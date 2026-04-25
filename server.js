@@ -1262,9 +1262,18 @@ app.post('/api/price', async (req, res) => {
   }
 
   try {
-    const checkout = await getCheckoutSession({ productUrl, sku, skus, items });
-    const { page } = checkout;
-    const result = await selectAddressAndGetPrice(page, selectedAddress);
+    let checkout = await getCheckoutSession({ productUrl, sku, skus, items });
+    let result;
+
+    try {
+      result = await selectAddressAndGetPrice(checkout.page, selectedAddress);
+    } catch (firstError) {
+      console.error('Retrying freight price with a fresh checkout session:', firstError.message);
+      await closeActiveCheckout();
+      checkout = await getCheckoutSession({ productUrl, sku, skus, items });
+      result = await selectAddressAndGetPrice(checkout.page, selectedAddress);
+    }
+
     checkout.lastUsed = Date.now();
     scheduleCheckoutCleanup();
     return res.json({
