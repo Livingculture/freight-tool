@@ -162,6 +162,7 @@ function buildProductFromDetails(details, resolvedUrl, includeMetrics) {
     title: normaliseSuggestion(details.variantTitle && details.variantTitle !== 'Default Title' ? `${details.title} - ${details.variantTitle}` : details.title || 'Living Culture product'),
     image: details.image,
     available: details.available,
+    saleState: details.saleState || (details.available ? 'Add to cart' : 'Unavailable'),
     weightKg: null,
     cartons: [],
     unitsPerCarton: 1,
@@ -254,6 +255,22 @@ async function getProductDetails(page, { productUrl, sku }, { includeMetrics = f
       .filter(table => /package\s*dimensions/i.test(table.innerText || '') && /gross\s*weight/i.test(table.innerText || ''))
       .map(table => table.innerText || '')
       .join('\n');
+    const isVisible = element => {
+      const style = window.getComputedStyle(element);
+      return style.display !== 'none' && style.visibility !== 'hidden' && element.offsetParent !== null;
+    };
+    const actionText = Array.from(document.querySelectorAll('button, input[type="submit"], [role="button"]'))
+      .filter(isVisible)
+      .map(element => (element.innerText || element.value || element.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .join(' | ');
+    const saleState = /pre[\s-]?sale|pre[\s-]?order/i.test(actionText)
+      ? 'Pre sale'
+      : /add\s+to\s+cart/i.test(actionText)
+        ? 'Add to cart'
+        : variant?.available
+          ? 'Available'
+          : 'Unavailable';
 
     return {
       title: product?.title || document.querySelector('meta[property="og:title"]')?.content || document.querySelector('h1')?.textContent?.trim() || document.title,
@@ -262,6 +279,7 @@ async function getProductDetails(page, { productUrl, sku }, { includeMetrics = f
       sku: variant?.sku || '',
       variantTitle: variant?.public_title || variant?.title || '',
       available: Boolean(variant?.available),
+      saleState,
       weightGrams: Number(variant?.weight || 0),
       descriptionHtml: includeMetrics ? product?.description || '' : '',
       pageText: includeMetrics ? document.body?.innerText || '' : '',

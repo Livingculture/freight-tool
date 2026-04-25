@@ -7,6 +7,7 @@ const productPreviewEl = document.getElementById('productPreview');
 const getFreightEl = document.getElementById('getFreight');
 const statusEl = document.getElementById('status');
 const resultEl = document.getElementById('result');
+const copyFreightEl = document.getElementById('copyFreight');
 
 let selectedAddress = null;
 let preparedKey = '';
@@ -172,6 +173,7 @@ function renderProductPreview(products, itemShipping = []) {
       const lineCbm = getLineCbm(product, quantity);
       const cartonCount = getLineCartonCount(product, quantity);
       const shippingLocation = getShippingLocation(shippingBySku.get(product.sku)?.method);
+      const saleState = product.saleState || (product.available ? 'Add to cart' : 'Unavailable');
       const stock = product.available ? `Stock: ${shippingLocation || 'Available'}` : 'Stock: Unavailable';
       const dimensions = product.metricsLoaded
         ? `${lineWeight ? `${lineWeight.toFixed(2)} kg` : 'Weight not found'} · ${lineCbm ? `${lineCbm.toFixed(3)} CBM` : 'CBM not found'}${cartonCount ? ` (${cartonCount} carton${cartonCount === 1 ? '' : 's'})` : ''}`
@@ -184,6 +186,7 @@ function renderProductPreview(products, itemShipping = []) {
             <strong>${escapeHtml(product.title || 'Living Culture product')}</strong>
             <div class="product-preview__meta">${escapeHtml(formatSkuWithQty(product.sku || '', quantity))}</div>
             <div class="product-preview__meta">${escapeHtml(dimensions)}</div>
+            <div class="product-preview__meta">${escapeHtml(`Status: ${saleState}`)}</div>
             <div class="product-preview__meta">${escapeHtml(stock)}</div>
           </div>
         </div>
@@ -231,6 +234,7 @@ function enrichBreakdownWithStandalonePrices(priceData, itemShipping) {
 }
 
 function renderFreightResult(data) {
+  copyFreightEl.hidden = !getFreightPriceText(data);
   const breakdown = data.freightBreakdown;
   if (!breakdown?.items) {
     resultEl.innerHTML = `<div class="freight-breakdown"><div class="freight-breakdown__row"><strong>Freight price</strong><strong>${escapeHtml(data.price || '')}</strong></div></div>`;
@@ -262,6 +266,23 @@ function renderFreightResult(data) {
       </div>
     </div>
   `;
+}
+
+function getFreightPriceText(data = latestPriceData) {
+  return data?.freightBreakdown?.total || data?.price || '';
+}
+
+async function copyFreightPrice() {
+  const price = getFreightPriceText();
+  if (!price) return;
+
+  try {
+    await navigator.clipboard.writeText(price);
+    setStatus(`Copied freight price ${price}`);
+  } catch (error) {
+    console.error(error);
+    setStatus(`Freight price ${price}`);
+  }
 }
 
 function getProductSuggestionBox(input) {
@@ -552,11 +573,13 @@ async function fetchFreightPrice() {
     selectedAddress = data.selectedAddress || selectedAddress;
     renderSelectedAddress(selectedAddress);
     setStatus('');
+    await copyFreightPrice();
     fetchProductMetrics(latestPriceData);
     fetchStandaloneShipping(latestPriceData);
   } catch (error) {
     console.error(error);
     resultEl.innerHTML = '<div class="result-empty">Freight price could not be loaded. Try again, or reselect the address.</div>';
+    copyFreightEl.hidden = true;
     setStatus('Could not get freight price. Try clicking Get freight price again.');
   }
 }
@@ -605,6 +628,7 @@ function selectProduct(option) {
 
 addProductEl.addEventListener('click', addProductRow);
 getFreightEl.addEventListener('click', fetchFreightPrice);
+copyFreightEl.addEventListener('click', copyFreightPrice);
 
 productRowsEl.addEventListener('input', event => {
   if (event.target.classList.contains('sku-input')) {

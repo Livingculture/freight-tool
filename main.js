@@ -46,13 +46,13 @@ async function createWindow() {
   const { port } = backend;
 
   mainWindow = new BrowserWindow({
-    width: 620,
+    width: 465,
     height: 820,
-    minWidth: 560,
+    minWidth: 465,
     minHeight: 560,
     title: 'Living Culture Freight Costing',
     show: false,
-    backgroundColor: '#f3f1e8',
+    backgroundColor: '#c5d9d3',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
