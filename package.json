@@ -1,14 +1,45 @@
 {
   "name": "livingculture-freight-tool",
   "version": "0.1.0",
-  "description": "Local helper for Living Culture delivery price lookup",
-  "main": "server.js",
+  "description": "Desktop helper for Living Culture delivery price lookup",
+  "author": "Living Culture",
+  "main": "main.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "electron .",
+    "dev": "electron .",
+    "start:web": "node server.js",
+    "package:mac": "electron-builder --mac",
+    "package:win": "electron-builder --win",
     "install-playwright": "npx playwright install chromium"
   },
   "dependencies": {
     "express": "^4.18.4",
     "playwright": "^1.40.0"
+  },
+  "devDependencies": {
+    "electron": "^39.2.7",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "nz.co.livingculture.freightcosting",
+    "productName": "Living Culture Freight Costing",
+    "files": [
+      "main.js",
+      "preload.js",
+      "server.js",
+      "package.json",
+      "package-lock.json",
+      "renderer/**/*",
+      "public/**/*"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "target": "zip"
+    },
+    "win": {
+      "target": "nsis"
+    }
   }
 }

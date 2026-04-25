@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Freight Costing</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="app-shell">
+    <section class="hero">
+      <div class="hero__top">
+        <img src="https://livingculture.co.nz/cdn/shop/files/logo_ec2b0c5e-42ca-4695-8c7e-43b344144c58.png?v=1675047511&width=300" alt="Living Culture" />
+        <h1>Freight Costing</h1>
+      </div>
+      <p>Enter one or more products and a delivery address. The app uses the Living Culture checkout flow in the background and returns the freight costing here.</p>
+    </section>
+
+    <section class="workspace">
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <span>Step 1</span>
+            <h2>Select Products</h2>
+          </div>
+        </div>
+
+        <div id="productRows" class="product-rows">
+          <div class="product-row">
+            <div class="product-search">
+              <label>Product URL or SKU</label>
+              <input class="sku-input" type="search" autocomplete="off" />
+              <div class="product-suggestions"></div>
+            </div>
+            <div>
+              <label>Qty</label>
+              <input class="sku-qty" type="number" min="1" step="1" value="1" />
+            </div>
+            <button class="remove-product" type="button" disabled>Remove</button>
+          </div>
+        </div>
+
+        <button id="addProduct" class="secondary-button" type="button">Add another product</button>
+
+        <div id="productPreview" class="product-preview"></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <span>Step 2</span>
+            <h2>Delivery Address</h2>
+          </div>
+        </div>
+
+        <label for="address">Address search</label>
+        <input id="address" type="search" autocomplete="off" />
+        <div id="suggestions" class="suggestions"></div>
+        <div id="selectedAddress" class="selected-address"></div>
+
+        <button id="getFreight" type="button" disabled>Get freight price</button>
+        <div id="status" class="status"></div>
+      </section>
+
+      <section class="panel result-panel">
+        <div class="section-heading">
+          <div>
+            <span>Step 3</span>
+            <h2>Freight Result</h2>
+          </div>
+        </div>
+        <div id="result" class="result-empty">Freight pricing will appear here after an address is selected.</div>
+      </section>
+    </section>
+  </main>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

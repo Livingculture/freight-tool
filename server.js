@@ -1201,7 +1201,25 @@ app.post('/api/item-shipping', async (req, res) => {
   }
 });
 
-const PORT = Number(process.env.PORT || 3001);
-app.listen(PORT, () => {
-  console.log(`Local freight helper running at http://localhost:${PORT}`);
-});
+function startServer(port = Number(process.env.PORT || 3001)) {
+  return new Promise((resolve, reject) => {
+    const server = app.listen(port, () => {
+      console.log(`Local freight helper running at http://localhost:${port}`);
+      resolve({ server, port });
+    });
+    server.on('error', reject);
+  });
+}
+
+if (require.main === module) {
+  startServer().catch(error => {
+    console.error(error);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  app,
+  startServer,
+  closeActiveCheckout
+};

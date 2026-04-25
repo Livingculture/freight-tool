@@ -1,61 +1,64 @@
-# Living Culture Freight Helper
+# Living Culture Freight Costing
 
-A local JavaScript helper to use Living Culture's own cart autocomplete, capture address suggestions, and request the freight price from the site.
+A desktop app for checking Living Culture freight pricing without staff needing to open VS Code, Terminal, or a browser URL.
 
-## Setup
+## Staff Instructions
 
-1. Open the project folder in VS Code.
-2. Run:
+1. Download the Freight Costing app.
+2. Double-click the app to open it.
+3. Enter a product SKU or product URL.
+4. Add more products and quantities if needed.
+5. Start typing the delivery address.
+6. Select the correct address from the suggestions.
+7. Click `Get freight price`.
+
+The app will show the product details, estimated weight and CBM, warehouse information where available, and the freight total.
+
+## Development Setup
+
+Install dependencies:
 
 ```bash
 npm install
 npm run install-playwright
 ```
 
-3. Start the local tool:
+Open the desktop app in development:
 
 ```bash
-npm start
+npm run dev
 ```
 
-4. Open the app in your browser:
+Run the old browser-based local server if needed:
 
+```bash
+npm run start:web
 ```
+
+Then open:
+
+```text
 http://localhost:3001
 ```
 
-## How it works
+## Build Apps
 
-- Enter the product page URL or the SKU from Living Culture.
-- Type a partial address. Suggestions load automatically after 4 characters, or you can click `Get suggestions`.
-- The local tool opens a headless Playwright browser in the background, resolves the SKU to the product variant, opens Shopify checkout, and reads the checkout address suggestions.
-- Select a suggestion from the list.
-- Click `Get freight price`.
-- The tool selects the address suggestion in checkout, continues to the shipping step, and reads the freight price.
-- The product preview also shows Shopify variant weight and estimated CBM calculated from package/carton dimensions in the product description.
+Build a Mac app:
 
-## Important notes
+```bash
+npm run package:mac
+```
 
-- The selectors in `server.js` target Living Culture's current Shopify checkout fields.
-- If Living Culture changes its cart, you may need to update selectors for:
-  - checkout address input
-  - autocomplete suggestion items
-  - shipping/freight price text
+Build a Windows app:
 
-## Customize selectors
+```bash
+npm run package:win
+```
 
-Open `server.js` and replace the selector arrays with the exact selectors from the Living Culture site.
+Build outputs are created in `dist/`.
 
-## Data storage
+## Notes
 
-The automation runs in a fresh background browser session for each lookup.
-
-## Weight and CBM
-
-- Weight comes from Shopify variant data.
-- CBM is estimated from package, carton, or box dimensions found in the product description.
-- CBM is not a carrier-provided checkout breakdown, so treat it as an estimate.
-
-## Disclaimer
-
-This tool runs locally on your machine and uses Playwright to automate the site in a browser. It does not send your address to any third-party service.
+- Playwright runs hidden in the background.
+- The app uses Living Culture checkout to read address suggestions and freight pricing.
+- Do not commit `node_modules`, `dist`, `build`, `.env`, `user-data`, or unrelated project folders.
