@@ -1044,8 +1044,12 @@ async function getProductSummaries(itemInput) {
 
 async function openCheckoutForProducts(page, products) {
   const cartItems = products.map(product => `${product.variantId}:${normaliseQuantity(product.quantity)}`).join(',');
-
   const checkoutUrl = `https://livingculture.co.nz/cart/${cartItems}`;
+
+  await page.goto('https://livingculture.co.nz/cart/clear.js', {
+    waitUntil: 'domcontentloaded',
+    timeout: 30000
+  }).catch(() => {});
 
   await page.goto(checkoutUrl, {
     waitUntil: 'domcontentloaded',
