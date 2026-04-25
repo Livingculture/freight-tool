@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      3.2
+// @version      3.3
 // @description  Opens a Living Culture freight panel inside Cin7 with auto and manual lookup modes.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -58,6 +58,13 @@
     return null;
   }
 
+  function isVisible(element) {
+    if (!element) return false;
+    const rect = element.getBoundingClientRect();
+    const style = window.getComputedStyle(element);
+    return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+  }
+
   function getFieldValueByLabel(labelText) {
     const labelPattern = new RegExp(labelText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
     const labelled = Array.from(document.querySelectorAll('label, legend, span, div'))
@@ -103,21 +110,73 @@
   }
 
   function findShippingPriceInput() {
-    const rows = Array.from(document.querySelectorAll('tr, [role="row"], .row, div'));
-    const shippingRows = rows
-      .filter(row => /Shipping\s*-\s*Ship from/i.test(clean(row.textContent)) || /\bShipping\b/i.test(clean(row.textContent)))
-      .sort((a, b) => clean(a.textContent).length - clean(b.textContent).length);
+    const additionalCharges = findTextNodeElement(/Additional charges and services/i);
+    if (!additionalCharges) return null;
 
-    for (const row of shippingRows) {
-      const inputs = Array.from(row.querySelectorAll('input'));
-      const priceInput = inputs.find(input => /number|text|tel|decimal|currency/i.test(input.type || 'text'));
-      if (priceInput) return priceInput;
+    const headingRect = additionalCharges.getBoundingClientRect();
+    let containers = Array.from(document.querySelectorAll('table, [role="table"], [class*="table" i], [class*="grid" i]'))
+      .filter(isVisible)
+      .map(element => ({ element, rect: element.getBoundingClientRect(), text: clean(element.textContent) }))
+      .filter(item =>
+        item.rect.top >= headingRect.bottom - 5 &&
+        /description/i.test(item.text) &&
+        /price/i.test(item.text) &&
+        /total/i.test(item.text) &&
+        /shipping\s*-/i.test(item.text)
+      )
+      .sort((a, b) => a.rect.top - b.rect.top || a.text.length - b.text.length);
+
+    if (!containers.length) {
+      containers = Array.from(document.querySelectorAll('section, main > div, body > div, div'))
+        .filter(isVisible)
+        .map(element => ({ element, rect: element.getBoundingClientRect(), text: clean(element.textContent) }))
+        .filter(item =>
+          item.rect.top >= headingRect.bottom - 5 &&
+          item.text.length < 5000 &&
+          /description/i.test(item.text) &&
+          /price/i.test(item.text) &&
+          /total/i.test(item.text) &&
+          /shipping\s*-/i.test(item.text)
+        )
+        .sort((a, b) => a.text.length - b.text.length);
     }
 
-    const additionalCharges = findTextNodeElement(/Additional charges and services/i);
-    const section = additionalCharges?.parentElement?.parentElement || additionalCharges?.closest('section, div');
-    const inputs = Array.from((section || document).querySelectorAll('input'));
-    return inputs.find(input => /^(?:0|0\.0000|\d+(?:\.\d{1,4})?)$/.test(clean(input.value)));
+    const section = containers[0]?.element;
+    if (!section) return null;
+
+    const rows = Array.from(section.querySelectorAll('tr, [role="row"], tbody > *, [class*="row" i]'))
+      .filter(isVisible)
+      .filter(row => {
+        const text = clean(row.textContent);
+        return /Shipping\s*-/i.test(text) && !/Shipping address/i.test(text);
+      })
+      .sort((a, b) => clean(a.textContent).length - clean(b.textContent).length);
+
+    for (const row of rows) {
+      const inputs = Array.from(row.querySelectorAll('input'))
+        .filter(isVisible)
+        .filter(input => !/address|contact|company|note|memo|date|carrier/i.test(`${input.name || ''} ${input.id || ''} ${input.placeholder || ''} ${input.getAttribute('aria-label') || ''}`));
+      if (inputs.length === 1) return inputs[0];
+
+      const priceHeader = Array.from(section.querySelectorAll('th, [role="columnheader"], div, span'))
+        .filter(isVisible)
+        .find(element => /^price$/i.test(clean(element.textContent)));
+      if (priceHeader) {
+        const headerCenter = priceHeader.getBoundingClientRect().left + (priceHeader.getBoundingClientRect().width / 2);
+        return inputs
+          .map(input => {
+            const rect = input.getBoundingClientRect();
+            const center = rect.left + (rect.width / 2);
+            return { input, distance: Math.abs(center - headerCenter) };
+          })
+          .sort((a, b) => a.distance - b.distance)[0]?.input || null;
+      }
+
+      const numericInput = inputs.find(input => /^(?:|0|0\.0000|\d+(?:\.\d{1,4})?)$/.test(clean(input.value)));
+      if (numericInput) return numericInput;
+    }
+
+    return null;
   }
 
   function setStatus(message, isError = false) {
