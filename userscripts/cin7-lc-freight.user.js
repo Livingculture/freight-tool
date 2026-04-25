@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      3.7
+// @version      3.8
 // @description  Opens a Living Culture freight panel inside Cin7 with auto and manual lookup modes.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -204,6 +204,47 @@
     if (!additionalCharges) return null;
 
     const headingRect = additionalCharges.getBoundingClientRect();
+    const visibleElementsBelowHeading = Array.from(document.querySelectorAll('td, th, [role="cell"], [role="columnheader"], div, span'))
+      .filter(isVisible)
+      .map(element => ({ element, rect: element.getBoundingClientRect(), text: clean(element.textContent) }))
+      .filter(item => item.rect.top >= headingRect.bottom - 5);
+    const shippingLabel = visibleElementsBelowHeading
+      .filter(item => item.text.length < 120 && (/^Shipping\s*-\s*Ship from\s+(?:Auckland|Christchurch)$/i.test(item.text) || /^Shipping\s*-/i.test(item.text)))
+      .sort((a, b) => a.text.length - b.text.length || a.rect.top - b.rect.top)[0];
+    const pageInputs = Array.from(document.querySelectorAll('input'))
+      .filter(isVisible)
+      .filter(input => !input.closest('#lc-freight-panel'))
+      .filter(input => !/address|contact|company|note|memo|date|carrier|search/i.test(`${input.name || ''} ${input.id || ''} ${input.placeholder || ''} ${input.getAttribute('aria-label') || ''}`));
+
+    if (shippingLabel) {
+      const priceHeader = visibleElementsBelowHeading
+        .filter(item => /^price$/i.test(item.text) && item.rect.top < shippingLabel.rect.top)
+        .sort((a, b) => Math.abs(a.rect.top - shippingLabel.rect.top) - Math.abs(b.rect.top - shippingLabel.rect.top))[0];
+      const rowInputs = pageInputs
+        .map(input => ({ input, rect: input.getBoundingClientRect() }))
+        .filter(item => {
+          const centerY = item.rect.top + (item.rect.height / 2);
+          return centerY >= shippingLabel.rect.top - 18 &&
+            centerY <= shippingLabel.rect.bottom + 42 &&
+            item.rect.left > shippingLabel.rect.right;
+        });
+
+      if (rowInputs.length && priceHeader) {
+        const headerCenter = priceHeader.rect.left + (priceHeader.rect.width / 2);
+        return rowInputs
+          .map(item => ({
+            input: item.input,
+            distance: Math.abs((item.rect.left + (item.rect.width / 2)) - headerCenter)
+          }))
+          .sort((a, b) => a.distance - b.distance)[0].input;
+      }
+
+      if (rowInputs.length === 1) return rowInputs[0].input;
+
+      const numericInput = rowInputs.find(item => /^(?:|0|0\.0000|\d+(?:\.\d{1,4})?)$/.test(clean(item.input.value)));
+      if (numericInput) return numericInput.input;
+    }
+
     let containers = Array.from(document.querySelectorAll('table, [role="table"], [class*="table" i], [class*="grid" i]'))
       .filter(isVisible)
       .map(element => ({ element, rect: element.getBoundingClientRect(), text: clean(element.textContent) }))
