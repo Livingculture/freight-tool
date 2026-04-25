@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      3.8
+// @version      3.9
 // @description  Opens a Living Culture freight panel inside Cin7 with auto and manual lookup modes.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -355,11 +355,54 @@
     return data;
   }
 
+  function scoreAddressSuggestion(suggestion, address) {
+    const normalise = value => clean(value)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+    const wanted = normalise(address);
+    const candidate = normalise(suggestion);
+    if (!wanted || !candidate) return 0;
+    if (candidate.includes(wanted)) return 1000 + wanted.length;
+
+    const wantedTokens = wanted.split(' ').filter(token => token.length > 1);
+    return wantedTokens.reduce((score, token) => score + (candidate.includes(token) ? 1 : 0), 0);
+  }
+
+  async function resolveAddressSuggestion(items, address) {
+    const firstItem = items[0] || {};
+    const isUrl = /^https?:\/\/.+\/products\//i.test(firstItem.sku || firstItem.productUrl || '');
+    const query = clean(address);
+    if (!firstItem.sku && !firstItem.productUrl) return query;
+
+    setStatus('Selecting address suggestion...');
+    const response = await fetch(`${API_BASE}/address-suggestions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sku: isUrl ? '' : firstItem.sku,
+        productUrl: firstItem.productUrl || (isUrl ? firstItem.sku : ''),
+        quantity: firstItem.quantity || 1,
+        address: query
+      })
+    });
+    const data = await response.json().catch(() => ({}));
+    const suggestions = data.suggestions || [];
+    if (!response.ok || !suggestions.length) return query;
+
+    const selected = suggestions
+      .map(suggestion => ({ suggestion, score: scoreAddressSuggestion(suggestion, query) }))
+      .sort((a, b) => b.score - a.score)[0]?.suggestion || suggestions[0];
+    state.selectedAddress = selected;
+    return selected;
+  }
+
   async function useCin7Details() {
     setStatus('Reading Cin7 details...');
     const items = getItemsFromCin7();
     const address = getAddressFromCin7();
     const searchAddress = getAddressSearchFromCin7();
+    state.selectedAddress = '';
     document.getElementById('lc-auto-sku').textContent = items.length ? items.map(item => `${item.sku} x ${item.quantity}`).join(', ') : '-';
     document.getElementById('lc-auto-address').textContent = address || '-';
 
@@ -368,7 +411,8 @@
       return;
     }
 
-    await getAndApplyFreight({ items, address: searchAddress, fill: true });
+    const selectedAddress = await resolveAddressSuggestion(items, searchAddress);
+    await getAndApplyFreight({ items, address: selectedAddress, fill: true });
   }
 
   async function getManualFreight() {

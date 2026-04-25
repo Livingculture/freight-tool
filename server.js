@@ -1172,15 +1172,20 @@ async function clickMatchingSuggestion(page, addressText) {
   const suggestionHandles = await page.$$(SUGGESTION_SELECTORS.join(','));
   const wantedAddress = normaliseSuggestion(addressText).toLowerCase();
   const wantedStreet = normaliseSuggestion(String(addressText).split(',')[0] || '').toLowerCase();
+  const comparableWantedAddress = normaliseAddressForCompare(addressText);
+  const comparableWantedStreet = normaliseAddressForCompare(String(addressText).split(',')[0] || '');
 
   for (const handle of suggestionHandles) {
     const text = normaliseSuggestion((await handle.textContent()) || '');
     const normalisedText = text.toLowerCase();
+    const comparableText = normaliseAddressForCompare(text);
     if (
       normalisedText.includes(wantedAddress) ||
       wantedAddress.includes(normalisedText) ||
       normalisedText === wantedAddress ||
-      (wantedStreet && normalisedText.includes(wantedStreet))
+      (wantedStreet && normalisedText.includes(wantedStreet)) ||
+      (comparableWantedAddress && comparableText.includes(comparableWantedAddress)) ||
+      (comparableWantedStreet && comparableText.includes(comparableWantedStreet))
     ) {
       await handle.click();
       return text;
@@ -1188,6 +1193,13 @@ async function clickMatchingSuggestion(page, addressText) {
   }
 
   return null;
+}
+
+function normaliseAddressForCompare(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
 }
 
 async function readShippingPrice(page) {
