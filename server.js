@@ -1317,12 +1317,20 @@ app.post('/api/price', async (req, res) => {
 app.post('/get-freight', async (req, res) => {
   const { sku, productUrl, address, selectedAddress, quantity } = req.body;
   const freightAddress = selectedAddress || address;
-  const skuLooksLikeUrl = /^https?:\/\/.+\/products\//i.test(String(sku || ''));
-  const items = [{
-    sku: skuLooksLikeUrl ? '' : sku,
-    productUrl: productUrl || (skuLooksLikeUrl ? sku : ''),
-    quantity: normaliseQuantity(quantity)
-  }];
+  const items = Array.isArray(req.body.items) && req.body.items.length
+    ? req.body.items.map(item => {
+      const itemSkuLooksLikeUrl = /^https?:\/\/.+\/products\//i.test(String(item?.sku || ''));
+      return {
+        sku: itemSkuLooksLikeUrl ? '' : item?.sku,
+        productUrl: item?.productUrl || (itemSkuLooksLikeUrl ? item?.sku : ''),
+        quantity: normaliseQuantity(item?.quantity)
+      };
+    })
+    : [{
+      sku: /^https?:\/\/.+\/products\//i.test(String(sku || '')) ? '' : sku,
+      productUrl: productUrl || (/^https?:\/\/.+\/products\//i.test(String(sku || '')) ? sku : ''),
+      quantity: normaliseQuantity(quantity)
+    }];
 
   if (!normaliseItems({ items }).length || !freightAddress) {
     return res.status(400).json({ error: 'SKU or product URL and address are required' });
@@ -1346,6 +1354,7 @@ app.post('/get-freight', async (req, res) => {
     return res.json({
       ...result,
       sku: checkout.products?.[0]?.sku || sku || '',
+      skus: checkout.products?.map(product => product.sku).filter(Boolean) || [],
       price: result.price,
       priceNumber: parseMoneyToCents(result.price) / 100,
       products: checkout.products,

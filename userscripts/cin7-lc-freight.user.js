@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      3.3
+// @version      3.4
 // @description  Opens a Living Culture freight panel inside Cin7 with auto and manual lookup modes.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -92,15 +92,51 @@
   }
 
   function getSkuFromCin7() {
-    const links = Array.from(document.querySelectorAll('table a, a'));
-    for (const link of links) {
-      const text = clean(link.textContent);
-      const sku = text.match(/^([A-Z]{1,6}\d{3,}(?:-\d+)?)\s*:/i)?.[1];
-      if (sku) return sku.toUpperCase();
+    return getItemsFromCin7()[0]?.sku || '';
+  }
+
+  function getQuantityFromRow(row) {
+    const inputs = Array.from(row.querySelectorAll('input'))
+      .map(input => clean(input.value))
+      .filter(Boolean);
+    const inputQuantity = inputs.find(value => /^\d+$/.test(value));
+    if (inputQuantity) return Number(inputQuantity);
+
+    const cells = Array.from(row.querySelectorAll('td, [role="cell"], div, span'))
+      .map(cell => clean(cell.textContent))
+      .filter(Boolean);
+    const numericCells = cells
+      .map(value => value.match(/^(\d+)$/)?.[1])
+      .filter(Boolean)
+      .map(Number);
+    return numericCells.find(value => value > 0 && value < 1000) || 1;
+  }
+
+  function getItemsFromCin7() {
+    const rows = Array.from(document.querySelectorAll('tr, [role="row"], tbody > *, [class*="row" i]'));
+    const items = [];
+    const seen = new Set();
+
+    for (const row of rows) {
+      const link = Array.from(row.querySelectorAll('a'))
+        .find(anchor => /^[A-Z]{1,6}\d{3,}(?:-\d+)?\s*:/i.test(clean(anchor.textContent)));
+      const sku = clean(link?.textContent).match(/^([A-Z]{1,6}\d{3,}(?:-\d+)?)\s*:/i)?.[1]?.toUpperCase();
+      if (!sku || seen.has(sku)) continue;
+      seen.add(sku);
+      items.push({ sku, quantity: getQuantityFromRow(row) });
     }
 
-    const textMatch = (document.body.innerText || '').match(/\b([A-Z]{1,6}\d{3,}(?:-\d+)?)\s*:/i);
-    return textMatch ? textMatch[1].toUpperCase() : '';
+    if (items.length) return items;
+
+    const matches = Array.from((document.body.innerText || '').matchAll(/\b([A-Z]{1,6}\d{3,}(?:-\d+)?)\s*:/gi));
+    for (const match of matches) {
+      const sku = match[1].toUpperCase();
+      if (seen.has(sku)) continue;
+      seen.add(sku);
+      items.push({ sku, quantity: 1 });
+    }
+
+    return items;
   }
 
   function getAddressFromCin7() {
@@ -194,17 +230,22 @@
     document.getElementById('lc-freight-method').textContent = method || '';
   }
 
-  async function requestFreight({ sku, address, quantity = 1 }) {
-    const isUrl = /^https?:\/\/.+\/products\//i.test(sku);
+  async function requestFreight({ sku, items, address, quantity = 1 }) {
+    const freightItems = Array.isArray(items) && items.length ? items : [{ sku, quantity }];
     const response = await fetch(`${API_BASE}/get-freight`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        sku: isUrl ? '' : sku,
-        productUrl: isUrl ? sku : '',
+        items: freightItems.map(item => {
+          const isUrl = /^https?:\/\/.+\/products\//i.test(item.sku || item.productUrl || '');
+          return {
+            sku: isUrl ? '' : item.sku,
+            productUrl: item.productUrl || (isUrl ? item.sku : ''),
+            quantity: item.quantity || 1
+          };
+        }),
         address,
-        selectedAddress: state.selectedAddress || address,
-        quantity
+        selectedAddress: state.selectedAddress || address
       })
     });
     const data = await response.json().catch(() => ({}));
@@ -216,33 +257,42 @@
 
   async function useCin7Details() {
     setStatus('Reading Cin7 details...');
-    const sku = getSkuFromCin7();
+    const items = getItemsFromCin7();
     const address = getAddressFromCin7();
-    document.getElementById('lc-auto-sku').textContent = sku || '-';
+    document.getElementById('lc-auto-sku').textContent = items.length ? items.map(item => `${item.sku} x ${item.quantity}`).join(', ') : '-';
     document.getElementById('lc-auto-address').textContent = address || '-';
 
-    if (!sku || !address) {
-      setStatus('Could not detect SKU or shipping address from Cin7.', true);
+    if (!items.length || !address) {
+      setStatus('Could not detect product lines or shipping address from Cin7.', true);
       return;
     }
 
-    await getAndApplyFreight({ sku, address, fill: true });
+    await getAndApplyFreight({ items, address, fill: true });
   }
 
   async function getManualFreight() {
-    const sku = clean(document.getElementById('lc-manual-sku').value);
+    const items = getManualItems();
     const address = clean(document.getElementById('lc-manual-address').value);
-    if (!sku || !address) {
-      setStatus('Enter a SKU/product URL and address first.', true);
+    if (!items.length || !address) {
+      setStatus('Enter at least one SKU/product URL and address first.', true);
       return;
     }
-    await getAndApplyFreight({ sku, address, fill: false });
+    await getAndApplyFreight({ items, address, fill: false });
   }
 
-  async function getAndApplyFreight({ sku, address, fill }) {
+  function getManualItems() {
+    return Array.from(document.querySelectorAll('.lc-manual-product-row'))
+      .map(row => ({
+        sku: clean(row.querySelector('.lc-manual-sku')?.value),
+        quantity: Number(clean(row.querySelector('.lc-manual-qty')?.value)) || 1
+      }))
+      .filter(item => item.sku);
+  }
+
+  async function getAndApplyFreight({ sku, items, address, fill }) {
     try {
       setStatus('Getting freight...');
-      const data = await requestFreight({ sku, address });
+      const data = await requestFreight({ sku, items, address });
       setResult(data.price, data.method);
       await copyPrice(false);
       if (fill) fillCin7PriceField(false);
@@ -277,21 +327,22 @@
   }
 
   async function loadAddressSuggestions() {
-    const sku = clean(document.getElementById('lc-manual-sku').value);
+    const items = getManualItems();
+    const firstItem = items[0];
     const address = clean(document.getElementById('lc-manual-address').value);
-    const isUrl = /^https?:\/\/.+\/products\//i.test(sku);
+    const isUrl = /^https?:\/\/.+\/products\//i.test(firstItem?.sku || '');
     const list = document.getElementById('lc-address-suggestions');
     state.selectedAddress = '';
     list.innerHTML = '';
 
-    if (sku.length < 2 || address.length < 4) return;
+    if (!firstItem || firstItem.sku.length < 2 || address.length < 4) return;
 
     try {
       setStatus('Getting address suggestions...');
       const response = await fetch(`${API_BASE}/address-suggestions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sku: isUrl ? '' : sku, productUrl: isUrl ? sku : '', address })
+        body: JSON.stringify({ sku: isUrl ? '' : firstItem.sku, productUrl: isUrl ? firstItem.sku : '', address })
       });
       const data = await response.json().catch(() => ({}));
       const suggestions = data.suggestions || [];
@@ -308,8 +359,21 @@
   }
 
   function renderDetectedDetails() {
-    document.getElementById('lc-auto-sku').textContent = getSkuFromCin7() || '-';
+    const items = getItemsFromCin7();
+    document.getElementById('lc-auto-sku').textContent = items.length ? items.map(item => `${item.sku} x ${item.quantity}`).join(', ') : '-';
     document.getElementById('lc-auto-address').textContent = getAddressFromCin7() || '-';
+  }
+
+  function addManualProductRow(value = '', quantity = 1) {
+    const rows = document.getElementById('lc-manual-products');
+    const row = document.createElement('div');
+    row.className = 'lc-manual-product-row';
+    row.innerHTML = `
+      <input class="lc-manual-sku" placeholder="SKU or product URL" value="${value}" />
+      <input class="lc-manual-qty" type="number" min="1" step="1" value="${quantity}" />
+      <button type="button" class="lc-remove-product">Remove</button>
+    `;
+    rows.appendChild(row);
   }
 
   function createPanel() {
@@ -336,7 +400,8 @@
 
       <div class="lc-block">
         <div class="lc-label">Manual lookup</div>
-        <input id="lc-manual-sku" placeholder="SKU or product URL" />
+        <div id="lc-manual-products"></div>
+        <button type="button" id="lc-add-product">Add another product</button>
         <input id="lc-manual-address" placeholder="Address" />
         <div id="lc-address-suggestions"></div>
         <button type="button" id="lc-manual-get">Get freight manually</button>
@@ -430,6 +495,18 @@
         font-weight: 700;
         cursor: pointer;
       }
+      .lc-manual-product-row {
+        display: grid;
+        grid-template-columns: 1fr 58px 72px;
+        gap: 6px;
+      }
+      .lc-manual-product-row .lc-remove-product {
+        padding: 7px 6px !important;
+        color: #1f2b24 !important;
+        background: #f8f8f5 !important;
+        border: 1px solid #ebe7dc !important;
+        font-size: 12px;
+      }
       #lc-address-suggestions {
         display: grid;
         gap: 5px;
@@ -469,6 +546,7 @@
     panel.querySelector('#lc-panel-close').addEventListener('click', () => panel.classList.remove('is-open'));
     panel.querySelector('#lc-use-cin7').addEventListener('click', useCin7Details);
     panel.querySelector('#lc-manual-get').addEventListener('click', getManualFreight);
+    panel.querySelector('#lc-add-product').addEventListener('click', () => addManualProductRow());
     panel.querySelector('#lc-fill-price').addEventListener('click', () => fillCin7PriceField(true));
     panel.querySelector('#lc-copy-price').addEventListener('click', () => copyPrice(true));
     panel.querySelector('#lc-address-suggestions').addEventListener('click', event => {
@@ -482,10 +560,17 @@
       clearTimeout(state.addressTimer);
       state.addressTimer = setTimeout(loadAddressSuggestions, 700);
     });
-    panel.querySelector('#lc-manual-sku').addEventListener('input', () => {
+    panel.querySelector('#lc-manual-products').addEventListener('click', event => {
+      if (!event.target.classList.contains('lc-remove-product')) return;
+      const rows = panel.querySelectorAll('.lc-manual-product-row');
+      if (rows.length <= 1) return;
+      event.target.closest('.lc-manual-product-row').remove();
+    });
+    panel.querySelector('#lc-manual-products').addEventListener('input', () => {
       clearTimeout(state.addressTimer);
       state.addressTimer = setTimeout(loadAddressSuggestions, 700);
     });
+    addManualProductRow();
   }
 
   function boot() {
