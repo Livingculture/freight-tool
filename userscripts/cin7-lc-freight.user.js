@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      3.5
+// @version      3.6
 // @description  Opens a Living Culture freight panel inside Cin7 with auto and manual lookup modes.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -195,6 +195,10 @@
     return clean([line1, line2].filter(Boolean).join(', '));
   }
 
+  function getAddressSearchFromCin7() {
+    return clean(getAddressLineByLabel('Shipping address line 1') || getFieldValueByLabel('Shipping address line 1') || getAddressFromCin7());
+  }
+
   function findShippingPriceInput() {
     const additionalCharges = findTextNodeElement(/Additional charges and services/i);
     if (!additionalCharges) return null;
@@ -314,15 +318,16 @@
     setStatus('Reading Cin7 details...');
     const items = getItemsFromCin7();
     const address = getAddressFromCin7();
+    const searchAddress = getAddressSearchFromCin7();
     document.getElementById('lc-auto-sku').textContent = items.length ? items.map(item => `${item.sku} x ${item.quantity}`).join(', ') : '-';
     document.getElementById('lc-auto-address').textContent = address || '-';
 
-    if (!items.length || !address) {
+    if (!items.length || !searchAddress) {
       setStatus('Could not detect product lines or shipping address from Cin7.', true);
       return;
     }
 
-    await getAndApplyFreight({ items, address, fill: true });
+    await getAndApplyFreight({ items, address: searchAddress, fill: true });
   }
 
   async function getManualFreight() {
