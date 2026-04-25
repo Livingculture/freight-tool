@@ -46,10 +46,10 @@ async function createWindow() {
   const { port } = backend;
 
   mainWindow = new BrowserWindow({
-    width: 1040,
-    height: 980,
-    minWidth: 900,
-    minHeight: 720,
+    width: 940,
+    height: 820,
+    minWidth: 760,
+    minHeight: 560,
     title: 'Living Culture Freight Costing',
     show: false,
     backgroundColor: '#f3f1e8',

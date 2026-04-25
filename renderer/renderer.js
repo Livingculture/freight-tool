@@ -245,16 +245,12 @@ function renderFreightResult(data) {
         const itemMethod = itemShipping.method
           ? `<div class="freight-breakdown__meta">${escapeHtml(itemShipping.method)}${itemShipping.price ? ` when quoted alone: ${escapeHtml(itemShipping.price)}` : ''}</div>`
           : '';
-        const itemError = itemShipping.error
-          ? `<div class="freight-breakdown__meta">Single-item quote unavailable: ${escapeHtml(itemShipping.error)}</div>`
-          : '';
         return `
           <div class="freight-breakdown__row">
             <div>
               <strong>${escapeHtml(item.title || 'Product')}</strong>
               <div class="freight-breakdown__meta">${escapeHtml(formatSkuWithQty(item.sku || '', Number(item.quantity) || 1))}${item.basisValue ? ` · ${escapeHtml(String(item.basisValue))} ${escapeHtml(breakdown.basis)}` : ''}</div>
               ${itemMethod}
-              ${itemError}
             </div>
             <strong>${escapeHtml(item.price || 'N/A')}</strong>
           </div>
@@ -396,7 +392,8 @@ async function prepareProducts(items, productKey) {
       scheduleAddressLookup(100);
     }
   } catch (error) {
-    setStatus(`Error: ${error.message}`);
+    console.error(error);
+    setStatus('Could not prepare those products. Check the SKU, then try again.');
   } finally {
     activePrepare = false;
     if (getProductKey() && getProductKey() !== preparedKey) {
@@ -466,7 +463,8 @@ async function fetchAddressSuggestions() {
     renderProductPreview(data.products || []);
     setStatus('Select the correct address from the list.');
   } catch (error) {
-    setStatus(`Error: ${error.message}`);
+    console.error(error);
+    setStatus('Could not load address suggestions. Keep typing or try the full street address.');
   } finally {
     activeAddressSearch = false;
     if (addressInput.value.trim() && addressInput.value.trim() !== lastAddressQuery) {
@@ -557,7 +555,9 @@ async function fetchFreightPrice() {
     fetchProductMetrics(latestPriceData);
     fetchStandaloneShipping(latestPriceData);
   } catch (error) {
-    setStatus(`Error: ${error.message}`);
+    console.error(error);
+    resultEl.innerHTML = '<div class="result-empty">Freight price could not be loaded. Try again, or reselect the address.</div>';
+    setStatus('Could not get freight price. Try clicking Get freight price again.');
   }
 }
 

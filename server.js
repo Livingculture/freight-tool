@@ -323,12 +323,20 @@ function buildFreightBreakdown(products, priceText, itemShipping = []) {
   });
   const basisTotal = basisValues.reduce((total, value) => total + value, 0);
   const shippingBySku = new Map(itemShipping.map(item => [item.sku, item]));
+  const hasMissingBasis = basisValues.some(value => !Number.isFinite(value) || value <= 0);
 
-  if (!totalCents || !basisTotal) {
+  if (!totalCents || !basisTotal || hasMissingBasis) {
     return {
       basis,
       total: priceText,
-      items: products.map(product => ({ sku: product.sku, title: product.title, quantity: normaliseQuantity(product.quantity), itemShipping: shippingBySku.get(product.sku), price: null }))
+      items: products.map((product, index) => ({
+        sku: product.sku,
+        title: product.title,
+        quantity: normaliseQuantity(product.quantity),
+        basisValue: basisValues[index] || null,
+        itemShipping: shippingBySku.get(product.sku),
+        price: null
+      }))
     };
   }
 
@@ -987,6 +995,26 @@ async function getProductMetrics(itemInput) {
   }
 }
 
+async function getProductSummaries(itemInput) {
+  const items = normaliseItems(itemInput);
+  if (!items.length) {
+    throw new Error('At least one SKU is required');
+  }
+
+  const session = await createBrowserSession();
+  try {
+    const products = [];
+    for (const item of items) {
+      const product = { ...(await getProductDetails(session.page, item, { includeMetrics: false })) };
+      product.quantity = item.quantity;
+      products.push(product);
+    }
+    return products;
+  } finally {
+    await session.close().catch(() => {});
+  }
+}
+
 async function openCheckoutForProducts(page, products) {
   const cartItems = products.map(product => `${product.variantId}:${normaliseQuantity(product.quantity)}`).join(',');
 
@@ -1082,9 +1110,11 @@ async function selectAddressAndGetPrice(page, addressText) {
     .first();
 
   await Promise.all([
-    page.waitForURL(/\/shipping/, { timeout: 30000 }),
+    page.waitForURL(/\/shipping/, { timeout: 45000, waitUntil: 'domcontentloaded' }).catch(() => {}),
     continueButton.click({ timeout: DEFAULT_WAIT })
   ]);
+
+  await page.waitForURL(/\/shipping/, { timeout: 45000, waitUntil: 'domcontentloaded' }).catch(() => {});
 
   await page.waitForFunction(() => {
     const text = document.body?.innerText || '';
@@ -1187,10 +1217,8 @@ app.post('/api/prepare', async (req, res) => {
   }
 
   try {
-    const checkout = await getCheckoutSession({ productUrl, sku, skus, items });
-    checkout.lastUsed = Date.now();
-    scheduleCheckoutCleanup();
-    return res.json({ products: checkout.products });
+    const products = await getProductSummaries({ productUrl, sku, skus, items });
+    return res.json({ products });
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: error.message });
