@@ -1,13 +1,15 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      3.1
+// @version      3.2
 // @description  Opens a Living Culture freight panel inside Cin7 with auto and manual lookup modes.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
 // @match        *://*.cin7.co/*
 // @match        *://*.cin7core.com/*
 // @match        *://*.dearsystems.com/*
+// @match        https://inventory.dearsystems.com/*
+// @run-at       document-idle
 // @grant        none
 // ==/UserScript==
 
@@ -427,5 +429,13 @@
     });
   }
 
-  setTimeout(createPanel, 1500);
+  function boot() {
+    if (!document.body) return;
+    createPanel();
+  }
+
+  boot();
+  window.addEventListener('load', boot);
+  document.addEventListener('DOMContentLoaded', boot);
+  setInterval(boot, 3000);
 })();
