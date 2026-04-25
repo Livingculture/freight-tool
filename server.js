@@ -3,6 +3,15 @@ const path = require('path');
 const { chromium } = require('playwright');
 
 const app = express();
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+  return next();
+});
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
@@ -1299,6 +1308,74 @@ app.post('/api/price', async (req, res) => {
       products: checkout.products,
       freightBreakdown: buildFreightBreakdown(checkout.products, result.price)
     });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/get-freight', async (req, res) => {
+  const { sku, productUrl, address, selectedAddress, quantity } = req.body;
+  const freightAddress = selectedAddress || address;
+  const skuLooksLikeUrl = /^https?:\/\/.+\/products\//i.test(String(sku || ''));
+  const items = [{
+    sku: skuLooksLikeUrl ? '' : sku,
+    productUrl: productUrl || (skuLooksLikeUrl ? sku : ''),
+    quantity: normaliseQuantity(quantity)
+  }];
+
+  if (!normaliseItems({ items }).length || !freightAddress) {
+    return res.status(400).json({ error: 'SKU or product URL and address are required' });
+  }
+
+  try {
+    let checkout = await getCheckoutSession({ items });
+    let result;
+
+    try {
+      result = await selectAddressAndGetPrice(checkout.page, freightAddress);
+    } catch (firstError) {
+      console.error('Retrying Cin7 freight with a fresh checkout session:', firstError.message);
+      await closeActiveCheckout();
+      checkout = await getCheckoutSession({ items });
+      result = await selectAddressAndGetPrice(checkout.page, freightAddress);
+    }
+
+    checkout.lastUsed = Date.now();
+    scheduleCheckoutCleanup();
+    return res.json({
+      ...result,
+      sku: checkout.products?.[0]?.sku || sku || '',
+      price: result.price,
+      priceNumber: parseMoneyToCents(result.price) / 100,
+      products: checkout.products,
+      freightBreakdown: buildFreightBreakdown(checkout.products, result.price)
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/address-suggestions', async (req, res) => {
+  const { sku, productUrl, address, quantity } = req.body;
+  const skuLooksLikeUrl = /^https?:\/\/.+\/products\//i.test(String(sku || ''));
+  const items = [{
+    sku: skuLooksLikeUrl ? '' : sku,
+    productUrl: productUrl || (skuLooksLikeUrl ? sku : ''),
+    quantity: normaliseQuantity(quantity)
+  }];
+
+  if (!normaliseItems({ items }).length || !address) {
+    return res.status(400).json({ error: 'SKU or product URL and address are required' });
+  }
+
+  try {
+    const checkout = await getCheckoutSession({ items });
+    const suggestions = await getSuggestionsForAddress(checkout.page, address);
+    checkout.lastUsed = Date.now();
+    scheduleCheckoutCleanup();
+    return res.json({ suggestions, products: checkout.products });
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: error.message });

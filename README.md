@@ -14,6 +14,23 @@ A desktop app for checking Living Culture freight pricing without staff needing 
 
 The app will show the product details, estimated weight and CBM, warehouse information where available, and the freight total.
 
+## Cin7 Helper
+
+The Tampermonkey helper is in:
+
+```text
+userscripts/cin7-lc-freight.user.js
+```
+
+Install it in Tampermonkey, then keep the Freight Costing app running locally. In Cin7, click `LC Freight` to open the side panel.
+
+The panel can:
+
+- read the SKU and shipping address from Cin7
+- run a manual SKU/address lookup
+- fill the Cin7 shipping price field
+- copy the freight price as a backup
+
 ## Development Setup
 
 Install dependencies:
