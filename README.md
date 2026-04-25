@@ -24,6 +24,8 @@ userscripts/cin7-lc-freight.user.js
 
 Install it in Tampermonkey, then keep the Freight Costing app running locally. In Cin7, click `LC Freight` to open the side panel.
 
+If the `LC Freight` button does not appear, check that Tampermonkey shows the script as enabled on the current Cin7 page. The script matches Cin7, Cin7 Core, and Dear Systems URLs.
+
 The panel can:
 
 - read the SKU and shipping address from Cin7

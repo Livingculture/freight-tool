@@ -1,9 +1,13 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      3.0
+// @version      3.1
 // @description  Opens a Living Culture freight panel inside Cin7 with auto and manual lookup modes.
+// @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
+// @match        *://*.cin7.co/*
+// @match        *://*.cin7core.com/*
+// @match        *://*.dearsystems.com/*
 // @grant        none
 // ==/UserScript==
 
