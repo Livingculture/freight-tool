@@ -1201,11 +1201,11 @@ app.post('/api/item-shipping', async (req, res) => {
   }
 });
 
-function startServer(port = Number(process.env.PORT || 3001)) {
+function startServer(port = Number(process.env.PORT || 3001), host = '127.0.0.1') {
   return new Promise((resolve, reject) => {
-    const server = app.listen(port, () => {
-      console.log(`Local freight helper running at http://localhost:${port}`);
-      resolve({ server, port });
+    const server = app.listen(port, host, () => {
+      console.log(`Local freight helper running at http://${host}:${port}`);
+      resolve({ server, port, host });
     });
     server.on('error', reject);
   });

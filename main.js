@@ -27,9 +27,23 @@ async function findBackendPort() {
   throw new Error('Could not find an available local port for the freight service.');
 }
 
+async function startBackend() {
+  const preferredPort = await findBackendPort();
+  for (let port = preferredPort; port < preferredPort + 20; port += 1) {
+    try {
+      return await startServer(port, '127.0.0.1');
+    } catch (error) {
+      if (error.code !== 'EADDRINUSE') {
+        throw error;
+      }
+    }
+  }
+  throw new Error('Could not start the local freight service because ports 3001-3020 are already in use.');
+}
+
 async function createWindow() {
-  const port = await findBackendPort();
-  backend = await startServer(port);
+  backend = await startBackend();
+  const { port } = backend;
 
   mainWindow = new BrowserWindow({
     width: 1040,
