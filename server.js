@@ -10,6 +10,7 @@ const DEFAULT_WAIT = 10000;
 const HEADLESS = process.env.HEADLESS !== 'false';
 const CHECKOUT_IDLE_MS = 5 * 60 * 1000;
 const productCache = new Map();
+const productSummaryCache = new Map();
 let activeCheckout = null;
 const ADDRESS_INPUT_SELECTORS = [
   '#shipping-address1:visible',
@@ -153,9 +154,48 @@ function getVariantIdFromUrl(productUrl) {
   }
 }
 
-async function getProductDetails(page, { productUrl, sku }) {
+function buildProductFromDetails(details, resolvedUrl, includeMetrics) {
+  const product = {
+    url: resolvedUrl,
+    variantId: details.variantId,
+    sku: details.sku,
+    title: normaliseSuggestion(details.variantTitle && details.variantTitle !== 'Default Title' ? `${details.title} - ${details.variantTitle}` : details.title || 'Living Culture product'),
+    image: details.image,
+    available: details.available,
+    weightKg: null,
+    cartons: [],
+    unitsPerCarton: 1,
+    cbm: 0,
+    metricsLoaded: false
+  };
+
+  if (!includeMetrics) {
+    return product;
+  }
+
+  const descriptionSource = details.descriptionHtml || '';
+  const pageTextSource = `${details.specTableText || ''}\n${details.pageText || ''}`;
+  const combinedSource = `${descriptionSource}\n${pageTextSource}`;
+  const variantPackageTable = parseVariantPackageTable(descriptionSource, details.variantTitle);
+  const tableCartons = parseSpecCellCartons(details.specTableRows, combinedSource);
+  const cartons = variantPackageTable.cartons.length ? variantPackageTable.cartons : tableCartons.length ? tableCartons : parseCartonDimensions(pageTextSource);
+
+  product.weightKg = variantPackageTable.weightKg || parseSpecCellWeight(details.specTableRows, combinedSource) || parseGrossWeightKg(descriptionSource) || parseSpecificationTableWeight(pageTextSource) || parseListedWeightKg(combinedSource) || parseGrossWeightKg(pageTextSource) || (details.weightGrams ? roundNumber(details.weightGrams / 1000, 2) : null);
+  product.cartons = cartons.length ? cartons : parseCartonDimensions(descriptionSource);
+  product.unitsPerCarton = parseUnitsPerCarton(combinedSource);
+  product.cbm = variantPackageTable.cbm || roundNumber(product.cartons.reduce((total, carton) => total + carton.cbm, 0), 3);
+  product.metricsLoaded = true;
+  return product;
+}
+
+async function getProductDetails(page, { productUrl, sku }, { includeMetrics = false } = {}) {
   const cacheKey = makeProductKey({ productUrl, sku });
-  if (productCache.has(cacheKey)) {
+  const cache = includeMetrics ? productCache : productSummaryCache;
+  if (cache.has(cacheKey)) {
+    return cache.get(cacheKey);
+  }
+
+  if (includeMetrics && productCache.has(cacheKey)) {
     return productCache.get(cacheKey);
   }
 
@@ -170,17 +210,19 @@ async function getProductDetails(page, { productUrl, sku }) {
   }
 
   await page.goto(resolvedUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
-  await page.waitForFunction(() => /Specifications|Package Dimensions|Packing size|Gross Weight/i.test(document.body?.innerText || ''), {
-    timeout: 5000
-  }).catch(() => {});
-  await page.waitForFunction(() => {
-    return Array.from(document.querySelectorAll('table')).some(table => {
-      const text = table.innerText || '';
-      return /package\s*dimensions/i.test(text) && /gross\s*weight/i.test(text);
-    });
-  }, { timeout: 5000 }).catch(() => {});
+  if (includeMetrics) {
+    await page.waitForFunction(() => /Specifications|Package Dimensions|Packing size|Gross Weight/i.test(document.body?.innerText || ''), {
+      timeout: 5000
+    }).catch(() => {});
+    await page.waitForFunction(() => {
+      return Array.from(document.querySelectorAll('table')).some(table => {
+        const text = table.innerText || '';
+        return /package\s*dimensions/i.test(text) && /gross\s*weight/i.test(text);
+      });
+    }, { timeout: 5000 }).catch(() => {});
+  }
 
-  const details = await page.evaluate(async requestedSku => {
+  const details = await page.evaluate(async ({ requestedSku, includeMetrics }) => {
     const normaliseUrl = value => {
       if (!value) return '';
       if (value.startsWith('//')) return `https:${value}`;
@@ -221,12 +263,12 @@ async function getProductDetails(page, { productUrl, sku }) {
       variantTitle: variant?.public_title || variant?.title || '',
       available: Boolean(variant?.available),
       weightGrams: Number(variant?.weight || 0),
-      descriptionHtml: product?.description || '',
-      pageText: document.body?.innerText || '',
-      specTableRows,
-      specTableText
+      descriptionHtml: includeMetrics ? product?.description || '' : '',
+      pageText: includeMetrics ? document.body?.innerText || '' : '',
+      specTableRows: includeMetrics ? specTableRows : [],
+      specTableText: includeMetrics ? specTableText : ''
     };
-  }, sku || '');
+  }, { requestedSku: sku || '', includeMetrics });
 
   if (!details.variantId) {
     details.variantId = getVariantIdFromUrl(resolvedUrl);
@@ -240,25 +282,18 @@ async function getProductDetails(page, { productUrl, sku }) {
     throw new Error(`Search result did not contain exact SKU ${sku}`);
   }
 
-  const descriptionSource = details.descriptionHtml || '';
-  const pageTextSource = `${details.specTableText || ''}\n${details.pageText || ''}`;
-  const combinedSource = `${descriptionSource}\n${pageTextSource}`;
-  const variantPackageTable = parseVariantPackageTable(descriptionSource, details.variantTitle);
-  const tableCartons = parseSpecCellCartons(details.specTableRows, combinedSource);
-  const cartons = variantPackageTable.cartons.length ? variantPackageTable.cartons : tableCartons.length ? tableCartons : parseCartonDimensions(pageTextSource);
-  const product = {
-    url: page.url(),
-    variantId: details.variantId,
-    sku: details.sku,
-    title: normaliseSuggestion(details.variantTitle && details.variantTitle !== 'Default Title' ? `${details.title} - ${details.variantTitle}` : details.title || 'Living Culture product'),
-    image: details.image,
-    available: details.available,
-    weightKg: variantPackageTable.weightKg || parseSpecCellWeight(details.specTableRows, combinedSource) || parseGrossWeightKg(descriptionSource) || parseSpecificationTableWeight(pageTextSource) || parseListedWeightKg(combinedSource) || parseGrossWeightKg(pageTextSource) || (details.weightGrams ? roundNumber(details.weightGrams / 1000, 2) : null),
-    cartons: cartons.length ? cartons : parseCartonDimensions(descriptionSource),
-    unitsPerCarton: parseUnitsPerCarton(combinedSource),
-  };
-  product.cbm = variantPackageTable.cbm || roundNumber(product.cartons.reduce((total, carton) => total + carton.cbm, 0), 3);
-  productCache.set(cacheKey, product);
+  const product = buildProductFromDetails(details, page.url(), includeMetrics);
+  cache.set(cacheKey, product);
+  if (includeMetrics) {
+    productSummaryCache.set(cacheKey, {
+      ...product,
+      weightKg: null,
+      cartons: [],
+      unitsPerCarton: 1,
+      cbm: 0,
+      metricsLoaded: false
+    });
+  }
   return product;
 }
 
@@ -932,6 +967,26 @@ async function prepareCheckout(page, itemInput) {
   return products;
 }
 
+async function getProductMetrics(itemInput) {
+  const items = normaliseItems(itemInput);
+  if (!items.length) {
+    throw new Error('At least one SKU is required');
+  }
+
+  const session = await createBrowserSession();
+  try {
+    const products = [];
+    for (const item of items) {
+      const product = { ...(await getProductDetails(session.page, item, { includeMetrics: true })) };
+      product.quantity = item.quantity;
+      products.push(product);
+    }
+    return products;
+  } finally {
+    await session.close().catch(() => {});
+  }
+}
+
 async function openCheckoutForProducts(page, products) {
   const cartItems = products.map(product => `${product.variantId}:${normaliseQuantity(product.quantity)}`).join(',');
 
@@ -1173,6 +1228,24 @@ app.post('/api/price', async (req, res) => {
       ...result,
       products: checkout.products,
       freightBreakdown: buildFreightBreakdown(checkout.products, result.price)
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/product-metrics', async (req, res) => {
+  const { productUrl, sku, skus, items, price, itemShipping } = req.body;
+  if (!normaliseItems({ productUrl, sku, skus, items }).length) {
+    return res.status(400).json({ error: 'At least one SKU is required' });
+  }
+
+  try {
+    const products = await getProductMetrics({ productUrl, sku, skus, items });
+    return res.json({
+      products,
+      freightBreakdown: price ? buildFreightBreakdown(products, price, itemShipping || []) : null
     });
   } catch (error) {
     console.error(error);

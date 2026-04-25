@@ -89,6 +89,14 @@ function formatSkuWithQty(sku, quantity) {
   return quantity > 1 ? `${sku} · Qty ${quantity}` : sku;
 }
 
+function mergeProductLists(baseProducts = [], updateProducts = []) {
+  const updatesByKey = new Map(updateProducts.map(product => [product.sku || product.variantId || product.title, product]));
+  return baseProducts.map(product => {
+    const key = product.sku || product.variantId || product.title;
+    return updatesByKey.has(key) ? { ...product, ...updatesByKey.get(key) } : product;
+  });
+}
+
 function getShippingLocation(method) {
   const match = String(method || '').match(/Ship from\s+([^\n$]+)/i);
   if (!match) return '';
@@ -165,6 +173,9 @@ function renderProductPreview(products, itemShipping = []) {
       const cartonCount = getLineCartonCount(product, quantity);
       const shippingLocation = getShippingLocation(shippingBySku.get(product.sku)?.method);
       const stock = product.available ? `Stock: ${shippingLocation || 'Available'}` : 'Stock: Unavailable';
+      const dimensions = product.metricsLoaded
+        ? `${lineWeight ? `${lineWeight.toFixed(2)} kg` : 'Weight not found'} · ${lineCbm ? `${lineCbm.toFixed(3)} CBM` : 'CBM not found'}${cartonCount ? ` (${cartonCount} carton${cartonCount === 1 ? '' : 's'})` : ''}`
+        : 'Weight, CBM and carton details loading after freight price';
 
       return `
         <div class="product-preview__inner">
@@ -172,7 +183,7 @@ function renderProductPreview(products, itemShipping = []) {
           <div>
             <strong>${escapeHtml(product.title || 'Living Culture product')}</strong>
             <div class="product-preview__meta">${escapeHtml(formatSkuWithQty(product.sku || '', quantity))}</div>
-            <div class="product-preview__meta">${lineWeight ? `${lineWeight.toFixed(2)} kg` : 'Weight not found'} · ${lineCbm ? `${lineCbm.toFixed(3)} CBM` : 'CBM not found'}${cartonCount ? ` (${cartonCount} carton${cartonCount === 1 ? '' : 's'})` : ''}</div>
+            <div class="product-preview__meta">${escapeHtml(dimensions)}</div>
             <div class="product-preview__meta">${escapeHtml(stock)}</div>
           </div>
         </div>
@@ -478,15 +489,47 @@ async function fetchStandaloneShipping(priceData) {
     if (requestKey !== getProductKey()) return;
 
     const itemShipping = data.itemShipping || [];
+    const products = mergeProductLists(data.products || priceData.products || [], latestPriceData?.products || []);
     latestPriceData = {
       ...priceData,
-      products: data.products || priceData.products,
+      ...latestPriceData,
+      products,
       itemShipping,
-      freightBreakdown: enrichBreakdownWithStandalonePrices(priceData, itemShipping)
+      freightBreakdown: enrichBreakdownWithStandalonePrices(latestPriceData || priceData, itemShipping)
     };
 
     renderFreightResult(latestPriceData);
     renderProductPreview(latestPriceData.products || [], itemShipping);
+    setStatus('');
+  } catch (_error) {
+    setStatus('');
+  }
+}
+
+async function fetchProductMetrics(priceData) {
+  const items = getItems();
+  const requestKey = getProductKey();
+  if (!items.length) return;
+
+  setStatus('Freight price loaded. Loading weight, CBM and carton details...');
+
+  try {
+    const data = await request('/api/product-metrics', {
+      items,
+      price: priceData.price,
+      itemShipping: latestPriceData?.itemShipping || []
+    });
+    if (requestKey !== getProductKey()) return;
+
+    latestPriceData = {
+      ...priceData,
+      ...latestPriceData,
+      products: data.products || latestPriceData?.products || priceData.products,
+      freightBreakdown: data.freightBreakdown || latestPriceData?.freightBreakdown || priceData.freightBreakdown
+    };
+
+    renderFreightResult(latestPriceData);
+    renderProductPreview(latestPriceData.products || [], latestPriceData.itemShipping || []);
     setStatus('');
   } catch (_error) {
     setStatus('');
@@ -511,6 +554,7 @@ async function fetchFreightPrice() {
     selectedAddress = data.selectedAddress || selectedAddress;
     renderSelectedAddress(selectedAddress);
     setStatus('');
+    fetchProductMetrics(latestPriceData);
     fetchStandaloneShipping(latestPriceData);
   } catch (error) {
     setStatus(`Error: ${error.message}`);
