@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      3.4
+// @version      3.5
 // @description  Opens a Living Culture freight panel inside Cin7 with auto and manual lookup modes.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -91,6 +91,56 @@
     return index >= 0 ? clean(lines[index + 1]) : '';
   }
 
+  function isAddressLike(value) {
+    const text = clean(value);
+    return text.length >= 5 &&
+      !/^(?:on|off|yes|no|\+|-)$/i.test(text) &&
+      !/^Shipping address line/i.test(text) &&
+      /[a-z0-9]/i.test(text);
+  }
+
+  function getAddressLineByLabel(labelText) {
+    const labelPattern = new RegExp(`^${labelText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+    const labels = Array.from(document.querySelectorAll('label, legend, span, div'))
+      .filter(isVisible)
+      .filter(element => labelPattern.test(clean(element.textContent)));
+
+    for (const label of labels) {
+      const labelRect = label.getBoundingClientRect();
+      const scope = label.closest('fieldset, section, form, main, body') || document.body;
+      const fields = Array.from(scope.querySelectorAll('input, textarea, [contenteditable="true"], div, span'))
+        .filter(isVisible)
+        .map(element => {
+          const rect = element.getBoundingClientRect();
+          const value = clean(element.value || element.textContent);
+          return { element, rect, value };
+        })
+        .filter(item =>
+          item.rect.top >= labelRect.top - 4 &&
+          item.rect.left >= labelRect.left - 20 &&
+          item.rect.top <= labelRect.bottom + 90 &&
+          item.element !== label &&
+          isAddressLike(item.value)
+        )
+        .sort((a, b) => {
+          const aInput = /^(?:INPUT|TEXTAREA)$/i.test(a.element.tagName) ? 0 : 1;
+          const bInput = /^(?:INPUT|TEXTAREA)$/i.test(b.element.tagName) ? 0 : 1;
+          return aInput - bInput || a.rect.top - b.rect.top || a.rect.left - b.rect.left;
+        });
+
+      if (fields.length) return fields[0].value;
+    }
+
+    const lines = (document.body.innerText || '').split('\n').map(clean).filter(Boolean);
+    const index = lines.findIndex(line => labelPattern.test(line));
+    if (index >= 0) {
+      const nextLine = lines.slice(index + 1, index + 5).find(isAddressLike);
+      if (nextLine) return nextLine;
+    }
+
+    return '';
+  }
+
   function getSkuFromCin7() {
     return getItemsFromCin7()[0]?.sku || '';
   }
@@ -140,8 +190,8 @@
   }
 
   function getAddressFromCin7() {
-    const line1 = getFieldValueByLabel('Shipping address line 1');
-    const line2 = getFieldValueByLabel('Shipping address line 2');
+    const line1 = getAddressLineByLabel('Shipping address line 1') || getFieldValueByLabel('Shipping address line 1');
+    const line2 = getAddressLineByLabel('Shipping address line 2') || getFieldValueByLabel('Shipping address line 2');
     return clean([line1, line2].filter(Boolean).join(', '));
   }
 
@@ -232,10 +282,15 @@
 
   async function requestFreight({ sku, items, address, quantity = 1 }) {
     const freightItems = Array.isArray(items) && items.length ? items : [{ sku, quantity }];
+    const firstItem = freightItems[0] || {};
+    const firstIsUrl = /^https?:\/\/.+\/products\//i.test(firstItem.sku || firstItem.productUrl || '');
     const response = await fetch(`${API_BASE}/get-freight`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        sku: firstIsUrl ? '' : firstItem.sku,
+        productUrl: firstItem.productUrl || (firstIsUrl ? firstItem.sku : ''),
+        quantity: firstItem.quantity || 1,
         items: freightItems.map(item => {
           const isUrl = /^https?:\/\/.+\/products\//i.test(item.sku || item.productUrl || '');
           return {
