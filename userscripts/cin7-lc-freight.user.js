@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      3.6
+// @version      3.7
 // @description  Opens a Living Culture freight panel inside Cin7 with auto and manual lookup modes.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -446,8 +446,12 @@
     const panel = document.createElement('div');
     panel.id = 'lc-freight-panel';
     panel.innerHTML = `
-      <div class="lc-panel-head">
-        <strong>Living Culture Freight</strong>
+      <div class="lc-hero">
+        <div class="lc-hero-top">
+          <img src="https://livingculture.co.nz/cdn/shop/files/logo_ec2b0c5e-42ca-4695-8c7e-43b344144c58.png?v=1675047511&width=220" alt="Living Culture" />
+          <strong>Freight Costing</strong>
+        </div>
+        <p>Use Cin7 products and delivery details, or enter them manually.</p>
         <button type="button" id="lc-panel-close">×</button>
       </div>
 
@@ -484,11 +488,12 @@
         right: 20px;
         bottom: 20px;
         z-index: 2147483647;
-        padding: 10px 14px;
+        padding: 11px 16px;
         background: #2d5c4e;
         color: #fff;
         border: 0;
-        border-radius: 8px;
+        border-radius: 10px;
+        box-shadow: 0 16px 34px rgba(34, 48, 40, 0.2);
         font: 700 14px Arial, sans-serif;
         cursor: pointer;
       }
@@ -497,61 +502,99 @@
         top: 80px;
         right: 20px;
         z-index: 2147483647;
-        width: 340px;
+        width: 370px;
         max-height: calc(100vh - 110px);
         overflow: auto;
         display: none;
-        padding: 14px;
+        padding: 0;
         color: #1f2b24;
-        background: #fffefb;
+        background: #c5d9d3;
         border: 1px solid #d9d6cc;
-        border-radius: 12px;
+        border-radius: 18px;
         box-shadow: 0 20px 44px rgba(34, 48, 40, 0.18);
         font: 14px/1.4 Arial, sans-serif;
       }
       #lc-freight-panel.is-open { display: block; }
-      .lc-panel-head {
+      .lc-hero {
+        position: relative;
+        margin: 14px;
+        padding: 18px 18px 16px;
+        color: #fff;
+        background: #2d5c4e;
+        border-radius: 16px;
+        box-shadow: 0 12px 28px rgba(34, 48, 40, 0.14);
+      }
+      .lc-hero-top {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        margin-bottom: 12px;
-        font-size: 16px;
+        gap: 14px;
+        padding-right: 38px;
+      }
+      .lc-hero img {
+        width: 116px;
+        height: auto;
+        display: block;
+      }
+      .lc-hero strong {
+        font-size: 22px;
+        line-height: 1;
+        text-align: right;
+      }
+      .lc-hero p {
+        margin: 14px 0 0;
+        color: rgba(255, 255, 255, 0.92);
+        font-size: 13px;
+        line-height: 1.5;
       }
       #lc-panel-close {
-        width: 28px;
-        height: 28px;
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        width: 32px;
+        height: 32px;
         color: #1f2b24;
         background: #f3f1e8;
         border: 1px solid #d9d6cc;
-        border-radius: 6px;
+        border-radius: 9px;
+        font-size: 18px;
+        font-weight: 800;
         cursor: pointer;
       }
       .lc-block {
         display: grid;
         gap: 8px;
-        margin-top: 10px;
-        padding-top: 10px;
-        border-top: 1px solid #ebe7dc;
+        margin: 14px;
+        padding: 16px;
+        background: #fffefb;
+        border: 1px solid #d9d6cc;
+        border-radius: 16px;
+        box-shadow: 0 10px 24px rgba(34, 48, 40, 0.08);
       }
       .lc-label {
         color: #637061;
         font-weight: 700;
         text-transform: uppercase;
         font-size: 11px;
+        letter-spacing: 0;
       }
       #lc-freight-panel input {
         width: 100%;
-        padding: 9px 10px;
+        min-height: 42px;
+        padding: 10px 12px;
+        color: #1f2b24;
+        background: #fff;
         border: 1px solid #d9d6cc;
-        border-radius: 8px;
+        border-radius: 12px;
         font: inherit;
       }
       #lc-freight-panel button:not(#lc-panel-close) {
-        padding: 9px 10px;
+        min-height: 42px;
+        padding: 10px 12px;
         color: #fff;
         background: #2d5c4e;
         border: 0;
-        border-radius: 8px;
+        border-radius: 12px;
         font-weight: 700;
         cursor: pointer;
       }
@@ -561,10 +604,11 @@
         gap: 6px;
       }
       .lc-manual-product-row .lc-remove-product {
+        min-height: 42px !important;
         padding: 7px 6px !important;
         color: #1f2b24 !important;
-        background: #f8f8f5 !important;
-        border: 1px solid #ebe7dc !important;
+        background: #f9f8f2 !important;
+        border: 1px solid #d9d6cc !important;
         font-size: 12px;
       }
       #lc-address-suggestions {
@@ -591,7 +635,7 @@
       }
       #lc-freight-status {
         min-height: 20px;
-        margin-top: 10px;
+        margin: 10px 14px 16px;
         color: #405f54;
       }
     `;
