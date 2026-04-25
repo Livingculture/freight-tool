@@ -1,0 +1,14 @@
+{
+  "name": "livingculture-freight-tool",
+  "version": "0.1.0",
+  "description": "Local helper for Living Culture delivery price lookup",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "install-playwright": "npx playwright install chromium"
+  },
+  "dependencies": {
+    "express": "^4.18.4",
+    "playwright": "^1.40.0"
+  }
+}

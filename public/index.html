@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Freight Costing</title>
+  <style>
+    :root {
+      --brand-green: #2d5c4e;
+      --brand-green-dark: #112922;
+      --brand-cream: #f3f1e8;
+      --brand-white: #ffffff;
+      --brand-text: #1f2b24;
+      --brand-muted: #5e6a5b;
+      --brand-border: #d8d6cc;
+      --button-green: #2d5c4e;
+      --button-green-hover: #254c41;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(180deg, #f7f7f5 0%, #e9e7dd 100%);
+      color: var(--brand-text);
+      zoom: 0.75;
+    }
+
+    .page-shell {
+      max-width: 780px;
+      margin: 0 auto;
+      padding: 24px 22px 40px;
+    }
+
+    .hero {
+      background: var(--brand-green);
+      color: var(--brand-white);
+      padding: 26px;
+      border-radius: 20px;
+      box-shadow: 0 22px 55px rgba(27, 62, 48, 0.16);
+    }
+
+    .hero__top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 18px;
+    }
+
+    .hero__logo img {
+      width: 140px;
+      max-width: 100%;
+      display: block;
+    }
+
+    .hero h1 {
+      margin: 0;
+      font-size: clamp(1.8rem, 2.4vw, 2.4rem);
+      line-height: 1.05;
+      text-align: right;
+    }
+
+    .hero p {
+      margin: 0;
+      max-width: 700px;
+      color: rgba(255, 255, 255, 0.94);
+      font-size: 1rem;
+      line-height: 1.7;
+      text-align: justify;
+      text-align-last: left;
+    }
+
+    .card {
+      background: var(--brand-white);
+      border: 1px solid var(--brand-border);
+      border-radius: 24px;
+      padding: 26px;
+      margin-top: 24px;
+      box-shadow: 0 18px 38px rgba(28, 42, 32, 0.08);
+    }
+
+    label {
+      display: block;
+      margin-bottom: 10px;
+      font-weight: 700;
+      color: var(--brand-text);
+    }
+
+    input,
+    textarea,
+    button {
+      width: 100%;
+      border: 1px solid #d8d6cc;
+      border-radius: 14px;
+      padding: 14px 16px;
+      font-size: 1rem;
+      font-family: inherit;
+      color: var(--brand-text);
+    }
+
+    label + input,
+    label + textarea {
+      margin-bottom: 18px;
+    }
+
+    input:focus,
+    textarea:focus {
+      outline: 2px solid rgba(46, 95, 73, 0.2);
+      border-color: var(--button-green);
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 100px;
+    }
+
+    button {
+      background: var(--button-green);
+      color: var(--brand-white);
+      border: none;
+      font-weight: 700;
+      transition: background 150ms ease;
+      margin-top: 18px;
+    }
+
+    button:hover {
+      background: var(--button-green-hover);
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+      margin-bottom: 18px;
+    }
+
+    .sku-row {
+      display: grid;
+      grid-template-columns: 1fr 82px auto;
+      gap: 10px;
+      align-items: end;
+      margin-bottom: 10px;
+    }
+
+    .sku-row input {
+      margin-bottom: 0;
+    }
+
+    .sku-search {
+      position: relative;
+    }
+
+    .sku-qty {
+      text-align: center;
+    }
+
+    .sku-product-suggestions {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      right: 0;
+      display: none;
+      max-height: 280px;
+      overflow-y: auto;
+      border: 1px solid #e1ded2;
+      border-radius: 14px;
+      background: #fbfaf6;
+      box-shadow: 0 18px 36px rgba(28, 42, 32, 0.14);
+      z-index: 20;
+    }
+
+    .sku-product-suggestions.is-visible {
+      display: block;
+    }
+
+    .sku-product-option {
+      display: grid;
+      grid-template-columns: 52px 1fr;
+      gap: 10px;
+      width: 100%;
+      padding: 10px;
+      border-bottom: 1px solid #ece8db;
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .sku-product-option:last-child {
+      border-bottom: none;
+    }
+
+    .sku-product-option:hover {
+      background: #f1f3ee;
+    }
+
+    .sku-product-option img {
+      width: 52px;
+      height: 52px;
+      border-radius: 10px;
+      object-fit: cover;
+      background: #f1f3ee;
+    }
+
+    .sku-product-option strong,
+    .sku-product-option span {
+      display: block;
+    }
+
+    .sku-product-option span {
+      margin-top: 2px;
+      color: var(--brand-muted);
+      font-size: 0.9rem;
+    }
+
+    .sku-product-empty {
+      padding: 12px;
+      color: var(--brand-muted);
+    }
+
+    .sku-remove {
+      width: auto;
+      margin-top: 0;
+      border: 1px solid var(--brand-border);
+      background: #fbfaf6;
+      color: var(--brand-text);
+    }
+
+    .sku-remove {
+      min-width: 52px;
+      padding-inline: 14px;
+    }
+
+    .secondary-button {
+      width: 100%;
+      margin-top: 0;
+      margin-bottom: 18px;
+      background: var(--button-green);
+      color: var(--brand-white);
+      border: 1px solid var(--button-green);
+    }
+
+    .sku-remove:hover {
+      background: #f1f3ee;
+    }
+
+    .secondary-button:hover {
+      background: var(--button-green-hover);
+      border-color: var(--button-green-hover);
+    }
+
+    #suggestions {
+      margin-top: 0;
+      margin-bottom: 18px;
+      border: 1px solid #e1ded2;
+      border-radius: 16px;
+      max-height: 260px;
+      overflow-y: auto;
+      background: #fbfaf6;
+      min-height: 52px;
+    }
+
+    .suggestion-item {
+      padding: 14px 16px;
+      border-bottom: 1px solid #ece8db;
+      cursor: pointer;
+      transition: background 120ms ease;
+    }
+
+    .suggestion-item:last-child {
+      border-bottom: none;
+    }
+
+    .suggestion-item:hover,
+    .suggestion-item.selected {
+      background: #f1f3ee;
+    }
+
+    .suggestion-empty {
+      padding: 14px 16px;
+      color: var(--brand-muted);
+    }
+
+    .selected-address,
+    .address-fields,
+    .product-preview {
+      display: none;
+      margin-top: 18px;
+      padding: 14px 16px;
+      border: 1px solid #e1ded2;
+      border-radius: 16px;
+      background: #fbfaf6;
+      line-height: 1.6;
+    }
+
+    .selected-address.is-visible,
+    .address-fields.is-visible,
+    .product-preview.is-visible {
+      display: block;
+    }
+
+    .selected-address strong,
+    .address-fields strong,
+    .product-preview strong {
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .product-preview__inner {
+      display: grid;
+      grid-template-columns: 92px 1fr;
+      gap: 14px;
+      align-items: center;
+      padding: 10px 0;
+    }
+
+    .product-preview__inner + .product-preview__inner {
+      border-top: 1px solid #ece8db;
+    }
+
+    .product-preview img {
+      width: 92px;
+      height: 92px;
+      border-radius: 12px;
+      object-fit: cover;
+      background: #f1f3ee;
+    }
+
+    .product-preview__meta,
+    .product-preview__totals {
+      margin-top: 6px;
+      color: var(--brand-muted);
+      font-size: 0.95rem;
+    }
+
+    .product-preview__totals {
+      border-top: 1px solid #e1ded2;
+      padding-top: 12px;
+      font-weight: 700;
+      color: var(--brand-text);
+    }
+
+    #status,
+    #result {
+      margin-top: 18px;
+      line-height: 1.6;
+    }
+
+    #result {
+      font-weight: 700;
+    }
+
+    .freight-breakdown {
+      margin-top: 18px;
+      border: 1px solid #e1ded2;
+      border-radius: 16px;
+      overflow: hidden;
+      background: #fbfaf6;
+      font-weight: 400;
+    }
+
+    .freight-breakdown__row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      padding: 12px 16px;
+      border-bottom: 1px solid #ece8db;
+    }
+
+    .freight-breakdown__row:last-child {
+      border-bottom: none;
+    }
+
+    .freight-breakdown__total {
+      font-weight: 700;
+      background: var(--button-green);
+      color: var(--brand-white);
+      border-bottom: none;
+      padding-block: 16px;
+    }
+
+    .freight-breakdown__meta {
+      color: var(--brand-muted);
+      font-size: 0.92rem;
+      margin-top: 2px;
+    }
+
+    @media (max-width: 640px) {
+      .page-shell {
+        padding: 20px 16px 32px;
+      }
+
+      .hero {
+        padding: 20px;
+      }
+
+      .hero__top {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .hero h1 {
+        text-align: left;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page-shell">
+    <section class="hero">
+      <div class="hero__top">
+        <div class="hero__logo">
+          <img src="https://livingculture.co.nz/cdn/shop/files/logo_ec2b0c5e-42ca-4695-8c7e-43b344144c58.png?v=1675047511&width=300" alt="Living Culture logo" />
+        </div>
+        <h1>Freight Costing</h1>
+      </div>
+      <p>Enter one or more SKUs and a delivery address. The tool will use the site’s own checkout autocomplete and show shipping quotes from the Living Culture checkout flow.</p>
+    </section>
+
+    <section class="card">
+      <div class="form-row">
+        <label>Select Products</label>
+        <div id="skuList">
+          <div class="sku-row">
+            <div class="sku-search">
+              <input class="sku-input" type="search" autocomplete="off" />
+              <div class="sku-product-suggestions"></div>
+            </div>
+            <input class="sku-qty" type="number" min="1" step="1" value="1" aria-label="Quantity" />
+            <button class="sku-remove" type="button" aria-label="Remove SKU" disabled>Remove</button>
+          </div>
+        </div>
+        <button id="btnAddSku" class="secondary-button" type="button">Add another SKU</button>
+      </div>
+
+      <div class="form-row">
+        <label for="address">Address search</label>
+        <input id="address" type="search" autocomplete="off" />
+      </div>
+
+      <button id="btnSuggest">Get suggestions</button>
+      <div id="productPreview" class="product-preview"></div>
+      <div id="suggestions"></div>
+      <div id="selectedAddress" class="selected-address"></div>
+      <button id="btnPrice" disabled>Get freight price for selected address</button>
+
+      <div id="status"></div>
+      <div id="result"></div>
+      <div id="addressFields" class="address-fields"></div>
+    </section>
+  </main>
+
+  <script src="main.js"></script>
+</body>
+</html>
