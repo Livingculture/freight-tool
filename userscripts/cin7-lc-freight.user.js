@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      4.0
+// @version      4.1
 // @description  Opens a Living Culture freight panel inside Cin7 with auto and manual lookup modes.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -32,6 +32,21 @@
   function moneyToNumber(value) {
     const match = String(value || '').replace(/,/g, '').match(/(\d+(?:\.\d{1,2})?)/);
     return match ? Number(match[1]).toFixed(4) : '';
+  }
+
+  function escapeHtml(value) {
+    return String(value || '').replace(/[&<>"']/g, char => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    }[char]));
+  }
+
+  function normaliseQuantity(value) {
+    const quantity = Number.parseInt(value, 10);
+    return Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
   }
 
   function setNativeValue(input, value) {
@@ -326,6 +341,103 @@
     document.getElementById('lc-freight-method').textContent = method || '';
   }
 
+  function getLineCartonCount(product, quantity = normaliseQuantity(product?.quantity)) {
+    const baseCartons = Array.isArray(product.cartons)
+      ? product.cartons.reduce((total, carton) => total + (Number(carton.quantity) || 1), 0)
+      : 0;
+    const unitsPerCarton = normaliseQuantity(product?.unitsPerCarton);
+    return unitsPerCarton > 1 ? baseCartons * Math.ceil(quantity / unitsPerCarton) : baseCartons * quantity;
+  }
+
+  function getLineCbm(product, quantity = normaliseQuantity(product?.quantity)) {
+    const cbm = Number(product.cbm) || 0;
+    const unitsPerCarton = normaliseQuantity(product?.unitsPerCarton);
+    return unitsPerCarton > 1 ? cbm * Math.ceil(quantity / unitsPerCarton) : cbm * quantity;
+  }
+
+  function getShippingLocation(method) {
+    const match = String(method || '').match(/Ship from\s+([^\n$]+)/i);
+    if (!match) return '';
+
+    return Array.from(new Set(match[1]
+      .replace(/\s+when quoted alone.*$/i, '')
+      .split(/\s*(?:\+|&|\/|,|\band\b)\s*/i)
+      .map(location => location.trim())
+      .filter(Boolean))).join(' + ');
+  }
+
+  function renderProductDetails(products = [], method = state.method) {
+    const block = document.getElementById('lc-product-details');
+    if (!block) return;
+
+    if (!products.length) {
+      block.classList.remove('is-visible');
+      block.innerHTML = '';
+      return;
+    }
+
+    const totalWeightKg = products.reduce((total, product) => total + ((Number(product.weightKg) || 0) * normaliseQuantity(product.quantity)), 0);
+    const totalCbm = products.reduce((total, product) => total + getLineCbm(product), 0);
+    const shippingLocation = getShippingLocation(method);
+
+    block.classList.add('is-visible');
+    block.innerHTML = `
+      ${products.map(product => {
+        const quantity = normaliseQuantity(product.quantity);
+        const lineWeight = (Number(product.weightKg) || 0) * quantity;
+        const lineCbm = getLineCbm(product, quantity);
+        const cartonCount = getLineCartonCount(product, quantity);
+        const saleState = product.saleState || (product.available ? 'Add to cart' : 'Unavailable');
+        const stock = product.available ? `Stock: ${shippingLocation || 'Available'}` : 'Stock: Unavailable';
+        const dimensions = product.metricsLoaded
+          ? `${lineWeight ? `${lineWeight.toFixed(2)} kg` : 'Weight not found'} · ${lineCbm ? `${lineCbm.toFixed(3)} CBM` : 'CBM not found'}${cartonCount ? ` (${cartonCount} carton${cartonCount === 1 ? '' : 's'})` : ''}`
+          : 'Weight, CBM and carton details loading...';
+        const skuLine = quantity > 1 ? `${product.sku || ''} · Qty ${quantity}` : product.sku || '';
+        const image = product.image ? `<img src="${escapeHtml(product.image)}" alt="">` : '<div class="lc-product-image-placeholder"></div>';
+
+        return `
+          <div class="lc-product-row">
+            ${image}
+            <div>
+              <strong>${escapeHtml(product.title || 'Living Culture product')}</strong>
+              <div>${escapeHtml(skuLine)}</div>
+              <div>${escapeHtml(dimensions)}</div>
+              <div>${escapeHtml(`Status: ${saleState}`)}</div>
+              <div>${escapeHtml(stock)}</div>
+            </div>
+          </div>
+        `;
+      }).join('')}
+      <div class="lc-product-totals">
+        Total weight: ${totalWeightKg ? totalWeightKg.toFixed(2) : '0.00'} kg · Estimated CBM: ${totalCbm ? totalCbm.toFixed(3) : '0.000'}
+      </div>
+    `;
+  }
+
+  async function loadProductDetails(items, price, method, fallbackProducts = []) {
+    renderProductDetails(fallbackProducts, method);
+
+    try {
+      const response = await fetch(`${API_BASE}/api/product-metrics`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items, price })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Product details unavailable');
+      renderProductDetails(data.products || fallbackProducts, method);
+    } catch (error) {
+      console.error(error);
+      if (!fallbackProducts.length) {
+        const block = document.getElementById('lc-product-details');
+        if (block) {
+          block.classList.add('is-visible');
+          block.innerHTML = '<div class="lc-product-loading">Product details unavailable.</div>';
+        }
+      }
+    }
+  }
+
   async function requestFreight({ sku, items, address, quantity = 1 }) {
     const freightItems = Array.isArray(items) && items.length ? items : [{ sku, quantity }];
     const firstItem = freightItems[0] || {};
@@ -443,6 +555,7 @@
       await copyPrice(false);
       if (fill) fillCin7PriceField(false);
       setStatus(fill ? 'Freight applied.' : 'Freight loaded.');
+      loadProductDetails(data.products || items || [], data.price, data.method, data.products || []);
     } catch (error) {
       console.error(error);
       setStatus(error.message || 'Error getting freight.', true);
@@ -563,6 +676,8 @@
         <button type="button" id="lc-fill-price">Fill Cin7 price field</button>
         <button type="button" id="lc-copy-price">Copy price</button>
       </div>
+
+      <div id="lc-product-details" class="lc-block"></div>
 
       <div id="lc-freight-status"></div>
     `;
@@ -723,6 +838,48 @@
         min-height: 20px;
         margin: 10px 14px 16px;
         color: #405f54;
+      }
+      #lc-product-details {
+        display: none;
+        gap: 0;
+      }
+      #lc-product-details.is-visible {
+        display: grid;
+      }
+      .lc-product-row {
+        display: grid;
+        grid-template-columns: 72px 1fr;
+        gap: 12px;
+        padding: 8px 0;
+        border-bottom: 1px solid #ebe7dc;
+      }
+      .lc-product-row:first-child {
+        padding-top: 0;
+      }
+      .lc-product-row img,
+      .lc-product-image-placeholder {
+        width: 72px;
+        height: 72px;
+        object-fit: contain;
+        background: #fff;
+        border-radius: 10px;
+      }
+      .lc-product-row strong {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 14px;
+        line-height: 1.25;
+      }
+      .lc-product-row div div {
+        color: #637061;
+        font-size: 13px;
+      }
+      .lc-product-totals {
+        padding-top: 10px;
+        font-weight: 800;
+      }
+      .lc-product-loading {
+        color: #637061;
       }
     `;
 
