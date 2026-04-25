@@ -1018,7 +1018,9 @@ async function getProductSummaries(itemInput) {
 async function openCheckoutForProducts(page, products) {
   const cartItems = products.map(product => `${product.variantId}:${normaliseQuantity(product.quantity)}`).join(',');
 
-  await page.goto(`https://livingculture.co.nz/cart/${cartItems}`, {
+  const checkoutUrl = `https://livingculture.co.nz/cart/${cartItems}`;
+
+  await page.goto(checkoutUrl, {
     waitUntil: 'domcontentloaded',
     timeout: 60000
   });
@@ -1043,8 +1045,21 @@ async function openCheckoutForProducts(page, products) {
     }
   }
 
-  await page.waitForURL(/\/checkouts\/.*\/information/, { timeout: 60000 }).catch(() => {});
-  await page.waitForSelector('#shipping-address1:visible, input[name="address1"]:visible', { timeout: 60000 });
+  await page.waitForURL(/\/checkouts\/.*\/information/, { timeout: 30000, waitUntil: 'domcontentloaded' }).catch(() => {});
+
+  const addressSelector = ADDRESS_INPUT_SELECTORS.join(',');
+  try {
+    await page.waitForSelector(addressSelector, { timeout: 20000 });
+  } catch (error) {
+    await page.goto('https://livingculture.co.nz/checkout?skip_shop_pay=true', {
+      waitUntil: 'domcontentloaded',
+      timeout: 60000
+    }).catch(() => {});
+    await page.waitForSelector(addressSelector, { timeout: 20000 }).catch(async () => {
+      const bodyText = await page.locator('body').innerText({ timeout: 5000 }).catch(() => '');
+      throw new Error(`Checkout address field was not available on ${page.url()}: ${bodyText.slice(0, 500)}`);
+    });
+  }
 }
 
 function normaliseSuggestion(text) {

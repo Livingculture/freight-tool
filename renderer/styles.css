@@ -370,7 +370,7 @@ button:disabled {
   margin-top: 4px;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 640px) {
   .app-shell {
     padding: 18px;
   }
