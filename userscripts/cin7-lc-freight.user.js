@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      4.2
+// @version      4.3
 // @description  Opens a Living Culture freight panel inside Cin7 with auto and manual lookup modes.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -50,6 +50,17 @@
   function normaliseQuantity(value) {
     const quantity = Number.parseInt(value, 10);
     return Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+  }
+
+  function normaliseFreightItems({ sku, items, quantity = 1 }) {
+    const sourceItems = Array.isArray(items) && items.length ? items : [{ sku, quantity }];
+    return sourceItems
+      .map(item => ({
+        sku: clean(item?.sku),
+        productUrl: clean(item?.productUrl),
+        quantity: normaliseQuantity(item?.quantity)
+      }))
+      .filter(item => item.sku || item.productUrl);
   }
 
   function setNativeValue(input, value) {
@@ -417,18 +428,38 @@
     `;
   }
 
+  function mergeProductDetails(requestedItems = [], loadedProducts = []) {
+    const loadedByKey = new Map((loadedProducts || []).map(product => [
+      clean(product.sku || product.productUrl || product.url).toLowerCase(),
+      product
+    ]));
+
+    return requestedItems.map(item => {
+      const key = clean(item.sku || item.productUrl).toLowerCase();
+      const loaded = loadedByKey.get(key) || {};
+      return {
+        ...item,
+        ...loaded,
+        sku: loaded.sku || item.sku,
+        productUrl: loaded.productUrl || item.productUrl,
+        quantity: normaliseQuantity(item.quantity)
+      };
+    });
+  }
+
   async function loadProductDetails(items, price, method, fallbackProducts = []) {
-    renderProductDetails(fallbackProducts, method);
+    const requestedItems = normaliseFreightItems({ items });
+    renderProductDetails(mergeProductDetails(requestedItems, fallbackProducts), method);
 
     try {
       const response = await fetch(`${API_BASE}/api/product-metrics`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items, price })
+        body: JSON.stringify({ items: requestedItems, price })
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || 'Product details unavailable');
-      renderProductDetails(data.products || fallbackProducts, method);
+      renderProductDetails(mergeProductDetails(requestedItems, data.products || fallbackProducts), method);
     } catch (error) {
       console.error(error);
       if (!fallbackProducts.length) {
@@ -442,7 +473,7 @@
   }
 
   async function requestFreight({ sku, items, address, quantity = 1 }) {
-    const freightItems = Array.isArray(items) && items.length ? items : [{ sku, quantity }];
+    const freightItems = normaliseFreightItems({ sku, items, quantity });
     const firstItem = freightItems[0] || {};
     const firstIsUrl = /^https?:\/\/.+\/products\//i.test(firstItem.sku || firstItem.productUrl || '');
     const response = await fetch(`${API_BASE}/get-freight`, {
@@ -583,12 +614,13 @@
   async function getAndApplyFreight({ sku, items, address, fill }) {
     try {
       setStatus('Getting freight...');
+      const requestedItems = normaliseFreightItems({ sku, items });
       const data = await requestFreight({ sku, items, address });
       setResult(data.price, data.method);
       await copyPrice(false);
       if (fill) fillCin7PriceField(false);
       setStatus(fill ? 'Freight applied.' : 'Freight loaded.');
-      loadProductDetails(data.products || items || [], data.price, data.method, data.products || []);
+      loadProductDetails(requestedItems, data.price, data.method, data.products || []);
     } catch (error) {
       console.error(error);
       setStatus(error.message || 'Error getting freight.', true);
