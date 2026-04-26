@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      4.3
+// @version      4.4
 // @description  Opens a Living Culture freight panel inside Cin7 with auto and manual lookup modes.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -25,7 +25,8 @@
     addressTimer: null,
     autoTimer: null,
     autoRunning: false,
-    lastAutoKey: ''
+    lastAutoKey: '',
+    queuedAutoKey: ''
   };
 
   function clean(value) {
@@ -565,9 +566,14 @@
   }
 
   async function useCin7Details({ force = true } = {}) {
-    if (state.autoRunning) return;
-    setStatus('Reading Cin7 details...');
     const { items, address, searchAddress, key } = getCin7AutoPayload();
+    if (state.autoRunning) {
+      state.queuedAutoKey = key;
+      setStatus('Cin7 products changed. Updating after this lookup finishes...');
+      return;
+    }
+
+    setStatus('Reading Cin7 details...');
     state.selectedAddress = '';
     document.getElementById('lc-auto-sku').textContent = items.length ? items.map(item => `${item.sku} x ${item.quantity}`).join(', ') : '-';
     document.getElementById('lc-auto-address').textContent = address || '-';
@@ -586,9 +592,18 @@
 
     try {
       const selectedAddress = await resolveAddressSuggestion(items, searchAddress);
-      await getAndApplyFreight({ items, address: selectedAddress, fill: true });
+      const loaded = await getAndApplyFreight({ items, address: selectedAddress, fill: true });
+      if (loaded) {
+        state.lastAutoKey = key;
+      }
     } finally {
       state.autoRunning = false;
+      if (state.queuedAutoKey && state.queuedAutoKey !== state.lastAutoKey) {
+        state.queuedAutoKey = '';
+        scheduleAutoCin7Lookup(150);
+      } else {
+        state.queuedAutoKey = '';
+      }
     }
   }
 
@@ -621,9 +636,11 @@
       if (fill) fillCin7PriceField(false);
       setStatus(fill ? 'Freight applied.' : 'Freight loaded.');
       loadProductDetails(requestedItems, data.price, data.method, data.products || []);
+      return true;
     } catch (error) {
       console.error(error);
       setStatus(error.message || 'Error getting freight.', true);
+      return false;
     }
   }
 
