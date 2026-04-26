@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      4.1
+// @version      4.2
 // @description  Opens a Living Culture freight panel inside Cin7 with auto and manual lookup modes.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -22,7 +22,10 @@
     priceNumber: '',
     method: '',
     selectedAddress: '',
-    addressTimer: null
+    addressTimer: null,
+    autoTimer: null,
+    autoRunning: false,
+    lastAutoKey: ''
   };
 
   function clean(value) {
@@ -510,11 +513,30 @@
     return selected;
   }
 
-  async function useCin7Details() {
-    setStatus('Reading Cin7 details...');
+  function getCin7AutoPayload() {
     const items = getItemsFromCin7();
     const address = getAddressFromCin7();
     const searchAddress = getAddressSearchFromCin7();
+    const key = JSON.stringify({
+      items: items.map(item => ({ sku: item.sku, quantity: item.quantity })),
+      address: searchAddress
+    });
+    return { items, address, searchAddress, key };
+  }
+
+  function scheduleAutoCin7Lookup(delay = 600) {
+    clearTimeout(state.autoTimer);
+    state.autoTimer = setTimeout(() => {
+      const panel = document.getElementById('lc-freight-panel');
+      if (!panel?.classList.contains('is-open')) return;
+      useCin7Details({ force: false });
+    }, delay);
+  }
+
+  async function useCin7Details({ force = true } = {}) {
+    if (state.autoRunning) return;
+    setStatus('Reading Cin7 details...');
+    const { items, address, searchAddress, key } = getCin7AutoPayload();
     state.selectedAddress = '';
     document.getElementById('lc-auto-sku').textContent = items.length ? items.map(item => `${item.sku} x ${item.quantity}`).join(', ') : '-';
     document.getElementById('lc-auto-address').textContent = address || '-';
@@ -524,8 +546,19 @@
       return;
     }
 
-    const selectedAddress = await resolveAddressSuggestion(items, searchAddress);
-    await getAndApplyFreight({ items, address: selectedAddress, fill: true });
+    if (!force && key === state.lastAutoKey) {
+      return;
+    }
+
+    state.lastAutoKey = key;
+    state.autoRunning = true;
+
+    try {
+      const selectedAddress = await resolveAddressSuggestion(items, searchAddress);
+      await getAndApplyFreight({ items, address: selectedAddress, fill: true });
+    } finally {
+      state.autoRunning = false;
+    }
   }
 
   async function getManualFreight() {
@@ -658,7 +691,7 @@
         <div class="lc-label">Detected from Cin7</div>
         <div><b>SKU:</b> <span id="lc-auto-sku">-</span></div>
         <div><b>Address:</b> <span id="lc-auto-address">-</span></div>
-        <button type="button" id="lc-use-cin7">Use Cin7 details</button>
+        <button type="button" id="lc-use-cin7">Refresh Cin7 details</button>
       </div>
 
       <div class="lc-block">
@@ -889,9 +922,10 @@
     button.addEventListener('click', () => {
       panel.classList.toggle('is-open');
       renderDetectedDetails();
+      scheduleAutoCin7Lookup();
     });
     panel.querySelector('#lc-panel-close').addEventListener('click', () => panel.classList.remove('is-open'));
-    panel.querySelector('#lc-use-cin7').addEventListener('click', useCin7Details);
+    panel.querySelector('#lc-use-cin7').addEventListener('click', () => useCin7Details({ force: true }));
     panel.querySelector('#lc-manual-get').addEventListener('click', getManualFreight);
     panel.querySelector('#lc-add-product').addEventListener('click', () => addManualProductRow());
     panel.querySelector('#lc-fill-price').addEventListener('click', () => fillCin7PriceField(true));
@@ -918,6 +952,12 @@
       state.addressTimer = setTimeout(loadAddressSuggestions, 700);
     });
     addManualProductRow();
+
+    setInterval(() => {
+      if (!panel.classList.contains('is-open')) return;
+      renderDetectedDetails();
+      scheduleAutoCin7Lookup();
+    }, 3000);
   }
 
   function boot() {
