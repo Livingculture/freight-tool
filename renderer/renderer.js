@@ -20,6 +20,7 @@ let activeProductSearch = null;
 let activePrepare = false;
 let activeAddressSearch = false;
 let lastAddressQuery = '';
+let latestAddressRequestKey = '';
 
 const MIN_PRODUCT_SEARCH_LENGTH = 2;
 const MIN_ADDRESS_SEARCH_LENGTH = 4;
@@ -394,6 +395,9 @@ async function prepareProducts(items, productKey) {
 
   try {
     const data = await request('/api/prepare', { items });
+    if (productKey !== getProductKey()) {
+      return;
+    }
     preparedKey = productKey;
     renderProductPreview(data.products || []);
 
@@ -414,6 +418,9 @@ async function prepareProducts(items, productKey) {
     }
   } catch (error) {
     console.error(error);
+    if (productKey !== getProductKey()) {
+      return;
+    }
     setStatus('Could not prepare those products. Check the SKU, then try again.');
   } finally {
     activePrepare = false;
@@ -460,6 +467,8 @@ function scheduleAddressLookup(delay = ADDRESS_SEARCH_DELAY_MS) {
 async function fetchAddressSuggestions() {
   const items = getItems();
   const address = addressInput.value.trim();
+  const requestKey = getProductKey();
+  const requestAddress = address;
   if (!items.length || !address) return;
 
   if (activePrepare && preparedKey !== getProductKey()) {
@@ -475,20 +484,26 @@ async function fetchAddressSuggestions() {
 
   activeAddressSearch = true;
   lastAddressQuery = address;
+  latestAddressRequestKey = `${requestKey}|${requestAddress}`;
   setStatus('Loading address suggestions...');
   showAddressMessage('Loading address suggestions...');
 
   try {
     const data = await request('/api/suggestions', { items, address });
+    if (requestKey !== getProductKey() || requestAddress !== addressInput.value.trim()) {
+      return;
+    }
     renderAddressSuggestions(data.suggestions || []);
-    renderProductPreview(data.products || []);
     setStatus('Select the correct address from the list.');
   } catch (error) {
     console.error(error);
+    if (requestKey !== getProductKey() || requestAddress !== addressInput.value.trim()) {
+      return;
+    }
     setStatus('Could not load address suggestions. Keep typing or try the full street address.');
   } finally {
     activeAddressSearch = false;
-    if (addressInput.value.trim() && addressInput.value.trim() !== lastAddressQuery) {
+    if (latestAddressRequestKey !== `${getProductKey()}|${addressInput.value.trim()}` && addressInput.value.trim()) {
       clearTimeout(addressTimer);
       addressTimer = setTimeout(fetchAddressSuggestions, 300);
     }
