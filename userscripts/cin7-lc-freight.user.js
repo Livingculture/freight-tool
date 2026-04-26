@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      4.4
+// @version      4.5
 // @description  Opens a Living Culture freight panel inside Cin7 with auto and manual lookup modes.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -768,8 +768,8 @@
     styles.textContent = `
       #lc-freight-toggle {
         position: fixed;
-        right: 20px;
-        bottom: 20px;
+        right: calc(20px + 2cm);
+        bottom: calc(20px + 4mm);
         z-index: 2147483647;
         padding: 11px 16px;
         background: #2d5c4e;
