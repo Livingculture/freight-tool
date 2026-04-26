@@ -18,9 +18,18 @@ app.use(express.json());
 const DEFAULT_WAIT = 10000;
 const HEADLESS = process.env.HEADLESS !== 'false';
 const CHECKOUT_IDLE_MS = 5 * 60 * 1000;
+const AUTOMATION_TIMEOUT_MS = 120000;
+const BLOCKED_RESOURCE_TYPES = new Set(['image', 'font', 'media']);
 const productCache = new Map();
 const productSummaryCache = new Map();
+const skuUrlCache = new Map();
+const addressSuggestionCache = new Map();
 let activeCheckout = null;
+let sharedBrowser = null;
+let sharedBrowserPromise = null;
+let sharedContext = null;
+let sharedPage = null;
+let automationQueue = Promise.resolve();
 const ADDRESS_INPUT_SELECTORS = [
   '#shipping-address1:visible',
   'input[name="address1"]:visible',
@@ -58,12 +67,109 @@ async function findElement(page, selectors) {
 }
 
 async function createBrowserSession() {
-  const browser = await chromium.launch({ headless: HEADLESS });
+  const browser = await getSharedBrowser();
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  await context.route('**/*', route => {
+    if (BLOCKED_RESOURCE_TYPES.has(route.request().resourceType())) {
+      return route.abort().catch(() => {});
+    }
+    return route.continue().catch(() => {});
+  });
   const page = await context.newPage();
   return {
     page,
-    close: () => browser.close()
+    close: () => context.close().catch(() => {})
+  };
+}
+
+async function getSharedBrowser() {
+  if (sharedBrowser) return sharedBrowser;
+  if (!sharedBrowserPromise) {
+    sharedBrowserPromise = chromium.launch({ headless: HEADLESS })
+      .then(browser => {
+        sharedBrowser = browser;
+        return browser;
+      })
+      .finally(() => {
+        sharedBrowserPromise = null;
+      });
+  }
+  return sharedBrowserPromise;
+}
+
+async function getSharedContext() {
+  if (sharedContext) return sharedContext;
+
+  const browser = await getSharedBrowser();
+
+  sharedContext = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  await sharedContext.route('**/*', route => {
+    if (BLOCKED_RESOURCE_TYPES.has(route.request().resourceType())) {
+      return route.abort().catch(() => {});
+    }
+    return route.continue().catch(() => {});
+  });
+  return sharedContext;
+}
+
+async function getSharedPage() {
+  const context = await getSharedContext();
+  if (sharedPage && !sharedPage.isClosed()) return sharedPage;
+  sharedPage = await context.newPage();
+  return sharedPage;
+}
+
+async function resetSharedPage() {
+  activeCheckout = null;
+  if (sharedPage && !sharedPage.isClosed()) {
+    await sharedPage.close().catch(() => {});
+  }
+  sharedPage = null;
+}
+
+function withAutomationPage(label, work, timeoutMs = AUTOMATION_TIMEOUT_MS) {
+  const previous = automationQueue.catch(() => {});
+  const task = previous.then(async () => {
+    const page = await getSharedPage();
+    let timeoutId;
+    const timeout = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+    });
+
+    try {
+      return await Promise.race([work(page), timeout]);
+    } catch (error) {
+      if (/timed out/i.test(error.message)) {
+        await resetSharedPage();
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  });
+  automationQueue = task.catch(() => {});
+  return task;
+}
+
+function createTiming(label) {
+  const startedAt = Date.now();
+  let lastAt = startedAt;
+  return {
+    async step(name, fn) {
+      const stepStartedAt = Date.now();
+      try {
+        return await fn();
+      } finally {
+        const now = Date.now();
+        console.log(`[timing:${label}] ${name}: ${now - stepStartedAt}ms (+${now - lastAt}ms, total ${now - startedAt}ms)`);
+        lastAt = now;
+      }
+    },
+    mark(name) {
+      const now = Date.now();
+      console.log(`[timing:${label}] ${name}: +${now - lastAt}ms, total ${now - startedAt}ms`);
+      lastAt = now;
+    }
   };
 }
 
@@ -108,6 +214,10 @@ function makeProductKey({ productUrl, sku, skus, items }) {
     .join('|');
 }
 
+function makeAddressSuggestionKey({ productUrl, sku, skus, items, address }) {
+  return `${makeProductKey({ productUrl, sku, skus, items })}|address:${normaliseSuggestion(String(address || '')).toLowerCase()}`;
+}
+
 function scheduleCheckoutCleanup() {
   if (!activeCheckout) return;
   clearTimeout(activeCheckout.cleanupTimer);
@@ -121,10 +231,9 @@ async function closeActiveCheckout() {
   const checkout = activeCheckout;
   activeCheckout = null;
   clearTimeout(checkout.cleanupTimer);
-  await checkout.session.close().catch(() => {});
 }
 
-async function getCheckoutSession({ productUrl, sku, skus, items }) {
+async function getCheckoutSession({ productUrl, sku, skus, items }, page, timing = createTiming('checkout')) {
   const key = makeProductKey({ productUrl, sku, skus, items });
 
   if (activeCheckout?.key === key) {
@@ -132,19 +241,18 @@ async function getCheckoutSession({ productUrl, sku, skus, items }) {
     scheduleCheckoutCleanup();
 
     if (!/\/checkouts\/.*\/information/.test(activeCheckout.page.url())) {
-      activeCheckout.products = await prepareCheckout(activeCheckout.page, { productUrl, sku, skus, items });
+      activeCheckout.products = await prepareCheckout(activeCheckout.page, { productUrl, sku, skus, items }, timing);
     }
 
     return activeCheckout;
   }
 
   await closeActiveCheckout();
-  const session = await createBrowserSession();
-  const products = await prepareCheckout(session.page, { productUrl, sku, skus, items });
+  const checkoutPage = page || await getSharedPage();
+  const products = await prepareCheckout(checkoutPage, { productUrl, sku, skus, items }, timing);
   activeCheckout = {
     key,
-    session,
-    page: session.page,
+    page: checkoutPage,
     products,
     cleanupTimer: null,
     lastUsed: Date.now()
@@ -903,6 +1011,11 @@ function parseUnitsPerCarton(descriptionHtml) {
 }
 
 async function getProductUrlBySKU(page, sku) {
+  const cacheKey = String(sku || '').trim().toLowerCase();
+  if (skuUrlCache.has(cacheKey)) {
+    return skuUrlCache.get(cacheKey);
+  }
+
   const searchUrl = `https://livingculture.co.nz/search?q=${encodeURIComponent(sku)}`;
   await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
@@ -923,6 +1036,7 @@ async function getProductUrlBySKU(page, sku) {
     throw new Error(`No product page found for SKU ${sku}`);
   }
 
+  skuUrlCache.set(cacheKey, results[0].href);
   return results[0].href;
 }
 
@@ -985,20 +1099,22 @@ async function searchProducts(query) {
     .slice(0, 12);
 }
 
-async function prepareCheckout(page, itemInput) {
+async function prepareCheckout(page, itemInput, timing = createTiming('checkout')) {
   const items = normaliseItems(itemInput);
   if (!items.length) {
     throw new Error('At least one SKU is required');
   }
 
   const products = [];
-  for (const item of items) {
-    const product = { ...(await getProductDetails(page, item)) };
-    product.quantity = item.quantity;
-    products.push(product);
-  }
+  await timing.step('resolve SKU', async () => {
+    for (const item of items) {
+      const product = { ...(await getProductDetails(page, item)) };
+      product.quantity = item.quantity;
+      products.push(product);
+    }
+  });
 
-  await openCheckoutForProducts(page, products);
+  await openCheckoutForProducts(page, products, timing);
   return products;
 }
 
@@ -1042,55 +1158,61 @@ async function getProductSummaries(itemInput) {
   }
 }
 
-async function openCheckoutForProducts(page, products) {
+async function openCheckoutForProducts(page, products, timing = createTiming('checkout')) {
   const cartItems = products.map(product => `${product.variantId}:${normaliseQuantity(product.quantity)}`).join(',');
   const checkoutUrl = `https://livingculture.co.nz/cart/${cartItems}`;
 
-  await page.goto('https://livingculture.co.nz/cart/clear.js', {
-    waitUntil: 'domcontentloaded',
-    timeout: 30000
-  }).catch(() => {});
-
-  await page.goto(checkoutUrl, {
-    waitUntil: 'domcontentloaded',
-    timeout: 60000
+  await timing.step('clear cart', async () => {
+    await page.goto('https://livingculture.co.nz/cart/clear.js', {
+      waitUntil: 'domcontentloaded',
+      timeout: 30000
+    }).catch(() => {});
   });
 
-  if (!/\/checkouts\//.test(page.url())) {
-    await page.locator('#CartTerms:visible, input.cart__terms-checkbox:visible').first().check({ timeout: DEFAULT_WAIT }).catch(() => {});
+  await timing.step('add to cart', async () => {
+    await page.goto(checkoutUrl, {
+      waitUntil: 'domcontentloaded',
+      timeout: 60000
+    });
+  });
 
-    const checkoutButton = page
-      .locator('button[name="checkout"]:visible, input[name="checkout"]:visible, a[href*="/checkout"]:visible, button:has-text("Checkout"):visible, input[value*="Checkout" i]:visible')
-      .first();
+  await timing.step('open checkout/cart', async () => {
+    if (!/\/checkouts\//.test(page.url())) {
+      await page.locator('#CartTerms:visible, input.cart__terms-checkbox:visible').first().check({ timeout: DEFAULT_WAIT }).catch(() => {});
 
+      const checkoutButton = page
+        .locator('button[name="checkout"]:visible, input[name="checkout"]:visible, a[href*="/checkout"]:visible, button:has-text("Checkout"):visible, input[value*="Checkout" i]:visible')
+        .first();
+
+      try {
+        await Promise.all([
+          page.waitForURL(/\/checkouts\//, { timeout: 60000 }).catch(() => {}),
+          checkoutButton.click({ timeout: DEFAULT_WAIT })
+        ]);
+      } catch (error) {
+        await page.goto('https://livingculture.co.nz/checkout?skip_shop_pay=true', {
+          waitUntil: 'domcontentloaded',
+          timeout: 60000
+        });
+      }
+    }
+
+    await page.waitForURL(/\/checkouts\/.*\/information/, { timeout: 30000, waitUntil: 'domcontentloaded' }).catch(() => {});
+
+    const addressSelector = ADDRESS_INPUT_SELECTORS.join(',');
     try {
-      await Promise.all([
-        page.waitForURL(/\/checkouts\//, { timeout: 60000 }).catch(() => {}),
-        checkoutButton.click({ timeout: DEFAULT_WAIT })
-      ]);
+      await page.waitForSelector(addressSelector, { timeout: 20000 });
     } catch (error) {
       await page.goto('https://livingculture.co.nz/checkout?skip_shop_pay=true', {
         waitUntil: 'domcontentloaded',
         timeout: 60000
+      }).catch(() => {});
+      await page.waitForSelector(addressSelector, { timeout: 20000 }).catch(async () => {
+        const bodyText = await page.locator('body').innerText({ timeout: 5000 }).catch(() => '');
+        throw new Error(`Checkout address field was not available on ${page.url()}: ${bodyText.slice(0, 500)}`);
       });
     }
-  }
-
-  await page.waitForURL(/\/checkouts\/.*\/information/, { timeout: 30000, waitUntil: 'domcontentloaded' }).catch(() => {});
-
-  const addressSelector = ADDRESS_INPUT_SELECTORS.join(',');
-  try {
-    await page.waitForSelector(addressSelector, { timeout: 20000 });
-  } catch (error) {
-    await page.goto('https://livingculture.co.nz/checkout?skip_shop_pay=true', {
-      waitUntil: 'domcontentloaded',
-      timeout: 60000
-    }).catch(() => {});
-    await page.waitForSelector(addressSelector, { timeout: 20000 }).catch(async () => {
-      const bodyText = await page.locator('body').innerText({ timeout: 5000 }).catch(() => '');
-      throw new Error(`Checkout address field was not available on ${page.url()}: ${bodyText.slice(0, 500)}`);
-    });
-  }
+  });
 }
 
 function normaliseSuggestion(text) {
@@ -1108,22 +1230,26 @@ async function readAddressFields(page) {
   );
 }
 
-async function getSuggestionsForAddress(page, addressQuery) {
+async function getSuggestionsForAddress(page, addressQuery, timing = createTiming('suggestions')) {
   const addressInput = page.locator(ADDRESS_INPUT_SELECTORS.join(',')).first();
 
-  await addressInput.fill('');
-  await addressInput.type(addressQuery, { delay: 35 });
+  await timing.step('type address', async () => {
+    await addressInput.fill('');
+    await addressInput.type(addressQuery, { delay: 20 });
+  });
 
-  await page.waitForSelector(SUGGESTION_SELECTORS.join(','), { timeout: DEFAULT_WAIT });
-  const suggestions = await page.$$eval(SUGGESTION_SELECTORS.join(','), nodes =>
-    Array.from(new Set(Array.from(nodes).map(node => node.textContent || '').map(text => text.replace(/\s+/g, ' ').trim()).filter(Boolean)))
-  );
+  const suggestions = await timing.step('read address suggestions', async () => {
+    await page.waitForSelector(SUGGESTION_SELECTORS.join(','), { timeout: DEFAULT_WAIT });
+    return page.$$eval(SUGGESTION_SELECTORS.join(','), nodes =>
+      Array.from(new Set(Array.from(nodes).map(node => node.textContent || '').map(text => text.replace(/\s+/g, ' ').trim()).filter(Boolean)))
+    );
+  });
 
   return suggestions.slice(0, 10);
 }
 
-async function selectAddressAndGetPrice(page, addressText) {
-  let clickedSuggestion = await clickMatchingSuggestion(page, addressText);
+async function selectAddressAndGetPrice(page, addressText, timing = createTiming('price')) {
+  let clickedSuggestion = await timing.step('select address', () => clickMatchingSuggestion(page, addressText));
 
   if (!clickedSuggestion) {
     const addressInput = page.locator(ADDRESS_INPUT_SELECTORS.join(',')).first();
@@ -1134,11 +1260,13 @@ async function selectAddressAndGetPrice(page, addressText) {
     ].map(value => normaliseSuggestion(String(value || ''))).filter(Boolean)));
 
     for (const query of addressQueries) {
-      await addressInput.fill('');
-      await addressInput.type(query, { delay: 35 });
+      await timing.step('type address', async () => {
+        await addressInput.fill('');
+        await addressInput.type(query, { delay: 20 });
+      });
 
       await page.waitForSelector(SUGGESTION_SELECTORS.join(','), { timeout: DEFAULT_WAIT }).catch(() => {});
-      clickedSuggestion = await clickMatchingSuggestion(page, addressText);
+      clickedSuggestion = await timing.step('select address', () => clickMatchingSuggestion(page, addressText));
       if (clickedSuggestion) break;
     }
   }
@@ -1155,19 +1283,23 @@ async function selectAddressAndGetPrice(page, addressText) {
     .locator('button:has-text("Continue to shipping"), button:has-text("Continue"), button[type="submit"]:visible')
     .first();
 
-  await Promise.all([
-    page.waitForURL(/\/shipping/, { timeout: 45000, waitUntil: 'domcontentloaded' }).catch(() => {}),
-    continueButton.click({ timeout: DEFAULT_WAIT })
-  ]);
+  await timing.step('open checkout/cart', async () => {
+    await Promise.all([
+      page.waitForURL(/\/shipping/, { timeout: 45000, waitUntil: 'domcontentloaded' }).catch(() => {}),
+      continueButton.click({ timeout: DEFAULT_WAIT })
+    ]);
 
-  await page.waitForURL(/\/shipping/, { timeout: 45000, waitUntil: 'domcontentloaded' }).catch(() => {});
+    await page.waitForURL(/\/shipping/, { timeout: 45000, waitUntil: 'domcontentloaded' }).catch(() => {});
+  });
 
-  await page.waitForFunction(() => {
-    const text = document.body?.innerText || '';
-    return /Shipping method/i.test(text) && !/Getting available shipping rates/i.test(text) && (/Ship from[\s\S]*\$\d/.test(text) || /Shipping\s+\$\d/.test(text));
-  }, { timeout: 60000 });
+  await timing.step('read freight', async () => {
+    await page.waitForFunction(() => {
+      const text = document.body?.innerText || '';
+      return /Shipping method/i.test(text) && !/Getting available shipping rates/i.test(text) && (/Ship from[\s\S]*\$\d/.test(text) || /Shipping\s+\$\d/.test(text));
+    }, { timeout: 60000 });
+  });
 
-  const shipping = await readShippingPrice(page);
+  const shipping = await timing.step('read freight', () => readShippingPrice(page));
   const addressFields = await readAddressFields(page);
   return { price: shipping.price, method: shipping.method, selectedAddress: clickedSuggestion || addressText, addressFields };
 }
@@ -1255,13 +1387,22 @@ app.post('/api/suggestions', async (req, res) => {
     return res.status(400).json({ error: 'At least one SKU and address are required' });
   }
 
+  const cacheKey = makeAddressSuggestionKey({ productUrl, sku, skus, items, address });
+  if (addressSuggestionCache.has(cacheKey)) {
+    return res.json(addressSuggestionCache.get(cacheKey));
+  }
+
   try {
-    const checkout = await getCheckoutSession({ productUrl, sku, skus, items });
-    const { page, products } = checkout;
-    const suggestions = await getSuggestionsForAddress(page, address);
-    checkout.lastUsed = Date.now();
-    scheduleCheckoutCleanup();
-    return res.json({ suggestions, products });
+    const payload = await withAutomationPage('api suggestions', async page => {
+      const timing = createTiming('api suggestions');
+      const checkout = await getCheckoutSession({ productUrl, sku, skus, items }, page, timing);
+      const suggestions = await getSuggestionsForAddress(checkout.page, address, timing);
+      checkout.lastUsed = Date.now();
+      scheduleCheckoutCleanup();
+      return { suggestions, products: checkout.products };
+    });
+    addressSuggestionCache.set(cacheKey, payload);
+    return res.json(payload);
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: error.message });
@@ -1305,25 +1446,29 @@ app.post('/api/price', async (req, res) => {
   }
 
   try {
-    let checkout = await getCheckoutSession({ productUrl, sku, skus, items });
-    let result;
+    const payload = await withAutomationPage('api price', async page => {
+      const timing = createTiming('api price');
+      let checkout = await getCheckoutSession({ productUrl, sku, skus, items }, page, timing);
+      let result;
 
-    try {
-      result = await selectAddressAndGetPrice(checkout.page, selectedAddress);
-    } catch (firstError) {
-      console.error('Retrying freight price with a fresh checkout session:', firstError.message);
-      await closeActiveCheckout();
-      checkout = await getCheckoutSession({ productUrl, sku, skus, items });
-      result = await selectAddressAndGetPrice(checkout.page, selectedAddress);
-    }
+      try {
+        result = await selectAddressAndGetPrice(checkout.page, selectedAddress, timing);
+      } catch (firstError) {
+        console.error('Retrying freight price with a fresh checkout session:', firstError.message);
+        await closeActiveCheckout();
+        checkout = await getCheckoutSession({ productUrl, sku, skus, items }, page, timing);
+        result = await selectAddressAndGetPrice(checkout.page, selectedAddress, timing);
+      }
 
-    checkout.lastUsed = Date.now();
-    scheduleCheckoutCleanup();
-    return res.json({
-      ...result,
-      products: checkout.products,
-      freightBreakdown: buildFreightBreakdown(checkout.products, result.price)
+      checkout.lastUsed = Date.now();
+      scheduleCheckoutCleanup();
+      return {
+        ...result,
+        products: checkout.products,
+        freightBreakdown: buildFreightBreakdown(checkout.products, result.price)
+      };
     });
+    return res.json(payload);
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: error.message });
@@ -1353,29 +1498,33 @@ app.post('/get-freight', async (req, res) => {
   }
 
   try {
-    let checkout = await getCheckoutSession({ items });
-    let result;
+    const payload = await withAutomationPage('get freight', async page => {
+      const timing = createTiming('get freight');
+      let checkout = await getCheckoutSession({ items }, page, timing);
+      let result;
 
-    try {
-      result = await selectAddressAndGetPrice(checkout.page, freightAddress);
-    } catch (firstError) {
-      console.error('Retrying Cin7 freight with a fresh checkout session:', firstError.message);
-      await closeActiveCheckout();
-      checkout = await getCheckoutSession({ items });
-      result = await selectAddressAndGetPrice(checkout.page, freightAddress);
-    }
+      try {
+        result = await selectAddressAndGetPrice(checkout.page, freightAddress, timing);
+      } catch (firstError) {
+        console.error('Retrying Cin7 freight with a fresh checkout session:', firstError.message);
+        await closeActiveCheckout();
+        checkout = await getCheckoutSession({ items }, page, timing);
+        result = await selectAddressAndGetPrice(checkout.page, freightAddress, timing);
+      }
 
-    checkout.lastUsed = Date.now();
-    scheduleCheckoutCleanup();
-    return res.json({
-      ...result,
-      sku: checkout.products?.[0]?.sku || sku || '',
-      skus: checkout.products?.map(product => product.sku).filter(Boolean) || [],
-      price: result.price,
-      priceNumber: parseMoneyToCents(result.price) / 100,
-      products: checkout.products,
-      freightBreakdown: buildFreightBreakdown(checkout.products, result.price)
+      checkout.lastUsed = Date.now();
+      scheduleCheckoutCleanup();
+      return {
+        ...result,
+        sku: checkout.products?.[0]?.sku || sku || '',
+        skus: checkout.products?.map(product => product.sku).filter(Boolean) || [],
+        price: result.price,
+        priceNumber: parseMoneyToCents(result.price) / 100,
+        products: checkout.products,
+        freightBreakdown: buildFreightBreakdown(checkout.products, result.price)
+      };
     });
+    return res.json(payload);
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: error.message });
@@ -1395,12 +1544,22 @@ app.post('/address-suggestions', async (req, res) => {
     return res.status(400).json({ error: 'SKU or product URL and address are required' });
   }
 
+  const cacheKey = makeAddressSuggestionKey({ items, address });
+  if (addressSuggestionCache.has(cacheKey)) {
+    return res.json(addressSuggestionCache.get(cacheKey));
+  }
+
   try {
-    const checkout = await getCheckoutSession({ items });
-    const suggestions = await getSuggestionsForAddress(checkout.page, address);
-    checkout.lastUsed = Date.now();
-    scheduleCheckoutCleanup();
-    return res.json({ suggestions, products: checkout.products });
+    const payload = await withAutomationPage('address suggestions', async page => {
+      const timing = createTiming('address suggestions');
+      const checkout = await getCheckoutSession({ items }, page, timing);
+      const suggestions = await getSuggestionsForAddress(checkout.page, address, timing);
+      checkout.lastUsed = Date.now();
+      scheduleCheckoutCleanup();
+      return { suggestions, products: checkout.products };
+    });
+    addressSuggestionCache.set(cacheKey, payload);
+    return res.json(payload);
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: error.message });
@@ -1432,14 +1591,18 @@ app.post('/api/item-shipping', async (req, res) => {
   }
 
   try {
-    const checkout = await getCheckoutSession({ productUrl, sku, skus, items });
-    const itemShipping = await getSingleProductShippingSummaries(checkout.products, selectedAddress);
-    checkout.lastUsed = Date.now();
-    scheduleCheckoutCleanup();
-    return res.json({
-      products: checkout.products,
-      itemShipping
+    const payload = await withAutomationPage('item shipping', async page => {
+      const timing = createTiming('item shipping');
+      const checkout = await getCheckoutSession({ productUrl, sku, skus, items }, page, timing);
+      const itemShipping = await getSingleProductShippingSummaries(checkout.products, selectedAddress);
+      checkout.lastUsed = Date.now();
+      scheduleCheckoutCleanup();
+      return {
+        products: checkout.products,
+        itemShipping
+      };
     });
+    return res.json(payload);
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: error.message });
