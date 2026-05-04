@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Copy SKU
 // @namespace    livingculture
-// @version      1.1
+// @version      1.2
 // @description  Adds a button to Living Culture product pages to copy the current product SKU.
 // @match        https://livingculture.co.nz/products/*
 // @match        https://www.livingculture.co.nz/products/*
@@ -202,7 +202,7 @@
         min-height: 32px;
         padding: 7px 12px;
         color: #fff;
-        background: #d93025;
+        background: #ff3131;
         border: 0;
         border-radius: 8px;
         box-shadow: 0 8px 22px rgba(0,0,0,.18);
