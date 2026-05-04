@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Copy SKU
 // @namespace    livingculture
-// @version      1.3
+// @version      1.4
 // @description  Adds a button to Living Culture product pages to copy the current product SKU.
 // @match        https://livingculture.co.nz/products/*
 // @match        https://www.livingculture.co.nz/products/*
@@ -26,7 +26,7 @@
   }
 
   function setStatus(message, error = false) {
-    const status = document.getElementById('lc-copy-sku-status');
+    const status = document.getElementById('lc-copy-sku-panel')?.shadowRoot?.getElementById('lc-copy-sku-status');
     if (!status) return;
     status.textContent = message || '';
     status.style.color = error ? '#9a2d20' : '#2d5c4e';
@@ -170,77 +170,90 @@
 
     const panel = document.createElement('div');
     panel.id = 'lc-copy-sku-panel';
-    panel.innerHTML = `
+    panel.attachShadow({ mode: 'open' });
+    panel.shadowRoot.innerHTML = `
+      <style>
+        :host {
+          all: initial;
+          z-index: 2147483647;
+          display: inline-grid;
+          gap: 7px;
+          justify-items: start;
+          font: 13px/1.35 Arial, sans-serif;
+        }
+
+        :host(.is-inline) {
+          margin-left: 10px;
+          vertical-align: middle;
+        }
+
+        :host(.is-floating) {
+          position: fixed;
+          right: 22px;
+          bottom: 22px;
+          justify-items: end;
+        }
+
+        #lc-copy-sku-button {
+          all: initial;
+          appearance: none;
+          box-sizing: border-box;
+          opacity: 1;
+          filter: none;
+          mix-blend-mode: normal;
+          min-width: 86px;
+          min-height: 32px;
+          padding: 7px 12px;
+          color: #fff;
+          background: #ff3131;
+          background-color: #ff3131;
+          border: 1px solid #ff3131;
+          border-radius: 8px;
+          box-shadow: 0 8px 22px rgba(0,0,0,.18);
+          font: 800 12px Arial, sans-serif;
+          line-height: 1.35;
+          text-align: center;
+          cursor: pointer;
+          user-select: none;
+        }
+
+        #lc-copy-sku-button:hover {
+          background: #c90000;
+          background-color: #c90000;
+          border-color: #c90000;
+        }
+
+        #lc-copy-sku-button:active {
+          background: #990000;
+          background-color: #990000;
+          border-color: #990000;
+        }
+
+        #lc-copy-sku-status {
+          all: initial;
+          box-sizing: border-box;
+          min-height: 18px;
+          max-width: 180px;
+          padding: 5px 8px;
+          color: #2d5c4e;
+          background: rgba(255,255,255,.96);
+          border: 1px solid #d9d6cc;
+          border-radius: 8px;
+          text-align: right;
+          box-shadow: 0 8px 18px rgba(0,0,0,.1);
+          font: 13px/1.35 Arial, sans-serif;
+        }
+
+        #lc-copy-sku-status:empty {
+          display: none;
+        }
+      </style>
       <button type="button" id="lc-copy-sku-button">Copy SKU</button>
       <div id="lc-copy-sku-status"></div>
     `;
-
-    const style = document.createElement('style');
-    style.textContent = `
-      #lc-copy-sku-panel {
-        z-index: 2147483647;
-        display: inline-grid;
-        gap: 7px;
-        justify-items: start;
-        font: 13px/1.35 Arial, sans-serif;
-      }
-
-      #lc-copy-sku-panel.is-inline {
-        margin-left: 10px;
-        vertical-align: middle;
-      }
-
-      #lc-copy-sku-panel.is-floating {
-        position: fixed;
-        right: 22px;
-        bottom: 22px;
-        justify-items: end;
-      }
-
-      #lc-copy-sku-button {
-        appearance: none !important;
-        opacity: 1 !important;
-        filter: none !important;
-        mix-blend-mode: normal !important;
-        min-width: 86px;
-        min-height: 32px;
-        padding: 7px 12px;
-        color: #fff !important;
-        background: #ff3131 !important;
-        background-color: #ff3131 !important;
-        border: 1px solid #ff3131 !important;
-        border-radius: 8px;
-        box-shadow: 0 8px 22px rgba(0,0,0,.18);
-        font: 800 12px Arial, sans-serif;
-        cursor: pointer;
-      }
-
-      #lc-copy-sku-button:hover {
-        background: #ff3131 !important;
-        background-color: #ff3131 !important;
-      }
-
-      #lc-copy-sku-status {
-        min-height: 18px;
-        max-width: 180px;
-        padding: 5px 8px;
-        color: #2d5c4e;
-        background: rgba(255,255,255,.92);
-        border: 1px solid #d9d6cc;
-        border-radius: 8px;
-        text-align: right;
-        box-shadow: 0 8px 18px rgba(0,0,0,.1);
-      }
-
-      #lc-copy-sku-status:empty {
-        display: none;
-      }
-    `;
-
-    document.head.appendChild(style);
     document.body.appendChild(panel);
 
-    const button = panel.querySelector('#lc-copy-sku-button');
+    const button = panel.shadowRoot.querySelector('#lc-copy-sku-button');
     button.addEventListener('click', () => copySku(button));
 
     loadProduct()
