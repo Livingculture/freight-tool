@@ -21,11 +21,14 @@ The Tampermonkey helpers are installed from GitHub:
 ```text
 https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-lc-freight.user.js
 https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-quote-memo-info.user.js
+https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/livingculture-copy-sku.user.js
 ```
 
 Install each link once in Tampermonkey on every computer. After that, Tampermonkey checks GitHub for script updates automatically because the scripts include `@updateURL` and `@downloadURL`.
 
 Keep the Freight Costing app running locally. In Cin7, click `LC Freight` to open the freight panel, or `Quote Memo Info` to open the quote memo panel.
+
+On Living Culture product pages, click `Copy SKU` to copy the current product SKU.
 
 If the `LC Freight` button does not appear, check that Tampermonkey shows the script as enabled on the current Cin7 page. The script matches Cin7, Cin7 Core, and Dear Systems URLs.
 
