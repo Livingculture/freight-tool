@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Copy SKU
 // @namespace    livingculture
-// @version      1.4
+// @version      1.5
 // @description  Adds a button to Living Culture product pages to copy the current product SKU.
 // @match        https://livingculture.co.nz/products/*
 // @match        https://www.livingculture.co.nz/products/*
@@ -148,7 +148,7 @@
 
       await navigator.clipboard.writeText(sku);
       const oldText = button.textContent;
-      button.textContent = 'Copied';
+      button.textContent = 'SKU copied';
       setStatus(`Copied ${sku}`);
       setTimeout(() => {
         button.textContent = oldText;
