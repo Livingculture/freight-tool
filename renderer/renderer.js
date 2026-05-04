@@ -27,6 +27,7 @@ const MIN_ADDRESS_SEARCH_LENGTH = 4;
 const PRODUCT_SEARCH_DELAY_MS = 300;
 const PREPARE_DELAY_MS = 700;
 const ADDRESS_SEARCH_DELAY_MS = 650;
+const ADDRESS_SEARCH_TIMEOUT_MS = 45000;
 
 function escapeHtml(value) {
   return String(value || '').replace(/[&<>"']/g, char => ({
@@ -116,6 +117,15 @@ function request(path, body, method = 'POST') {
   return window.freightApi.request({ path, method, body });
 }
 
+function requestWithTimeout(path, body, timeoutMs = ADDRESS_SEARCH_TIMEOUT_MS) {
+  return Promise.race([
+    request(path, body),
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Address search timed out. Keep typing or try again.')), timeoutMs);
+    })
+  ]);
+}
+
 function renderSelectedAddress(text) {
   selectedAddressEl.classList.toggle('is-visible', Boolean(text));
   selectedAddressEl.innerHTML = text ? `<strong>Selected address</strong>${escapeHtml(text)}` : '';
@@ -163,6 +173,7 @@ function renderProductPreview(products, itemShipping = []) {
 
   const totalWeightKg = productList.reduce((total, product) => total + ((Number(product.weightKg) || 0) * getLineQuantity(product)), 0);
   const totalCbm = productList.reduce((total, product) => total + getLineCbm(product), 0);
+  const totalCartons = productList.reduce((total, product) => total + getLineCartonCount(product), 0);
 
   productPreviewEl.innerHTML = `
     ${productList.map(product => {
@@ -176,25 +187,32 @@ function renderProductPreview(products, itemShipping = []) {
       const shippingLocation = getShippingLocation(shippingBySku.get(product.sku)?.method);
       const saleState = product.saleState || (product.available ? 'Add to cart' : 'Unavailable');
       const stock = product.available ? `Stock: ${shippingLocation || 'Available'}` : 'Stock: Unavailable';
-      const dimensions = product.metricsLoaded
-        ? `${lineWeight ? `${lineWeight.toFixed(2)} kg` : 'Weight not found'} · ${lineCbm ? `${lineCbm.toFixed(3)} CBM` : 'CBM not found'}${cartonCount ? ` (${cartonCount} carton${cartonCount === 1 ? '' : 's'})` : ''}`
-        : 'Weight, CBM and carton details loading after freight price';
+      const detailsLine = product.metricsLoaded
+        ? lineWeight && lineCbm && cartonCount ? '' : 'Some product metrics were not found'
+        : 'Weight, CBM and carton details loading...';
+      const detailsHtml = detailsLine ? `<div class="product-preview__meta">${escapeHtml(detailsLine)}</div>` : '';
+      const quantityLine = quantity > 1 ? `<div class="product-preview__meta">Qty ${quantity}</div>` : '';
+      const websiteUrl = String(product.url || product.productUrl || '').trim();
+      const websiteLine = websiteUrl
+        ? `<div class="product-preview__meta product-preview__website"><a href="${escapeHtml(websiteUrl)}" target="_blank" rel="noopener noreferrer">To website</a></div>`
+        : '';
 
       return `
         <div class="product-preview__inner">
           ${image}
           <div>
             <strong>${escapeHtml(product.title || 'Living Culture product')}</strong>
-            <div class="product-preview__meta">${escapeHtml(formatSkuWithQty(product.sku || '', quantity))}</div>
-            <div class="product-preview__meta">${escapeHtml(dimensions)}</div>
+            ${quantityLine}
+            ${detailsHtml}
             <div class="product-preview__meta">${escapeHtml(`Status: ${saleState}`)}</div>
             <div class="product-preview__meta">${escapeHtml(stock)}</div>
+            ${websiteLine}
           </div>
         </div>
       `;
     }).join('')}
     <div class="product-preview__totals">
-      Total weight: ${totalWeightKg ? totalWeightKg.toFixed(2) : '0.00'} kg · Estimated CBM: ${totalCbm ? totalCbm.toFixed(3) : '0.000'}
+      Total weight: ${totalWeightKg ? totalWeightKg.toFixed(2) : '0.00'} kg · Est CBM: ${totalCbm ? totalCbm.toFixed(3) : '0.000'} · Ctns: ${totalCartons || 0}
     </div>
   `;
 }
@@ -489,7 +507,7 @@ async function fetchAddressSuggestions() {
   showAddressMessage('Loading address suggestions...');
 
   try {
-    const data = await request('/api/suggestions', { items, address });
+    const data = await requestWithTimeout('/api/suggestions', { items, address });
     if (requestKey !== getProductKey() || requestAddress !== addressInput.value.trim()) {
       return;
     }
@@ -548,8 +566,16 @@ async function fetchProductMetrics(priceData) {
   setStatus('Freight price loaded. Loading weight, CBM and carton details...');
 
   try {
+    const productsBySku = new Map((latestPriceData?.products || priceData.products || [])
+      .filter(product => product?.sku)
+      .map(product => [product.sku.toLowerCase(), product]));
+    const metricItems = items.map(item => {
+      if (item.productUrl) return item;
+      const product = productsBySku.get(String(item.sku || '').toLowerCase());
+      return product?.url ? { ...item, productUrl: product.url } : item;
+    });
     const data = await request('/api/product-metrics', {
-      items,
+      items: metricItems,
       price: priceData.price,
       itemShipping: latestPriceData?.itemShipping || []
     });

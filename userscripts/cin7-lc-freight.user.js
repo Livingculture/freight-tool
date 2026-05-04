@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      4.5
+// @version      4.6
 // @description  Opens a Living Culture freight panel inside Cin7 with auto and manual lookup modes.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -9,6 +9,9 @@
 // @match        *://*.cin7core.com/*
 // @match        *://*.dearsystems.com/*
 // @match        https://inventory.dearsystems.com/*
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-lc-freight.user.js
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-lc-freight.user.js
+// @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
 // @grant        none
 // ==/UserScript==
@@ -64,19 +67,6 @@
       .filter(item => item.sku || item.productUrl);
   }
 
-  function setNativeValue(input, value) {
-    const prototype = Object.getPrototypeOf(input);
-    const descriptor = Object.getOwnPropertyDescriptor(prototype, 'value');
-    if (descriptor?.set) {
-      descriptor.set.call(input, value);
-    } else {
-      input.value = value;
-    }
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-    input.dispatchEvent(new Event('blur', { bubbles: true }));
-  }
-
   function findTextNodeElement(pattern) {
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
     let node = walker.nextNode();
@@ -95,9 +85,14 @@
     return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
   }
 
+  function isInjectedPanelElement(element) {
+    return Boolean(element?.closest?.('#lc-freight-panel, #lc-quote-memo-panel'));
+  }
+
   function getFieldValueByLabel(labelText) {
     const labelPattern = new RegExp(labelText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
     const labelled = Array.from(document.querySelectorAll('label, legend, span, div'))
+      .filter(element => !isInjectedPanelElement(element))
       .find(element => labelPattern.test(clean(element.textContent)));
 
     if (labelled) {
@@ -133,6 +128,7 @@
     const labelPattern = new RegExp(`^${labelText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
     const labels = Array.from(document.querySelectorAll('label, legend, span, div'))
       .filter(isVisible)
+      .filter(element => !isInjectedPanelElement(element))
       .filter(element => labelPattern.test(clean(element.textContent)));
 
     for (const label of labels) {
@@ -140,6 +136,7 @@
       const scope = label.closest('fieldset, section, form, main, body') || document.body;
       const fields = Array.from(scope.querySelectorAll('input, textarea, [contenteditable="true"], div, span'))
         .filter(isVisible)
+        .filter(element => !isInjectedPanelElement(element))
         .map(element => {
           const rect = element.getBoundingClientRect();
           const value = clean(element.value || element.textContent);
@@ -229,118 +226,6 @@
     return clean(getAddressLineByLabel('Shipping address line 1') || getFieldValueByLabel('Shipping address line 1') || getAddressFromCin7());
   }
 
-  function findShippingPriceInput() {
-    const additionalCharges = findTextNodeElement(/Additional charges and services/i);
-    if (!additionalCharges) return null;
-
-    const headingRect = additionalCharges.getBoundingClientRect();
-    const visibleElementsBelowHeading = Array.from(document.querySelectorAll('td, th, [role="cell"], [role="columnheader"], div, span'))
-      .filter(isVisible)
-      .map(element => ({ element, rect: element.getBoundingClientRect(), text: clean(element.textContent) }))
-      .filter(item => item.rect.top >= headingRect.bottom - 5);
-    const shippingLabel = visibleElementsBelowHeading
-      .filter(item => item.text.length < 120 && (/^Shipping\s*-\s*Ship from\s+(?:Auckland|Christchurch)$/i.test(item.text) || /^Shipping\s*-/i.test(item.text)))
-      .sort((a, b) => a.text.length - b.text.length || a.rect.top - b.rect.top)[0];
-    const pageInputs = Array.from(document.querySelectorAll('input'))
-      .filter(isVisible)
-      .filter(input => !input.closest('#lc-freight-panel'))
-      .filter(input => !/address|contact|company|note|memo|date|carrier|search/i.test(`${input.name || ''} ${input.id || ''} ${input.placeholder || ''} ${input.getAttribute('aria-label') || ''}`));
-
-    if (shippingLabel) {
-      const priceHeader = visibleElementsBelowHeading
-        .filter(item => /^price$/i.test(item.text) && item.rect.top < shippingLabel.rect.top)
-        .sort((a, b) => Math.abs(a.rect.top - shippingLabel.rect.top) - Math.abs(b.rect.top - shippingLabel.rect.top))[0];
-      const rowInputs = pageInputs
-        .map(input => ({ input, rect: input.getBoundingClientRect() }))
-        .filter(item => {
-          const centerY = item.rect.top + (item.rect.height / 2);
-          return centerY >= shippingLabel.rect.top - 18 &&
-            centerY <= shippingLabel.rect.bottom + 42;
-        });
-
-      if (rowInputs.length && priceHeader) {
-        const headerCenter = priceHeader.rect.left + (priceHeader.rect.width / 2);
-        const alignedInputs = rowInputs
-          .map(item => ({
-            input: item.input,
-            distance: Math.abs((item.rect.left + (item.rect.width / 2)) - headerCenter)
-          }))
-          .sort((a, b) => a.distance - b.distance);
-        const bestInput = alignedInputs[0];
-        if (bestInput && bestInput.distance < 180) return bestInput.input;
-      }
-
-      if (rowInputs.length === 1) return rowInputs[0].input;
-
-      const numericInput = rowInputs.find(item => /^(?:|0|0\.0000|\d+(?:\.\d{1,4})?)$/.test(clean(item.input.value)));
-      if (numericInput) return numericInput.input;
-    }
-
-    let containers = Array.from(document.querySelectorAll('table, [role="table"], [class*="table" i], [class*="grid" i]'))
-      .filter(isVisible)
-      .map(element => ({ element, rect: element.getBoundingClientRect(), text: clean(element.textContent) }))
-      .filter(item =>
-        item.rect.top >= headingRect.bottom - 5 &&
-        /description/i.test(item.text) &&
-        /price/i.test(item.text) &&
-        /total/i.test(item.text) &&
-        /shipping\s*-/i.test(item.text)
-      )
-      .sort((a, b) => a.rect.top - b.rect.top || a.text.length - b.text.length);
-
-    if (!containers.length) {
-      containers = Array.from(document.querySelectorAll('section, main > div, body > div, div'))
-        .filter(isVisible)
-        .map(element => ({ element, rect: element.getBoundingClientRect(), text: clean(element.textContent) }))
-        .filter(item =>
-          item.rect.top >= headingRect.bottom - 5 &&
-          item.text.length < 5000 &&
-          /description/i.test(item.text) &&
-          /price/i.test(item.text) &&
-          /total/i.test(item.text) &&
-          /shipping\s*-/i.test(item.text)
-        )
-        .sort((a, b) => a.text.length - b.text.length);
-    }
-
-    const section = containers[0]?.element;
-    if (!section) return null;
-
-    const rows = Array.from(section.querySelectorAll('tr, [role="row"], tbody > *, [class*="row" i]'))
-      .filter(isVisible)
-      .filter(row => {
-        const text = clean(row.textContent);
-        return /Shipping\s*-/i.test(text) && !/Shipping address/i.test(text);
-      })
-      .sort((a, b) => clean(a.textContent).length - clean(b.textContent).length);
-
-    for (const row of rows) {
-      const inputs = Array.from(row.querySelectorAll('input'))
-        .filter(isVisible)
-        .filter(input => !/address|contact|company|note|memo|date|carrier/i.test(`${input.name || ''} ${input.id || ''} ${input.placeholder || ''} ${input.getAttribute('aria-label') || ''}`));
-      if (inputs.length === 1) return inputs[0];
-
-      const priceHeader = Array.from(section.querySelectorAll('th, [role="columnheader"], div, span'))
-        .filter(isVisible)
-        .find(element => /^price$/i.test(clean(element.textContent)));
-      if (priceHeader) {
-        const headerCenter = priceHeader.getBoundingClientRect().left + (priceHeader.getBoundingClientRect().width / 2);
-        return inputs
-          .map(input => {
-            const rect = input.getBoundingClientRect();
-            const center = rect.left + (rect.width / 2);
-            return { input, distance: Math.abs(center - headerCenter) };
-          })
-          .sort((a, b) => a.distance - b.distance)[0]?.input || null;
-      }
-
-      const numericInput = inputs.find(input => /^(?:|0|0\.0000|\d+(?:\.\d{1,4})?)$/.test(clean(input.value)));
-      if (numericInput) return numericInput;
-    }
-
-    return null;
-  }
-
   function setStatus(message, isError = false) {
     const status = document.getElementById('lc-freight-status');
     if (!status) return;
@@ -393,6 +278,7 @@
 
     const totalWeightKg = products.reduce((total, product) => total + ((Number(product.weightKg) || 0) * normaliseQuantity(product.quantity)), 0);
     const totalCbm = products.reduce((total, product) => total + getLineCbm(product), 0);
+    const totalCartons = products.reduce((total, product) => total + getLineCartonCount(product), 0);
     const shippingLocation = getShippingLocation(method);
 
     block.classList.add('is-visible');
@@ -404,27 +290,33 @@
         const cartonCount = getLineCartonCount(product, quantity);
         const saleState = product.saleState || (product.available ? 'Add to cart' : 'Unavailable');
         const stock = product.available ? `Stock: ${shippingLocation || 'Available'}` : 'Stock: Unavailable';
-        const dimensions = product.metricsLoaded
-          ? `${lineWeight ? `${lineWeight.toFixed(2)} kg` : 'Weight not found'} · ${lineCbm ? `${lineCbm.toFixed(3)} CBM` : 'CBM not found'}${cartonCount ? ` (${cartonCount} carton${cartonCount === 1 ? '' : 's'})` : ''}`
+        const detailsLine = product.metricsLoaded
+          ? lineWeight && lineCbm && cartonCount ? '' : 'Some product metrics were not found'
           : 'Weight, CBM and carton details loading...';
-        const skuLine = quantity > 1 ? `${product.sku || ''} · Qty ${quantity}` : product.sku || '';
+        const detailsHtml = detailsLine ? `<div>${escapeHtml(detailsLine)}</div>` : '';
+        const quantityLine = quantity > 1 ? `<div>Qty ${quantity}</div>` : '';
         const image = product.image ? `<img src="${escapeHtml(product.image)}" alt="">` : '<div class="lc-product-image-placeholder"></div>';
+        const websiteUrl = clean(product.url || product.productUrl);
+        const websiteLine = websiteUrl
+          ? `<div class="lc-product-website"><a href="${escapeHtml(websiteUrl)}" target="_blank" rel="noopener noreferrer">To website</a></div>`
+          : '';
 
         return `
           <div class="lc-product-row">
             ${image}
             <div>
               <strong>${escapeHtml(product.title || 'Living Culture product')}</strong>
-              <div>${escapeHtml(skuLine)}</div>
-              <div>${escapeHtml(dimensions)}</div>
+              ${quantityLine}
+              ${detailsHtml}
               <div>${escapeHtml(`Status: ${saleState}`)}</div>
               <div>${escapeHtml(stock)}</div>
+              ${websiteLine}
             </div>
           </div>
         `;
       }).join('')}
       <div class="lc-product-totals">
-        Total weight: ${totalWeightKg ? totalWeightKg.toFixed(2) : '0.00'} kg · Estimated CBM: ${totalCbm ? totalCbm.toFixed(3) : '0.000'}
+        Total weight: ${totalWeightKg ? totalWeightKg.toFixed(2) : '0.00'} kg · Est CBM: ${totalCbm ? totalCbm.toFixed(3) : '0.000'} · Ctns: ${totalCartons || 0}
       </div>
     `;
   }
@@ -450,17 +342,22 @@
 
   async function loadProductDetails(items, price, method, fallbackProducts = []) {
     const requestedItems = normaliseFreightItems({ items });
-    renderProductDetails(mergeProductDetails(requestedItems, fallbackProducts), method);
+    const itemsWithUrls = mergeProductDetails(requestedItems, fallbackProducts)
+      .map(item => ({
+        ...item,
+        productUrl: item.productUrl || item.url || ''
+      }));
+    renderProductDetails(itemsWithUrls, method);
 
     try {
       const response = await fetch(`${API_BASE}/api/product-metrics`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: requestedItems, price })
+        body: JSON.stringify({ items: itemsWithUrls, price })
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || 'Product details unavailable');
-      renderProductDetails(mergeProductDetails(requestedItems, data.products || fallbackProducts), method);
+      renderProductDetails(mergeProductDetails(itemsWithUrls, data.products || fallbackProducts), method);
     } catch (error) {
       console.error(error);
       if (!fallbackProducts.length) {
@@ -632,9 +529,7 @@
       const requestedItems = normaliseFreightItems({ sku, items });
       const data = await requestFreight({ sku, items, address });
       setResult(data.price, data.method);
-      await copyPrice(false);
-      if (fill) fillCin7PriceField(false);
-      setStatus(fill ? 'Freight applied.' : 'Freight loaded.');
+      setStatus('Freight loaded.');
       loadProductDetails(requestedItems, data.price, data.method, data.products || []);
       return true;
     } catch (error) {
@@ -642,29 +537,6 @@
       setStatus(error.message || 'Error getting freight.', true);
       return false;
     }
-  }
-
-  async function copyPrice(showStatus = true) {
-    if (!state.price) {
-      setStatus('No freight price to copy.', true);
-      return;
-    }
-    await navigator.clipboard.writeText(state.price);
-    if (showStatus) setStatus(`Copied ${state.price}`);
-  }
-
-  function fillCin7PriceField(showStatus = true) {
-    if (!state.priceNumber) {
-      setStatus('No freight price to fill.', true);
-      return;
-    }
-    const input = findShippingPriceInput();
-    if (!input) {
-      setStatus('Could not find the Cin7 shipping price field.', true);
-      return;
-    }
-    setNativeValue(input, state.priceNumber);
-    if (showStatus) setStatus(`Filled Cin7 price field with ${state.price}`);
   }
 
   async function loadAddressSuggestions() {
@@ -732,7 +604,7 @@
           <img src="https://livingculture.co.nz/cdn/shop/files/logo_ec2b0c5e-42ca-4695-8c7e-43b344144c58.png?v=1675047511&width=220" alt="Living Culture" />
           <strong>Freight Costing</strong>
         </div>
-        <p>Use Cin7 products and delivery details, or enter them manually.</p>
+        <p>Use Cin7 products and delivery details.</p>
         <button type="button" id="lc-panel-close">×</button>
       </div>
 
@@ -743,7 +615,7 @@
         <button type="button" id="lc-use-cin7">Refresh Cin7 details</button>
       </div>
 
-      <div class="lc-block">
+      <div class="lc-block" id="lc-manual-lookup-block">
         <div class="lc-label">Manual lookup</div>
         <div id="lc-manual-products"></div>
         <button type="button" id="lc-add-product">Add another product</button>
@@ -755,8 +627,6 @@
       <div class="lc-block lc-result-block">
         <div id="lc-freight-result">Freight: -</div>
         <div id="lc-freight-method"></div>
-        <button type="button" id="lc-fill-price">Fill Cin7 price field</button>
-        <button type="button" id="lc-copy-price">Copy price</button>
       </div>
 
       <div id="lc-product-details" class="lc-block"></div>
@@ -768,66 +638,70 @@
     styles.textContent = `
       #lc-freight-toggle {
         position: fixed;
-        right: calc(20px + 2cm);
-        bottom: calc(20px + 4mm);
+        right: 25mm;
+        bottom: calc(18px + 6mm);
         z-index: 2147483647;
-        padding: 11px 16px;
-        background: #2d5c4e;
+        box-sizing: border-box;
+        width: 140px;
+        min-height: 36px;
+        padding: 9px 14px;
+        background: #05cabe;
         color: #fff;
         border: 0;
         border-radius: 10px;
-        box-shadow: 0 16px 34px rgba(34, 48, 40, 0.2);
-        font: 700 14px Arial, sans-serif;
+        box-shadow: 0 8px 22px rgba(0,0,0,.18);
+        font: 800 13px Arial, sans-serif;
         cursor: pointer;
       }
       #lc-freight-panel {
         position: fixed;
-        top: 80px;
-        right: 20px;
+        top: 72px;
+        right: 16px;
         z-index: 2147483647;
-        width: 370px;
-        max-height: calc(100vh - 110px);
+        box-sizing: border-box;
+        width: 340px;
+        max-height: calc(100vh - 96px);
         overflow: auto;
         display: none;
         padding: 0;
         color: #1f2b24;
         background: #c5d9d3;
         border: 1px solid #d9d6cc;
-        border-radius: 18px;
+        border-radius: 14px;
         box-shadow: 0 20px 44px rgba(34, 48, 40, 0.18);
-        font: 14px/1.4 Arial, sans-serif;
+        font: 13px/1.35 Arial, sans-serif;
       }
       #lc-freight-panel.is-open { display: block; }
       .lc-hero {
         position: relative;
-        margin: 14px;
-        padding: 18px 18px 16px;
+        margin: 10px;
+        padding: 14px 14px 12px;
         color: #fff;
         background: #2d5c4e;
-        border-radius: 16px;
+        border-radius: 12px;
         box-shadow: 0 12px 28px rgba(34, 48, 40, 0.14);
       }
       .lc-hero-top {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 14px;
+        display: block;
         padding-right: 38px;
       }
       .lc-hero img {
-        width: 116px;
+        width: 96px;
         height: auto;
         display: block;
+        margin-bottom: 10px;
       }
       .lc-hero strong {
+        display: block;
         font-size: 22px;
-        line-height: 1;
-        text-align: right;
+        line-height: 1.05;
+        font-weight: 700;
+        text-align: left;
       }
       .lc-hero p {
-        margin: 14px 0 0;
+        margin: 6px 38px 0 0;
         color: rgba(255, 255, 255, 0.92);
-        font-size: 13px;
+        font-size: 12px;
         line-height: 1.5;
       }
       #lc-panel-close {
@@ -846,13 +720,16 @@
       }
       .lc-block {
         display: grid;
-        gap: 8px;
-        margin: 14px;
-        padding: 16px;
+        gap: 7px;
+        margin: 10px;
+        padding: 12px;
         background: #fffefb;
         border: 1px solid #d9d6cc;
-        border-radius: 16px;
+        border-radius: 12px;
         box-shadow: 0 10px 24px rgba(34, 48, 40, 0.08);
+      }
+      #lc-manual-lookup-block {
+        display: none;
       }
       .lc-label {
         color: #637061;
@@ -863,31 +740,31 @@
       }
       #lc-freight-panel input {
         width: 100%;
-        min-height: 42px;
-        padding: 10px 12px;
+        min-height: 36px;
+        padding: 8px 10px;
         color: #1f2b24;
         background: #fff;
         border: 1px solid #d9d6cc;
-        border-radius: 12px;
+        border-radius: 9px;
         font: inherit;
       }
       #lc-freight-panel button:not(#lc-panel-close) {
-        min-height: 42px;
-        padding: 10px 12px;
+        min-height: 36px;
+        padding: 8px 10px;
         color: #fff;
         background: #2d5c4e;
         border: 0;
-        border-radius: 12px;
+        border-radius: 9px;
         font-weight: 700;
         cursor: pointer;
       }
       .lc-manual-product-row {
         display: grid;
-        grid-template-columns: 1fr 58px 72px;
+        grid-template-columns: 1fr 50px 64px;
         gap: 6px;
       }
       .lc-manual-product-row .lc-remove-product {
-        min-height: 42px !important;
+        min-height: 36px !important;
         padding: 7px 6px !important;
         color: #1f2b24 !important;
         background: #f9f8f2 !important;
@@ -905,20 +782,17 @@
         text-align: left;
         font-weight: 400 !important;
       }
-      .lc-result-block {
-        grid-template-columns: 1fr 1fr;
-      }
       #lc-freight-result,
       #lc-freight-method {
         grid-column: 1 / -1;
       }
       #lc-freight-result {
         font-weight: 800;
-        font-size: 18px;
+        font-size: 16px;
       }
       #lc-freight-status {
         min-height: 20px;
-        margin: 10px 14px 16px;
+        margin: 8px 10px 12px;
         color: #405f54;
       }
       #lc-product-details {
@@ -930,9 +804,9 @@
       }
       .lc-product-row {
         display: grid;
-        grid-template-columns: 72px 1fr;
-        gap: 12px;
-        padding: 8px 0;
+        grid-template-columns: 60px 1fr;
+        gap: 10px;
+        padding: 7px 0;
         border-bottom: 1px solid #ebe7dc;
       }
       .lc-product-row:first-child {
@@ -940,21 +814,29 @@
       }
       .lc-product-row img,
       .lc-product-image-placeholder {
-        width: 72px;
-        height: 72px;
+        width: 60px;
+        height: 60px;
         object-fit: contain;
         background: #fff;
-        border-radius: 10px;
+        border-radius: 8px;
       }
       .lc-product-row strong {
         display: block;
         margin-bottom: 4px;
-        font-size: 14px;
+        font-size: 13px;
         line-height: 1.25;
       }
       .lc-product-row div div {
         color: #637061;
-        font-size: 13px;
+        font-size: 12px;
+      }
+      .lc-product-website {
+        overflow-wrap: anywhere;
+      }
+      .lc-product-website a {
+        color: #2d5c4e;
+        font-weight: 700;
+        text-decoration: underline;
       }
       .lc-product-totals {
         padding-top: 10px;
@@ -977,8 +859,6 @@
     panel.querySelector('#lc-use-cin7').addEventListener('click', () => useCin7Details({ force: true }));
     panel.querySelector('#lc-manual-get').addEventListener('click', getManualFreight);
     panel.querySelector('#lc-add-product').addEventListener('click', () => addManualProductRow());
-    panel.querySelector('#lc-fill-price').addEventListener('click', () => fillCin7PriceField(true));
-    panel.querySelector('#lc-copy-price').addEventListener('click', () => copyPrice(true));
     panel.querySelector('#lc-address-suggestions').addEventListener('click', event => {
       const suggestion = event.target.closest('.lc-suggestion');
       if (!suggestion) return;

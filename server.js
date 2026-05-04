@@ -330,14 +330,14 @@ async function getProductDetails(page, { productUrl, sku }, { includeMetrics = f
   await page.goto(resolvedUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
   if (includeMetrics) {
     await page.waitForFunction(() => /Specifications|Package Dimensions|Packing size|Gross Weight/i.test(document.body?.innerText || ''), {
-      timeout: 5000
+      timeout: 1500
     }).catch(() => {});
     await page.waitForFunction(() => {
       return Array.from(document.querySelectorAll('table')).some(table => {
         const text = table.innerText || '';
         return /package\s*dimensions/i.test(text) && /gross\s*weight/i.test(text);
       });
-    }, { timeout: 5000 }).catch(() => {});
+    }, { timeout: 1000 }).catch(() => {});
   }
 
   const details = await page.evaluate(async ({ requestedSku, includeMetrics }) => {
@@ -831,9 +831,22 @@ function parseGrossWeightKg(descriptionHtml) {
     }
 
     if (!inWeightSection) continue;
+    if (/net\s*weight/i.test(line) && !/gross\s*weight/i.test(line)) continue;
 
-    for (const match of line.matchAll(weightPattern)) {
-      const label = getLineLabelBeforeMatch(line, match.index);
+    const labelledGrossWeights = Array.from(line.matchAll(/gross\s*weight\s*:?\s*(\d+(?:\.\d+)?)\s*kgs?\b/gi));
+    if (labelledGrossWeights.length) {
+      for (const match of labelledGrossWeights) {
+        const label = getLineLabelBeforeMatch(line, match.index);
+        weights.push(Number(match[1]) * getPackageQuantity(packageQuantities, label));
+      }
+      continue;
+    }
+
+    const grossIndex = line.search(/gross\s*weight/i);
+    const weightSource = grossIndex >= 0 ? line.slice(grossIndex) : line;
+
+    for (const match of weightSource.matchAll(weightPattern)) {
+      const label = getLineLabelBeforeMatch(line, grossIndex >= 0 ? grossIndex + match.index : match.index);
       weights.push(Number(match[1]) * getPackageQuantity(packageQuantities, label));
     }
   }
@@ -1047,6 +1060,125 @@ function normaliseProductImage(value) {
   return value.replace(/^http:\/\//, 'https://');
 }
 
+function normaliseStorefrontUrl(value) {
+  if (!value) return '';
+  if (value.startsWith('//')) return `https:${value}`;
+  if (value.startsWith('/')) return `https://livingculture.co.nz${value}`;
+  return value.replace(/^http:\/\//, 'https://');
+}
+
+function getProductHandleFromUrl(productUrl) {
+  try {
+    return new URL(normaliseStorefrontUrl(productUrl)).pathname.match(/\/products\/([^/?#]+)/)?.[1] || '';
+  } catch (error) {
+    return '';
+  }
+}
+
+async function fetchProductJsonByHandle(handle) {
+  if (!handle) return null;
+  const response = await fetch(`https://livingculture.co.nz/products/${encodeURIComponent(handle)}.js`);
+  if (!response.ok) return null;
+  return response.json();
+}
+
+function buildProductFromStorefrontData(productData, resolvedUrl, requestedSku = '', includeMetrics = false) {
+  const requestedSkuLower = requestedSku ? requestedSku.toLowerCase() : '';
+  const variantIdFromUrl = getVariantIdFromUrl(resolvedUrl);
+  const variant =
+    productData?.variants?.find(item => requestedSkuLower && String(item.sku || '').toLowerCase() === requestedSkuLower) ||
+    productData?.variants?.find(item => variantIdFromUrl && String(item.id) === variantIdFromUrl) ||
+    productData?.variants?.[0];
+
+  if (!variant) {
+    throw new Error('Could not find a variant ID for this product');
+  }
+
+  if (requestedSku && String(variant.sku || '').toLowerCase() !== requestedSkuLower) {
+    throw new Error(`Search result did not contain exact SKU ${requestedSku}`);
+  }
+
+  const image = normaliseProductImage(variant.featured_image?.src || productData.featured_image || productData.images?.[0] || '');
+  const details = {
+    title: productData.title,
+    image,
+    variantId: variant.id ? String(variant.id) : '',
+    sku: variant.sku || '',
+    variantTitle: variant.public_title || variant.title || '',
+    available: Boolean(variant.available),
+    saleState: variant.available ? 'Add to cart' : 'Unavailable',
+    weightGrams: Number(variant.weight || 0),
+    descriptionHtml: includeMetrics ? productData.description || '' : '',
+    pageText: '',
+    specTableRows: includeMetrics ? parseTableRows(productData.description || '') : [],
+    specTableText: ''
+  };
+
+  return buildProductFromDetails(details, resolvedUrl, includeMetrics);
+}
+
+async function getFastProductUrlBySKU(sku) {
+  const cacheKey = String(sku || '').trim().toLowerCase();
+  if (skuUrlCache.has(cacheKey)) {
+    return skuUrlCache.get(cacheKey);
+  }
+
+  const suggestUrl = new URL('https://livingculture.co.nz/search/suggest.json');
+  suggestUrl.searchParams.set('q', sku);
+  suggestUrl.searchParams.set('resources[type]', 'product');
+  suggestUrl.searchParams.set('resources[limit]', '8');
+
+  const response = await fetch(suggestUrl);
+  if (!response.ok) {
+    throw new Error(`Living Culture search failed: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const products = data?.resources?.results?.products || [];
+
+  for (const product of products) {
+    const handle = product.handle || String(product.url || '').match(/\/products\/([^?]+)/)?.[1];
+    const productData = await fetchProductJsonByHandle(handle);
+    const variant = productData?.variants?.find(item => String(item.sku || '').toLowerCase() === cacheKey);
+    if (!variant) continue;
+
+    const url = `https://livingculture.co.nz/products/${handle}${variant.id ? `?variant=${variant.id}` : ''}`;
+    skuUrlCache.set(cacheKey, url);
+    return url;
+  }
+
+  throw new Error(`No product page found for SKU ${sku}`);
+}
+
+async function getProductDetailsFast({ productUrl, sku }, { includeMetrics = false } = {}) {
+  const cacheKey = makeProductKey({ productUrl, sku });
+  const cache = includeMetrics ? productCache : productSummaryCache;
+  if (cache.has(cacheKey)) {
+    return cache.get(cacheKey);
+  }
+
+  const resolvedUrl = productUrl ? normaliseStorefrontUrl(productUrl) : await getFastProductUrlBySKU(sku);
+  const handle = getProductHandleFromUrl(resolvedUrl);
+  const productData = await fetchProductJsonByHandle(handle);
+  if (!productData) {
+    throw new Error(`No product data found for ${sku || productUrl}`);
+  }
+
+  const product = buildProductFromStorefrontData(productData, resolvedUrl, sku, includeMetrics);
+  cache.set(cacheKey, product);
+  if (includeMetrics) {
+    productSummaryCache.set(cacheKey, {
+      ...product,
+      weightKg: null,
+      cartons: [],
+      unitsPerCarton: 1,
+      cbm: 0,
+      metricsLoaded: false
+    });
+  }
+  return product;
+}
+
 async function searchProducts(query) {
   const suggestUrl = new URL('https://livingculture.co.nz/search/suggest.json');
   suggestUrl.searchParams.set('q', query);
@@ -1124,10 +1256,26 @@ async function getProductMetrics(itemInput) {
     throw new Error('At least one SKU is required');
   }
 
+  const fastProducts = await Promise.all(items.map(async item => {
+    const product = { ...(await getProductDetailsFast(item, { includeMetrics: true })) };
+    product.quantity = item.quantity;
+    return product;
+  }).map(promise => promise.catch(error => ({ error }))));
+
+  if (fastProducts.every(product => !product.error)) {
+    return fastProducts;
+  }
+
   const session = await createBrowserSession();
   try {
     const products = [];
-    for (const item of items) {
+    for (const [index, item] of items.entries()) {
+      if (!fastProducts[index]?.error) {
+        products.push(fastProducts[index]);
+        continue;
+      }
+
+      console.error(`Fast product metrics failed for ${item.sku || item.productUrl}:`, fastProducts[index].error.message);
       const product = { ...(await getProductDetails(session.page, item, { includeMetrics: true })) };
       product.quantity = item.quantity;
       products.push(product);

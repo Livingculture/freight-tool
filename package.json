@@ -5,6 +5,7 @@
   "author": "Living Culture",
   "main": "main.js",
   "scripts": {
+    "update": "git pull --ff-only origin main",
     "start": "electron .",
     "dev": "electron .",
     "start:web": "node server.js",

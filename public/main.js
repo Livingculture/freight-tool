@@ -26,6 +26,7 @@ const MIN_PRODUCT_SEARCH_LENGTH = 2;
 const AUTO_SUGGEST_DELAY_MS = 600;
 const PREPARE_DELAY_MS = 700;
 const PRODUCT_SEARCH_DELAY_MS = 300;
+const ADDRESS_SEARCH_TIMEOUT_MS = 45000;
 
 function getSkus() {
   return getItems().map(item => item.sku);
@@ -125,6 +126,7 @@ function renderProductPreview(products, itemShipping = []) {
 
   const totalWeightKg = productList.reduce((total, product) => total + ((Number(product.weightKg) || 0) * getLineQuantity(product)), 0);
   const totalCbm = productList.reduce((total, product) => total + getLineCbm(product), 0);
+  const totalCartons = productList.reduce((total, product) => total + getLineCartonCount(product), 0);
   const productRows = productList.map(product => {
     const quantity = getLineQuantity(product);
     const image = product.image
@@ -132,24 +134,31 @@ function renderProductPreview(products, itemShipping = []) {
       : '<div></div>';
     const lineWeight = (Number(product.weightKg) || 0) * quantity;
     const lineCbm = getLineCbm(product, quantity);
-    const weight = lineWeight ? `${lineWeight.toFixed(2)} kg` : 'Weight not found';
-    const cbm = lineCbm ? `${lineCbm.toFixed(3)} CBM` : 'CBM not found';
     const cartonCount = getLineCartonCount(product, quantity);
-    const cartons = Array.isArray(product.cartons) && product.cartons.length
-      ? ` (${cartonCount} carton${cartonCount === 1 ? '' : 's'})`
-      : '';
     const shippingLocation = getShippingLocation(shippingBySku.get(product.sku)?.method);
     const stock = product.available
       ? `Stock: ${shippingLocation || 'Available'}`
       : 'Stock: Unavailable';
+    const saleState = product.saleState || (product.available ? 'Add to cart' : 'Unavailable');
+    const detailsLine = product.metricsLoaded
+      ? lineWeight && lineCbm && cartonCount ? '' : 'Some product metrics were not found'
+      : 'Weight, CBM and carton details loading...';
+    const detailsHtml = detailsLine ? `<div class="product-preview__meta">${escapeHtml(detailsLine)}</div>` : '';
+    const quantityLine = quantity > 1 ? `<div class="product-preview__meta">Qty ${quantity}</div>` : '';
+    const websiteUrl = String(product.url || product.productUrl || '').trim();
+    const websiteLine = websiteUrl
+      ? `<div class="product-preview__meta product-preview__website"><a href="${escapeHtml(websiteUrl)}" target="_blank" rel="noopener noreferrer">To website</a></div>`
+      : '';
     return `
     <div class="product-preview__inner">
       ${image}
       <div>
         <strong>${escapeHtml(product.title || 'Living Culture product')}</strong>
-        <div class="product-preview__meta">${escapeHtml(formatSkuWithQty(product.sku || '', quantity))}</div>
-        <div class="product-preview__meta">${weight} · ${cbm}${cartons}</div>
+        ${quantityLine}
+        ${detailsHtml}
+        <div class="product-preview__meta">${escapeHtml(`Status: ${saleState}`)}</div>
         <div class="product-preview__meta">${escapeHtml(stock)}</div>
+        ${websiteLine}
       </div>
     </div>
   `;
@@ -158,7 +167,7 @@ function renderProductPreview(products, itemShipping = []) {
   productPreviewEl.innerHTML = `
     ${productRows}
     <div class="product-preview__totals">
-      Total weight: ${totalWeightKg ? totalWeightKg.toFixed(2) : '0.00'} kg · Estimated CBM: ${totalCbm ? totalCbm.toFixed(3) : '0.000'}
+      Total weight: ${totalWeightKg ? totalWeightKg.toFixed(2) : '0.00'} kg · Est CBM: ${totalCbm ? totalCbm.toFixed(3) : '0.000'} · Ctns: ${totalCartons || 0}
     </div>
   `;
 }
@@ -480,6 +489,10 @@ async function prepareCheckout(items, skuKey) {
 
 function scheduleSuggestionLookup(delay = AUTO_SUGGEST_DELAY_MS) {
   clearTimeout(suggestionTimer);
+  if (activeSuggestionRequest) {
+    activeSuggestionRequest.abort();
+    activeSuggestionRequest = null;
+  }
   clearSuggestions();
   setResult('');
 
@@ -543,6 +556,7 @@ async function fetchSuggestions() {
   showSuggestionsList();
   suggestionsContainer.innerHTML = '<div class="suggestion-empty">Loading address suggestions...</div>';
 
+  const timeout = setTimeout(() => activeSuggestionRequest?.abort(), ADDRESS_SEARCH_TIMEOUT_MS);
   try {
     const response = await fetch('/api/suggestions', {
       method: 'POST',
@@ -557,9 +571,15 @@ async function fetchSuggestions() {
     renderProductPreview(data.products || data.product || null);
     setStatus('Suggestions loaded. Click one to select it, then get the freight price.');
   } catch (error) {
-    if (error.name === 'AbortError') return;
+    if (error.name === 'AbortError') {
+      if (addressInput.value.trim() !== address) return;
+      showSuggestionMessage('Address search timed out or was replaced. Keep typing or try again.');
+      setStatus('Address search stopped.');
+      return;
+    }
     setStatus(`Error: ${error.message}`);
   } finally {
+    clearTimeout(timeout);
     activeSuggestionRequest = null;
     if (addressInput.value.trim() && addressInput.value.trim() !== activeSuggestionAddress) {
       clearTimeout(suggestionTimer);

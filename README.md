@@ -16,22 +16,43 @@ The app will show the product details, estimated weight and CBM, warehouse infor
 
 ## Cin7 Helper
 
-The Tampermonkey helper is in:
+The Tampermonkey helpers are installed from GitHub:
 
 ```text
-userscripts/cin7-lc-freight.user.js
+https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-lc-freight.user.js
+https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-quote-memo-info.user.js
 ```
 
-Install it in Tampermonkey, then keep the Freight Costing app running locally. In Cin7, click `LC Freight` to open the side panel.
+Install each link once in Tampermonkey on every computer. After that, Tampermonkey checks GitHub for script updates automatically because the scripts include `@updateURL` and `@downloadURL`.
+
+Keep the Freight Costing app running locally. In Cin7, click `LC Freight` to open the freight panel, or `Quote Memo Info` to open the quote memo panel.
 
 If the `LC Freight` button does not appear, check that Tampermonkey shows the script as enabled on the current Cin7 page. The script matches Cin7, Cin7 Core, and Dear Systems URLs.
 
 The panel can:
 
 - read the SKU and shipping address from Cin7
-- run a manual SKU/address lookup
-- fill the Cin7 shipping price field
-- copy the freight price as a backup
+- get freight pricing from the local Freight Costing app
+- show product details, stock, website link, weight, CBM, and carton count
+
+## GitHub Updates
+
+GitHub is the source for updates:
+
+- Tampermonkey updates come from the raw GitHub script URLs above.
+- The standalone app source can be updated from GitHub with:
+
+```bash
+npm run update
+```
+
+Then restart the app:
+
+```bash
+npm start
+```
+
+For installed desktop app builds, rebuild a new app after changes and install the new build on each computer.
 
 ## Development Setup
 
