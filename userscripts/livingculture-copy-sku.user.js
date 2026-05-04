@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Copy SKU
 // @namespace    livingculture
-// @version      1.0
+// @version      1.1
 // @description  Adds a button to Living Culture product pages to copy the current product SKU.
 // @match        https://livingculture.co.nz/products/*
 // @match        https://www.livingculture.co.nz/products/*
@@ -30,6 +30,13 @@
     if (!status) return;
     status.textContent = message || '';
     status.style.color = error ? '#9a2d20' : '#2d5c4e';
+  }
+
+  function isVisible(element) {
+    if (!element) return false;
+    const rect = element.getBoundingClientRect();
+    const style = window.getComputedStyle(element);
+    return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
   }
 
   function getProductJsonUrl() {
@@ -69,6 +76,53 @@
 
     state.sku = clean(selectedVariant?.sku || getSkuFromPageText()).toUpperCase();
     return state.sku;
+  }
+
+  function findSkuElement(sku) {
+    const wantedSku = clean(sku).toUpperCase();
+    if (!wantedSku) return null;
+
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const text = clean(node.nodeValue).toUpperCase();
+        if (!text.includes(wantedSku) && !/^SKU\b/i.test(text)) return NodeFilter.FILTER_REJECT;
+        const parent = node.parentElement;
+        if (!parent || parent.closest('#lc-copy-sku-panel, script, style, noscript')) return NodeFilter.FILTER_REJECT;
+        return isVisible(parent) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+      }
+    });
+
+    const matches = [];
+    let node = walker.nextNode();
+    while (node) {
+      const parent = node.parentElement;
+      const text = clean(parent?.textContent || '');
+      if (parent && text.length < 180 && (text.toUpperCase().includes(wantedSku) || /^SKU\b/i.test(text))) {
+        matches.push(parent);
+      }
+      node = walker.nextNode();
+    }
+
+    return matches
+      .sort((a, b) => clean(a.textContent).length - clean(b.textContent).length)[0] || null;
+  }
+
+  function positionPanel() {
+    const panel = document.getElementById('lc-copy-sku-panel');
+    if (!panel) return;
+
+    const sku = resolveCurrentSku();
+    const target = findSkuElement(sku);
+    panel.classList.toggle('is-floating', !target);
+    panel.classList.toggle('is-inline', Boolean(target));
+
+    if (target && panel.parentElement !== target.parentElement) {
+      target.insertAdjacentElement('afterend', panel);
+    } else if (target && target.nextElementSibling !== panel) {
+      target.insertAdjacentElement('afterend', panel);
+    } else if (!target && panel.parentElement !== document.body) {
+      document.body.appendChild(panel);
+    }
   }
 
   async function loadProduct() {
@@ -124,27 +178,40 @@
     const style = document.createElement('style');
     style.textContent = `
       #lc-copy-sku-panel {
-        position: fixed;
-        right: 22px;
-        bottom: 22px;
         z-index: 2147483647;
-        display: grid;
+        display: inline-grid;
         gap: 7px;
-        justify-items: end;
+        justify-items: start;
         font: 13px/1.35 Arial, sans-serif;
       }
 
+      #lc-copy-sku-panel.is-inline {
+        margin-left: 10px;
+        vertical-align: middle;
+      }
+
+      #lc-copy-sku-panel.is-floating {
+        position: fixed;
+        right: 22px;
+        bottom: 22px;
+        justify-items: end;
+      }
+
       #lc-copy-sku-button {
-        min-width: 116px;
-        min-height: 38px;
-        padding: 9px 14px;
+        min-width: 86px;
+        min-height: 32px;
+        padding: 7px 12px;
         color: #fff;
-        background: #05cabe;
+        background: #d93025;
         border: 0;
-        border-radius: 10px;
+        border-radius: 8px;
         box-shadow: 0 8px 22px rgba(0,0,0,.18);
-        font: 800 13px Arial, sans-serif;
+        font: 800 12px Arial, sans-serif;
         cursor: pointer;
+      }
+
+      #lc-copy-sku-button:hover {
+        background: #b3261e;
       }
 
       #lc-copy-sku-status {
@@ -170,10 +237,12 @@
     const button = panel.querySelector('#lc-copy-sku-button');
     button.addEventListener('click', () => copySku(button));
 
-    loadProduct().catch(error => {
-      console.error(error);
-      resolveCurrentSku();
-    });
+    loadProduct()
+      .catch(error => {
+        console.error(error);
+        resolveCurrentSku();
+      })
+      .finally(positionPanel);
   }
 
   function boot() {
@@ -185,11 +254,12 @@
   window.addEventListener('load', boot);
   document.addEventListener('DOMContentLoaded', boot);
   window.addEventListener('popstate', () => {
-    setTimeout(resolveCurrentSku, 100);
+    setTimeout(positionPanel, 100);
   });
   document.addEventListener('change', event => {
     if (event.target?.matches?.('[name="id"], select, input[type="radio"]')) {
-      setTimeout(resolveCurrentSku, 100);
+      setTimeout(positionPanel, 100);
     }
   });
+  setInterval(positionPanel, 1500);
 })();
