@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Copy SKU
 // @namespace    livingculture
-// @version      1.2
+// @version      1.3
 // @description  Adds a button to Living Culture product pages to copy the current product SKU.
 // @match        https://livingculture.co.nz/products/*
 // @match        https://www.livingculture.co.nz/products/*
@@ -198,12 +198,17 @@
       }
 
       #lc-copy-sku-button {
+        appearance: none !important;
+        opacity: 1 !important;
+        filter: none !important;
+        mix-blend-mode: normal !important;
         min-width: 86px;
         min-height: 32px;
         padding: 7px 12px;
-        color: #fff;
-        background: #ff3131;
-        border: 0;
+        color: #fff !important;
+        background: #ff3131 !important;
+        background-color: #ff3131 !important;
+        border: 1px solid #ff3131 !important;
         border-radius: 8px;
         box-shadow: 0 8px 22px rgba(0,0,0,.18);
         font: 800 12px Arial, sans-serif;
@@ -211,7 +216,8 @@
       }
 
       #lc-copy-sku-button:hover {
-        background: #b3261e;
+        background: #ff3131 !important;
+        background-color: #ff3131 !important;
       }
 
       #lc-copy-sku-status {
