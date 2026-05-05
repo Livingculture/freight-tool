@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Living Culture Copy SKU
 // @namespace    livingculture
-// @version      1.5
+// @version      1.6
 // @description  Adds a button to Living Culture product pages to copy the current product SKU.
-// @match        https://livingculture.co.nz/products/*
-// @match        https://www.livingculture.co.nz/products/*
+// @match        https://livingculture.co.nz/*
+// @match        https://www.livingculture.co.nz/*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/livingculture-copy-sku.user.js
 // @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/livingculture-copy-sku.user.js
 // @supportURL   https://github.com/Livingculture/freight-tool
@@ -25,11 +25,13 @@
     return String(value || '').replace(/\s+/g, ' ').trim();
   }
 
-  function setStatus(message, error = false) {
-    const status = document.getElementById('lc-copy-sku-panel')?.shadowRoot?.getElementById('lc-copy-sku-status');
-    if (!status) return;
-    status.textContent = message || '';
-    status.style.color = error ? '#9a2d20' : '#2d5c4e';
+  function flashButtonText(button, message, duration = 1200) {
+    if (!button) return;
+    const oldText = button.textContent;
+    button.textContent = message;
+    setTimeout(() => {
+      button.textContent = oldText;
+    }, duration);
   }
 
   function isVisible(element) {
@@ -40,6 +42,7 @@
   }
 
   function getProductJsonUrl() {
+    if (!window.location.pathname.includes('/products/')) return '';
     return `${window.location.origin}${window.location.pathname.replace(/\/$/, '')}.js`;
   }
 
@@ -112,7 +115,13 @@
     if (!panel) return;
 
     const sku = resolveCurrentSku();
+    if (!sku) {
+      panel.style.display = 'none';
+      return;
+    }
+
     const target = findSkuElement(sku);
+    panel.style.display = '';
     panel.classList.toggle('is-floating', !target);
     panel.classList.toggle('is-inline', Boolean(target));
 
@@ -128,7 +137,10 @@
   async function loadProduct() {
     if (state.product) return state.product;
 
-    const response = await fetch(getProductJsonUrl(), { credentials: 'same-origin' });
+    const productJsonUrl = getProductJsonUrl();
+    if (!productJsonUrl) throw new Error('Not a product JSON page.');
+
+    const response = await fetch(productJsonUrl, { credentials: 'same-origin' });
     if (!response.ok) throw new Error('Could not load product details.');
 
     state.product = await response.json();
@@ -142,26 +154,21 @@
       const sku = resolveCurrentSku();
 
       if (!sku) {
-        setStatus('SKU not found.', true);
+        flashButtonText(button, 'SKU not found');
         return;
       }
 
       await navigator.clipboard.writeText(sku);
-      const oldText = button.textContent;
-      button.textContent = 'SKU copied';
-      setStatus(`Copied ${sku}`);
-      setTimeout(() => {
-        button.textContent = oldText;
-      }, 1200);
+      flashButtonText(button, 'SKU copied');
     } catch (error) {
       console.error(error);
       const fallbackSku = getSkuFromPageText();
       if (fallbackSku) {
         await navigator.clipboard.writeText(fallbackSku);
-        setStatus(`Copied ${fallbackSku}`);
+        flashButtonText(button, 'SKU copied');
         return;
       }
-      setStatus(error.message || 'Could not copy SKU.', true);
+      flashButtonText(button, 'SKU not found');
     }
   }
 
@@ -170,6 +177,7 @@
 
     const panel = document.createElement('div');
     panel.id = 'lc-copy-sku-panel';
+    panel.style.display = 'none';
     panel.attachShadow({ mode: 'open' });
     panel.shadowRoot.innerHTML = `
       <style>
@@ -201,7 +209,7 @@
           opacity: 1;
           filter: none;
           mix-blend-mode: normal;
-          min-width: 86px;
+          min-width: 104px;
           min-height: 32px;
           padding: 7px 12px;
           color: #fff;
@@ -229,27 +237,8 @@
           border-color: #990000;
         }
 
-        #lc-copy-sku-status {
-          all: initial;
-          box-sizing: border-box;
-          min-height: 18px;
-          max-width: 180px;
-          padding: 5px 8px;
-          color: #2d5c4e;
-          background: rgba(255,255,255,.96);
-          border: 1px solid #d9d6cc;
-          border-radius: 8px;
-          text-align: right;
-          box-shadow: 0 8px 18px rgba(0,0,0,.1);
-          font: 13px/1.35 Arial, sans-serif;
-        }
-
-        #lc-copy-sku-status:empty {
-          display: none;
-        }
       </style>
       <button type="button" id="lc-copy-sku-button">Copy SKU</button>
-      <div id="lc-copy-sku-status"></div>
     `;
     document.body.appendChild(panel);
 
