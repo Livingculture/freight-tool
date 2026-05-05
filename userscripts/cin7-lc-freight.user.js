@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      4.6
-// @description  Opens a Living Culture freight panel inside Cin7 with auto and manual lookup modes.
+// @version      5.2
+// @description  Living Culture freight panel with editable quantities, remove/ignore options, and total weight/CBM/cartons.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
 // @match        *://*.cin7.co/*
@@ -29,7 +29,8 @@
     autoTimer: null,
     autoRunning: false,
     lastAutoKey: '',
-    queuedAutoKey: ''
+    queuedAutoKey: '',
+    excludedSkus: new Set()
   };
 
   function clean(value) {
@@ -56,6 +57,11 @@
     return Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
   }
 
+  function normaliseQuantityAllowZero(value) {
+    const quantity = Number.parseInt(value, 10);
+    return Number.isFinite(quantity) && quantity >= 0 ? quantity : 0;
+  }
+
   function normaliseFreightItems({ sku, items, quantity = 1 }) {
     const sourceItems = Array.isArray(items) && items.length ? items : [{ sku, quantity }];
     return sourceItems
@@ -64,7 +70,8 @@
         productUrl: clean(item?.productUrl),
         quantity: normaliseQuantity(item?.quantity)
       }))
-      .filter(item => item.sku || item.productUrl);
+      .filter(item => item.sku || item.productUrl)
+      .filter(item => item.quantity > 0);
   }
 
   function findTextNodeElement(pattern) {
@@ -82,7 +89,7 @@
     if (!element) return false;
     const rect = element.getBoundingClientRect();
     const style = window.getComputedStyle(element);
-    return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+    return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
   }
 
   function isInjectedPanelElement(element) {
@@ -168,52 +175,56 @@
     return '';
   }
 
-  function getSkuFromCin7() {
-    return getItemsFromCin7()[0]?.sku || '';
-  }
-
-  function getQuantityFromRow(row) {
-    const inputs = Array.from(row.querySelectorAll('input'))
-      .map(input => clean(input.value))
-      .filter(Boolean);
-    const inputQuantity = inputs.find(value => /^\d+$/.test(value));
-    if (inputQuantity) return Number(inputQuantity);
-
-    const cells = Array.from(row.querySelectorAll('td, [role="cell"], div, span'))
-      .map(cell => clean(cell.textContent))
-      .filter(Boolean);
-    const numericCells = cells
-      .map(value => value.match(/^(\d+)$/)?.[1])
-      .filter(Boolean)
-      .map(Number);
-    return numericCells.find(value => value > 0 && value < 1000) || 1;
-  }
-
   function getItemsFromCin7() {
-    const rows = Array.from(document.querySelectorAll('tr, [role="row"], tbody > *, [class*="row" i]'));
-    const items = [];
-    const seen = new Set();
+    const rawItems = [];
 
-    for (const row of rows) {
-      const link = Array.from(row.querySelectorAll('a'))
-        .find(anchor => /^[A-Z]{1,6}\d{3,}(?:-\d+)?\s*:/i.test(clean(anchor.textContent)));
-      const sku = clean(link?.textContent).match(/^([A-Z]{1,6}\d{3,}(?:-\d+)?)\s*:/i)?.[1]?.toUpperCase();
-      if (!sku || seen.has(sku)) continue;
-      seen.add(sku);
-      items.push({ sku, quantity: getQuantityFromRow(row) });
+    const skuLinks = Array.from(document.querySelectorAll('a'))
+      .filter(isVisible)
+      .filter(anchor => !isInjectedPanelElement(anchor))
+      .map(anchor => {
+        const text = clean(anchor.textContent || '');
+        const match = text.match(/^([A-Z]{1,6}\d{3,}(?:-\d+)?)\s*:/i);
+
+        if (!match) return null;
+
+        return {
+          sku: match[1].toUpperCase(),
+          quantity: 1,
+          top: anchor.getBoundingClientRect().top
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.top - b.top);
+
+    for (const item of skuLinks) {
+      rawItems.push({
+        sku: item.sku,
+        quantity: 1
+      });
     }
 
-    if (items.length) return items;
+    if (!rawItems.length) {
+      const matches = Array.from((document.body.innerText || '').matchAll(/\b([A-Z]{1,6}\d{3,}(?:-\d+)?)\s*:/gi));
 
-    const matches = Array.from((document.body.innerText || '').matchAll(/\b([A-Z]{1,6}\d{3,}(?:-\d+)?)\s*:/gi));
-    for (const match of matches) {
-      const sku = match[1].toUpperCase();
-      if (seen.has(sku)) continue;
-      seen.add(sku);
-      items.push({ sku, quantity: 1 });
+      for (const match of matches) {
+        rawItems.push({
+          sku: match[1].toUpperCase(),
+          quantity: 1
+        });
+      }
     }
 
-    return items;
+    const grouped = new Map();
+
+    for (const item of rawItems) {
+      const current = grouped.get(item.sku) || 0;
+      grouped.set(item.sku, current + normaliseQuantity(item.quantity));
+    }
+
+    return Array.from(grouped.entries()).map(([sku, quantity]) => ({
+      sku,
+      quantity
+    }));
   }
 
   function getAddressFromCin7() {
@@ -255,6 +266,12 @@
     return unitsPerCarton > 1 ? cbm * Math.ceil(quantity / unitsPerCarton) : cbm * quantity;
   }
 
+  function getLineWeight(product, quantity = normaliseQuantity(product?.quantity)) {
+    const weightKg = Number(product.weightKg) || 0;
+    const unitsPerCarton = normaliseQuantity(product?.unitsPerCarton);
+    return unitsPerCarton > 1 ? weightKg * Math.ceil(quantity / unitsPerCarton) : weightKg * quantity;
+  }
+
   function getShippingLocation(method) {
     const match = String(method || '').match(/Ship from\s+([^\n$]+)/i);
     if (!match) return '';
@@ -276,16 +293,24 @@
       return;
     }
 
-    const totalWeightKg = products.reduce((total, product) => total + ((Number(product.weightKg) || 0) * normaliseQuantity(product.quantity)), 0);
-    const totalCbm = products.reduce((total, product) => total + getLineCbm(product), 0);
-    const totalCartons = products.reduce((total, product) => total + getLineCartonCount(product), 0);
+    const activeProducts = products.filter(product => normaliseQuantityAllowZero(product.quantity) > 0);
+
+    if (!activeProducts.length) {
+      block.classList.add('is-visible');
+      block.innerHTML = '<div class="lc-product-loading">No freight products selected.</div>';
+      return;
+    }
+
+    const totalWeightKg = activeProducts.reduce((total, product) => total + getLineWeight(product), 0);
+    const totalCbm = activeProducts.reduce((total, product) => total + getLineCbm(product), 0);
+    const totalCartons = activeProducts.reduce((total, product) => total + getLineCartonCount(product), 0);
     const shippingLocation = getShippingLocation(method);
 
     block.classList.add('is-visible');
     block.innerHTML = `
-      ${products.map(product => {
+      ${activeProducts.map(product => {
         const quantity = normaliseQuantity(product.quantity);
-        const lineWeight = (Number(product.weightKg) || 0) * quantity;
+        const lineWeight = getLineWeight(product, quantity);
         const lineCbm = getLineCbm(product, quantity);
         const cartonCount = getLineCartonCount(product, quantity);
         const saleState = product.saleState || (product.available ? 'Add to cart' : 'Unavailable');
@@ -294,7 +319,7 @@
           ? lineWeight && lineCbm && cartonCount ? '' : 'Some product metrics were not found'
           : 'Weight, CBM and carton details loading...';
         const detailsHtml = detailsLine ? `<div>${escapeHtml(detailsLine)}</div>` : '';
-        const quantityLine = quantity > 1 ? `<div>Qty ${quantity}</div>` : '';
+        const quantityLine = `<div>Qty ${quantity} · ${lineWeight.toFixed(2)} kg · ${lineCbm.toFixed(3)} CBM · ${cartonCount} ctns</div>`;
         const image = product.image ? `<img src="${escapeHtml(product.image)}" alt="">` : '<div class="lc-product-image-placeholder"></div>';
         const websiteUrl = clean(product.url || product.productUrl);
         const websiteLine = websiteUrl
@@ -305,7 +330,7 @@
           <div class="lc-product-row">
             ${image}
             <div>
-              <strong>${escapeHtml(product.title || 'Living Culture product')}</strong>
+              <strong>${escapeHtml(product.title || product.sku || 'Living Culture product')}</strong>
               ${quantityLine}
               ${detailsHtml}
               <div>${escapeHtml(`Status: ${saleState}`)}</div>
@@ -335,7 +360,7 @@
         ...loaded,
         sku: loaded.sku || item.sku,
         productUrl: loaded.productUrl || item.productUrl,
-        quantity: normaliseQuantity(item.quantity)
+        quantity: normaliseQuantityAllowZero(item.quantity)
       };
     });
   }
@@ -348,6 +373,8 @@
         productUrl: item.productUrl || item.url || ''
       }));
     renderProductDetails(itemsWithUrls, method);
+
+    if (!requestedItems.length) return;
 
     try {
       const response = await fetch(`${API_BASE}/api/product-metrics`, {
@@ -372,6 +399,9 @@
 
   async function requestFreight({ sku, items, address, quantity = 1 }) {
     const freightItems = normaliseFreightItems({ sku, items, quantity });
+    if (!freightItems.length) {
+      throw new Error('No freight products selected');
+    }
     const firstItem = freightItems[0] || {};
     const firstIsUrl = /^https?:\/\/.+\/products\//i.test(firstItem.sku || firstItem.productUrl || '');
     const response = await fetch(`${API_BASE}/get-freight`, {
@@ -415,7 +445,8 @@
   }
 
   async function resolveAddressSuggestion(items, address) {
-    const firstItem = items[0] || {};
+    const freightItems = normaliseFreightItems({ items });
+    const firstItem = freightItems[0] || {};
     const isUrl = /^https?:\/\/.+\/products\//i.test(firstItem.sku || firstItem.productUrl || '');
     const query = clean(address);
     if (!firstItem.sku && !firstItem.productUrl) return query;
@@ -442,8 +473,31 @@
     return selected;
   }
 
+  function getEditedCin7Items() {
+    const rows = Array.from(document.querySelectorAll('#lc-auto-sku .lc-detected-item'));
+
+    if (!rows.length) {
+      return getItemsFromCin7()
+        .filter(item => !state.excludedSkus.has(item.sku))
+        .map(item => ({
+          sku: item.sku,
+          quantity: normaliseQuantityAllowZero(item.quantity)
+        }))
+        .filter(item => item.quantity > 0);
+    }
+
+    return rows
+      .map(row => ({
+        sku: clean(row.dataset.sku),
+        quantity: normaliseQuantityAllowZero(row.querySelector('.lc-detected-qty')?.value)
+      }))
+      .filter(item => item.sku)
+      .filter(item => !state.excludedSkus.has(item.sku))
+      .filter(item => item.quantity > 0);
+  }
+
   function getCin7AutoPayload() {
-    const items = getItemsFromCin7();
+    const items = getEditedCin7Items();
     const address = getAddressFromCin7();
     const searchAddress = getAddressSearchFromCin7();
     const key = JSON.stringify({
@@ -472,11 +526,46 @@
 
     setStatus('Reading Cin7 details...');
     state.selectedAddress = '';
-    document.getElementById('lc-auto-sku').textContent = items.length ? items.map(item => `${item.sku} x ${item.quantity}`).join(', ') : '-';
-    document.getElementById('lc-auto-address').textContent = address || '-';
+
+    const skuBox = document.getElementById('lc-auto-sku');
+    const addressBox = document.getElementById('lc-auto-address');
+
+    if (skuBox) {
+      const detectedItems = getItemsFromCin7()
+        .filter(item => !state.excludedSkus.has(item.sku));
+
+      const existingQty = new Map(
+        Array.from(document.querySelectorAll('#lc-auto-sku .lc-detected-item')).map(row => [
+          clean(row.dataset.sku),
+          normaliseQuantityAllowZero(row.querySelector('.lc-detected-qty')?.value)
+        ])
+      );
+
+      skuBox.innerHTML = detectedItems.length
+        ? detectedItems.map(item => {
+          const qty = existingQty.has(item.sku) ? existingQty.get(item.sku) : item.quantity;
+          return `
+            <div class="lc-detected-item" data-sku="${escapeHtml(item.sku)}">
+              <span>${escapeHtml(item.sku)}</span>
+              <label>
+                Qty
+                <input class="lc-detected-qty" type="number" min="0" step="1" value="${escapeHtml(qty)}">
+              </label>
+              <button type="button" class="lc-remove-detected" data-sku="${escapeHtml(item.sku)}">Remove</button>
+            </div>
+          `;
+        }).join('')
+        : '-';
+    }
+
+    if (addressBox) {
+      addressBox.textContent = address || '-';
+    }
 
     if (!items.length || !searchAddress) {
-      setStatus('Could not detect product lines or shipping address from Cin7.', true);
+      setResult('', '');
+      renderProductDetails([], '');
+      setStatus('No freight products selected, or could not detect shipping address.', true);
       return;
     }
 
@@ -518,16 +607,24 @@
     return Array.from(document.querySelectorAll('.lc-manual-product-row'))
       .map(row => ({
         sku: clean(row.querySelector('.lc-manual-sku')?.value),
-        quantity: Number(clean(row.querySelector('.lc-manual-qty')?.value)) || 1
+        quantity: normaliseQuantity(row.querySelector('.lc-manual-qty')?.value)
       }))
-      .filter(item => item.sku);
+      .filter(item => item.sku)
+      .filter(item => item.quantity > 0);
   }
 
   async function getAndApplyFreight({ sku, items, address, fill }) {
     try {
       setStatus('Getting freight...');
       const requestedItems = normaliseFreightItems({ sku, items });
-      const data = await requestFreight({ sku, items, address });
+      if (!requestedItems.length) {
+        setResult('', '');
+        renderProductDetails([], '');
+        setStatus('No freight products selected.');
+        return false;
+      }
+
+      const data = await requestFreight({ sku, items: requestedItems, address });
       setResult(data.price, data.method);
       setStatus('Freight loaded.');
       loadProductDetails(requestedItems, data.price, data.method, data.products || []);
@@ -572,9 +669,38 @@
   }
 
   function renderDetectedDetails() {
-    const items = getItemsFromCin7();
-    document.getElementById('lc-auto-sku').textContent = items.length ? items.map(item => `${item.sku} x ${item.quantity}`).join(', ') : '-';
-    document.getElementById('lc-auto-address').textContent = getAddressFromCin7() || '-';
+    const items = getItemsFromCin7().filter(item => !state.excludedSkus.has(item.sku));
+    const skuBox = document.getElementById('lc-auto-sku');
+    const addressBox = document.getElementById('lc-auto-address');
+
+    if (!skuBox || !addressBox) return;
+
+    const existingQty = new Map(
+      Array.from(document.querySelectorAll('#lc-auto-sku .lc-detected-item')).map(row => [
+        clean(row.dataset.sku),
+        normaliseQuantityAllowZero(row.querySelector('.lc-detected-qty')?.value)
+      ])
+    );
+
+    if (!items.length) {
+      skuBox.innerHTML = '-';
+    } else {
+      skuBox.innerHTML = items.map(item => {
+        const qty = existingQty.has(item.sku) ? existingQty.get(item.sku) : item.quantity;
+        return `
+          <div class="lc-detected-item" data-sku="${escapeHtml(item.sku)}">
+            <span>${escapeHtml(item.sku)}</span>
+            <label>
+              Qty
+              <input class="lc-detected-qty" type="number" min="0" step="1" value="${escapeHtml(qty)}">
+            </label>
+            <button type="button" class="lc-remove-detected" data-sku="${escapeHtml(item.sku)}">Remove</button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    addressBox.textContent = getAddressFromCin7() || '-';
   }
 
   function addManualProductRow(value = '', quantity = 1) {
@@ -589,12 +715,119 @@
     rows.appendChild(row);
   }
 
+  function findQuoteMemoButton() {
+    return document.getElementById('lc-quote-memo-inline-button') || document.getElementById('lc-quote-memo-toggle');
+  }
+
+  function placeFreightButtonNextToMemo() {
+    const freightButton = document.getElementById('lc-freight-toggle');
+    if (!freightButton) return;
+
+    const memoButton = findQuoteMemoButton();
+    if (!memoButton || !isVisible(memoButton)) {
+      freightButton.style.display = 'none';
+      return;
+    }
+
+    const memoRect = memoButton.getBoundingClientRect();
+    const parent = memoButton.parentElement || memoButton.closest?.('div, section, fieldset') || document.body;
+    const parentStyle = window.getComputedStyle(parent);
+    if (parentStyle.position === 'static') {
+      parent.style.position = 'relative';
+    }
+
+    if (freightButton.parentElement !== parent) {
+      parent.appendChild(freightButton);
+    }
+
+    const parentRect = parent.getBoundingClientRect();
+    freightButton.style.display = 'block';
+    freightButton.style.position = 'absolute';
+    freightButton.style.left = `${memoRect.right - parentRect.left + 8}px`;
+    freightButton.style.top = `${memoRect.top - parentRect.top}px`;
+    freightButton.style.height = `${Math.max(34, memoRect.height || 34)}px`;
+    freightButton.style.zIndex = '51';
+  }
+
+  function styleFreightInlineButton(button) {
+    button.style.boxSizing = 'border-box';
+    button.style.minWidth = '120px';
+    button.style.minHeight = '34px';
+    button.style.padding = '0 14px';
+    button.style.background = '#05cabe';
+    button.style.color = '#fff';
+    button.style.border = '1px solid #05cabe';
+    button.style.borderRadius = '4px';
+    button.style.boxShadow = 'none';
+    button.style.font = '800 14px Arial, sans-serif';
+    button.style.cursor = 'pointer';
+    button.style.lineHeight = '1';
+    button.style.whiteSpace = 'nowrap';
+    button.style.verticalAlign = 'middle';
+    button.style.display = 'none';
+
+    button.addEventListener('mouseenter', () => {
+      button.style.background = '#04b5aa';
+      button.style.borderColor = '#04b5aa';
+    });
+
+    button.addEventListener('mouseleave', () => {
+      button.style.background = '#05cabe';
+      button.style.borderColor = '#05cabe';
+    });
+  }
+
+  function watchCin7QuoteChanges() {
+    if (window.__lcFreightObserverStarted) return;
+    window.__lcFreightObserverStarted = true;
+
+    let lastDetectedSkuKey = '';
+
+    const checkForChanges = () => {
+      const panel = document.getElementById('lc-freight-panel');
+      if (!panel?.classList.contains('is-open')) return;
+
+      const rawItems = getItemsFromCin7();
+      if (!rawItems.length) return;
+
+      const detectedSkuKey = JSON.stringify(rawItems.map(item => item.sku));
+      if (detectedSkuKey !== lastDetectedSkuKey) {
+        lastDetectedSkuKey = detectedSkuKey;
+        renderDetectedDetails();
+        state.lastAutoKey = '';
+        scheduleAutoCin7Lookup(250);
+      }
+    };
+
+    const observer = new MutationObserver(() => {
+      clearTimeout(window.__lcFreightMutationTimer);
+      window.__lcFreightMutationTimer = setTimeout(() => {
+        checkForChanges();
+      }, 350);
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['value', 'class', 'aria-label', 'title']
+    });
+
+    setInterval(checkForChanges, 1200);
+  }
+
   function createPanel() {
-    if (document.getElementById('lc-freight-panel')) return;
+    if (document.getElementById('lc-freight-panel')) {
+      placeFreightButtonNextToMemo();
+      return;
+    }
 
     const button = document.createElement('button');
     button.id = 'lc-freight-toggle';
+    button.type = 'button';
     button.textContent = 'LC Freight';
+    styleFreightInlineButton(button);
 
     const panel = document.createElement('div');
     panel.id = 'lc-freight-panel';
@@ -612,7 +845,7 @@
         <div class="lc-label">Detected from Cin7</div>
         <div><b>SKU:</b> <span id="lc-auto-sku">-</span></div>
         <div><b>Address:</b> <span id="lc-auto-address">-</span></div>
-        <button type="button" id="lc-use-cin7">Refresh Cin7 details</button>
+        <button type="button" id="lc-use-cin7">Refresh freight with these quantities</button>
       </div>
 
       <div class="lc-block" id="lc-manual-lookup-block">
@@ -636,30 +869,13 @@
 
     const styles = document.createElement('style');
     styles.textContent = `
-      #lc-freight-toggle {
-        position: fixed;
-        right: 25mm;
-        bottom: calc(18px + 6mm);
-        z-index: 2147483647;
-        box-sizing: border-box;
-        width: 140px;
-        min-height: 36px;
-        padding: 9px 14px;
-        background: #05cabe;
-        color: #fff;
-        border: 0;
-        border-radius: 10px;
-        box-shadow: 0 8px 22px rgba(0,0,0,.18);
-        font: 800 13px Arial, sans-serif;
-        cursor: pointer;
-      }
       #lc-freight-panel {
         position: fixed;
         top: 72px;
         right: 16px;
         z-index: 2147483647;
         box-sizing: border-box;
-        width: 340px;
+        width: 360px;
         max-height: calc(100vh - 96px);
         overflow: auto;
         display: none;
@@ -738,6 +954,38 @@
         font-size: 11px;
         letter-spacing: 0;
       }
+      .lc-detected-item {
+        display: grid;
+        grid-template-columns: 1fr 86px 64px;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 0;
+        border-bottom: 1px solid #ebe7dc;
+      }
+      .lc-detected-item:last-child {
+        border-bottom: 0;
+      }
+      .lc-detected-item span {
+        font-weight: 800;
+      }
+      .lc-detected-item label {
+        display: grid;
+        grid-template-columns: 28px 1fr;
+        align-items: center;
+        gap: 4px;
+        color: #637061;
+        font-size: 12px;
+        font-weight: 800;
+      }
+      .lc-remove-detected {
+        min-height: 28px !important;
+        padding: 4px 6px !important;
+        background: #f9f8f2 !important;
+        color: #1f2b24 !important;
+        border: 1px solid #d9d6cc !important;
+        border-radius: 6px !important;
+        font-size: 11px !important;
+      }
       #lc-freight-panel input {
         width: 100%;
         min-height: 36px;
@@ -748,7 +996,13 @@
         border-radius: 9px;
         font: inherit;
       }
-      #lc-freight-panel button:not(#lc-panel-close) {
+      #lc-freight-panel .lc-detected-qty {
+        min-height: 28px;
+        padding: 4px 6px;
+        text-align: center;
+        border-radius: 6px;
+      }
+      #lc-freight-panel button:not(#lc-panel-close):not(.lc-remove-detected) {
         min-height: 36px;
         padding: 8px 10px;
         color: #fff;
@@ -852,11 +1106,17 @@
 
     button.addEventListener('click', () => {
       panel.classList.toggle('is-open');
-      renderDetectedDetails();
-      scheduleAutoCin7Lookup();
+      if (panel.classList.contains('is-open')) {
+        state.lastAutoKey = '';
+        renderDetectedDetails();
+        scheduleAutoCin7Lookup(150);
+      }
     });
     panel.querySelector('#lc-panel-close').addEventListener('click', () => panel.classList.remove('is-open'));
-    panel.querySelector('#lc-use-cin7').addEventListener('click', () => useCin7Details({ force: true }));
+    panel.querySelector('#lc-use-cin7').addEventListener('click', () => {
+      state.lastAutoKey = '';
+      useCin7Details({ force: true });
+    });
     panel.querySelector('#lc-manual-get').addEventListener('click', getManualFreight);
     panel.querySelector('#lc-add-product').addEventListener('click', () => addManualProductRow());
     panel.querySelector('#lc-address-suggestions').addEventListener('click', event => {
@@ -880,22 +1140,48 @@
       clearTimeout(state.addressTimer);
       state.addressTimer = setTimeout(loadAddressSuggestions, 700);
     });
+    panel.querySelector('#lc-auto-sku').addEventListener('input', event => {
+      if (!event.target.classList.contains('lc-detected-qty')) return;
+      state.lastAutoKey = '';
+      scheduleAutoCin7Lookup(700);
+    });
+    panel.querySelector('#lc-auto-sku').addEventListener('click', event => {
+      const removeButton = event.target.closest('.lc-remove-detected');
+      if (!removeButton) return;
+
+      const sku = clean(removeButton.dataset.sku);
+      if (!sku) return;
+
+      state.excludedSkus.add(sku);
+      state.lastAutoKey = '';
+      renderDetectedDetails();
+      scheduleAutoCin7Lookup(300);
+    });
     addManualProductRow();
 
     setInterval(() => {
       if (!panel.classList.contains('is-open')) return;
       renderDetectedDetails();
-      scheduleAutoCin7Lookup();
     }, 3000);
+
+    placeFreightButtonNextToMemo();
   }
 
   function boot() {
     if (!document.body) return;
     createPanel();
+    watchCin7QuoteChanges();
+    setTimeout(placeFreightButtonNextToMemo, 300);
+    setTimeout(placeFreightButtonNextToMemo, 1000);
+    setTimeout(placeFreightButtonNextToMemo, 2500);
+    setTimeout(placeFreightButtonNextToMemo, 5000);
   }
 
   boot();
   window.addEventListener('load', boot);
   document.addEventListener('DOMContentLoaded', boot);
-  setInterval(boot, 3000);
+  setInterval(() => {
+    createPanel();
+    placeFreightButtonNextToMemo();
+  }, 3000);
 })();
