@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Quote Memo Info
 // @namespace    livingculture
-// @version      1.9
+// @version      2.3
 // @description  Quote Memo Info panel with copy and auto-fill into Cin7 Quote Memo only.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -93,14 +93,23 @@ Purchased as seen. No returns, refunds or exchanges.`
 
   function isVisible(el) {
     if (!el) return false;
+
     const rect = el.getBoundingClientRect();
     const style = window.getComputedStyle(el);
-    return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+
+    return (
+      rect.width > 0 &&
+      rect.height > 0 &&
+      style.display !== 'none' &&
+      style.visibility !== 'hidden' &&
+      style.opacity !== '0'
+    );
   }
 
   function setStatus(message, error = false) {
     const el = document.getElementById('lc-qm-status');
     if (!el) return;
+
     el.textContent = message || '';
     el.style.color = error ? '#9a2d20' : '#2d5c4e';
   }
@@ -119,7 +128,13 @@ Purchased as seen. No returns, refunds or exchanges.`
     }
 
     element.dispatchEvent(new Event('input', { bubbles: true }));
-    element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value }));
+    element.dispatchEvent(
+      new InputEvent('input', {
+        bubbles: true,
+        inputType: 'insertText',
+        data: value
+      })
+    );
     element.dispatchEvent(new Event('change', { bubbles: true }));
     element.dispatchEvent(new Event('blur', { bubbles: true }));
   }
@@ -127,15 +142,19 @@ Purchased as seen. No returns, refunds or exchanges.`
   function findEditableInside(el) {
     if (!el) return null;
 
-    if (el.matches?.('textarea, input, [contenteditable="true"]') && isVisible(el)) return el;
+    if (el.matches?.('textarea, input, [contenteditable="true"]') && isVisible(el)) {
+      return el;
+    }
 
-    return Array.from(el.querySelectorAll?.('textarea, input, [contenteditable="true"]') || [])
-      .filter(isVisible)
-      .sort((a, b) => {
-        const ar = a.getBoundingClientRect();
-        const br = b.getBoundingClientRect();
-        return (br.width * br.height) - (ar.width * ar.height);
-      })[0] || null;
+    return (
+      Array.from(el.querySelectorAll?.('textarea, input, [contenteditable="true"]') || [])
+        .filter(isVisible)
+        .sort((a, b) => {
+          const ar = a.getBoundingClientRect();
+          const br = b.getBoundingClientRect();
+          return br.width * br.height - ar.width * ar.height;
+        })[0] || null
+    );
   }
 
   function findQuoteMemoLabel() {
@@ -154,6 +173,7 @@ Purchased as seen. No returns, refunds or exchanges.`
       .filter(isVisible)
       .filter(field => {
         const fr = field.getBoundingClientRect();
+
         return (
           fr.top >= lr.top - 20 &&
           fr.top <= lr.bottom + 260 &&
@@ -165,6 +185,7 @@ Purchased as seen. No returns, refunds or exchanges.`
       .sort((a, b) => {
         const ar = a.getBoundingClientRect();
         const br = b.getBoundingClientRect();
+
         return Math.abs(ar.top - lr.bottom) - Math.abs(br.top - lr.bottom);
       });
 
@@ -179,6 +200,7 @@ Purchased as seen. No returns, refunds or exchanges.`
 
     for (const [x, y] of probePoints) {
       const el = document.elementFromPoint(x, y);
+
       const editable =
         findEditableInside(el) ||
         findEditableInside(el?.parentElement) ||
@@ -192,10 +214,15 @@ Purchased as seen. No returns, refunds or exchanges.`
 
   async function copyText(text, button) {
     await navigator.clipboard.writeText(text);
+
     const old = button.textContent;
+
     button.textContent = 'Copied';
     setStatus('Copied to clipboard.');
-    setTimeout(() => button.textContent = old, 1200);
+
+    setTimeout(() => {
+      button.textContent = old;
+    }, 1200);
   }
 
   async function fillQuoteMemo(text, button) {
@@ -203,19 +230,32 @@ Purchased as seen. No returns, refunds or exchanges.`
 
     if (!field) {
       await navigator.clipboard.writeText(text);
+
       setStatus('Could not find Quote memo. Text copied instead.', true);
+
       alert('Could not find the Quote memo field.\n\nText has been copied. Click inside Quote memo and paste.');
+
       return;
     }
 
-    field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    field.scrollIntoView({
+      behavior: 'smooth',
+      block: 'center'
+    });
+
     field.focus();
     field.click();
 
     if (field.getAttribute('contenteditable') === 'true') {
       field.innerText = text;
       field.dispatchEvent(new Event('input', { bubbles: true }));
-      field.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
+      field.dispatchEvent(
+        new InputEvent('input', {
+          bubbles: true,
+          inputType: 'insertText',
+          data: text
+        })
+      );
       field.dispatchEvent(new Event('change', { bubbles: true }));
       field.dispatchEvent(new Event('blur', { bubbles: true }));
     } else {
@@ -225,20 +265,181 @@ Purchased as seen. No returns, refunds or exchanges.`
     await navigator.clipboard.writeText(text);
 
     const old = button.textContent;
+
     button.textContent = 'Filled';
     setStatus('Filled Quote memo and copied text as backup.');
+
     document.getElementById('lc-quote-memo-panel')?.classList.remove('is-open');
-    setTimeout(() => button.textContent = old, 1200);
+
+    setTimeout(() => {
+      button.textContent = old;
+    }, 1200);
+  }
+
+  function openQuoteMemoPanel() {
+    const panel = document.getElementById('lc-quote-memo-panel');
+    if (!panel) return;
+
+    panel.classList.toggle('is-open');
+  }
+
+  function getAllVisibleElements() {
+    return Array.from(document.querySelectorAll('body *')).filter(el => {
+      if (!isVisible(el)) return false;
+      if (el.closest('#lc-quote-memo-panel')) return false;
+      if (el.id === 'lc-quote-memo-inline-button') return false;
+
+      return true;
+    });
+  }
+
+  function findAdditionalChargesHeading() {
+    return getAllVisibleElements().find(el => {
+      const text = clean(el.innerText || el.textContent).toLowerCase();
+      return text === 'additional charges and services';
+    });
+  }
+
+  function findAdditionalChargesPlusButton() {
+    const heading = findAdditionalChargesHeading();
+
+    if (!heading) return null;
+
+    const headingRect = heading.getBoundingClientRect();
+
+    const candidates = getAllVisibleElements()
+      .filter(el => {
+        const rect = el.getBoundingClientRect();
+        const text = clean(el.innerText || el.textContent);
+
+        const isBelowHeading =
+          rect.top >= headingRect.bottom - 5 &&
+          rect.top <= headingRect.bottom + 160;
+
+        const isNearLeft =
+          rect.left >= headingRect.left - 20 &&
+          rect.left <= headingRect.left + 130;
+
+        const isButtonSized =
+          rect.width >= 28 &&
+          rect.width <= 90 &&
+          rect.height >= 28 &&
+          rect.height <= 80;
+
+        const tagLooksClickable =
+          ['BUTTON', 'A'].includes(el.tagName) ||
+          el.getAttribute('role') === 'button' ||
+          el.onclick ||
+          window.getComputedStyle(el).cursor === 'pointer';
+
+        const textLooksPlus =
+          text === '+' ||
+          text.includes('+');
+
+        const hasSvgOrIcon =
+          !!el.querySelector?.('svg, i, .fa, .icon, [class*="icon"], [class*="plus"]');
+
+        return (
+          isBelowHeading &&
+          isNearLeft &&
+          isButtonSized &&
+          (tagLooksClickable || textLooksPlus || hasSvgOrIcon)
+        );
+      })
+      .map(el => ({
+        el,
+        rect: el.getBoundingClientRect()
+      }))
+      .sort((a, b) => {
+        const aDistance =
+          Math.abs(a.rect.top - headingRect.bottom) +
+          Math.abs(a.rect.left - headingRect.left);
+
+        const bDistance =
+          Math.abs(b.rect.top - headingRect.bottom) +
+          Math.abs(b.rect.left - headingRect.left);
+
+        return aDistance - bDistance;
+      });
+
+    return candidates[0]?.el || null;
+  }
+
+  function placeButtonBesidePlus(button, plusButton) {
+    const plusRect = plusButton.getBoundingClientRect();
+
+    const parent =
+      plusButton.parentElement ||
+      plusButton.closest?.('div, section, fieldset') ||
+      document.body;
+
+    const parentStyle = window.getComputedStyle(parent);
+
+    if (parentStyle.position === 'static') {
+      parent.style.position = 'relative';
+    }
+
+    if (button.parentElement !== parent) {
+      parent.appendChild(button);
+    }
+
+    const parentRect = parent.getBoundingClientRect();
+
+    button.style.position = 'absolute';
+    button.style.left = `${plusRect.right - parentRect.left + 10}px`;
+    button.style.top = `${plusRect.top - parentRect.top}px`;
+    button.style.height = `${Math.max(34, plusRect.height || 34)}px`;
+    button.style.zIndex = '50';
+    button.style.display = 'block';
+  }
+
+  function insertQuoteMemoButtonNextToAdditionalPlus() {
+    let button = document.getElementById('lc-quote-memo-inline-button');
+    const plusButton = findAdditionalChargesPlusButton();
+
+    if (!plusButton) return;
+
+    if (!button) {
+      button = document.createElement('button');
+
+      button.id = 'lc-quote-memo-inline-button';
+      button.type = 'button';
+      button.textContent = 'Quote Memo Info';
+
+      button.style.background = '#05cabe';
+      button.style.color = '#fff';
+      button.style.border = '1px solid #05cabe';
+      button.style.borderRadius = '4px';
+      button.style.padding = '0 14px';
+      button.style.font = '700 14px Arial, sans-serif';
+      button.style.cursor = 'pointer';
+      button.style.lineHeight = '1';
+      button.style.whiteSpace = 'nowrap';
+      button.style.boxSizing = 'border-box';
+      button.style.boxShadow = 'none';
+      button.style.display = 'none';
+
+      button.addEventListener('mouseenter', () => {
+        button.style.background = '#04b5aa';
+        button.style.borderColor = '#04b5aa';
+      });
+
+      button.addEventListener('mouseleave', () => {
+        button.style.background = '#05cabe';
+        button.style.borderColor = '#05cabe';
+      });
+
+      button.addEventListener('click', openQuoteMemoPanel);
+    }
+
+    placeButtonBesidePlus(button, plusButton);
   }
 
   function createPanel() {
     if (document.getElementById('lc-quote-memo-panel')) return;
 
-    const toggle = document.createElement('button');
-    toggle.id = 'lc-quote-memo-toggle';
-    toggle.textContent = 'Quote Memo Info';
-
     const panel = document.createElement('div');
+
     panel.id = 'lc-quote-memo-panel';
 
     panel.innerHTML = `
@@ -267,25 +468,8 @@ Purchased as seen. No returns, refunds or exchanges.`
     `;
 
     const style = document.createElement('style');
-    style.textContent = `
-      #lc-quote-memo-toggle {
-        position: fixed;
-        right: calc(148px + 25mm);
-        bottom: calc(18px + 6mm);
-        z-index: 2147483647;
-        box-sizing: border-box;
-        width: 140px;
-        min-height: 36px;
-        background: #05cabe;
-        color: #fff;
-        border: 0;
-        border-radius: 10px;
-        padding: 9px 14px;
-        font: 800 13px Arial, sans-serif;
-        cursor: pointer;
-        box-shadow: 0 8px 22px rgba(0,0,0,.18);
-      }
 
+    style.textContent = `
       #lc-quote-memo-panel {
         position: fixed;
         top: 72px;
@@ -329,7 +513,7 @@ Purchased as seen. No returns, refunds or exchanges.`
       .lc-qm-title {
         font-size: 22px;
         line-height: 1.05;
-        font-weight: 700;
+        font-weight: 800;
         text-align: left;
       }
 
@@ -408,6 +592,10 @@ Purchased as seen. No returns, refunds or exchanges.`
         cursor: pointer;
       }
 
+      .lc-qm-actions button:hover {
+        background: #244a3f;
+      }
+
       #lc-qm-status {
         margin-top: 10px;
         font-weight: 700;
@@ -416,27 +604,44 @@ Purchased as seen. No returns, refunds or exchanges.`
     `;
 
     document.head.appendChild(style);
-    document.body.append(toggle, panel);
+    document.body.append(panel);
 
-    toggle.addEventListener('click', () => panel.classList.toggle('is-open'));
-    panel.querySelector('#lc-qm-close').addEventListener('click', () => panel.classList.remove('is-open'));
+    panel.querySelector('#lc-qm-close').addEventListener('click', () => {
+      panel.classList.remove('is-open');
+    });
 
     panel.querySelectorAll('.lc-qm-copy').forEach(button => {
-      button.addEventListener('click', () => copyText(MEMOS[Number(button.dataset.index)].text, button));
+      button.addEventListener('click', () => {
+        copyText(MEMOS[Number(button.dataset.index)].text, button);
+      });
     });
 
     panel.querySelectorAll('.lc-qm-fill').forEach(button => {
-      button.addEventListener('click', () => fillQuoteMemo(MEMOS[Number(button.dataset.index)].text, button));
+      button.addEventListener('click', () => {
+        fillQuoteMemo(MEMOS[Number(button.dataset.index)].text, button);
+      });
     });
   }
 
   function boot() {
     if (!document.body) return;
+
     createPanel();
+
+    setTimeout(insertQuoteMemoButtonNextToAdditionalPlus, 300);
+    setTimeout(insertQuoteMemoButtonNextToAdditionalPlus, 1000);
+    setTimeout(insertQuoteMemoButtonNextToAdditionalPlus, 2500);
+    setTimeout(insertQuoteMemoButtonNextToAdditionalPlus, 5000);
   }
 
   boot();
+
   window.addEventListener('load', boot);
   document.addEventListener('DOMContentLoaded', boot);
-  setInterval(boot, 3000);
+
+  setInterval(() => {
+    if (!document.getElementById('lc-quote-memo-inline-button')) {
+      insertQuoteMemoButtonNextToAdditionalPlus();
+    }
+  }, 3000);
 })();
