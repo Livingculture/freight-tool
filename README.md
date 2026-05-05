@@ -2,6 +2,10 @@
 
 A desktop app for checking Living Culture freight pricing without staff needing to open VS Code, Terminal, or a browser URL.
 
+## Staff Setup Guide
+
+Use [STAFF_SETUP.md](./STAFF_SETUP.md) when setting up another staff computer.
+
 ## Staff Instructions
 
 1. Download the Freight Costing app.
