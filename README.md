@@ -6,6 +6,8 @@ A desktop app for checking Living Culture freight pricing without staff needing 
 
 Use [STAFF_SETUP.md](./STAFF_SETUP.md) when setting up another staff computer.
 
+For a browser-friendly version, open [STAFF_SETUP.html](./STAFF_SETUP.html).
+
 ## Staff Instructions
 
 1. Download the Freight Costing app.

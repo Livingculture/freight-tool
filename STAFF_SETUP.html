@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Living Culture Tools Setup</title>
+    <style>
+      :root {
+        --green: #2d5c4e;
+        --teal: #05cabe;
+        --mint: #cfe2d9;
+        --paper: #fffefb;
+        --line: #d9d6cc;
+        --text: #1f2b24;
+        --muted: #637061;
+        --soft: #f5f7f4;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        color: var(--text);
+        background: #eef3ef;
+        font: 16px/1.55 Arial, Helvetica, sans-serif;
+      }
+
+      .page {
+        max-width: 1040px;
+        margin: 0 auto;
+        padding: 28px 20px 48px;
+      }
+
+      .hero {
+        background: var(--green);
+        color: #fff;
+        border-radius: 8px;
+        padding: 28px;
+        margin-bottom: 18px;
+      }
+
+      .hero img {
+        width: 150px;
+        display: block;
+        margin-bottom: 22px;
+      }
+
+      h1,
+      h2,
+      h3 {
+        margin: 0;
+        line-height: 1.15;
+      }
+
+      h1 {
+        font-size: 36px;
+      }
+
+      .hero p {
+        max-width: 720px;
+        margin: 12px 0 0;
+        color: rgba(255, 255, 255, 0.92);
+        font-size: 18px;
+      }
+
+      .nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 0 0 18px;
+      }
+
+      .nav a {
+        display: inline-flex;
+        align-items: center;
+        min-height: 36px;
+        padding: 8px 12px;
+        color: var(--green);
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        font-weight: 800;
+        text-decoration: none;
+      }
+
+      .section {
+        background: var(--paper);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 22px;
+        margin-top: 16px;
+        box-shadow: 0 12px 28px rgba(34, 48, 40, 0.08);
+      }
+
+      .section h2 {
+        font-size: 25px;
+        margin-bottom: 12px;
+      }
+
+      .section h3 {
+        font-size: 18px;
+        margin: 18px 0 8px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+        gap: 12px;
+      }
+
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 14px;
+        background: #fff;
+      }
+
+      .card strong {
+        display: block;
+        margin-bottom: 4px;
+        color: var(--green);
+        font-size: 17px;
+      }
+
+      ol,
+      ul {
+        margin: 10px 0 0;
+        padding-left: 24px;
+      }
+
+      li {
+        margin: 7px 0;
+      }
+
+      code,
+      .code-box {
+        font-family: Arial, Helvetica, sans-serif;
+      }
+
+      .code-box {
+        display: block;
+        overflow-wrap: anywhere;
+        background: var(--soft);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 12px;
+        margin: 10px 0;
+        color: #223028;
+        font-weight: 700;
+      }
+
+      .links {
+        display: grid;
+        gap: 8px;
+      }
+
+      .links a {
+        display: block;
+        overflow-wrap: anywhere;
+        padding: 12px;
+        color: var(--green);
+        background: var(--soft);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        font-weight: 800;
+      }
+
+      .note {
+        border-left: 5px solid var(--teal);
+        background: #edf8f6;
+        padding: 12px 14px;
+        margin: 12px 0;
+      }
+
+      .warning {
+        border-left-color: #d67426;
+        background: #fff3e8;
+      }
+
+      .check {
+        display: inline-block;
+        min-width: 140px;
+        padding: 8px 12px;
+        margin: 4px 6px 4px 0;
+        text-align: center;
+        color: #fff;
+        background: var(--teal);
+        border-radius: 4px;
+        font-weight: 800;
+      }
+
+      .footer {
+        color: var(--muted);
+        margin-top: 18px;
+        text-align: center;
+        font-size: 13px;
+      }
+
+      @media print {
+        body {
+          background: #fff;
+        }
+
+        .page {
+          max-width: none;
+          padding: 0;
+        }
+
+        .nav {
+          display: none;
+        }
+
+        .section,
+        .hero {
+          box-shadow: none;
+          break-inside: avoid;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <header class="hero">
+        <img src="https://livingculture.co.nz/cdn/shop/files/logo_ec2b0c5e-42ca-4695-8c7e-43b344144c58.png?v=1675047511&width=220" alt="Living Culture">
+        <h1>Living Culture Tools Setup</h1>
+        <p>Use this guide to set up the Freight Costing app and browser helpers on a staff computer.</p>
+      </header>
+
+      <nav class="nav" aria-label="Sections">
+        <a href="#install">Install</a>
+        <a href="#scripts">Scripts</a>
+        <a href="#checks">Checks</a>
+        <a href="#use">How To Use</a>
+        <a href="#updates">Updates</a>
+        <a href="#troubleshooting">Troubleshooting</a>
+      </nav>
+
+      <section class="section">
+        <h2>What Gets Installed</h2>
+        <div class="grid">
+          <div class="card"><strong>Freight Costing app</strong>Standalone app that calculates freight.</div>
+          <div class="card"><strong>Tampermonkey</strong>Chrome extension that runs the browser helpers.</div>
+          <div class="card"><strong>LC Freight</strong>Adds the freight panel inside Cin7.</div>
+          <div class="card"><strong>Quote Memo Info</strong>Adds quote memo wording inside Cin7.</div>
+          <div class="card"><strong>Install Fees</strong>Adds installation fee search and add tools inside Cin7.</div>
+          <div class="card"><strong>Copy SKU</strong>Adds the red SKU copy button on Living Culture product pages.</div>
+        </div>
+      </section>
+
+      <section class="section" id="install">
+        <h2>1. Install Chrome And Tampermonkey</h2>
+        <ol>
+          <li>Open Google Chrome.</li>
+          <li>Go to the Chrome Web Store.</li>
+          <li>Search for <strong>Tampermonkey</strong>.</li>
+          <li>Click <strong>Add to Chrome</strong>.</li>
+          <li>Confirm the install.</li>
+          <li>Open Chrome extensions with this address:</li>
+        </ol>
+        <div class="code-box">chrome://extensions</div>
+        <ol start="7">
+          <li>Find <strong>Tampermonkey</strong> and make sure it is enabled.</li>
+          <li>If Chrome shows <strong>Allow User Scripts</strong>, turn it on.</li>
+        </ol>
+      </section>
+
+      <section class="section" id="scripts">
+        <h2>2. Install The Tampermonkey Scripts</h2>
+        <p>Open each link below in Chrome. Tampermonkey should open an install page. Click <strong>Install</strong> or <strong>Update</strong>.</p>
+        <div class="links">
+          <a href="https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-lc-freight.user.js">Cin7 LC Freight helper</a>
+          <a href="https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-quote-memo-info.user.js">Cin7 Quote Memo Info helper</a>
+          <a href="https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-install-fee-helper.user.js">Cin7 Installation Fee helper</a>
+          <a href="https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/livingculture-copy-sku.user.js">Living Culture Copy SKU helper</a>
+        </div>
+        <div class="note">After installing once, Tampermonkey checks GitHub for updates automatically.</div>
+      </section>
+
+      <section class="section">
+        <h2>3. Install The Freight Costing App</h2>
+        <h3>Mac</h3>
+        <ol>
+          <li>Open the downloaded app file.</li>
+          <li>Drag the app to <strong>Applications</strong> if prompted.</li>
+          <li>Open <strong>Freight Costing</strong>.</li>
+          <li>If Mac blocks it, right-click the app and choose <strong>Open</strong>.</li>
+        </ol>
+        <h3>Windows</h3>
+        <ol>
+          <li>Open the installer supplied by Living Culture.</li>
+          <li>Follow the prompts.</li>
+          <li>Open <strong>Freight Costing</strong>.</li>
+        </ol>
+        <div class="note">Keep the Freight Costing app open while using the Cin7 <strong>LC Freight</strong> helper.</div>
+      </section>
+
+      <section class="section" id="checks">
+        <h2>4. Check Everything Appears</h2>
+        <h3>Cin7</h3>
+        <ol>
+          <li>Open Cin7 or Dear Systems in Chrome.</li>
+          <li>Open a quote.</li>
+          <li>Near <strong>Additional charges and services</strong>, check for:</li>
+        </ol>
+        <span class="check">Quote Memo Info</span>
+        <span class="check">LC Freight</span>
+        <ol start="4">
+          <li>Near the top quote buttons, beside <strong>Scan</strong>, check for:</li>
+        </ol>
+        <span class="check">Install Fees</span>
+
+        <h3>Living Culture Product Pages</h3>
+        <ol>
+          <li>Open a product page on <strong>livingculture.co.nz</strong>.</li>
+          <li>Find the SKU near the product title.</li>
+          <li>Check for the red <strong>Copy SKU</strong> button.</li>
+          <li>Click it. The button should change to <strong>SKU copied</strong>.</li>
+        </ol>
+      </section>
+
+      <section class="section" id="use">
+        <h2>How To Use The Tools</h2>
+        <h3>LC Freight</h3>
+        <ol>
+          <li>Open a Cin7 quote.</li>
+          <li>Make sure the Freight Costing app is open.</li>
+          <li>Click <strong>LC Freight</strong>.</li>
+          <li>Check the detected products, quantities, and address.</li>
+          <li>Click <strong>Refresh freight with these quantities</strong> if needed.</li>
+        </ol>
+
+        <h3>Quote Memo Info</h3>
+        <ol>
+          <li>Open a Cin7 quote.</li>
+          <li>Click <strong>Quote Memo Info</strong>.</li>
+          <li>Click <strong>Copy</strong> to copy text only.</li>
+          <li>Click <strong>Copy + Fill Quote Memo</strong> to fill the quote memo and close the panel.</li>
+        </ol>
+
+        <h3>Install Fees</h3>
+        <ol>
+          <li>Open a Cin7 quote.</li>
+          <li>Click <strong>Install Fees</strong>.</li>
+          <li>Search for the fee.</li>
+          <li>Click <strong>Add</strong>.</li>
+        </ol>
+        <div class="note">Install fee data is loaded from the shared Google Sheet. If the sheet cannot be reached, the helper uses cached data or built-in fallback data.</div>
+
+        <h3>Copy SKU</h3>
+        <ol>
+          <li>Open a Living Culture product page.</li>
+          <li>Click <strong>Copy SKU</strong>.</li>
+          <li>Paste the SKU where needed.</li>
+        </ol>
+      </section>
+
+      <section class="section" id="updates">
+        <h2>Updating</h2>
+        <p>Tampermonkey scripts update from GitHub automatically.</p>
+        <h3>Manual update check</h3>
+        <ol>
+          <li>Click the Tampermonkey icon in Chrome.</li>
+          <li>Open <strong>Dashboard</strong>.</li>
+          <li>Go to <strong>Utilities</strong>.</li>
+          <li>Click <strong>Check for userscript updates</strong>.</li>
+        </ol>
+        <p>For the Freight Costing app, install the newest app version supplied by Living Culture.</p>
+      </section>
+
+      <section class="section" id="troubleshooting">
+        <h2>Troubleshooting</h2>
+        <h3>Buttons Do Not Show In Cin7</h3>
+        <ol>
+          <li>Refresh the Cin7 page.</li>
+          <li>Check Tampermonkey is enabled.</li>
+          <li>Check the scripts are installed and enabled in the Tampermonkey dashboard.</li>
+          <li>Make sure you are using Chrome.</li>
+        </ol>
+
+        <h3>A Script Link Shows 404 Or Does Not Open Tampermonkey</h3>
+        <div class="note warning">If the GitHub repo is private, staff must be signed into a GitHub account that can access it. For simple installs without GitHub login, the repo must be public or the script files need to be supplied another way.</div>
+
+        <h3>LC Freight Does Not Load A Price</h3>
+        <ol>
+          <li>Make sure the Freight Costing app is open.</li>
+          <li>Check the quote has a product SKU.</li>
+          <li>Check the quote has a shipping address.</li>
+          <li>Close and reopen the <strong>LC Freight</strong> panel.</li>
+        </ol>
+
+        <h3>Install Fees Does Not Show Updated Sheet Data</h3>
+        <ol>
+          <li>Check the computer has internet.</li>
+          <li>Refresh Cin7.</li>
+          <li>Open <strong>Install Fees</strong> again.</li>
+          <li>Check the Google Sheet is shared so people with the link can view it.</li>
+        </ol>
+
+        <h3>Copy SKU Does Not Show On A Product Page</h3>
+        <ol>
+          <li>Refresh the product page.</li>
+          <li>Check the page has a visible SKU.</li>
+          <li>Check the <strong>Living Culture Copy SKU</strong> script is enabled in Tampermonkey.</li>
+        </ol>
+      </section>
+
+      <p class="footer">Living Culture internal setup guide.</p>
+    </main>
+  </body>
+</html>
