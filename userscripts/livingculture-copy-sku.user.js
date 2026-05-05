@@ -1,10 +1,12 @@
 // ==UserScript==
 // @name         Living Culture Copy SKU
 // @namespace    livingculture
-// @version      1.6
+// @version      1.8
 // @description  Adds a button to Living Culture product pages to copy the current product SKU.
-// @match        https://livingculture.co.nz/*
-// @match        https://www.livingculture.co.nz/*
+// @match        https://livingculture.co.nz/products/*
+// @match        https://www.livingculture.co.nz/products/*
+// @match        https://livingculture.co.nz/collections/*/products/*
+// @match        https://www.livingculture.co.nz/collections/*/products/*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/livingculture-copy-sku.user.js
 // @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/livingculture-copy-sku.user.js
 // @supportURL   https://github.com/Livingculture/freight-tool
@@ -17,6 +19,7 @@
 
   const state = {
     product: null,
+    productUrl: '',
     sku: '',
     variantId: ''
   };
@@ -25,33 +28,41 @@
     return String(value || '').replace(/\s+/g, ' ').trim();
   }
 
-  function flashButtonText(button, message, duration = 1200) {
-    if (!button) return;
-    const oldText = button.textContent;
-    button.textContent = message;
-    setTimeout(() => {
-      button.textContent = oldText;
-    }, duration);
-  }
-
   function isVisible(element) {
     if (!element) return false;
+
     const rect = element.getBoundingClientRect();
     const style = window.getComputedStyle(element);
-    return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+
+    return (
+      rect.width > 0 &&
+      rect.height > 0 &&
+      style.display !== 'none' &&
+      style.visibility !== 'hidden'
+    );
+  }
+
+  function isProductPage() {
+    return /\/products\//.test(window.location.pathname);
   }
 
   function getProductJsonUrl() {
-    if (!window.location.pathname.includes('/products/')) return '';
-    return `${window.location.origin}${window.location.pathname.replace(/\/$/, '')}.js`;
+    const path = window.location.pathname.replace(/\/$/, '');
+    const productMatch = path.match(/\/products\/([^/?#]+)/);
+
+    if (!productMatch?.[1]) return '';
+
+    return `${window.location.origin}/products/${productMatch[1]}.js`;
   }
 
   function getSelectedVariantId() {
     const urlVariant = new URL(window.location.href).searchParams.get('variant');
+
     if (urlVariant) return urlVariant;
 
     const form = document.querySelector('form[action*="/cart/add"]');
     const formVariant = form?.querySelector('[name="id"]')?.value;
+
     if (formVariant) return formVariant;
 
     return document.querySelector('[name="id"]')?.value || '';
@@ -59,6 +70,7 @@
 
   function getSkuFromPageText() {
     const text = document.body?.innerText || '';
+
     return clean(
       text.match(/\bSKU\s*:?\s*([A-Z]{1,8}\d{3,}(?:-\d+)?)\b/i)?.[1] ||
       text.match(/\b([A-Z]{1,8}\d{3,}(?:-\d+)?)\b/)?.[1] ||
@@ -69,59 +81,84 @@
   function resolveCurrentSku() {
     const product = state.product;
     const selectedVariantId = getSelectedVariantId();
+
     state.variantId = selectedVariantId;
 
     const variants = Array.isArray(product?.variants) ? product.variants : [];
+
     const selectedVariant =
       variants.find(variant => String(variant.id) === String(selectedVariantId)) ||
       variants.find(variant => variant.available) ||
       variants[0];
 
     state.sku = clean(selectedVariant?.sku || getSkuFromPageText()).toUpperCase();
+
     return state.sku;
   }
 
   function findSkuElement(sku) {
     const wantedSku = clean(sku).toUpperCase();
-    if (!wantedSku) return null;
+
+    if (!wantedSku || !document.body) return null;
 
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
       acceptNode(node) {
         const text = clean(node.nodeValue).toUpperCase();
-        if (!text.includes(wantedSku) && !/^SKU\b/i.test(text)) return NodeFilter.FILTER_REJECT;
+
+        if (!text.includes(wantedSku) && !/^SKU\b/i.test(text)) {
+          return NodeFilter.FILTER_REJECT;
+        }
+
         const parent = node.parentElement;
-        if (!parent || parent.closest('#lc-copy-sku-panel, script, style, noscript')) return NodeFilter.FILTER_REJECT;
-        return isVisible(parent) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+
+        if (!parent || parent.closest('#lc-copy-sku-panel, script, style, noscript')) {
+          return NodeFilter.FILTER_REJECT;
+        }
+
+        return isVisible(parent)
+          ? NodeFilter.FILTER_ACCEPT
+          : NodeFilter.FILTER_REJECT;
       }
     });
 
     const matches = [];
     let node = walker.nextNode();
+
     while (node) {
       const parent = node.parentElement;
       const text = clean(parent?.textContent || '');
-      if (parent && text.length < 180 && (text.toUpperCase().includes(wantedSku) || /^SKU\b/i.test(text))) {
+
+      if (
+        parent &&
+        text.length < 180 &&
+        (text.toUpperCase().includes(wantedSku) || /^SKU\b/i.test(text))
+      ) {
         matches.push(parent);
       }
+
       node = walker.nextNode();
     }
 
-    return matches
-      .sort((a, b) => clean(a.textContent).length - clean(b.textContent).length)[0] || null;
+    return (
+      matches.sort(
+        (a, b) => clean(a.textContent).length - clean(b.textContent).length
+      )[0] || null
+    );
   }
 
   function positionPanel() {
     const panel = document.getElementById('lc-copy-sku-panel');
+
     if (!panel) return;
 
-    const sku = resolveCurrentSku();
-    if (!sku) {
-      panel.style.display = 'none';
+    if (!isProductPage()) {
+      panel.remove();
       return;
     }
 
+    const sku = resolveCurrentSku();
     const target = findSkuElement(sku);
-    panel.style.display = '';
+
     panel.classList.toggle('is-floating', !target);
     panel.classList.toggle('is-inline', Boolean(target));
 
@@ -135,57 +172,115 @@
   }
 
   async function loadProduct() {
-    if (state.product) return state.product;
-
     const productJsonUrl = getProductJsonUrl();
-    if (!productJsonUrl) throw new Error('Not a product JSON page.');
+
+    if (!productJsonUrl) {
+      throw new Error('Not a product page.');
+    }
+
+    if (state.product && state.productUrl === productJsonUrl) {
+      return state.product;
+    }
 
     const response = await fetch(productJsonUrl, { credentials: 'same-origin' });
-    if (!response.ok) throw new Error('Could not load product details.');
+
+    if (!response.ok) {
+      throw new Error('Could not load product details.');
+    }
 
     state.product = await response.json();
+    state.productUrl = productJsonUrl;
+
     resolveCurrentSku();
+
     return state.product;
   }
 
+  async function copyText(value) {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return;
+    }
+
+    const textarea = document.createElement('textarea');
+    textarea.value = value;
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    textarea.style.top = '-9999px';
+
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+
+    document.execCommand('copy');
+    textarea.remove();
+  }
+
   async function copySku(button) {
+    const originalText = 'Copy SKU';
+
     try {
       await loadProduct();
+
       const sku = resolveCurrentSku();
 
       if (!sku) {
-        flashButtonText(button, 'SKU not found');
+        button.textContent = 'SKU not found';
+
+        setTimeout(() => {
+          button.textContent = originalText;
+        }, 1400);
+
         return;
       }
 
-      await navigator.clipboard.writeText(sku);
-      flashButtonText(button, 'SKU copied');
+      await copyText(sku);
+
+      button.textContent = 'SKU copied';
+
+      setTimeout(() => {
+        button.textContent = originalText;
+      }, 1200);
     } catch (error) {
       console.error(error);
+
       const fallbackSku = getSkuFromPageText();
+
       if (fallbackSku) {
-        await navigator.clipboard.writeText(fallbackSku);
-        flashButtonText(button, 'SKU copied');
+        await copyText(fallbackSku);
+        button.textContent = 'SKU copied';
+
+        setTimeout(() => {
+          button.textContent = originalText;
+        }, 1200);
+
         return;
       }
-      flashButtonText(button, 'SKU not found');
+
+      button.textContent = 'Copy failed';
+
+      setTimeout(() => {
+        button.textContent = originalText;
+      }, 1400);
     }
   }
 
   function createButton() {
+    if (!isProductPage()) return;
     if (document.getElementById('lc-copy-sku-panel')) return;
+    if (!document.body) return;
 
     const panel = document.createElement('div');
     panel.id = 'lc-copy-sku-panel';
-    panel.style.display = 'none';
+
     panel.attachShadow({ mode: 'open' });
+
     panel.shadowRoot.innerHTML = `
       <style>
         :host {
           all: initial;
           z-index: 2147483647;
           display: inline-grid;
-          gap: 7px;
           justify-items: start;
           font: 13px/1.35 Arial, sans-serif;
         }
@@ -209,40 +304,42 @@
           opacity: 1;
           filter: none;
           mix-blend-mode: normal;
-          min-width: 104px;
-          min-height: 32px;
-          padding: 7px 12px;
+          min-width: 96px;
+          min-height: 36px;
+          padding: 7px 13px;
           color: #fff;
-          background: #ff3131;
-          background-color: #ff3131;
-          border: 1px solid #ff3131;
-          border-radius: 8px;
-          box-shadow: 0 8px 22px rgba(0,0,0,.18);
-          font: 800 12px Arial, sans-serif;
-          line-height: 1.35;
+          background: #ff0000;
+          background-color: #ff0000;
+          border: 1px solid #ff0000;
+          border-radius: 9px;
+          box-shadow: 0 6px 16px rgba(0,0,0,.14);
+          font: 800 14px Arial, sans-serif;
+          line-height: 1.25;
           text-align: center;
           cursor: pointer;
           user-select: none;
         }
 
         #lc-copy-sku-button:hover {
-          background: #c90000;
-          background-color: #c90000;
-          border-color: #c90000;
+          background: #d90000;
+          background-color: #d90000;
+          border-color: #d90000;
         }
 
         #lc-copy-sku-button:active {
-          background: #990000;
-          background-color: #990000;
-          border-color: #990000;
+          background: #b00000;
+          background-color: #b00000;
+          border-color: #b00000;
         }
-
       </style>
+
       <button type="button" id="lc-copy-sku-button">Copy SKU</button>
     `;
+
     document.body.appendChild(panel);
 
     const button = panel.shadowRoot.querySelector('#lc-copy-sku-button');
+
     button.addEventListener('click', () => copySku(button));
 
     loadProduct()
@@ -255,19 +352,35 @@
 
   function boot() {
     if (!document.body) return;
+
     createButton();
+    positionPanel();
+  }
+
+  function handlePageChange() {
+    state.product = null;
+    state.productUrl = '';
+    state.sku = '';
+    state.variantId = '';
+
+    setTimeout(boot, 150);
   }
 
   boot();
+
   window.addEventListener('load', boot);
   document.addEventListener('DOMContentLoaded', boot);
-  window.addEventListener('popstate', () => {
-    setTimeout(positionPanel, 100);
-  });
+  window.addEventListener('popstate', handlePageChange);
+
   document.addEventListener('change', event => {
     if (event.target?.matches?.('[name="id"], select, input[type="radio"]')) {
       setTimeout(positionPanel, 100);
     }
   });
-  setInterval(positionPanel, 1500);
+
+  setInterval(() => {
+    if (isProductPage()) {
+      boot();
+    }
+  }, 1500);
 })();
