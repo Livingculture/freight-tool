@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Installation Fee Helper
 // @namespace    livingculture-cin7
-// @version      2.8
+// @version      2.9
 // @description  Shows Living Culture installation fee SKUs and prices inside Cin7 for quick add.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
@@ -10,11 +10,20 @@
 // @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-install-fee-helper.user.js
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
-// @grant        none
+// @grant        GM_xmlhttpRequest
+// @connect      docs.google.com
+// @connect      drive.google.com
+// @connect      googleusercontent.com
+// @connect      docs.googleusercontent.com
 // ==/UserScript==
 
 (function () {
   'use strict';
+
+  // Add a shared Google Sheet/Drive CSV URL here. Leave blank to use the built-in fallback data.
+  const REMOTE_DATA_URL = '';
+  const CACHE_KEY = 'lc-install-fee-data-v1';
+  const CACHE_TIME_KEY = 'lc-install-fee-data-time-v1';
 
   const RAW_DATA = `
 Product Code	Name	Price
@@ -126,7 +135,8 @@ AS10138	Assembly Roosevelt Motorised Sliding Gate & Post with Base Plate Mount o
 AS10139	Assembly Roosevelt Motorised Sliding Gate & Post with Post with Bury into concrete (5M Gate & under)	1800
 `;
 
-  let items = parseData(RAW_DATA);
+  let dataSourceLabel = 'Built-in fallback pricing';
+  let items = parseData(readCachedRawData() || RAW_DATA);
   let filteredItems = items;
 
   function clean(value) {
@@ -137,13 +147,41 @@ AS10139	Assembly Roosevelt Motorised Sliding Gate & Post with Post with Bury int
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
+  function parseCsvLine(line) {
+    const values = [];
+    let value = '';
+    let quoted = false;
+
+    for (let index = 0; index < line.length; index += 1) {
+      const char = line[index];
+      const next = line[index + 1];
+
+      if (char === '"' && quoted && next === '"') {
+        value += '"';
+        index += 1;
+      } else if (char === '"') {
+        quoted = !quoted;
+      } else if (char === ',' && !quoted) {
+        values.push(value);
+        value = '';
+      } else {
+        value += char;
+      }
+    }
+
+    values.push(value);
+    return values;
+  }
+
   function parseData(raw) {
-    return raw
-      .trim()
-      .split('\n')
+    const lines = String(raw || '').trim().split(/\r?\n/).filter(Boolean);
+    const delimiter = lines[0]?.includes('\t') ? '\t' : ',';
+
+    return lines
       .slice(1)
       .map(line => {
-        const parts = line.split('\t');
+        const parts = delimiter === '\t' ? line.split('\t') : parseCsvLine(line);
+
         return {
           code: clean(parts[0]),
           name: clean(parts[1]),
@@ -151,6 +189,127 @@ AS10139	Assembly Roosevelt Motorised Sliding Gate & Post with Post with Bury int
         };
       })
       .filter(item => item.code && item.name && item.price !== '');
+  }
+
+  function readCachedRawData() {
+    try {
+      const cached = localStorage.getItem(CACHE_KEY);
+
+      if (!cached || !parseData(cached).length) return '';
+
+      const cachedAt = Number(localStorage.getItem(CACHE_TIME_KEY)) || 0;
+      const ageHours = cachedAt ? Math.round((Date.now() - cachedAt) / 36e5) : 0;
+
+      dataSourceLabel = ageHours
+        ? `Google Drive pricing from cache (${ageHours}h old)`
+        : 'Google Drive pricing from cache';
+
+      return cached;
+    } catch (error) {
+      console.warn(error);
+      return '';
+    }
+  }
+
+  function normaliseRemoteDataUrl(url) {
+    const value = clean(url);
+
+    if (!value) return '';
+
+    const sheetMatch = value.match(/docs\.google\.com\/spreadsheets\/d\/([^/]+)/i);
+
+    if (sheetMatch) {
+      const gid = value.match(/[?&]gid=(\d+)/i)?.[1] || '0';
+      return `https://docs.google.com/spreadsheets/d/${sheetMatch[1]}/export?format=csv&gid=${gid}`;
+    }
+
+    const driveFileMatch = value.match(/drive\.google\.com\/file\/d\/([^/]+)/i);
+
+    if (driveFileMatch) {
+      return `https://drive.google.com/uc?export=download&id=${driveFileMatch[1]}`;
+    }
+
+    return value;
+  }
+
+  function requestText(url) {
+    return new Promise((resolve, reject) => {
+      if (typeof GM_xmlhttpRequest === 'function') {
+        GM_xmlhttpRequest({
+          method: 'GET',
+          url,
+          headers: {
+            'Cache-Control': 'no-cache'
+          },
+          onload: response => {
+            if (response.status >= 200 && response.status < 300) {
+              resolve(response.responseText || '');
+            } else {
+              reject(new Error(`Google data returned ${response.status}`));
+            }
+          },
+          onerror: () => reject(new Error('Could not load Google data'))
+        });
+
+        return;
+      }
+
+      fetch(url, { cache: 'no-store' })
+        .then(response => {
+          if (!response.ok) throw new Error(`Google data returned ${response.status}`);
+          return response.text();
+        })
+        .then(resolve)
+        .catch(reject);
+    });
+  }
+
+  function setSourceLabel(label) {
+    const root = document.getElementById('lc-install-fee-root');
+    const source = root?.shadowRoot?.getElementById('lc-install-fee-source');
+
+    dataSourceLabel = label || dataSourceLabel;
+
+    if (source) source.textContent = dataSourceLabel;
+  }
+
+  async function loadRemoteInstallFees() {
+    const remoteUrl = normaliseRemoteDataUrl(REMOTE_DATA_URL);
+
+    if (!remoteUrl) {
+      setSourceLabel(dataSourceLabel);
+      return false;
+    }
+
+    setSourceLabel('Loading Google Drive pricing...');
+
+    try {
+      const raw = await requestText(remoteUrl);
+      const nextItems = parseData(raw);
+
+      if (!nextItems.length) {
+        throw new Error('Google data had no install-fee rows');
+      }
+
+      items = nextItems;
+      filteredItems = items;
+
+      localStorage.setItem(CACHE_KEY, raw);
+      localStorage.setItem(CACHE_TIME_KEY, String(Date.now()));
+
+      setSourceLabel('Google Drive pricing loaded');
+
+      const root = document.getElementById('lc-install-fee-root');
+      const search = root?.shadowRoot?.getElementById('lc-install-fee-search');
+
+      filterItems(search?.value || '');
+      return true;
+    } catch (error) {
+      console.warn(error);
+      setSourceLabel(`${dataSourceLabel} - Google data unavailable`);
+      renderRows();
+      return false;
+    }
   }
 
   function getCleanPrice(price) {
@@ -206,6 +365,7 @@ AS10139	Assembly Roosevelt Motorised Sliding Gate & Post with Post with Bury int
     if (!modal) return;
 
     modal.classList.add('open');
+    loadRemoteInstallFees();
     setTimeout(() => search?.focus(), 50);
   }
 
@@ -1039,7 +1199,7 @@ AS10139	Assembly Roosevelt Motorised Sliding Gate & Post with Post with Bury int
               <div class="subtitle">
                 Search, then click Add to insert SKU and price.
               </div>
-              <div class="source">Using built-in test pricing</div>
+              <div class="source" id="lc-install-fee-source">${escapeHtml(dataSourceLabel)}</div>
             </div>
 
             <button id="lc-install-fee-close" type="button">Close</button>
@@ -1115,7 +1275,9 @@ AS10139	Assembly Roosevelt Motorised Sliding Gate & Post with Post with Bury int
       }
     });
 
+    setSourceLabel(dataSourceLabel);
     renderRows();
+    loadRemoteInstallFees();
     insertInstallFeeButtonNextToScan();
   }
 
