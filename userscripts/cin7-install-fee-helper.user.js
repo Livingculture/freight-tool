@@ -21,7 +21,7 @@
   'use strict';
 
   // Add a shared Google Sheet/Drive CSV URL here. Leave blank to use the built-in fallback data.
-  const REMOTE_DATA_URL = '';
+  const REMOTE_DATA_URL = 'https://docs.google.com/spreadsheets/d/1rf8L1DDLwE6GQuFFarxMlcA1rUjRVVxKJwsLL6htDOY/edit?gid=1998708271#gid=1998708271';
   const CACHE_KEY = 'lc-install-fee-data-v1';
   const CACHE_TIME_KEY = 'lc-install-fee-data-time-v1';
 
