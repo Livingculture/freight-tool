@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Installation Fee Helper
 // @namespace    livingculture-cin7
-// @version      2.9
-// @description  Shows Living Culture installation fee SKUs and prices inside Cin7 for quick add.
+// @version      3.0
+// @description  Shows Living Culture installation fee SKUs and prices inside Cin7 for quick add. Loads Google Sheet pricing with built-in fallback.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
 // @match        https://inventory.dearsystems.com/*
@@ -10,20 +10,19 @@
 // @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-install-fee-helper.user.js
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
-// @grant        GM_xmlhttpRequest
-// @connect      docs.google.com
-// @connect      drive.google.com
-// @connect      googleusercontent.com
-// @connect      docs.googleusercontent.com
+// @grant        none
 // ==/UserScript==
 
 (function () {
   'use strict';
 
-  // Add a shared Google Sheet/Drive CSV URL here. Leave blank to use the built-in fallback data.
+  // IMPORTANT:
+  // This should be a Google Sheet URL. The script converts /edit?gid=... into /export?format=csv&gid=...
+  // The Google Sheet must be accessible/published enough for the browser to read it.
   const REMOTE_DATA_URL = 'https://docs.google.com/spreadsheets/d/1rf8L1DDLwE6GQuFFarxMlcA1rUjRVVxKJwsLL6htDOY/edit?gid=1998708271#gid=1998708271';
-  const CACHE_KEY = 'lc-install-fee-data-v1';
-  const CACHE_TIME_KEY = 'lc-install-fee-data-time-v1';
+
+  const CACHE_KEY = 'lc-install-fee-data-v3';
+  const CACHE_TIME_KEY = 'lc-install-fee-data-time-v3';
 
   const RAW_DATA = `
 Product Code	Name	Price
@@ -135,7 +134,7 @@ AS10138	Assembly Roosevelt Motorised Sliding Gate & Post with Base Plate Mount o
 AS10139	Assembly Roosevelt Motorised Sliding Gate & Post with Post with Bury into concrete (5M Gate & under)	1800
 `;
 
-  let dataSourceLabel = 'Built-in fallback pricing';
+  let dataSourceLabel = 'Built-in backup pricing';
   let items = parseData(readCachedRawData() || RAW_DATA);
   let filteredItems = items;
 
@@ -175,7 +174,9 @@ AS10139	Assembly Roosevelt Motorised Sliding Gate & Post with Post with Bury int
 
   function parseData(raw) {
     const lines = String(raw || '').trim().split(/\r?\n/).filter(Boolean);
-    const delimiter = lines[0]?.includes('\t') ? '\t' : ',';
+    if (!lines.length) return [];
+
+    const delimiter = lines[0].includes('\t') ? '\t' : ',';
 
     return lines
       .slice(1)
@@ -194,15 +195,14 @@ AS10139	Assembly Roosevelt Motorised Sliding Gate & Post with Post with Bury int
   function readCachedRawData() {
     try {
       const cached = localStorage.getItem(CACHE_KEY);
-
       if (!cached || !parseData(cached).length) return '';
 
       const cachedAt = Number(localStorage.getItem(CACHE_TIME_KEY)) || 0;
       const ageHours = cachedAt ? Math.round((Date.now() - cachedAt) / 36e5) : 0;
 
       dataSourceLabel = ageHours
-        ? `Google Drive pricing from cache (${ageHours}h old)`
-        : 'Google Drive pricing from cache';
+        ? `Google Sheet pricing from cache (${ageHours}h old)`
+        : 'Google Sheet pricing from cache';
 
       return cached;
     } catch (error) {
@@ -213,7 +213,6 @@ AS10139	Assembly Roosevelt Motorised Sliding Gate & Post with Post with Bury int
 
   function normaliseRemoteDataUrl(url) {
     const value = clean(url);
-
     if (!value) return '';
 
     const sheetMatch = value.match(/docs\.google\.com\/spreadsheets\/d\/([^/]+)/i);
@@ -223,54 +222,7 @@ AS10139	Assembly Roosevelt Motorised Sliding Gate & Post with Post with Bury int
       return `https://docs.google.com/spreadsheets/d/${sheetMatch[1]}/export?format=csv&gid=${gid}`;
     }
 
-    const driveFileMatch = value.match(/drive\.google\.com\/file\/d\/([^/]+)/i);
-
-    if (driveFileMatch) {
-      return `https://drive.google.com/uc?export=download&id=${driveFileMatch[1]}`;
-    }
-
     return value;
-  }
-
-  function requestText(url) {
-    return new Promise((resolve, reject) => {
-      if (typeof GM_xmlhttpRequest === 'function') {
-        GM_xmlhttpRequest({
-          method: 'GET',
-          url,
-          headers: {
-            'Cache-Control': 'no-cache'
-          },
-          onload: response => {
-            if (response.status >= 200 && response.status < 300) {
-              resolve(response.responseText || '');
-            } else {
-              reject(new Error(`Google data returned ${response.status}`));
-            }
-          },
-          onerror: () => reject(new Error('Could not load Google data'))
-        });
-
-        return;
-      }
-
-      fetch(url, { cache: 'no-store' })
-        .then(response => {
-          if (!response.ok) throw new Error(`Google data returned ${response.status}`);
-          return response.text();
-        })
-        .then(resolve)
-        .catch(reject);
-    });
-  }
-
-  function setSourceLabel(label) {
-    const root = document.getElementById('lc-install-fee-root');
-    const source = root?.shadowRoot?.getElementById('lc-install-fee-source');
-
-    dataSourceLabel = label || dataSourceLabel;
-
-    if (source) source.textContent = dataSourceLabel;
   }
 
   async function loadRemoteInstallFees() {
@@ -281,14 +233,23 @@ AS10139	Assembly Roosevelt Motorised Sliding Gate & Post with Post with Bury int
       return false;
     }
 
-    setSourceLabel('Loading Google Drive pricing...');
+    setSourceLabel('Loading Google Sheet pricing...');
 
     try {
-      const raw = await requestText(remoteUrl);
+      const response = await fetch(remoteUrl, {
+        cache: 'no-store',
+        credentials: 'omit'
+      });
+
+      if (!response.ok) {
+        throw new Error(`Google Sheet returned ${response.status}`);
+      }
+
+      const raw = await response.text();
       const nextItems = parseData(raw);
 
       if (!nextItems.length) {
-        throw new Error('Google data had no install-fee rows');
+        throw new Error('Google Sheet had no install-fee rows');
       }
 
       items = nextItems;
@@ -297,7 +258,7 @@ AS10139	Assembly Roosevelt Motorised Sliding Gate & Post with Post with Bury int
       localStorage.setItem(CACHE_KEY, raw);
       localStorage.setItem(CACHE_TIME_KEY, String(Date.now()));
 
-      setSourceLabel('Google Drive pricing loaded');
+      setSourceLabel('Google Sheet pricing loaded');
 
       const root = document.getElementById('lc-install-fee-root');
       const search = root?.shadowRoot?.getElementById('lc-install-fee-search');
@@ -306,9 +267,20 @@ AS10139	Assembly Roosevelt Motorised Sliding Gate & Post with Post with Bury int
       return true;
     } catch (error) {
       console.warn(error);
-      setSourceLabel(`${dataSourceLabel} - Google data unavailable`);
+      setSourceLabel(`${dataSourceLabel} - live Google Sheet unavailable`);
       renderRows();
       return false;
+    }
+  }
+
+  function setSourceLabel(label) {
+    dataSourceLabel = label || dataSourceLabel;
+
+    const root = document.getElementById('lc-install-fee-root');
+    const source = root?.shadowRoot?.getElementById('lc-install-fee-source');
+
+    if (source) {
+      source.textContent = dataSourceLabel;
     }
   }
 
@@ -318,7 +290,9 @@ AS10139	Assembly Roosevelt Motorised Sliding Gate & Post with Post with Bury int
 
   function formatPrice(price) {
     const number = Number(String(price || '').replace(/[^\d.-]/g, ''));
+
     if (Number.isNaN(number)) return String(price || '');
+
     return number.toLocaleString('en-NZ', { maximumFractionDigits: 0 });
   }
 
@@ -332,28 +306,33 @@ AS10139	Assembly Roosevelt Motorised Sliding Gate & Post with Post with Bury int
   }
 
   async function copyText(text) {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      return;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return;
+      }
+
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.left = '-9999px';
+      textarea.style.top = '-9999px';
+
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+
+      document.execCommand('copy');
+      textarea.remove();
+    } catch (error) {
+      console.warn('Clipboard copy failed:', error);
     }
-
-    const textarea = document.createElement('textarea');
-    textarea.value = text;
-    textarea.style.position = 'fixed';
-    textarea.style.left = '-9999px';
-    textarea.style.top = '-9999px';
-
-    document.body.appendChild(textarea);
-    textarea.focus();
-    textarea.select();
-
-    document.execCommand('copy');
-    textarea.remove();
   }
 
   function closeModal() {
     const root = document.getElementById('lc-install-fee-root');
     const modal = root?.shadowRoot?.getElementById('lc-install-fee-modal');
+
     if (modal) modal.classList.remove('open');
   }
 
@@ -385,6 +364,7 @@ AS10139	Assembly Roosevelt Motorised Sliding Gate & Post with Post with Bury int
   function showToast(message) {
     const root = document.getElementById('lc-install-fee-root');
     const toast = root?.shadowRoot?.getElementById('lc-install-fee-toast');
+
     if (!toast) return;
 
     toast.textContent = message;
@@ -688,86 +668,92 @@ AS10139	Assembly Roosevelt Motorised Sliding Gate & Post with Post with Bury int
   }
 
   async function fillQuoteProductAndPrice(item) {
-    await copyText(item.code);
+    try {
+      await copyText(item.code);
 
-    setInstallFeeModalPassthrough(true);
-    await wait(200);
+      setInstallFeeModalPassthrough(true);
+      await wait(200);
 
-    const productHeader = findHeaderRect('product');
-    const priceHeader = findHeaderRect('price');
+      const productHeader = findHeaderRect('product');
+      const priceHeader = findHeaderRect('price');
 
-    if (!productHeader || !priceHeader) {
+      if (!productHeader || !priceHeader) {
+        setInstallFeeModalPassthrough(false);
+        closeModal();
+        showToast('Could not find quote product/price headers');
+        return;
+      }
+
+      const emptyRow = findNextEmptyProductRow(productHeader);
+
+      if (!emptyRow) {
+        setInstallFeeModalPassthrough(false);
+        closeModal();
+        showToast('No empty quote line available');
+        return;
+      }
+
+      const rowY = emptyRow.rect.top + emptyRow.rect.height / 2;
+      const productX = emptyRow.rect.left + Math.min(emptyRow.rect.width / 2, 160);
+      const priceX = priceHeader.left + priceHeader.width / 2;
+
+      clickAt(productX, rowY);
+      await wait(300);
+
+      const finalProductInput = findActiveInputNear(productX, rowY, 320);
+
+      if (!finalProductInput) {
+        setInstallFeeModalPassthrough(false);
+        closeModal();
+        showToast('No empty product field available');
+        return;
+      }
+
+      const productInputRect = finalProductInput.getBoundingClientRect();
+
+      if (Math.abs(productInputRect.top - rowY) > 170) {
+        setInstallFeeModalPassthrough(false);
+        closeModal();
+        showToast('Blocked wrong field');
+        return;
+      }
+
+      setInputOrEditableValue(finalProductInput, item.code);
+
+      await selectFirstCin7ProductOption(finalProductInput, item.code);
+
+      await wait(1200);
+
+      clickAt(priceX, rowY);
+      await wait(300);
+
+      const priceInput = findActiveInputNear(priceX, rowY, 320);
+
+      if (!priceInput) {
+        setInstallFeeModalPassthrough(false);
+        showToast(`SKU selected. Price copied: ${item.price}`);
+        await copyText(String(item.price));
+        return;
+      }
+
+      const priceInputRect = priceInput.getBoundingClientRect();
+
+      if (Math.abs(priceInputRect.top - rowY) > 170) {
+        setInstallFeeModalPassthrough(false);
+        showToast(`SKU selected. Price copied: ${item.price}`);
+        await copyText(String(item.price));
+        return;
+      }
+
+      setInputOrEditableValue(priceInput, getCleanPrice(item.price));
+
       setInstallFeeModalPassthrough(false);
-      closeModal();
-      showToast('Could not find quote product/price headers');
-      return;
-    }
-
-    const emptyRow = findNextEmptyProductRow(productHeader);
-
-    if (!emptyRow) {
+      showToast(`Added ${item.code} + $${formatPrice(item.price)}`);
+    } catch (error) {
+      console.error('Install fee add failed:', error);
       setInstallFeeModalPassthrough(false);
-      closeModal();
-      showToast('No empty quote line available');
-      return;
+      showToast(`Add failed: ${error.message || 'Unknown error'}`);
     }
-
-    const rowY = emptyRow.rect.top + emptyRow.rect.height / 2;
-    const productX = emptyRow.rect.left + Math.min(emptyRow.rect.width / 2, 160);
-    const priceX = priceHeader.left + priceHeader.width / 2;
-
-    clickAt(productX, rowY);
-    await wait(300);
-
-    const finalProductInput = findActiveInputNear(productX, rowY, 320);
-
-    if (!finalProductInput) {
-      setInstallFeeModalPassthrough(false);
-      closeModal();
-      showToast('No empty product field available');
-      return;
-    }
-
-    const productInputRect = finalProductInput.getBoundingClientRect();
-
-    if (Math.abs(productInputRect.top - rowY) > 170) {
-      setInstallFeeModalPassthrough(false);
-      closeModal();
-      showToast('Blocked wrong field');
-      return;
-    }
-
-    setInputOrEditableValue(finalProductInput, item.code);
-
-    await selectFirstCin7ProductOption(finalProductInput, item.code);
-
-    await wait(1200);
-
-    clickAt(priceX, rowY);
-    await wait(300);
-
-    const priceInput = findActiveInputNear(priceX, rowY, 320);
-
-    if (!priceInput) {
-      setInstallFeeModalPassthrough(false);
-      showToast(`SKU selected. Price copied: ${item.price}`);
-      await copyText(String(item.price));
-      return;
-    }
-
-    const priceInputRect = priceInput.getBoundingClientRect();
-
-    if (Math.abs(priceInputRect.top - rowY) > 170) {
-      setInstallFeeModalPassthrough(false);
-      showToast(`SKU selected. Price copied: ${item.price}`);
-      await copyText(String(item.price));
-      return;
-    }
-
-    setInputOrEditableValue(priceInput, getCleanPrice(item.price));
-
-    setInstallFeeModalPassthrough(false);
-    showToast(`Added ${item.code} + $${formatPrice(item.price)}`);
   }
 
   function getInstallFeeGroup(item) {
