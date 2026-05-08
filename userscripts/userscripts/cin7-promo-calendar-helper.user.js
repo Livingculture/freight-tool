@@ -1,14 +1,11 @@
 // ==UserScript==
-// @name         Cin7 Living Culture Promo Calendar Helper
+// @name         Cin7 Living Culture Promo Calendar Summary
 // @namespace    livingculture-cin7
-// @version      1.0
-// @description  Shows the Living Culture promotion calendar inside Cin7 from the shared Google Sheet CSV.
+// @version      1.1
+// @description  Shows the Living Culture promotion calendar Summary tab inside Cin7.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
 // @match        https://inventory.dearsystems.com/*
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-calendar-helper.user.js
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-calendar-helper.user.js
-// @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
 // @connect      docs.google.com
@@ -21,17 +18,17 @@
   const PROMO_CSV_URL =
     'https://docs.google.com/spreadsheets/d/1Y6r2-84sZYqtqDGKQwIWt9gT03BmjXloiuER8gHDqRY/export?format=csv&gid=375042703';
 
-  const CACHE_KEY = 'lc-promo-calendar-csv-v1';
-  const CACHE_TIME_KEY = 'lc-promo-calendar-csv-time-v1';
+  const CACHE_KEY = 'lc-promo-summary-csv-v11';
+  const CACHE_TIME_KEY = 'lc-promo-summary-csv-time-v11';
 
   const FALLBACK_CSV = `
 ,NZ Promotion Campaign,Start date,End date,NZ Category ( Shopify > Sales & Discount (Selected items only) ),Note,Task
 ,Clearance,,,https://livingculture.co.nz/collections/clearance-sale,,
 `;
 
-  let sourceLabel = 'Loading promo calendar...';
-  let allPromos = [];
-  let filteredPromos = [];
+  let sourceLabel = 'Loading Summary tab...';
+  let allRows = [];
+  let filteredRows = [];
 
   function clean(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
@@ -87,36 +84,23 @@
 
   function parseDateText(value) {
     const text = clean(value);
-
     if (!text) return null;
 
     const currentYear = new Date().getFullYear();
 
     const monthMap = {
-      jan: 0,
-      january: 0,
-      feb: 1,
-      february: 1,
-      mar: 2,
-      march: 2,
-      apr: 3,
-      april: 3,
+      jan: 0, january: 0,
+      feb: 1, february: 1,
+      mar: 2, march: 2,
+      apr: 3, april: 3,
       may: 4,
-      jun: 5,
-      june: 5,
-      jul: 6,
-      july: 6,
-      aug: 7,
-      august: 7,
-      sep: 8,
-      sept: 8,
-      september: 8,
-      oct: 9,
-      october: 9,
-      nov: 10,
-      november: 10,
-      dec: 11,
-      december: 11
+      jun: 5, june: 5,
+      jul: 6, july: 6,
+      aug: 7, august: 7,
+      sep: 8, sept: 8, september: 8,
+      oct: 9, october: 9,
+      nov: 10, november: 10,
+      dec: 11, december: 11
     };
 
     let match = text.match(/^(\d{1,2})[-\s/]([A-Za-z]{3,9})(?:[-\s/](\d{2,4}))?$/);
@@ -239,13 +223,13 @@
       .map((line, index) => {
         const cells = parseCsvLine(line);
 
+        const approval = clean(cells[colApproval]);
         const campaign = clean(cells[colCampaign >= 0 ? colCampaign : 1]);
         const startText = clean(cells[colStart >= 0 ? colStart : 2]);
         const endText = clean(cells[colEnd >= 0 ? colEnd : 3]);
         const category = clean(cells[colCategory >= 0 ? colCategory : 4]);
         const note = clean(cells[colNote >= 0 ? colNote : 5]);
         const task = clean(cells[colTask >= 0 ? colTask : 6]);
-        const approval = clean(cells[colApproval]);
 
         const startDate = parseDateText(startText);
         const endDate = parseDateText(endText);
@@ -267,14 +251,14 @@
           task,
           state,
           isWeekRow: /^week\s+\d+/i.test(campaign),
-          isBlank: !campaign && !category && !note
+          isBlank: !campaign && !category && !note && !task
         };
       })
       .filter(item => !item.isBlank)
-      .filter(item => item.campaign || item.category || item.note);
+      .filter(item => item.campaign || item.category || item.note || item.task);
   }
 
-  function sortPromos(promos) {
+  function sortRows(rows) {
     const priority = {
       current: 0,
       always: 1,
@@ -283,7 +267,7 @@
       past: 4
     };
 
-    return [...promos].sort((a, b) => {
+    return [...rows].sort((a, b) => {
       const priorityDiff = (priority[a.state] ?? 9) - (priority[b.state] ?? 9);
       if (priorityDiff !== 0) return priorityDiff;
 
@@ -338,8 +322,8 @@
       const ageMinutes = cachedAt ? Math.round((Date.now() - cachedAt) / 60000) : 0;
 
       sourceLabel = ageMinutes
-        ? `Google Sheet from cache (${ageMinutes}m old)`
-        : 'Google Sheet from cache';
+        ? `Summary tab from cache (${ageMinutes}m old)`
+        : 'Summary tab from cache';
 
       return cached;
     } catch (error) {
@@ -349,7 +333,7 @@
   }
 
   async function loadPromoData() {
-    setSourceLabel('Loading Google Sheet...');
+    setSourceLabel('Loading Summary tab...');
 
     try {
       const raw = await requestText(PROMO_CSV_URL);
@@ -361,14 +345,14 @@
       const parsed = parsePromoCsv(raw);
 
       if (!parsed.length) {
-        throw new Error('No promo rows found in Google Sheet');
+        throw new Error('No Summary rows found in Google Sheet');
       }
 
       localStorage.setItem(CACHE_KEY, raw);
       localStorage.setItem(CACHE_TIME_KEY, String(Date.now()));
 
-      allPromos = parsed;
-      sourceLabel = 'Google Sheet live data loaded';
+      allRows = parsed;
+      sourceLabel = 'Summary tab live data loaded';
       setSourceLabel(sourceLabel);
       applyFilters();
 
@@ -379,14 +363,14 @@
       const cached = readCachedCsv();
 
       if (cached) {
-        allPromos = parsePromoCsv(cached);
+        allRows = parsePromoCsv(cached);
         setSourceLabel(`${sourceLabel} - live unavailable`);
         applyFilters();
         return false;
       }
 
-      allPromos = parsePromoCsv(FALLBACK_CSV);
-      setSourceLabel('Built-in fallback - live Google Sheet unavailable');
+      allRows = parsePromoCsv(FALLBACK_CSV);
+      setSourceLabel('Built-in fallback - Summary tab unavailable');
       applyFilters();
       return false;
     }
@@ -395,21 +379,21 @@
   function setSourceLabel(text) {
     sourceLabel = text || sourceLabel;
 
-    const root = document.getElementById('lc-promo-calendar-root');
+    const root = document.getElementById('lc-promo-summary-root');
     const source = root?.shadowRoot?.getElementById('lc-promo-source');
 
     if (source) source.textContent = sourceLabel;
   }
 
   function applyFilters() {
-    const root = document.getElementById('lc-promo-calendar-root');
+    const root = document.getElementById('lc-promo-summary-root');
     const shadow = root?.shadowRoot;
 
     const searchValue = clean(shadow?.getElementById('lc-promo-search')?.value).toLowerCase();
     const stateValue = shadow?.getElementById('lc-promo-filter')?.value || 'active';
     const hideWeeks = shadow?.getElementById('lc-promo-hide-weeks')?.checked ?? true;
 
-    filteredPromos = allPromos.filter(item => {
+    filteredRows = allRows.filter(item => {
       if (hideWeeks && item.isWeekRow) return false;
 
       if (stateValue === 'active' && !['current', 'always', 'upcoming'].includes(item.state)) {
@@ -436,20 +420,20 @@
       return combined.includes(searchValue);
     });
 
-    filteredPromos = sortPromos(filteredPromos);
-    renderPromoRows();
+    filteredRows = sortRows(filteredRows);
+    renderRows();
     renderSummary();
   }
 
   function renderSummary() {
-    const root = document.getElementById('lc-promo-calendar-root');
+    const root = document.getElementById('lc-promo-summary-root');
     const shadow = root?.shadowRoot;
 
     if (!shadow) return;
 
-    const currentCount = allPromos.filter(item => item.state === 'current').length;
-    const upcomingCount = allPromos.filter(item => item.state === 'upcoming').length;
-    const alwaysCount = allPromos.filter(item => item.state === 'always').length;
+    const currentCount = allRows.filter(item => item.state === 'current').length;
+    const upcomingCount = allRows.filter(item => item.state === 'upcoming').length;
+    const alwaysCount = allRows.filter(item => item.state === 'always').length;
 
     const currentEl = shadow.getElementById('lc-promo-current-count');
     const upcomingEl = shadow.getElementById('lc-promo-upcoming-count');
@@ -459,25 +443,25 @@
     if (currentEl) currentEl.textContent = currentCount;
     if (upcomingEl) upcomingEl.textContent = upcomingCount;
     if (alwaysEl) alwaysEl.textContent = alwaysCount;
-    if (resultEl) resultEl.textContent = `${filteredPromos.length} result${filteredPromos.length === 1 ? '' : 's'}`;
+    if (resultEl) resultEl.textContent = `${filteredRows.length} result${filteredRows.length === 1 ? '' : 's'}`;
   }
 
-  function renderPromoRows() {
-    const root = document.getElementById('lc-promo-calendar-root');
+  function renderRows() {
+    const root = document.getElementById('lc-promo-summary-root');
     const tbody = root?.shadowRoot?.getElementById('lc-promo-tbody');
 
     if (!tbody) return;
 
-    if (!filteredPromos.length) {
+    if (!filteredRows.length) {
       tbody.innerHTML = `
         <tr>
-          <td colspan="5" class="empty">No promotions found.</td>
+          <td colspan="5" class="empty">No Summary rows found.</td>
         </tr>
       `;
       return;
     }
 
-    tbody.innerHTML = filteredPromos.map(item => `
+    tbody.innerHTML = filteredRows.map(item => `
       <tr>
         <td class="status-cell">
           <span class="tag ${getStateClass(item.state)}">${escapeHtml(getStateLabel(item.state))}</span>
@@ -520,7 +504,7 @@
   }
 
   function openModal() {
-    const root = document.getElementById('lc-promo-calendar-root');
+    const root = document.getElementById('lc-promo-summary-root');
     const modal = root?.shadowRoot?.getElementById('lc-promo-modal');
     const search = root?.shadowRoot?.getElementById('lc-promo-search');
 
@@ -533,14 +517,14 @@
   }
 
   function closeModal() {
-    const root = document.getElementById('lc-promo-calendar-root');
+    const root = document.getElementById('lc-promo-summary-root');
     const modal = root?.shadowRoot?.getElementById('lc-promo-modal');
 
     if (modal) modal.classList.remove('open');
   }
 
   function insertButtonNextToScan() {
-    if (document.getElementById('lc-promo-calendar-inline-button')) return;
+    if (document.getElementById('lc-promo-summary-inline-button')) return;
 
     const scanButton = Array.from(document.querySelectorAll('button, a, div, span'))
       .filter(element => isElementVisible(element))
@@ -549,9 +533,9 @@
     if (!scanButton) return;
 
     const button = document.createElement('button');
-    button.id = 'lc-promo-calendar-inline-button';
+    button.id = 'lc-promo-summary-inline-button';
     button.type = 'button';
-    button.textContent = 'Promo Calendar';
+    button.textContent = 'Promo Summary';
 
     const scanRect = scanButton.getBoundingClientRect();
 
@@ -584,15 +568,15 @@
   }
 
   function createWidget() {
-    if (document.getElementById('lc-promo-calendar-root')) return;
+    if (document.getElementById('lc-promo-summary-root')) return;
     if (!document.body) return;
 
     const cachedCsv = readCachedCsv();
-    allPromos = parsePromoCsv(cachedCsv || FALLBACK_CSV);
-    filteredPromos = sortPromos(allPromos);
+    allRows = parsePromoCsv(cachedCsv || FALLBACK_CSV);
+    filteredRows = sortRows(allRows);
 
     const root = document.createElement('div');
-    root.id = 'lc-promo-calendar-root';
+    root.id = 'lc-promo-summary-root';
     root.attachShadow({ mode: 'open' });
 
     root.shadowRoot.innerHTML = `
@@ -917,8 +901,8 @@
         <div class="panel">
           <div class="header">
             <div>
-              <h2 class="title">Living Culture Promo Calendar</h2>
-              <div class="subtitle">Live promotion calendar from the shared head office Google Sheet.</div>
+              <h2 class="title">Living Culture Promo Summary</h2>
+              <div class="subtitle">Live Summary tab from the shared head office Google Sheet.</div>
               <div class="source" id="lc-promo-source">${escapeHtml(sourceLabel)}</div>
             </div>
 
