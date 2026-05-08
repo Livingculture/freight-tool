@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Custom Product Helper
 // @namespace    livingculture-cin7
-// @version      1.3
+// @version      1.4
 // @description  Shows Living Culture customised pergola/product SKUs inside Cin7 and fills the product code into the quote line.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
@@ -41,8 +41,8 @@
 
   const REMOTE_DATA_URL = 'https://drive.google.com/file/d/13_8VBumN4EsU2obB-dllv7AyvVHGBt5Q/view?usp=sharing';
 
-  const CACHE_KEY = 'lc-custom-product-data-v13';
-  const CACHE_TIME_KEY = 'lc-custom-product-data-time-v13';
+  const CACHE_KEY = 'lc-custom-product-data-v14';
+  const CACHE_TIME_KEY = 'lc-custom-product-data-time-v14';
 
   const RAW_DATA = `
 Name,CS code,Price/per m2,Memo
@@ -472,7 +472,6 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
         new MouseEvent(type, {
           bubbles: true,
           cancelable: true,
-          view: window,
           clientX: x,
           clientY: y
         })
