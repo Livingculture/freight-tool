@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Custom Product Helper
 // @namespace    livingculture-cin7
-// @version      1.2
+// @version      1.3
 // @description  Shows Living Culture customised pergola/product SKUs inside Cin7 and fills the product code into the quote line.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
@@ -30,12 +30,19 @@
 
     Also accepted:
     Product | SKU | Price | Notes
+
+    This script:
+    - updates from GitHub
+    - loads product data from Google/Drive where possible
+    - falls back to built-in product data
+    - clicks Add to insert the SKU/product code into the next empty Cin7 product line
+    - does NOT fill price, because Cin7 should pull price from the product
   */
 
   const REMOTE_DATA_URL = 'https://drive.google.com/file/d/13_8VBumN4EsU2obB-dllv7AyvVHGBt5Q/view?usp=sharing';
 
-  const CACHE_KEY = 'lc-custom-product-data-v12';
-  const CACHE_TIME_KEY = 'lc-custom-product-data-time-v12';
+  const CACHE_KEY = 'lc-custom-product-data-v13';
+  const CACHE_TIME_KEY = 'lc-custom-product-data-time-v13';
 
   const RAW_DATA = `
 Name,CS code,Price/per m2,Memo
@@ -668,16 +675,28 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
       clickAt(productX, rowY);
       await wait(300);
 
-      const productInput = findActiveInputNear(productX, rowY, 320);
+      let finalProductInput = findActiveInputNear(productX, rowY, 320);
 
-      if (!productInput) {
+      if (!finalProductInput) {
+        const active = document.activeElement;
+
+        if (
+          active instanceof HTMLInputElement ||
+          active instanceof HTMLTextAreaElement ||
+          active?.isContentEditable
+        ) {
+          finalProductInput = active;
+        }
+      }
+
+      if (!finalProductInput) {
         setModalPassthrough(false);
         closeModal();
         showToast('No empty product field available');
         return;
       }
 
-      const productInputRect = productInput.getBoundingClientRect();
+      const productInputRect = finalProductInput.getBoundingClientRect();
 
       if (Math.abs(productInputRect.top - rowY) > 170) {
         setModalPassthrough(false);
@@ -686,9 +705,13 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
         return;
       }
 
-      setInputOrEditableValue(productInput, item.code);
+      setInputOrEditableValue(finalProductInput, item.code);
 
-      await selectFirstCin7ProductOption(productInput, item.code);
+      await wait(500);
+
+      await selectFirstCin7ProductOption(finalProductInput, item.code);
+
+      await wait(1200);
 
       setModalPassthrough(false);
       closeModal();
