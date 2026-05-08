@@ -1,11 +1,14 @@
 // ==UserScript==
-// @name         Cin7 Living Culture Promo Calendar Summary
+// @name         Cin7 Living Culture Promo Summary
 // @namespace    livingculture-cin7
-// @version      1.1
-// @description  Shows the Living Culture promotion calendar Summary tab inside Cin7.
+// @version      2.2
+// @description  Compact grouped Living Culture promo summary inside Cin7 from the Summary tab.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
 // @match        https://inventory.dearsystems.com/*
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js
+// @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
 // @connect      docs.google.com
@@ -15,23 +18,32 @@
 (function () {
   'use strict';
 
-  const PROMO_CSV_URL =
+  const SUMMARY_CSV_URL =
     'https://docs.google.com/spreadsheets/d/1Y6r2-84sZYqtqDGKQwIWt9gT03BmjXloiuER8gHDqRY/export?format=csv&gid=375042703';
 
-  const CACHE_KEY = 'lc-promo-summary-csv-v11';
-  const CACHE_TIME_KEY = 'lc-promo-summary-csv-time-v11';
+  const CACHE_KEY = 'lc-promo-summary-grouped-v22';
+  const CACHE_TIME_KEY = 'lc-promo-summary-grouped-time-v22';
 
-  const FALLBACK_CSV = `
-,NZ Promotion Campaign,Start date,End date,NZ Category ( Shopify > Sales & Discount (Selected items only) ),Note,Task
-,Clearance,,,https://livingculture.co.nz/collections/clearance-sale,,
+  const UPCOMING_DAYS_TO_SHOW = 90;
+
+  const FALLBACK_CSV = `Approval,NZ Promotion Campaign,Start date,End date,NZ Category ( Shopify > Sales & Discount (Selected items only) ),Note
+Approval,Tauranga Home Show Special Offer,30-Apr,12-May,"Spend $3,000+ on Products, and Get 10% OFF your items.Spend $6,000+ on Products, and Get 10% OFF your items + A FREE Hanging Wicker Swing Chair (Value $600).Note: Discount applies to product RRP only. Excludes shipping and installation fees. Offer valid while stocks last.",
+,Week 18,30-Apr,6-May,,
+,Tauranga Home Show Special Offer,30-Apr,12-May,"Spend $3,000+ on Products, and Get 10% OFF your items.Spend $6,000+ on Products, and Get 10% OFF your items + A FREE Hanging Wicker Swing Chair (Value $600).Note: Discount applies to product RRP only. Excludes shipping and installation fees. Offer valid while stocks last.",
+,Week 19,7-May,13-May,,
+Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Caspian Pergola5%off - Tasman Pergolas10%off - Patio Covers10%off - Window / Door Awning15%off - Ficus Solid Polycarbonate Outdoor Window Awning Door Canopy10%off - Retractable Awnings + Solar-Powered Awnings20%off - Aluminium Furniture20%off - Plastic Chairs15%off - Outdoor Throw Blanket and Rugs15%off - Outdoor Heating15%off - Outdoor Grills15%off - Garden & Outdoor Decor15%off - Pets & Farm",
 `;
 
-  let sourceLabel = 'Loading Summary tab...';
   let allRows = [];
   let filteredRows = [];
+  let sourceLabel = 'Loading Summary tab...';
 
   function clean(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function compact(value) {
+    return clean(value).toLowerCase().replace(/[^a-z0-9]+/g, '');
   }
 
   function escapeHtml(value) {
@@ -43,239 +55,103 @@
       .replace(/'/g, '&#039;');
   }
 
-  function parseCsvLine(line) {
-    const values = [];
+  function linkify(value) {
+    const safe = escapeHtml(value);
+
+    return safe.replace(
+      /(https?:\/\/[^\s<]+)/gi,
+      '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
+    );
+  }
+
+  function parseCsvRows(csvText) {
+    const rows = [];
+    let row = [];
     let value = '';
     let quoted = false;
 
-    for (let i = 0; i < line.length; i += 1) {
-      const char = line[i];
-      const next = line[i + 1];
+    const text = String(csvText || '')
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n');
+
+    for (let i = 0; i < text.length; i += 1) {
+      const char = text[i];
+      const next = text[i + 1];
 
       if (char === '"' && quoted && next === '"') {
         value += '"';
         i += 1;
-      } else if (char === '"') {
+        continue;
+      }
+
+      if (char === '"') {
         quoted = !quoted;
-      } else if (char === ',' && !quoted) {
-        values.push(value);
+        continue;
+      }
+
+      if (char === ',' && !quoted) {
+        row.push(value);
         value = '';
-      } else {
-        value += char;
+        continue;
       }
-    }
 
-    values.push(value);
-    return values;
-  }
+      if (char === '\n' && !quoted) {
+        row.push(value);
 
-  function normaliseHeader(value) {
-    return clean(value).toLowerCase().replace(/[^a-z0-9]+/g, '');
-  }
+        if (row.some(cell => clean(cell))) {
+          rows.push(row);
+        }
 
-  function findColumn(headers, names) {
-    const normalised = headers.map(normaliseHeader);
-    const wanted = names.map(normaliseHeader);
-
-    return normalised.findIndex(header =>
-      wanted.some(name => header === name || header.includes(name))
-    );
-  }
-
-  function parseDateText(value) {
-    const text = clean(value);
-    if (!text) return null;
-
-    const currentYear = new Date().getFullYear();
-
-    const monthMap = {
-      jan: 0, january: 0,
-      feb: 1, february: 1,
-      mar: 2, march: 2,
-      apr: 3, april: 3,
-      may: 4,
-      jun: 5, june: 5,
-      jul: 6, july: 6,
-      aug: 7, august: 7,
-      sep: 8, sept: 8, september: 8,
-      oct: 9, october: 9,
-      nov: 10, november: 10,
-      dec: 11, december: 11
-    };
-
-    let match = text.match(/^(\d{1,2})[-\s/]([A-Za-z]{3,9})(?:[-\s/](\d{2,4}))?$/);
-
-    if (match) {
-      const day = Number(match[1]);
-      const month = monthMap[match[2].toLowerCase()];
-      let year = match[3] ? Number(match[3]) : currentYear;
-
-      if (year < 100) year += 2000;
-
-      if (Number.isFinite(day) && month !== undefined) {
-        return new Date(year, month, day, 0, 0, 0, 0);
+        row = [];
+        value = '';
+        continue;
       }
+
+      value += char;
     }
 
-    match = text.match(/^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?$/);
+    row.push(value);
 
-    if (match) {
-      const day = Number(match[1]);
-      const month = Number(match[2]) - 1;
-      let year = match[3] ? Number(match[3]) : currentYear;
-
-      if (year < 100) year += 2000;
-
-      return new Date(year, month, day, 0, 0, 0, 0);
+    if (row.some(cell => clean(cell))) {
+      rows.push(row);
     }
 
-    const parsed = new Date(text);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
+    return rows;
   }
 
-  function formatDate(date, fallback) {
-    if (!date || Number.isNaN(date.getTime())) return clean(fallback);
+  function parseCsv(rawCsv) {
+    const rows = parseCsvRows(rawCsv);
 
-    return date.toLocaleDateString('en-NZ', {
-      day: 'numeric',
-      month: 'short'
+    if (!rows.length) return [];
+
+    const output = [];
+
+    rows.slice(1).forEach((cells, index) => {
+      const approval = clean(cells[0]);
+      const campaign = clean(cells[1]);
+      const start = clean(cells[2]);
+      const end = clean(cells[3]);
+      const category = clean(cells[4]);
+      const note = clean(cells[5]);
+
+      if (!approval && !campaign && !start && !end && !category && !note) return;
+
+      const weekMatch = campaign.match(/week\s+(\d+)/i);
+
+      output.push({
+        rowIndex: index + 2,
+        approval,
+        campaign,
+        start,
+        end,
+        category,
+        note,
+        isWeek: /^week\s+\d+/i.test(campaign),
+        weekNum: weekMatch ? Number(weekMatch[1]) : null
+      });
     });
-  }
 
-  function daysBetween(a, b) {
-    const oneDay = 24 * 60 * 60 * 1000;
-    const start = new Date(a.getFullYear(), a.getMonth(), a.getDate());
-    const end = new Date(b.getFullYear(), b.getMonth(), b.getDate());
-
-    return Math.round((end - start) / oneDay);
-  }
-
-  function getPromoState(startDate, endDate, campaignName) {
-    const today = new Date();
-    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-
-    if (!startDate && !endDate) {
-      if (clean(campaignName).toLowerCase().includes('clearance')) return 'always';
-      return 'undated';
-    }
-
-    let start = startDate;
-    let end = endDate;
-
-    if (start && end && end < start) {
-      end = new Date(end);
-      end.setFullYear(end.getFullYear() + 1);
-    }
-
-    if (start && todayStart < start) return 'upcoming';
-    if (end && todayStart > end) return 'past';
-
-    return 'current';
-  }
-
-  function getStateLabel(state) {
-    if (state === 'current') return 'Current';
-    if (state === 'upcoming') return 'Upcoming';
-    if (state === 'past') return 'Past';
-    if (state === 'always') return 'Always On';
-    return 'No Date';
-  }
-
-  function getStateClass(state) {
-    if (state === 'current') return 'current';
-    if (state === 'upcoming') return 'upcoming';
-    if (state === 'past') return 'past';
-    if (state === 'always') return 'always';
-    return 'undated';
-  }
-
-  function containsUrl(value) {
-    return /https?:\/\//i.test(String(value || ''));
-  }
-
-  function linkify(value) {
-    const text = clean(value);
-
-    if (!containsUrl(text)) return escapeHtml(text);
-
-    const url = text.match(/https?:\/\/[^\s]+/i)?.[0];
-
-    if (!url) return escapeHtml(text);
-
-    return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>`;
-  }
-
-  function parsePromoCsv(rawCsv) {
-    const lines = String(rawCsv || '').trim().split(/\r?\n/).filter(Boolean);
-    if (!lines.length) return [];
-
-    const headers = parseCsvLine(lines[0]);
-
-    const colApproval = 0;
-    const colCampaign = findColumn(headers, ['NZ Promotion Campaign', 'Promotion Campaign', 'Campaign']);
-    const colStart = findColumn(headers, ['Start date', 'Start']);
-    const colEnd = findColumn(headers, ['End date', 'End']);
-    const colCategory = findColumn(headers, ['NZ Category', 'Category', 'Shopify']);
-    const colNote = findColumn(headers, ['Note', 'Notes']);
-    const colTask = findColumn(headers, ['Task']);
-
-    return lines.slice(1)
-      .map((line, index) => {
-        const cells = parseCsvLine(line);
-
-        const approval = clean(cells[colApproval]);
-        const campaign = clean(cells[colCampaign >= 0 ? colCampaign : 1]);
-        const startText = clean(cells[colStart >= 0 ? colStart : 2]);
-        const endText = clean(cells[colEnd >= 0 ? colEnd : 3]);
-        const category = clean(cells[colCategory >= 0 ? colCategory : 4]);
-        const note = clean(cells[colNote >= 0 ? colNote : 5]);
-        const task = clean(cells[colTask >= 0 ? colTask : 6]);
-
-        const startDate = parseDateText(startText);
-        const endDate = parseDateText(endText);
-        const state = getPromoState(startDate, endDate, campaign);
-
-        return {
-          rowNumber: index + 2,
-          approval,
-          campaign,
-          startText,
-          endText,
-          startDate,
-          endDate,
-          dateLabel: startText || endText
-            ? `${formatDate(startDate, startText)}${endText ? ` – ${formatDate(endDate, endText)}` : ''}`
-            : '',
-          category,
-          note,
-          task,
-          state,
-          isWeekRow: /^week\s+\d+/i.test(campaign),
-          isBlank: !campaign && !category && !note && !task
-        };
-      })
-      .filter(item => !item.isBlank)
-      .filter(item => item.campaign || item.category || item.note || item.task);
-  }
-
-  function sortRows(rows) {
-    const priority = {
-      current: 0,
-      always: 1,
-      upcoming: 2,
-      undated: 3,
-      past: 4
-    };
-
-    return [...rows].sort((a, b) => {
-      const priorityDiff = (priority[a.state] ?? 9) - (priority[b.state] ?? 9);
-      if (priorityDiff !== 0) return priorityDiff;
-
-      const aTime = a.startDate ? a.startDate.getTime() : Number.MAX_SAFE_INTEGER;
-      const bTime = b.startDate ? b.startDate.getTime() : Number.MAX_SAFE_INTEGER;
-
-      return aTime - bTime;
-    });
+    return output;
   }
 
   function requestText(url) {
@@ -315,7 +191,7 @@
       const cached = localStorage.getItem(CACHE_KEY);
       if (!cached) return '';
 
-      const parsed = parsePromoCsv(cached);
+      const parsed = parseCsv(cached);
       if (!parsed.length) return '';
 
       const cachedAt = Number(localStorage.getItem(CACHE_TIME_KEY)) || 0;
@@ -336,16 +212,16 @@
     setSourceLabel('Loading Summary tab...');
 
     try {
-      const raw = await requestText(PROMO_CSV_URL);
+      const raw = await requestText(SUMMARY_CSV_URL);
 
       if (/<!doctype html|<html/i.test(raw.slice(0, 300))) {
         throw new Error('Google returned an HTML page instead of CSV');
       }
 
-      const parsed = parsePromoCsv(raw);
+      const parsed = parseCsv(raw);
 
       if (!parsed.length) {
-        throw new Error('No Summary rows found in Google Sheet');
+        throw new Error('No Summary rows found');
       }
 
       localStorage.setItem(CACHE_KEY, raw);
@@ -363,17 +239,371 @@
       const cached = readCachedCsv();
 
       if (cached) {
-        allRows = parsePromoCsv(cached);
+        allRows = parseCsv(cached);
         setSourceLabel(`${sourceLabel} - live unavailable`);
         applyFilters();
         return false;
       }
 
-      allRows = parsePromoCsv(FALLBACK_CSV);
+      allRows = parseCsv(FALLBACK_CSV);
       setSourceLabel('Built-in fallback - Summary tab unavailable');
       applyFilters();
       return false;
     }
+  }
+
+  function startOfToday() {
+    const today = new Date();
+    return new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  }
+
+  function addDays(date, days) {
+    const copy = new Date(date);
+    copy.setDate(copy.getDate() + days);
+    return copy;
+  }
+
+  const monthMap = {
+    jan: 0,
+    january: 0,
+    feb: 1,
+    february: 1,
+    mar: 2,
+    march: 2,
+    apr: 3,
+    april: 3,
+    may: 4,
+    jun: 5,
+    june: 5,
+    jul: 6,
+    july: 6,
+    aug: 7,
+    august: 7,
+    sep: 8,
+    sept: 8,
+    september: 8,
+    oct: 9,
+    october: 9,
+    nov: 10,
+    november: 10,
+    dec: 11,
+    december: 11
+  };
+
+  function parseDateText(value) {
+    const text = clean(value);
+    if (!text) return null;
+
+    const currentYear = new Date().getFullYear();
+
+    let match = text.match(/^(\d{1,2})[-\s/]([A-Za-z]{3,9})(?:[-\s/](\d{2,4}))?$/);
+
+    if (match) {
+      const day = Number(match[1]);
+      const month = monthMap[match[2].toLowerCase()];
+      let year = match[3] ? Number(match[3]) : currentYear;
+
+      if (year < 100) year += 2000;
+
+      if (Number.isFinite(day) && month !== undefined) {
+        return new Date(year, month, day);
+      }
+    }
+
+    match = text.match(/^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?$/);
+
+    if (match) {
+      const day = Number(match[1]);
+      const month = Number(match[2]) - 1;
+      let year = match[3] ? Number(match[3]) : currentYear;
+
+      if (year < 100) year += 2000;
+
+      return new Date(year, month, day);
+    }
+
+    const parsed = new Date(text);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  function fixDateRange(row) {
+    let start = parseDateText(row.start);
+    let end = parseDateText(row.end);
+
+    if (start && end && end < start) {
+      end.setFullYear(end.getFullYear() + 1);
+    }
+
+    return { start, end };
+  }
+
+  function getState(row) {
+    const today = startOfToday();
+    const { start, end } = fixDateRange(row);
+
+    if (!start && !end) {
+      if (clean(row.campaign).toLowerCase().includes('clearance')) return 'always';
+      return 'undated';
+    }
+
+    if (start && today < start) return 'upcoming';
+    if (end && today > end) return 'past';
+
+    return 'current';
+  }
+
+  function isDateRelevant(row) {
+    const state = getState(row);
+    const today = startOfToday();
+    const futureLimit = addDays(today, UPCOMING_DAYS_TO_SHOW);
+    const { start } = fixDateRange(row);
+
+    if (state === 'current' || state === 'always') return true;
+    if (state === 'upcoming' && start) return start <= futureLimit;
+
+    return false;
+  }
+
+  function dateMin(a, b) {
+    if (!a) return b || null;
+    if (!b) return a || null;
+    return a < b ? a : b;
+  }
+
+  function dateMax(a, b) {
+    if (!a) return b || null;
+    if (!b) return a || null;
+    return a > b ? a : b;
+  }
+
+  function formatShortDate(date, fallback) {
+    if (!date) return clean(fallback);
+
+    return date
+      .toLocaleDateString('en-NZ', {
+        day: 'numeric',
+        month: 'short'
+      })
+      .replace(' ', '-');
+  }
+
+  function rangesOverlap(aStart, aEnd, bStart, bEnd) {
+    if (!aStart || !aEnd || !bStart || !bEnd) return false;
+    return aStart <= bEnd && bStart <= aEnd;
+  }
+
+  function getLatestWeekOneIndex() {
+    let latest = 0;
+
+    allRows.forEach((row, index) => {
+      if (row.weekNum === 1) latest = index;
+    });
+
+    return latest;
+  }
+
+  function getCycleRows() {
+    const startIndex = getLatestWeekOneIndex();
+    return allRows.slice(startIndex);
+  }
+
+  function getWeekLabelForRange(start, end) {
+    if (!start || !end) return '';
+
+    const weeks = getCycleRows()
+      .filter(row => row.isWeek && row.weekNum)
+      .filter(row => {
+        const weekRange = fixDateRange(row);
+        return rangesOverlap(start, end, weekRange.start, weekRange.end);
+      })
+      .map(row => row.weekNum)
+      .filter(Boolean)
+      .sort((a, b) => a - b);
+
+    if (!weeks.length) return '';
+
+    const min = weeks[0];
+    const max = weeks[weeks.length - 1];
+
+    return min === max ? `Week ${min}` : `Week ${min}–${max}`;
+  }
+
+  function daysBetween(a, b) {
+    const oneDay = 24 * 60 * 60 * 1000;
+    const start = new Date(a.getFullYear(), a.getMonth(), a.getDate());
+    const end = new Date(b.getFullYear(), b.getMonth(), b.getDate());
+
+    return Math.round((end - start) / oneDay);
+  }
+
+  function stateLabel(state) {
+    if (state === 'current') return 'Current';
+    if (state === 'upcoming') return 'Upcoming';
+    if (state === 'past') return 'Past';
+    if (state === 'always') return 'Always On';
+    return 'No Date';
+  }
+
+  function approvalHtml(value) {
+    const text = clean(value);
+
+    if (!text) return '<span class="blank">No approval note</span>';
+
+    const cls = text.toLowerCase().includes('review') ? 'review' : 'approval';
+
+    return `<span class="pill ${cls}">${escapeHtml(text)}</span>`;
+  }
+
+  function stateHtml(row) {
+    const state = getState(row);
+    const { start } = fixDateRange(row);
+
+    const days = state === 'upcoming' && start
+      ? `<div class="small">${daysBetween(startOfToday(), start)} days away</div>`
+      : '';
+
+    return `<span class="tag ${state}">${stateLabel(state)}</span>${days}`;
+  }
+
+  function sortRows(rows) {
+    const priority = {
+      current: 0,
+      always: 1,
+      upcoming: 2,
+      undated: 3,
+      past: 4
+    };
+
+    return [...rows].sort((a, b) => {
+      const ap = priority[getState(a)] ?? 9;
+      const bp = priority[getState(b)] ?? 9;
+
+      if (ap !== bp) return ap - bp;
+
+      const aStart = fixDateRange(a).start;
+      const bStart = fixDateRange(b).start;
+      const at = aStart ? aStart.getTime() : Number.MAX_SAFE_INTEGER;
+      const bt = bStart ? bStart.getTime() : Number.MAX_SAFE_INTEGER;
+
+      return at - bt;
+    });
+  }
+
+  function mergeRows(rows) {
+    const map = new Map();
+
+    rows.forEach(row => {
+      if (row.isWeek) return;
+
+      const key = compact(row.campaign) + '|' + compact(row.category);
+
+      if (!map.has(key)) {
+        const rowCopy = { ...row };
+        const fixed = fixDateRange(row);
+
+        rowCopy._startDate = fixed.start;
+        rowCopy._endDate = fixed.end;
+        rowCopy._sources = [row];
+
+        map.set(key, rowCopy);
+        return;
+      }
+
+      const existing = map.get(key);
+      const fixed = fixDateRange(row);
+
+      existing._startDate = dateMin(existing._startDate, fixed.start);
+      existing._endDate = dateMax(existing._endDate, fixed.end);
+      existing.start = formatShortDate(existing._startDate, existing.start);
+      existing.end = formatShortDate(existing._endDate, existing.end);
+
+      if (!existing.approval && row.approval) existing.approval = row.approval;
+      if (clean(row.note).length > clean(existing.note).length) existing.note = row.note;
+
+      existing._sources.push(row);
+    });
+
+    return Array.from(map.values()).map(row => {
+      if (!row._startDate || !row._endDate) {
+        const fixed = fixDateRange(row);
+        row._startDate = fixed.start;
+        row._endDate = fixed.end;
+      }
+
+      row.weekLabel = getWeekLabelForRange(row._startDate, row._endDate);
+      return row;
+    });
+  }
+
+  function parseOfferItems(text) {
+    const raw = clean(text);
+    if (!raw) return [];
+
+    const parts = raw
+      .replace(/(Up to\s+\d+\s*% ?off\s*[–-])/gi, '|||$1')
+      .replace(/(\d+\s*% ?off\s*[–-])/gi, '|||$1')
+      .split('|||')
+      .map(item => clean(item))
+      .filter(Boolean);
+
+    if (!parts.length) return [{ discount: '', name: raw }];
+
+    return parts.map(part => {
+      const match = part.match(/^((?:Up to\s+)?\d+\s*% ?off)\s*[–-]?\s*(.*)$/i);
+
+      if (match) {
+        return {
+          discount: match[1],
+          name: match[2] || ''
+        };
+      }
+
+      return {
+        discount: '',
+        name: part
+      };
+    });
+  }
+
+  function renderOffers(text) {
+    const offers = parseOfferItems(text);
+
+    if (!offers.length) return '<span class="blank">No category details</span>';
+
+    const hasDiscounts = offers.some(item => item.discount);
+
+    if (!hasDiscounts) {
+      return `
+        <div class="detail-box">
+          <div>${linkify(text) || '<span class="blank">No category details</span>'}</div>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="offers">
+        ${offers.map(item => `
+          <div class="offer">
+            ${item.discount ? `<div class="discount">${escapeHtml(item.discount)}</div>` : '<div></div>'}
+            <div class="offer-name">${item.name ? linkify(item.name) : '<span class="blank">No offer text</span>'}</div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  function isElementVisible(element) {
+    if (!element) return false;
+
+    const rect = element.getBoundingClientRect();
+    const style = window.getComputedStyle(element);
+
+    return (
+      rect.width > 0 &&
+      rect.height > 0 &&
+      style.display !== 'none' &&
+      style.visibility !== 'hidden'
+    );
   }
 
   function setSourceLabel(text) {
@@ -389,118 +619,97 @@
     const root = document.getElementById('lc-promo-summary-root');
     const shadow = root?.shadowRoot;
 
-    const searchValue = clean(shadow?.getElementById('lc-promo-search')?.value).toLowerCase();
-    const stateValue = shadow?.getElementById('lc-promo-filter')?.value || 'active';
-    const hideWeeks = shadow?.getElementById('lc-promo-hide-weeks')?.checked ?? true;
+    if (!shadow) return;
 
-    filteredRows = allRows.filter(item => {
-      if (hideWeeks && item.isWeekRow) return false;
+    const searchValue = clean(shadow.getElementById('lc-promo-search')?.value).toLowerCase();
+    const filterValue = shadow.getElementById('lc-promo-filter')?.value || 'date-relevant';
+    const mergePromos = shadow.getElementById('lc-promo-merge')?.checked ?? true;
 
-      if (stateValue === 'active' && !['current', 'always', 'upcoming'].includes(item.state)) {
-        return false;
-      }
+    let rows = getCycleRows().filter(row => {
+      if (row.isWeek) return false;
 
-      if (stateValue !== 'all' && stateValue !== 'active' && item.state !== stateValue) {
-        return false;
-      }
+      const state = getState(row);
+
+      if (filterValue === 'date-relevant' && !isDateRelevant(row)) return false;
+      if (filterValue === 'current' && state !== 'current') return false;
+      if (filterValue === 'upcoming' && state !== 'upcoming') return false;
+      if (filterValue === 'past' && state !== 'past') return false;
 
       if (!searchValue) return true;
 
       const combined = [
-        item.approval,
-        item.campaign,
-        item.startText,
-        item.endText,
-        item.category,
-        item.note,
-        item.task,
-        item.state
+        row.approval,
+        row.campaign,
+        row.start,
+        row.end,
+        row.category,
+        row.note,
+        state
       ].join(' ').toLowerCase();
 
       return combined.includes(searchValue);
     });
 
-    filteredRows = sortRows(filteredRows);
+    if (mergePromos) rows = mergeRows(rows);
+
+    filteredRows = sortRows(rows);
+
     renderRows();
-    renderSummary();
-  }
-
-  function renderSummary() {
-    const root = document.getElementById('lc-promo-summary-root');
-    const shadow = root?.shadowRoot;
-
-    if (!shadow) return;
-
-    const currentCount = allRows.filter(item => item.state === 'current').length;
-    const upcomingCount = allRows.filter(item => item.state === 'upcoming').length;
-    const alwaysCount = allRows.filter(item => item.state === 'always').length;
-
-    const currentEl = shadow.getElementById('lc-promo-current-count');
-    const upcomingEl = shadow.getElementById('lc-promo-upcoming-count');
-    const alwaysEl = shadow.getElementById('lc-promo-always-count');
-    const resultEl = shadow.getElementById('lc-promo-result-count');
-
-    if (currentEl) currentEl.textContent = currentCount;
-    if (upcomingEl) upcomingEl.textContent = upcomingCount;
-    if (alwaysEl) alwaysEl.textContent = alwaysCount;
-    if (resultEl) resultEl.textContent = `${filteredRows.length} result${filteredRows.length === 1 ? '' : 's'}`;
   }
 
   function renderRows() {
     const root = document.getElementById('lc-promo-summary-root');
-    const tbody = root?.shadowRoot?.getElementById('lc-promo-tbody');
+    const shadow = root?.shadowRoot;
+    const list = shadow?.getElementById('lc-promo-list');
+    const count = shadow?.getElementById('lc-promo-count');
 
-    if (!tbody) return;
+    if (!list || !count) return;
+
+    count.textContent = `${filteredRows.length} promos`;
 
     if (!filteredRows.length) {
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="5" class="empty">No Summary rows found.</td>
-        </tr>
-      `;
+      list.innerHTML = `<div class="empty">No promotions found for this filter.</div>`;
       return;
     }
 
-    tbody.innerHTML = filteredRows.map(item => `
-      <tr>
-        <td class="status-cell">
-          <span class="tag ${getStateClass(item.state)}">${escapeHtml(getStateLabel(item.state))}</span>
-          ${item.approval ? `<div class="approval">${escapeHtml(item.approval)}</div>` : ''}
-        </td>
+    list.innerHTML = filteredRows.map(row => `
+      <article class="promo">
+        <div class="promo-head">
+          <div>
+            <h2 class="title">${escapeHtml(row.campaign) || 'Untitled promotion'}</h2>
 
-        <td class="date-cell">
-          ${item.dateLabel ? escapeHtml(item.dateLabel) : '<span class="muted">No date</span>'}
-          ${item.startDate && item.state === 'upcoming' ? `<div class="small">${daysBetween(new Date(), item.startDate)} days away</div>` : ''}
-        </td>
+            <div class="meta-row">
+              <span class="date">
+                ${escapeHtml(row.start) || 'No start date'}${row.end ? ` – ${escapeHtml(row.end)}` : ''}
+              </span>
 
-        <td class="campaign-cell">
-          <strong>${escapeHtml(item.campaign || 'Untitled promotion')}</strong>
-          ${item.note ? `<div class="note">${escapeHtml(item.note)}</div>` : ''}
-        </td>
+              ${row.weekLabel ? `<span class="week-range">${escapeHtml(row.weekLabel)}</span>` : ''}
+            </div>
+          </div>
 
-        <td class="category-cell">
-          ${item.category ? linkify(item.category) : '<span class="muted">No category details</span>'}
-        </td>
+          <div class="badges">
+            ${stateHtml(row)}
+            ${approvalHtml(row.approval)}
+          </div>
+        </div>
 
-        <td class="task-cell">
-          ${item.task ? escapeHtml(item.task) : '<span class="muted">—</span>'}
-        </td>
-      </tr>
+        <div class="promo-body">
+          <div>
+            <h3 class="label-title">Offer / category details</h3>
+            ${renderOffers(row.category)}
+          </div>
+
+          ${clean(row.note) ? `
+            <div class="details">
+              <div class="detail-box">
+                <h3 class="label-title">Note / T&Cs</h3>
+                <div>${linkify(row.note)}</div>
+              </div>
+            </div>
+          ` : ''}
+        </div>
+      </article>
     `).join('');
-  }
-
-  function isElementVisible(element) {
-    if (!element) return false;
-
-    const rect = element.getBoundingClientRect();
-    const style = window.getComputedStyle(element);
-
-    return (
-      rect.width > 0 &&
-      rect.height > 0 &&
-      style.display !== 'none' &&
-      style.visibility !== 'hidden'
-    );
   }
 
   function openModal() {
@@ -572,8 +781,7 @@
     if (!document.body) return;
 
     const cachedCsv = readCachedCsv();
-    allRows = parsePromoCsv(cachedCsv || FALLBACK_CSV);
-    filteredRows = sortRows(allRows);
+    allRows = parseCsv(cachedCsv || FALLBACK_CSV);
 
     const root = document.createElement('div');
     root.id = 'lc-promo-summary-root';
@@ -584,7 +792,7 @@
         :host {
           all: initial;
           font-family: Arial, Helvetica, sans-serif;
-          color: #263238;
+          color: #243238;
           position: relative;
           z-index: 2147483647;
         }
@@ -599,9 +807,9 @@
           inset: 0;
           z-index: 2147483646;
           background: rgba(0,0,0,.20);
-          align-items: center;
+          align-items: stretch;
           justify-content: flex-end;
-          padding: 14px 22px 14px 14px;
+          padding: 10px;
         }
 
         #lc-promo-modal.open {
@@ -609,241 +817,142 @@
         }
 
         .panel {
-          width: min(920px, 94vw);
-          max-height: 88vh;
-          background: #fff;
-          border-radius: 8px;
-          box-shadow: 0 14px 45px rgba(0,0,0,.25);
+          width: min(980px, 96vw);
+          height: min(94vh, 940px);
+          background: #eef5f5;
+          border-radius: 12px;
+          box-shadow: 0 14px 45px rgba(0,0,0,.26);
           overflow: hidden;
           display: flex;
           flex-direction: column;
+          border: 1px solid #dce7ea;
         }
 
-        .header {
-          display: flex;
-          justify-content: space-between;
-          gap: 12px;
-          padding: 12px 14px;
-          border-bottom: 1px solid #d9e1e5;
-          background: #f6f8f9;
-        }
-
-        .title {
-          margin: 0;
-          font: 700 17px Arial, sans-serif;
-          color: #263238;
-        }
-
-        .subtitle {
-          margin-top: 4px;
-          font: 11px Arial, sans-serif;
-          color: #607d8b;
-        }
-
-        .source {
-          margin-top: 4px;
-          font: 700 10px Arial, sans-serif;
-          color: #008f8f;
-        }
-
-        #lc-promo-close {
-          background: #fff;
-          border: 1px solid #cfd8dc;
-          border-radius: 4px;
-          padding: 4px 8px;
-          font: 700 11px Arial, sans-serif;
-          cursor: pointer;
-          color: #263238;
-          height: 28px;
-        }
-
-        .summary {
+        .controls {
+          background: rgba(255,255,255,.96);
+          border-bottom: 1px solid #dce7ea;
+          padding: 10px;
           display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 8px;
-          padding: 10px 12px;
-          border-bottom: 1px solid #d9e1e5;
-          background: #ffffff;
-        }
-
-        .metric {
-          border: 1px solid #d9e1e5;
-          border-radius: 7px;
-          padding: 8px 10px;
-          background: #f8fbfb;
-        }
-
-        .metric strong {
-          display: block;
-          font-size: 20px;
-          line-height: 1;
-          color: #263238;
-        }
-
-        .metric span {
-          display: block;
-          margin-top: 4px;
-          font-size: 10px;
-          font-weight: 800;
-          letter-spacing: .04em;
-          text-transform: uppercase;
-          color: #607d8b;
-        }
-
-        .toolbar {
-          display: grid;
-          grid-template-columns: 1fr 145px auto 92px;
+          grid-template-columns: 1fr 170px auto 72px;
           gap: 8px;
           align-items: center;
-          padding: 8px 12px;
-          border-bottom: 1px solid #d9e1e5;
-          background: #fff;
         }
 
         #lc-promo-search,
         #lc-promo-filter {
           width: 100%;
-          min-height: 32px;
-          border: 1px solid #cfd8dc;
-          border-radius: 4px;
-          padding: 5px 8px;
-          font: 12px Arial, sans-serif;
+          min-height: 34px;
+          border: 1px solid #ccdbdf;
+          border-radius: 9px;
+          padding: 7px 10px;
+          font: 13px Arial, Helvetica, sans-serif;
           outline: none;
           background: #fff;
-          color: #263238;
+          color: #243238;
         }
 
         #lc-promo-search:focus,
         #lc-promo-filter:focus {
           border-color: #05cbbf;
-          box-shadow: 0 0 0 2px rgba(5,203,191,.15);
+          box-shadow: 0 0 0 3px rgba(5,203,191,.14);
         }
 
-        .check {
+        .merge-label {
           display: inline-flex;
           align-items: center;
           gap: 6px;
-          font: 700 11px Arial, sans-serif;
           color: #607d8b;
+          font: 800 12px Arial, Helvetica, sans-serif;
           white-space: nowrap;
         }
 
-        .check input {
-          margin: 0;
-        }
-
-        #lc-promo-result-count {
+        .count {
+          color: #007f79;
+          font: 900 12px Arial, Helvetica, sans-serif;
           text-align: right;
-          font: 700 10px Arial, sans-serif;
-          color: #607d8b;
-        }
-
-        .table-wrap {
-          overflow: auto;
-        }
-
-        table {
-          width: 100%;
-          border-collapse: collapse;
-          font: 11px Arial, sans-serif;
-        }
-
-        thead th {
-          position: sticky;
-          top: 0;
-          z-index: 1;
-          text-align: left;
-          padding: 6px 7px;
-          border-bottom: 1px solid #d9e1e5;
-          background: #ffffff;
-          color: #37474f;
-          font: 800 10px Arial, sans-serif;
-          text-transform: uppercase;
-          letter-spacing: .03em;
-        }
-
-        tbody td {
-          padding: 7px;
-          border-bottom: 1px solid #edf2f4;
-          vertical-align: top;
-          line-height: 1.25;
-        }
-
-        tbody tr:hover {
-          background: #eefafa;
-        }
-
-        .status-cell {
-          width: 86px;
-        }
-
-        .date-cell {
-          width: 92px;
-          color: #263238;
-          font-weight: 700;
           white-space: nowrap;
         }
 
-        .campaign-cell {
-          width: 210px;
+        .source {
+          padding: 7px 10px;
+          background: #f8fbfb;
+          border-bottom: 1px solid #dce7ea;
+          color: #008f8f;
+          font: 800 10px Arial, Helvetica, sans-serif;
         }
 
-        .campaign-cell strong {
-          display: block;
-          color: #263238;
-          font-size: 12px;
-          margin-bottom: 3px;
+        .content {
+          overflow: auto;
+          padding: 10px;
         }
 
-        .category-cell {
-          color: #37474f;
+        .list {
+          display: grid;
+          gap: 10px;
         }
 
-        .task-cell {
-          width: 64px;
-          text-align: center;
-          font-weight: 700;
+        .promo {
+          background: #fff;
+          border: 1px solid #dce7ea;
+          border-radius: 16px;
+          box-shadow: 0 8px 22px rgba(15,45,55,.08);
+          overflow: hidden;
         }
 
-        .note {
+        .promo-head {
+          display: grid;
+          grid-template-columns: 1fr auto;
+          gap: 10px;
+          padding: 12px 14px;
+          border-bottom: 1px solid #edf3f4;
+          background: #fff;
+        }
+
+        .title {
+          margin: 0;
+          font: 900 16px/1.2 Arial, Helvetica, sans-serif;
+          color: #17262c;
+          white-space: pre-line;
+        }
+
+        .meta-row {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          margin-top: 6px;
+          align-items: center;
+        }
+
+        .date {
           color: #607d8b;
-          font-size: 10.5px;
+          font: 900 12px Arial, Helvetica, sans-serif;
         }
 
-        .small {
-          margin-top: 3px;
-          font-size: 10px;
-          color: #607d8b;
-          font-weight: 700;
-        }
-
-        .approval {
-          margin-top: 4px;
-          font-size: 9.5px;
-          font-weight: 800;
-          color: #607d8b;
-          text-transform: uppercase;
-        }
-
-        .muted {
-          color: #90a4ae;
-          font-weight: 400;
-        }
-
-        .empty {
-          text-align: center;
-          padding: 18px;
-          color: #607d8b;
-          font-weight: 700;
-        }
-
-        .tag {
+        .week-range {
           display: inline-flex;
           align-items: center;
           border-radius: 999px;
-          padding: 4px 7px;
-          font-size: 10px;
-          font-weight: 800;
+          padding: 3px 8px;
+          font: 900 10px Arial, Helvetica, sans-serif;
+          background: #eaf7ff;
+          color: #116078;
+        }
+
+        .badges {
+          display: flex;
+          flex-wrap: wrap;
+          justify-content: flex-end;
+          gap: 5px;
+          align-content: flex-start;
+        }
+
+        .tag,
+        .pill {
+          display: inline-flex;
+          align-items: center;
+          border-radius: 999px;
+          padding: 4px 8px;
+          font: 900 10px Arial, Helvetica, sans-serif;
           white-space: nowrap;
         }
 
@@ -872,10 +981,112 @@
           background: #edf2f4;
         }
 
+        .pill.approval {
+          color: #0f5a3b;
+          background: #e4f5ec;
+        }
+
+        .pill.review {
+          color: #76500d;
+          background: #fff2d2;
+        }
+
+        .promo-body {
+          padding: 12px 14px 14px;
+          display: grid;
+          gap: 10px;
+        }
+
+        .label-title {
+          margin: 0 0 7px;
+          color: #607d8b;
+          font: 900 10px Arial, Helvetica, sans-serif;
+          text-transform: uppercase;
+          letter-spacing: .06em;
+        }
+
+        .offers {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 7px;
+        }
+
+        .offer {
+          display: inline-grid;
+          grid-template-columns: auto 1fr;
+          align-items: start;
+          gap: 7px;
+          border: 1px solid #e5eff1;
+          border-radius: 10px;
+          background: #fbfdfd;
+          padding: 8px 9px;
+          min-width: 220px;
+          flex: 1 1 240px;
+        }
+
+        .discount {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 58px;
+          border-radius: 999px;
+          padding: 4px 7px;
+          background: #e0f8f6;
+          color: #007f79;
+          font: 900 11px/1 Arial, Helvetica, sans-serif;
+          white-space: nowrap;
+        }
+
+        .offer-name {
+          color: #2c3d43;
+          font: 700 12.5px/1.32 Arial, Helvetica, sans-serif;
+        }
+
+        .details {
+          display: grid;
+          gap: 8px;
+        }
+
+        .detail-box {
+          border: 1px solid #edf3f4;
+          border-radius: 11px;
+          background: #fbfdfd;
+          padding: 10px;
+        }
+
+        .detail-box div {
+          color: #526870;
+          font: 12.5px/1.4 Arial, Helvetica, sans-serif;
+          white-space: pre-line;
+        }
+
+        .blank {
+          color: #9aa9af;
+          font-weight: 400;
+        }
+
+        .small {
+          margin-top: 3px;
+          color: #607d8b;
+          font: 800 10.5px Arial, Helvetica, sans-serif;
+        }
+
+        .empty {
+          background: #fff;
+          border: 1px solid #dce7ea;
+          border-radius: 16px;
+          padding: 22px;
+          text-align: center;
+          color: #607d8b;
+          font: 900 13px Arial, Helvetica, sans-serif;
+          box-shadow: 0 8px 22px rgba(15,45,55,.08);
+        }
+
         a {
           color: #007f79;
-          font-weight: 700;
           text-decoration: none;
+          font-weight: 800;
+          word-break: break-word;
         }
 
         a:hover {
@@ -883,80 +1094,62 @@
         }
 
         @media (max-width: 760px) {
-          .summary {
+          #lc-promo-modal {
+            padding: 4px;
+          }
+
+          .panel {
+            width: 100vw;
+            height: 96vh;
+          }
+
+          .controls {
             grid-template-columns: 1fr;
           }
 
-          .toolbar {
-            grid-template-columns: 1fr;
-          }
-
-          #lc-promo-result-count {
+          .count {
             text-align: left;
+          }
+
+          .promo-head {
+            grid-template-columns: 1fr;
+          }
+
+          .badges {
+            justify-content: flex-start;
+          }
+
+          .offer {
+            flex-basis: 100%;
           }
         }
       </style>
 
       <div id="lc-promo-modal">
         <div class="panel">
-          <div class="header">
-            <div>
-              <h2 class="title">Living Culture Promo Summary</h2>
-              <div class="subtitle">Live Summary tab from the shared head office Google Sheet.</div>
-              <div class="source" id="lc-promo-source">${escapeHtml(sourceLabel)}</div>
-            </div>
-
-            <button id="lc-promo-close" type="button">Close</button>
-          </div>
-
-          <div class="summary">
-            <div class="metric">
-              <strong id="lc-promo-current-count">0</strong>
-              <span>Current</span>
-            </div>
-            <div class="metric">
-              <strong id="lc-promo-upcoming-count">0</strong>
-              <span>Upcoming</span>
-            </div>
-            <div class="metric">
-              <strong id="lc-promo-always-count">0</strong>
-              <span>Always On</span>
-            </div>
-          </div>
-
-          <div class="toolbar">
-            <input id="lc-promo-search" type="search" placeholder="Search promo, product, category, note..." />
+          <div class="controls">
+            <input id="lc-promo-search" type="search" placeholder="Search promo, category, date or note..." />
 
             <select id="lc-promo-filter">
-              <option value="active">Active + upcoming</option>
+              <option value="date-relevant">Current + upcoming</option>
               <option value="current">Current only</option>
               <option value="upcoming">Upcoming only</option>
-              <option value="always">Always on</option>
-              <option value="past">Past</option>
-              <option value="all">All rows</option>
+              <option value="past">Past in current cycle</option>
+              <option value="all">All current-cycle promos</option>
             </select>
 
-            <label class="check">
-              <input id="lc-promo-hide-weeks" type="checkbox" checked />
-              Hide week rows
+            <label class="merge-label">
+              <input id="lc-promo-merge" type="checkbox" checked />
+              Merge multi-week promos
             </label>
 
-            <div id="lc-promo-result-count">0 results</div>
+            <div class="count" id="lc-promo-count">0 promos</div>
           </div>
 
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Status</th>
-                  <th>Date</th>
-                  <th>Promotion</th>
-                  <th>Category / Details</th>
-                  <th>Task</th>
-                </tr>
-              </thead>
-              <tbody id="lc-promo-tbody"></tbody>
-            </table>
+          <div class="source" id="lc-promo-source">${escapeHtml(sourceLabel)}</div>
+
+          <div class="content">
+            <div class="list" id="lc-promo-list"></div>
           </div>
         </div>
       </div>
@@ -966,15 +1159,13 @@
 
     const shadow = root.shadowRoot;
 
-    shadow.getElementById('lc-promo-close').addEventListener('click', closeModal);
-
     shadow.getElementById('lc-promo-modal').addEventListener('click', event => {
       if (event.target === shadow.getElementById('lc-promo-modal')) closeModal();
     });
 
     shadow.getElementById('lc-promo-search').addEventListener('input', applyFilters);
     shadow.getElementById('lc-promo-filter').addEventListener('change', applyFilters);
-    shadow.getElementById('lc-promo-hide-weeks').addEventListener('change', applyFilters);
+    shadow.getElementById('lc-promo-merge').addEventListener('change', applyFilters);
 
     document.addEventListener('keydown', event => {
       if (event.key === 'Escape') closeModal();
