@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Custom Product Helper
 // @namespace    livingculture-cin7
-// @version      1.4
+// @version      1.5
 // @description  Shows Living Culture customised pergola/product SKUs inside Cin7 and fills the product code into the quote line.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
@@ -20,29 +20,10 @@
 (function () {
   'use strict';
 
-  /*
-    IMPORTANT:
-    Use a Google Sheet link or a direct Google Drive CSV/file link.
-    A Google Drive folder link will not work as a data source.
-
-    Best Google Sheet columns:
-    Name | CS code | Price/per m2 | Memo
-
-    Also accepted:
-    Product | SKU | Price | Notes
-
-    This script:
-    - updates from GitHub
-    - loads product data from Google/Drive where possible
-    - falls back to built-in product data
-    - clicks Add to insert the SKU/product code into the next empty Cin7 product line
-    - does NOT fill price, because Cin7 should pull price from the product
-  */
-
   const REMOTE_DATA_URL = 'https://drive.google.com/file/d/13_8VBumN4EsU2obB-dllv7AyvVHGBt5Q/view?usp=sharing';
 
-  const CACHE_KEY = 'lc-custom-product-data-v14';
-  const CACHE_TIME_KEY = 'lc-custom-product-data-time-v14';
+  const CACHE_KEY = 'lc-custom-product-data-v15';
+  const CACHE_TIME_KEY = 'lc-custom-product-data-time-v15';
 
   const RAW_DATA = `
 Name,CS code,Price/per m2,Memo
@@ -197,9 +178,7 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
     if (!value) return '';
 
     const folderMatch = value.match(/drive\.google\.com\/drive\/folders\/([^/?#]+)/i);
-    if (folderMatch) {
-      return '';
-    }
+    if (folderMatch) return '';
 
     const sheetMatch = value.match(/docs\.google\.com\/spreadsheets\/d\/([^/]+)/i);
     if (sheetMatch) {
@@ -221,9 +200,7 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
         GM_xmlhttpRequest({
           method: 'GET',
           url,
-          headers: {
-            'Cache-Control': 'no-cache'
-          },
+          headers: { 'Cache-Control': 'no-cache' },
           onload: response => {
             if (response.status >= 200 && response.status < 300) {
               resolve(response.responseText || '');
@@ -233,7 +210,6 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
           },
           onerror: () => reject(new Error('Could not load remote data'))
         });
-
         return;
       }
 
@@ -281,7 +257,6 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
 
       const root = document.getElementById('lc-custom-product-root');
       const search = root?.shadowRoot?.getElementById('lc-custom-product-search');
-
       filterItems(search?.value || '');
       return true;
     } catch (error) {
@@ -294,10 +269,8 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
 
   function setSourceLabel(label) {
     dataSourceLabel = label || dataSourceLabel;
-
     const root = document.getElementById('lc-custom-product-root');
     const source = root?.shadowRoot?.getElementById('lc-custom-product-source');
-
     if (source) source.textContent = dataSourceLabel;
   }
 
@@ -313,11 +286,9 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
       textarea.style.position = 'fixed';
       textarea.style.left = '-9999px';
       textarea.style.top = '-9999px';
-
       document.body.appendChild(textarea);
       textarea.focus();
       textarea.select();
-
       document.execCommand('copy');
       textarea.remove();
     } catch (error) {
@@ -327,7 +298,6 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
 
   function isElementVisible(element) {
     if (!element) return false;
-
     const rect = element.getBoundingClientRect();
     const style = window.getComputedStyle(element);
 
@@ -572,19 +542,15 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
     candidates.sort((a, b) => {
       const ar = a.getBoundingClientRect();
       const br = b.getBoundingClientRect();
-
       const aText = clean(a.textContent || '').toLowerCase();
       const bText = clean(b.textContent || '').toLowerCase();
-
       const aExact = aText.includes(String(sku).toLowerCase()) ? -1000 : 0;
       const bExact = bText.includes(String(sku).toLowerCase()) ? -1000 : 0;
-
       return aExact + ar.top - (bExact + br.top);
     });
 
     const option = candidates[0];
     const rect = option.getBoundingClientRect();
-
     clickAt(rect.left + Math.min(rect.width / 2, 160), rect.top + rect.height / 2);
     return true;
   }
@@ -595,16 +561,12 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
     input.focus();
 
     await wait(1200);
-
     keyOn(input, 'ArrowDown');
     await wait(250);
-
     keyOn(input, 'Enter');
     await wait(700);
-
     clickFirstVisibleDropdownOptionNear(input, sku);
     await wait(900);
-
     keyOn(input, 'Tab');
     await wait(500);
 
@@ -614,26 +576,22 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
   function closeModal() {
     const root = document.getElementById('lc-custom-product-root');
     const modal = root?.shadowRoot?.getElementById('lc-custom-product-modal');
-
     if (modal) modal.classList.remove('open');
   }
 
   function showToast(message) {
     const root = document.getElementById('lc-custom-product-root');
     const toast = root?.shadowRoot?.getElementById('lc-custom-product-toast');
-
     if (!toast) return;
 
     toast.textContent = message;
     toast.classList.add('show');
-
     setTimeout(() => toast.classList.remove('show'), 1800);
   }
 
   function setModalPassthrough(enabled) {
     const root = document.getElementById('lc-custom-product-root');
     const modal = root?.shadowRoot?.getElementById('lc-custom-product-modal');
-
     if (!modal) return;
 
     if (enabled) {
@@ -678,7 +636,6 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
 
       if (!finalProductInput) {
         const active = document.activeElement;
-
         if (
           active instanceof HTMLInputElement ||
           active instanceof HTMLTextAreaElement ||
@@ -705,11 +662,8 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
       }
 
       setInputOrEditableValue(finalProductInput, item.code);
-
       await wait(500);
-
       await selectFirstCin7ProductOption(finalProductInput, item.code);
-
       await wait(1200);
 
       setModalPassthrough(false);
@@ -785,7 +739,6 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
     const displayItems = [...filteredItems].sort((a, b) => {
       const groupA = getProductGroup(a);
       const groupB = getProductGroup(b);
-
       if (groupA !== groupB) return groupA.localeCompare(groupB);
       return a.name.localeCompare(b.name);
     });
@@ -801,7 +754,7 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
       return `
         ${showGroup ? `
           <tr class="group-row">
-            <td colspan="5">${escapeHtml(cleanGroup)}</td>
+            <td colspan="4">${escapeHtml(cleanGroup)}</td>
           </tr>
         ` : ''}
 
@@ -815,9 +768,6 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
             <div>${escapeHtml(item.memo || '')}</div>
           </td>
           <td class="price">${escapeHtml(item.price || '')}</td>
-          <td class="copy">
-            <button data-action="copy" data-code="${escapeHtml(item.code)}">Copy</button>
-          </td>
         </tr>
       `;
     }).join('');
@@ -832,7 +782,6 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
 
     modal.classList.add('open');
     loadRemoteData();
-
     setTimeout(() => search?.focus(), 50);
   }
 
@@ -910,7 +859,7 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
           background: rgba(0,0,0,.20);
           align-items: center;
           justify-content: flex-end;
-          padding: 14px 22px 14px 14px;
+          padding: 14px 18px 14px 14px;
         }
 
         #lc-custom-product-modal.open {
@@ -928,7 +877,7 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
         }
 
         .panel {
-          width: min(780px, 94vw);
+          width: min(640px, 82vw);
           max-height: 88vh;
           background: #fff;
           border-radius: 8px;
@@ -1000,7 +949,7 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
         }
 
         #lc-custom-product-count {
-          min-width: 82px;
+          min-width: 72px;
           text-align: right;
           font: 700 10px Arial, sans-serif;
           color: #607d8b;
@@ -1057,7 +1006,7 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
         }
 
         .actions {
-          width: 56px;
+          width: 58px;
           white-space: nowrap;
           text-align: left;
         }
@@ -1079,7 +1028,7 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
         }
 
         .code {
-          width: 92px;
+          width: 96px;
           font-weight: 700;
           color: #263238;
           white-space: nowrap;
@@ -1104,30 +1053,11 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
         }
 
         .price {
-          width: 72px;
+          width: 78px;
           font-weight: 700;
           color: #263238;
           white-space: nowrap;
-        }
-
-        .copy {
-          width: 58px;
-        }
-
-        .copy button {
-          border: 1px solid #cfd8dc;
-          border-radius: 4px;
-          background: #fff;
-          color: #263238;
-          padding: 3px 8px;
-          font: 700 10px Arial, sans-serif;
-          cursor: pointer;
-          min-height: 22px;
-        }
-
-        .copy button:hover {
-          background: #eefafa;
-          border-color: #05cbbf;
+          text-align: right;
         }
 
         #lc-custom-product-toast {
@@ -1179,8 +1109,7 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
                   <th>Add</th>
                   <th>SKU</th>
                   <th>Name / Notes</th>
-                  <th>Price</th>
-                  <th>Copy</th>
+                  <th style="text-align:right;">Price</th>
                 </tr>
               </thead>
               <tbody id="lc-custom-product-tbody"></tbody>
@@ -1209,21 +1138,14 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
 
     tbody.addEventListener('click', async event => {
       const target = event.target;
-
       if (!target?.matches?.('button[data-action]')) return;
 
       const code = clean(target.dataset.code);
       const item = items.find(row => row.code === code);
-
       if (!item) return;
 
       if (target.dataset.action === 'add') {
         await fillQuoteProductOnly(item);
-      }
-
-      if (target.dataset.action === 'copy') {
-        await copyText(item.code);
-        showToast(`Copied ${item.code}`);
       }
     });
 
@@ -1239,9 +1161,7 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
 
   function boot() {
     if (!document.body) return;
-
     createWidget();
-
     setTimeout(insertButtonNextToScan, 500);
     setTimeout(insertButtonNextToScan, 1500);
     setTimeout(insertButtonNextToScan, 3000);
