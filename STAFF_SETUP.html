@@ -245,6 +245,8 @@
           <div class="card"><strong>LC Freight</strong>Adds the freight panel inside Cin7.</div>
           <div class="card"><strong>Quote Memo Info</strong>Adds quote memo wording inside Cin7.</div>
           <div class="card"><strong>Install Fees</strong>Adds installation fee search and add tools inside Cin7.</div>
+          <div class="card"><strong>Custom Products</strong>Adds custom product and pergola search inside Cin7.</div>
+          <div class="card"><strong>Promo Summary</strong>Adds current promotion summary search inside Cin7.</div>
           <div class="card"><strong>Copy SKU</strong>Adds the red SKU copy button on Living Culture product pages.</div>
         </div>
       </section>
@@ -273,6 +275,8 @@
           <a href="https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-lc-freight.user.js">Cin7 LC Freight helper</a>
           <a href="https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-quote-memo-info.user.js">Cin7 Quote Memo Info helper</a>
           <a href="https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-install-fee-helper.user.js">Cin7 Installation Fee helper</a>
+          <a href="https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-custom-product-helper.user.js">Cin7 Custom Product helper</a>
+          <a href="https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js">Cin7 Promo Summary helper</a>
           <a href="https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/livingculture-copy-sku.user.js">Living Culture Copy SKU helper</a>
         </div>
         <div class="note">After installing once, Tampermonkey checks GitHub for updates automatically.</div>
@@ -310,6 +314,8 @@
           <li>Near the top quote buttons, beside <strong>Scan</strong>, check for:</li>
         </ol>
         <span class="check">Install Fees</span>
+        <span class="check">Custom Products</span>
+        <span class="check">Promo Summary</span>
 
         <h3>Living Culture Product Pages</h3>
         <ol>
@@ -347,6 +353,23 @@
           <li>Click <strong>Add</strong>.</li>
         </ol>
         <div class="note">Install fee data is loaded from the shared Google Sheet. If the sheet cannot be reached, the helper uses cached data or built-in fallback data.</div>
+
+        <h3>Custom Products</h3>
+        <ol>
+          <li>Open a Cin7 quote.</li>
+          <li>Click <strong>Custom Products</strong>.</li>
+          <li>Search for the custom product or pergola.</li>
+          <li>Click <strong>Add</strong>.</li>
+        </ol>
+        <div class="note">Custom product data is loaded from the shared Google Drive file. If the file cannot be reached, the helper uses cached data or built-in fallback data.</div>
+
+        <h3>Promo Summary</h3>
+        <ol>
+          <li>Open Cin7.</li>
+          <li>Click <strong>Promo Summary</strong>.</li>
+          <li>Search or review current promotion details.</li>
+        </ol>
+        <div class="note">Promo summary data is loaded from the shared Google Sheet. If the sheet cannot be reached, the helper uses cached data or built-in fallback data.</div>
 
         <h3>Copy SKU</h3>
         <ol>

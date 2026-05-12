@@ -9,6 +9,8 @@ Use this guide to set up the Living Culture freight app and browser helpers on a
 - Cin7 LC Freight helper: adds the `LC Freight` button in Cin7.
 - Quote Memo Info helper: adds the `Quote Memo Info` button in Cin7.
 - Installation Fee helper: adds the `Install Fees` button in Cin7.
+- Custom Product helper: adds the `Custom Products` button in Cin7.
+- Promo Summary helper: adds the `Promo Summary` button in Cin7.
 - Copy SKU helper: adds the red `Copy SKU` button on Living Culture product pages.
 
 ## 1. Install Chrome
@@ -50,6 +52,8 @@ Click `Install` or `Update` when Tampermonkey asks.
 https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-lc-freight.user.js
 https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-quote-memo-info.user.js
 https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-install-fee-helper.user.js
+https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-custom-product-helper.user.js
+https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js
 https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/livingculture-copy-sku.user.js
 ```
 
@@ -90,6 +94,8 @@ Near the top quote buttons, beside `Scan`, you should see:
 
 ```text
 Install Fees
+Custom Products
+Promo Summary
 ```
 
 ## 7. Check Living Culture Product Pages
@@ -131,6 +137,23 @@ https://livingculture.co.nz
 5. The helper will try to add the SKU and price to the quote line.
 
 Install fee data is loaded from the shared Google Sheet. If the sheet cannot be reached, the helper uses the last cached data or the built-in fallback data.
+
+### Custom Products
+
+1. Open a Cin7 quote.
+2. Click `Custom Products`.
+3. Search for the custom product or pergola.
+4. Click `Add`.
+
+Custom product data is loaded from the shared Google Drive file. If the file cannot be reached, the helper uses cached data or built-in fallback data.
+
+### Promo Summary
+
+1. Open Cin7.
+2. Click `Promo Summary`.
+3. Search or review current promotion details.
+
+Promo summary data is loaded from the shared Google Sheet. If the sheet cannot be reached, the helper uses cached data or built-in fallback data.
 
 ### Copy SKU
 
