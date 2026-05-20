@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Quote Memo Info
 // @namespace    livingculture
-// @version      2.3
+// @version      2.4
 // @description  Quote Memo Info panel with copy and auto-fill into Cin7 Quote Memo only.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -84,6 +84,19 @@ Full payment is required prior to scheduling delivery or collection.`
       text: `Discounted as ex-showroom. Shop soiling and/or scratches may have incurred.
 
 Purchased as seen. No returns, refunds or exchanges.`
+    },
+    {
+      title: 'Post to Wall Blinds',
+      subtitle: 'For wall mounted pergolas',
+      text: `Post to wall blinds for Wall mounted pergolas
+
+This is an indicative quote on pricing. This quote will need to be redone once the pergola is installed to get exact measurements.
+
+No payment required at this stage.
+
+Any installation charges are based on ground floor installations. Other installations are on a case-by-case basis.
+
+Extra charges may be incurred for extra work required in materials and labour outside of a standard basic installation or should any unexpected issues arise during installation. This will be discussed with you and invoiced same-day.`
     }
   ];
 
@@ -239,7 +252,7 @@ Purchased as seen. No returns, refunds or exchanges.`
     }
 
     field.scrollIntoView({
-      behavior: 'smooth',
+      behaviour: 'smooth',
       block: 'center'
     });
 
