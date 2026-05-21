@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Cin7 WeCom Payment Message Copier
+// @name         Cin7 WeCom Payment Message Sender
 // @namespace    livingculture
-// @version      1.5
-// @description  Copies a WeCom payment message from Cin7 invoice/payment screen only.
+// @version      1.7
+// @description  Copies or sends a WeCom payment message from Cin7 invoice/payment screen only.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
 // @match        *://*.cin7.co/*
@@ -13,16 +13,19 @@
 // @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-wecom-payment-message.user.js
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
-// @grant        none
+// @grant        GM_xmlhttpRequest
+// @connect      qyapi.weixin.qq.com
 // ==/UserScript==
 
 (function () {
   'use strict';
 
-  const BUTTON_ID = 'lc-copy-wecom-payment-btn';
+  const COPY_BUTTON_ID = 'lc-copy-wecom-payment-btn';
+  const SEND_BUTTON_ID = 'lc-send-wecom-payment-btn';
   const STATUS_ID = 'lc-copy-wecom-payment-status';
   const WRAPPER_ID = 'lc-wecom-payment-wrapper';
   const SPACER_ID = 'lc-wecom-payment-spacer';
+  const WEBHOOK_STORAGE_KEY = 'lc_wecom_payment_webhook_url';
 
   function clean(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
@@ -59,6 +62,27 @@
   function nearlyEqual(a, b, tolerance = 1.5) {
     if (a === null || b === null) return false;
     return Math.abs(Number(a) - Number(b)) <= tolerance;
+  }
+
+  function moneyToNumber(value) {
+    if (!value) return null;
+
+    const cleaned = String(value).replace(/[^0-9.]/g, '');
+    if (!cleaned) return null;
+
+    return Number(cleaned);
+  }
+
+  function parseDateNZ(value) {
+    const match = String(value || '').match(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/);
+
+    if (!match) return null;
+
+    const day = Number(match[1]);
+    const month = Number(match[2]) - 1;
+    const year = Number(match[3]);
+
+    return new Date(year, month, day).getTime();
   }
 
   function isInvoiceScreen() {
@@ -159,9 +183,9 @@
     return score;
   }
 
-  function findPaymentRowText() {
+  function findPaymentRows() {
     const paymentHeading = findPaymentHeading();
-    if (!paymentHeading) return '';
+    if (!paymentHeading) return [];
 
     const paymentTop = paymentHeading.getBoundingClientRect().top;
 
@@ -173,33 +197,43 @@
         text: clean(el.innerText || el.textContent)
       }))
       .filter(item => item.rect.top > paymentTop)
+      .filter(item => /\b\d{1,2}\/\d{1,2}\/\d{4}\b/.test(item.text))
       .filter(item => /succeed|eftpos|apos|terminal|q card|credit card|visa|mastercard|bank transfer|cash/i.test(item.text))
       .filter(item => /[0-9,]+\.\d{2}/.test(item.text))
+      .map(item => {
+        const dateValue = parseDateNZ(item.text);
+        const amounts = item.text.match(/[0-9,]+\.\d{2}/g) || [];
+        const amount = amounts.length ? moneyToNumber(amounts[amounts.length - 1]) : null;
+
+        return {
+          text: item.text,
+          dateValue,
+          amount,
+          rect: item.rect
+        };
+      })
+      .filter(row => row.dateValue !== null && row.amount !== null)
       .sort((a, b) => {
-        const scoreA = scorePaymentRow(a.text, a.rect);
-        const scoreB = scorePaymentRow(b.text, b.rect);
-        return scoreB - scoreA;
+        if (b.dateValue !== a.dateValue) return b.dateValue - a.dateValue;
+        return b.rect.top - a.rect.top;
       });
 
-    return rows[0]?.text || '';
+    return rows;
   }
 
-  function scorePaymentRow(text, rect) {
-    let score = 0;
+  function findLatestPaymentRow() {
+    const rows = findPaymentRows();
 
-    if (/succeed/i.test(text)) score += 50;
-    if (/eftpos|apos|terminal/i.test(text)) score += 40;
-    if (/q card|credit card|visa|mastercard|bank transfer|cash/i.test(text)) score += 30;
-    if (/date paid|amount|status/i.test(text)) score -= 20;
+    if (rows.length) {
+      return rows[0];
+    }
 
-    score += Math.min(rect.width / 100, 20);
-    score += Math.min(rect.height / 10, 10);
-
-    return score;
+    return null;
   }
 
   function findPaymentMethod() {
-    const paymentRowText = findPaymentRowText().toLowerCase();
+    const latestPaymentRow = findLatestPaymentRow();
+    const paymentRowText = latestPaymentRow ? latestPaymentRow.text.toLowerCase() : '';
     const bodyText = getBodyText().toLowerCase();
     const text = paymentRowText || bodyText;
 
@@ -213,14 +247,10 @@
   }
 
   function findPaymentAmount() {
-    const paymentRowText = findPaymentRowText();
+    const latestPaymentRow = findLatestPaymentRow();
 
-    if (paymentRowText) {
-      const amounts = paymentRowText.match(/[0-9,]+\.\d{2}/g);
-
-      if (amounts && amounts.length) {
-        return Number(amounts[amounts.length - 1].replace(/,/g, ''));
-      }
+    if (latestPaymentRow && latestPaymentRow.amount !== null) {
+      return latestPaymentRow.amount;
     }
 
     const bodyText = getBodyText();
@@ -254,6 +284,25 @@
       return Number(nzdMatches[nzdMatches.length - 1][1].replace(/,/g, ''));
     }
 
+    const paymentHeading = findPaymentHeading();
+    const paymentTop = paymentHeading ? paymentHeading.getBoundingClientRect().top : Infinity;
+
+    const summaryAmounts = Array.from(document.querySelectorAll('div, span, td, th'))
+      .filter(isVisible)
+      .map(el => ({
+        text: clean(el.innerText || el.textContent),
+        rect: el.getBoundingClientRect()
+      }))
+      .filter(item => item.rect.top < paymentTop)
+      .filter(item => /[0-9,]+\.\d{2}/.test(item.text))
+      .flatMap(item => item.text.match(/[0-9,]+\.\d{2}/g) || [])
+      .map(value => Number(value.replace(/,/g, '')))
+      .filter(value => !Number.isNaN(value));
+
+    if (summaryAmounts.length) {
+      return Math.max(...summaryAmounts);
+    }
+
     const totalMatches = [...bodyText.matchAll(/TOTAL\s*([0-9,]+\.\d{2})/gi)];
 
     if (totalMatches.length) {
@@ -273,6 +322,10 @@
     const paymentIsHalf = halfTotal !== null && nearlyEqual(paymentAmount, halfTotal, 2.5);
     const balanceRoughlyEqualsPayment = balanceDue !== null && nearlyEqual(balanceDue, paymentAmount, 2.5);
 
+    if (balanceIsZero && invoiceTotal !== null && paymentAmount < invoiceTotal - 1.5) {
+      return 'outstanding balance';
+    }
+
     if (balanceIsZero && paymentEqualsTotal) {
       return 'paid in full';
     }
@@ -283,10 +336,6 @@
 
     if (!balanceIsZero && balanceRoughlyEqualsPayment) {
       return '50% deposit';
-    }
-
-    if (balanceIsZero && invoiceTotal !== null && paymentAmount < invoiceTotal - 1.5) {
-      return 'outstanding balance';
     }
 
     if (balanceIsZero) {
@@ -325,9 +374,16 @@
     return `${orderNumber} ${paymentMethod} payment ${amount}`;
   }
 
-  async function copyMessage() {
-    const message = buildMessage();
+  function setStatus(message, error = false) {
+    const status = document.getElementById(STATUS_ID);
 
+    if (status) {
+      status.textContent = message;
+      status.style.color = error ? '#9a2d20' : '#2d5c4e';
+    }
+  }
+
+  async function copyToClipboard(message) {
     try {
       await navigator.clipboard.writeText(message);
     } catch (error) {
@@ -342,15 +398,16 @@
       document.execCommand('copy');
       temp.remove();
     }
+  }
 
-    const status = document.getElementById(STATUS_ID);
+  async function copyMessage() {
+    const message = buildMessage();
 
-    if (status) {
-      status.textContent = `Copied: ${message}`;
-      status.style.color = '#2d5c4e';
-    }
+    await copyToClipboard(message);
 
-    const button = document.getElementById(BUTTON_ID);
+    setStatus(`Copied: ${message}`);
+
+    const button = document.getElementById(COPY_BUTTON_ID);
 
     if (button) {
       const oldText = button.textContent;
@@ -362,23 +419,95 @@
     }
   }
 
-  function makeWrapper() {
-    const wrapper = document.createElement('div');
-    wrapper.id = WRAPPER_ID;
-    wrapper.style.display = 'flex';
-    wrapper.style.alignItems = 'center';
-    wrapper.style.gap = '10px';
-    wrapper.style.marginLeft = 'auto';
-    wrapper.style.zIndex = '50';
+  function getWebhookUrl() {
+    let url = localStorage.getItem(WEBHOOK_STORAGE_KEY);
 
+    if (!url) {
+      url = prompt('Paste the WeCom Message Push webhook URL:');
+
+      if (url) {
+        url = url.trim();
+        localStorage.setItem(WEBHOOK_STORAGE_KEY, url);
+      }
+    }
+
+    return url;
+  }
+
+  function sendToWeCom() {
+    const message = buildMessage();
+    const webhookUrl = getWebhookUrl();
+
+    if (!webhookUrl) {
+      setStatus('No WeCom webhook URL saved.', true);
+      return;
+    }
+
+    setStatus('Sending to WeCom...');
+
+    GM_xmlhttpRequest({
+      method: 'POST',
+      url: webhookUrl,
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      data: JSON.stringify({
+        msgtype: 'text',
+        text: {
+          content: message
+        }
+      }),
+      onload: function (response) {
+        let ok = false;
+        let errorMessage = '';
+
+        try {
+          const result = JSON.parse(response.responseText || '{}');
+          ok = result.errcode === 0;
+          errorMessage = result.errmsg || '';
+        } catch (error) {
+          ok = response.status >= 200 && response.status < 300;
+        }
+
+        if (ok) {
+          setStatus(`Sent to WeCom: ${message}`);
+
+          const button = document.getElementById(SEND_BUTTON_ID);
+
+          if (button) {
+            const oldText = button.textContent;
+            button.textContent = 'Sent';
+
+            setTimeout(() => {
+              button.textContent = oldText;
+            }, 1400);
+          }
+        } else {
+          setStatus(`WeCom send failed: ${errorMessage || response.responseText || response.status}`, true);
+          alert(`WeCom send failed.\n\n${errorMessage || response.responseText || response.status}`);
+        }
+      },
+      onerror: function () {
+        setStatus('Could not send to WeCom. Check webhook URL.', true);
+        alert('Could not send to WeCom. Check webhook URL.');
+      }
+    });
+  }
+
+  function resetWebhook() {
+    localStorage.removeItem(WEBHOOK_STORAGE_KEY);
+    alert('Saved WeCom webhook has been cleared. Click Send to WeCom again to paste a new one.');
+  }
+
+  function makeButton(text, id, bg) {
     const button = document.createElement('button');
-    button.id = BUTTON_ID;
+    button.id = id;
     button.type = 'button';
-    button.textContent = 'Copy WeCom Payment';
+    button.textContent = text;
 
-    button.style.background = '#05cabe';
+    button.style.background = bg;
     button.style.color = '#fff';
-    button.style.border = '1px solid #05cabe';
+    button.style.border = `1px solid ${bg}`;
     button.style.borderRadius = '4px';
     button.style.padding = '8px 14px';
     button.style.font = '700 14px Arial, sans-serif';
@@ -388,16 +517,35 @@
     button.style.boxSizing = 'border-box';
 
     button.addEventListener('mouseenter', () => {
-      button.style.background = '#04b5aa';
-      button.style.borderColor = '#04b5aa';
+      button.style.filter = 'brightness(0.94)';
     });
 
     button.addEventListener('mouseleave', () => {
-      button.style.background = '#05cabe';
-      button.style.borderColor = '#05cabe';
+      button.style.filter = 'none';
     });
 
-    button.addEventListener('click', copyMessage);
+    return button;
+  }
+
+  function makeWrapper() {
+    const wrapper = document.createElement('div');
+    wrapper.id = WRAPPER_ID;
+    wrapper.style.display = 'flex';
+    wrapper.style.alignItems = 'center';
+    wrapper.style.gap = '8px';
+    wrapper.style.marginLeft = 'auto';
+    wrapper.style.zIndex = '50';
+
+    const copyButton = makeButton('Copy WeCom Payment', COPY_BUTTON_ID, '#05cabe');
+    copyButton.addEventListener('click', copyMessage);
+
+    const sendButton = makeButton('Send to WeCom', SEND_BUTTON_ID, '#2d5c4e');
+    sendButton.addEventListener('click', sendToWeCom);
+
+    sendButton.addEventListener('contextmenu', event => {
+      event.preventDefault();
+      resetWebhook();
+    });
 
     const status = document.createElement('span');
     status.id = STATUS_ID;
@@ -408,7 +556,8 @@
     status.style.overflow = 'hidden';
     status.style.textOverflow = 'ellipsis';
 
-    wrapper.appendChild(button);
+    wrapper.appendChild(copyButton);
+    wrapper.appendChild(sendButton);
     wrapper.appendChild(status);
 
     return wrapper;
@@ -427,7 +576,7 @@
       return;
     }
 
-    if (document.getElementById(BUTTON_ID)) return;
+    if (document.getElementById(COPY_BUTTON_ID) || document.getElementById(SEND_BUTTON_ID)) return;
 
     const row = findPaymentActionRow();
 
