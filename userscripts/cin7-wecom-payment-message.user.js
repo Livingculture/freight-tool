@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 WeCom Payment Message Copier
 // @namespace    livingculture
-// @version      2.0
+// @version      2.1
 // @description  Copies a WeCom payment message from Cin7 invoice/payment screen only.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -180,13 +180,25 @@
     return score;
   }
 
+  function getPaymentMethodFromText(text) {
+    const lower = String(text || '').toLowerCase();
+
+    if (lower.includes('q card') || lower.includes('qcard')) return 'Q card';
+    if (lower.includes('eftpos') || lower.includes('apos') || lower.includes('terminal')) return 'EFTPOS';
+    if (lower.includes('visa') || lower.includes('mastercard') || lower.includes('credit card')) return 'credit card';
+    if (lower.includes('bank transfer')) return 'bank transfer';
+    if (lower.includes('cash')) return 'cash';
+
+    return 'payment';
+  }
+
   function findPaymentRows() {
     const paymentHeading = findPaymentHeading();
     if (!paymentHeading) return [];
 
     const paymentTop = paymentHeading.getBoundingClientRect().top;
 
-    const rows = Array.from(document.querySelectorAll('tr, [role="row"], div'))
+    const candidates = Array.from(document.querySelectorAll('tr, [role="row"], div'))
       .filter(isVisible)
       .map(el => ({
         el,
@@ -194,28 +206,67 @@
         text: clean(el.innerText || el.textContent)
       }))
       .filter(item => item.rect.top > paymentTop)
+      .filter(item => item.rect.height >= 28 && item.rect.height <= 95)
+      .filter(item => item.text.length <= 260)
       .filter(item => /\b\d{1,2}\/\d{1,2}\/\d{4}\b/.test(item.text))
       .filter(item => /succeed|eftpos|apos|terminal|q card|credit card|visa|mastercard|bank transfer|cash/i.test(item.text))
       .filter(item => /[0-9,]+\.\d{2}/.test(item.text))
       .map(item => {
-        const dateValue = parseDateNZ(item.text);
+        const dateMatch = item.text.match(/\b\d{1,2}\/\d{1,2}\/\d{4}\b/);
+        const dateText = dateMatch ? dateMatch[0] : '';
+        const dateValue = parseDateNZ(dateText);
         const amounts = item.text.match(/[0-9,]+\.\d{2}/g) || [];
         const amount = amounts.length ? moneyToNumber(amounts[amounts.length - 1]) : null;
+        const method = getPaymentMethodFromText(item.text);
 
         return {
           text: item.text,
+          dateText,
           dateValue,
           amount,
+          method,
           rect: item.rect
         };
       })
-      .filter(row => row.dateValue !== null && row.amount !== null)
-      .sort((a, b) => {
-        if (b.dateValue !== a.dateValue) return b.dateValue - a.dateValue;
-        return b.rect.top - a.rect.top;
-      });
+      .filter(row => row.dateValue !== null && row.amount !== null);
 
-    return rows;
+    const unique = new Map();
+
+    for (const row of candidates) {
+      const key = `${row.dateText}|${row.amount.toFixed(2)}|${row.method}`;
+
+      const existing = unique.get(key);
+
+      if (!existing) {
+        unique.set(key, row);
+        continue;
+      }
+
+      const existingScore = scorePaymentCandidate(existing);
+      const rowScore = scorePaymentCandidate(row);
+
+      if (rowScore > existingScore) {
+        unique.set(key, row);
+      }
+    }
+
+    return Array.from(unique.values()).sort((a, b) => {
+      if (b.dateValue !== a.dateValue) return b.dateValue - a.dateValue;
+      return b.rect.top - a.rect.top;
+    });
+  }
+
+  function scorePaymentCandidate(row) {
+    let score = 0;
+
+    if (/succeed/i.test(row.text)) score += 50;
+    if (/eftpos|apos|terminal/i.test(row.text)) score += 40;
+    if (/q card|credit card|visa|mastercard|bank transfer|cash/i.test(row.text)) score += 30;
+
+    score -= Math.abs(row.rect.height - 58);
+    score -= row.text.length / 20;
+
+    return score;
   }
 
   function findLatestPaymentRow() {
@@ -225,17 +276,12 @@
 
   function findPaymentMethod() {
     const latestPaymentRow = findLatestPaymentRow();
-    const paymentRowText = latestPaymentRow ? latestPaymentRow.text.toLowerCase() : '';
-    const bodyText = getBodyText().toLowerCase();
-    const text = paymentRowText || bodyText;
 
-    if (text.includes('q card') || text.includes('qcard')) return 'Q card';
-    if (text.includes('eftpos') || text.includes('apos') || text.includes('terminal')) return 'EFTPOS';
-    if (text.includes('visa') || text.includes('mastercard') || text.includes('credit card')) return 'credit card';
-    if (text.includes('bank transfer')) return 'bank transfer';
-    if (text.includes('cash')) return 'cash';
+    if (latestPaymentRow) {
+      return latestPaymentRow.method;
+    }
 
-    return 'payment';
+    return getPaymentMethodFromText(getBodyText());
   }
 
   function findPaymentAmount() {
@@ -271,7 +317,6 @@
     const paymentHeading = findPaymentHeading();
     const paymentTop = paymentHeading ? paymentHeading.getBoundingClientRect().top : Infinity;
 
-    // First try to read the visible invoice summary box above Payment.
     const visibleBlocks = Array.from(document.querySelectorAll('div, span, td, th'))
       .filter(isVisible)
       .map(el => ({
@@ -282,7 +327,6 @@
       .filter(item => item.text.toLowerCase().includes('total') || item.text.toLowerCase().includes('nzd'))
       .filter(item => /[0-9,]+\.\d{2}/.test(item.text));
 
-    // Prefer text that explicitly contains NZD, for example "NZD 1,223.99"
     for (const item of visibleBlocks) {
       const nzdMatch = item.text.match(/NZD\s*([0-9,]+\.\d{2})/i);
 
@@ -291,7 +335,6 @@
       }
     }
 
-    // Then try a TOTAL line that has amounts.
     for (const item of visibleBlocks) {
       if (item.text.toLowerCase().includes('total')) {
         const amounts = item.text.match(/[0-9,]+\.\d{2}/g) || [];
@@ -302,7 +345,6 @@
       }
     }
 
-    // Final fallback: use all visible amounts above Payment, ignoring zero values.
     const amountsAbovePayment = Array.from(document.querySelectorAll('div, span, td, th'))
       .filter(isVisible)
       .map(el => ({
@@ -331,22 +373,18 @@
     const paymentIsHalf = halfTotal !== null && nearlyEqual(paymentAmount, halfTotal, 2.5);
     const balanceRoughlyEqualsPayment = balanceDue !== null && nearlyEqual(balanceDue, paymentAmount, 2.5);
 
-    // One payment that matches the invoice total means paid in full.
     if (paymentCount <= 1 && balanceIsZero && paymentEqualsTotal) {
       return 'paid in full';
     }
 
-    // Multiple payments and the latest payment clears the balance means outstanding balance.
     if (paymentCount > 1 && balanceIsZero) {
       return 'outstanding balance';
     }
 
-    // One payment, balance is zero, but payment is less than invoice total means outstanding balance.
     if (balanceIsZero && invoiceTotal !== null && paymentAmount < invoiceTotal - 1.5) {
       return 'outstanding balance';
     }
 
-    // Deposit logic.
     if (!balanceIsZero && paymentIsHalf) {
       return '50% deposit';
     }
@@ -355,8 +393,6 @@
       return '50% deposit';
     }
 
-    // If balance is zero and we cannot prove it was multiple payments,
-    // treat it as paid in full.
     if (balanceIsZero) {
       return 'paid in full';
     }
