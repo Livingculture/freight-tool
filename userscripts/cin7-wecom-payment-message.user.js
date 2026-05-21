@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Cin7 WeCom Payment Message Sender
+// @name         Cin7 WeCom Payment Message Copier
 // @namespace    livingculture
-// @version      1.7
-// @description  Copies or sends a WeCom payment message from Cin7 invoice/payment screen only.
+// @version      1.8
+// @description  Copies a WeCom payment message from Cin7 invoice/payment screen only.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
 // @match        *://*.cin7.co/*
@@ -13,19 +13,16 @@
 // @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-wecom-payment-message.user.js
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
-// @grant        GM_xmlhttpRequest
-// @connect      qyapi.weixin.qq.com
+// @grant        none
 // ==/UserScript==
 
 (function () {
   'use strict';
 
   const COPY_BUTTON_ID = 'lc-copy-wecom-payment-btn';
-  const SEND_BUTTON_ID = 'lc-send-wecom-payment-btn';
   const STATUS_ID = 'lc-copy-wecom-payment-status';
   const WRAPPER_ID = 'lc-wecom-payment-wrapper';
   const SPACER_ID = 'lc-wecom-payment-spacer';
-  const WEBHOOK_STORAGE_KEY = 'lc_wecom_payment_webhook_url';
 
   function clean(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
@@ -419,86 +416,6 @@
     }
   }
 
-  function getWebhookUrl() {
-    let url = localStorage.getItem(WEBHOOK_STORAGE_KEY);
-
-    if (!url) {
-      url = prompt('Paste the WeCom Message Push webhook URL:');
-
-      if (url) {
-        url = url.trim();
-        localStorage.setItem(WEBHOOK_STORAGE_KEY, url);
-      }
-    }
-
-    return url;
-  }
-
-  function sendToWeCom() {
-    const message = buildMessage();
-    const webhookUrl = getWebhookUrl();
-
-    if (!webhookUrl) {
-      setStatus('No WeCom webhook URL saved.', true);
-      return;
-    }
-
-    setStatus('Sending to WeCom...');
-
-    GM_xmlhttpRequest({
-      method: 'POST',
-      url: webhookUrl,
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      data: JSON.stringify({
-        msgtype: 'text',
-        text: {
-          content: message
-        }
-      }),
-      onload: function (response) {
-        let ok = false;
-        let errorMessage = '';
-
-        try {
-          const result = JSON.parse(response.responseText || '{}');
-          ok = result.errcode === 0;
-          errorMessage = result.errmsg || '';
-        } catch (error) {
-          ok = response.status >= 200 && response.status < 300;
-        }
-
-        if (ok) {
-          setStatus(`Sent to WeCom: ${message}`);
-
-          const button = document.getElementById(SEND_BUTTON_ID);
-
-          if (button) {
-            const oldText = button.textContent;
-            button.textContent = 'Sent';
-
-            setTimeout(() => {
-              button.textContent = oldText;
-            }, 1400);
-          }
-        } else {
-          setStatus(`WeCom send failed: ${errorMessage || response.responseText || response.status}`, true);
-          alert(`WeCom send failed.\n\n${errorMessage || response.responseText || response.status}`);
-        }
-      },
-      onerror: function () {
-        setStatus('Could not send to WeCom. Check webhook URL.', true);
-        alert('Could not send to WeCom. Check webhook URL.');
-      }
-    });
-  }
-
-  function resetWebhook() {
-    localStorage.removeItem(WEBHOOK_STORAGE_KEY);
-    alert('Saved WeCom webhook has been cleared. Click Send to WeCom again to paste a new one.');
-  }
-
   function makeButton(text, id, bg) {
     const button = document.createElement('button');
     button.id = id;
@@ -539,14 +456,6 @@
     const copyButton = makeButton('Copy WeCom Payment', COPY_BUTTON_ID, '#05cabe');
     copyButton.addEventListener('click', copyMessage);
 
-    const sendButton = makeButton('Send to WeCom', SEND_BUTTON_ID, '#2d5c4e');
-    sendButton.addEventListener('click', sendToWeCom);
-
-    sendButton.addEventListener('contextmenu', event => {
-      event.preventDefault();
-      resetWebhook();
-    });
-
     const status = document.createElement('span');
     status.id = STATUS_ID;
     status.style.font = '700 13px Arial, sans-serif';
@@ -557,7 +466,6 @@
     status.style.textOverflow = 'ellipsis';
 
     wrapper.appendChild(copyButton);
-    wrapper.appendChild(sendButton);
     wrapper.appendChild(status);
 
     return wrapper;
@@ -576,7 +484,7 @@
       return;
     }
 
-    if (document.getElementById(COPY_BUTTON_ID) || document.getElementById(SEND_BUTTON_ID)) return;
+    if (document.getElementById(COPY_BUTTON_ID)) return;
 
     const row = findPaymentActionRow();
 
