@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 WeCom Payment Message Sender
 // @namespace    livingculture
-// @version      3.9
+// @version      4.0
 // @description  Sends a WeCom payment message from Cin7 invoice/payment screen only.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -26,7 +26,7 @@
   const WRAPPER_ID = 'lc-wecom-payment-wrapper';
   const SPACER_ID = 'lc-wecom-payment-spacer';
 
-  const WECOM_WEBHOOK_URL = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6b7427eb-519c-442c-90a7-fdf2f51b194f';
+  const WECOM_WEBHOOK_URL = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=f875dc80-5d4e-4bb4-8a8d-cd66193dc7e5';
 
   const CIN7_TEXT_GREY = '#3f454d';
   const CIN7_MUTED_GREY = '#6f7786';
@@ -514,7 +514,6 @@
           const button = document.getElementById(SEND_AS_BUTTON_ID);
 
           if (button) {
-            const oldText = button.textContent;
             button.textContent = 'Sent';
 
             setTimeout(() => {
