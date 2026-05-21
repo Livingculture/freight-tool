@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 WeCom Payment Message Copier
 // @namespace    livingculture
-// @version      1.9
+// @version      2.0
 // @description  Copies a WeCom payment message from Cin7 invoice/payment screen only.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -268,37 +268,55 @@
   }
 
   function findInvoiceTotal() {
-    const bodyText = getBodyText();
-
-    const nzdMatches = [...bodyText.matchAll(/NZD\s*([0-9,]+\.\d{2})/gi)];
-
-    if (nzdMatches.length) {
-      return Number(nzdMatches[nzdMatches.length - 1][1].replace(/,/g, ''));
-    }
-
     const paymentHeading = findPaymentHeading();
     const paymentTop = paymentHeading ? paymentHeading.getBoundingClientRect().top : Infinity;
 
-    const summaryAmounts = Array.from(document.querySelectorAll('div, span, td, th'))
+    // First try to read the visible invoice summary box above Payment.
+    const visibleBlocks = Array.from(document.querySelectorAll('div, span, td, th'))
       .filter(isVisible)
       .map(el => ({
         text: clean(el.innerText || el.textContent),
         rect: el.getBoundingClientRect()
       }))
       .filter(item => item.rect.top < paymentTop)
-      .filter(item => /[0-9,]+\.\d{2}/.test(item.text))
-      .flatMap(item => item.text.match(/[0-9,]+\.\d{2}/g) || [])
-      .map(value => Number(value.replace(/,/g, '')))
-      .filter(value => !Number.isNaN(value));
+      .filter(item => item.text.toLowerCase().includes('total') || item.text.toLowerCase().includes('nzd'))
+      .filter(item => /[0-9,]+\.\d{2}/.test(item.text));
 
-    if (summaryAmounts.length) {
-      return Math.max(...summaryAmounts);
+    // Prefer text that explicitly contains NZD, for example "NZD 1,223.99"
+    for (const item of visibleBlocks) {
+      const nzdMatch = item.text.match(/NZD\s*([0-9,]+\.\d{2})/i);
+
+      if (nzdMatch) {
+        return Number(nzdMatch[1].replace(/,/g, ''));
+      }
     }
 
-    const totalMatches = [...bodyText.matchAll(/TOTAL\s*([0-9,]+\.\d{2})/gi)];
+    // Then try a TOTAL line that has amounts.
+    for (const item of visibleBlocks) {
+      if (item.text.toLowerCase().includes('total')) {
+        const amounts = item.text.match(/[0-9,]+\.\d{2}/g) || [];
 
-    if (totalMatches.length) {
-      return Number(totalMatches[totalMatches.length - 1][1].replace(/,/g, ''));
+        if (amounts.length) {
+          return Number(amounts[amounts.length - 1].replace(/,/g, ''));
+        }
+      }
+    }
+
+    // Final fallback: use all visible amounts above Payment, ignoring zero values.
+    const amountsAbovePayment = Array.from(document.querySelectorAll('div, span, td, th'))
+      .filter(isVisible)
+      .map(el => ({
+        text: clean(el.innerText || el.textContent),
+        rect: el.getBoundingClientRect()
+      }))
+      .filter(item => item.rect.top < paymentTop)
+      .flatMap(item => item.text.match(/[0-9,]+\.\d{2}/g) || [])
+      .map(value => Number(value.replace(/,/g, '')))
+      .filter(value => !Number.isNaN(value))
+      .filter(value => value > 0);
+
+    if (amountsAbovePayment.length) {
+      return Math.max(...amountsAbovePayment);
     }
 
     return null;
@@ -313,18 +331,22 @@
     const paymentIsHalf = halfTotal !== null && nearlyEqual(paymentAmount, halfTotal, 2.5);
     const balanceRoughlyEqualsPayment = balanceDue !== null && nearlyEqual(balanceDue, paymentAmount, 2.5);
 
-    // This is the key rule:
-    // If there is more than one payment and the latest one clears the balance,
-    // it is the outstanding balance, not paid in full.
-    if (paymentCount > 1 && balanceIsZero) {
-      return 'outstanding balance';
-    }
-
-    // Only say paid in full when the whole invoice amount was paid in one payment.
+    // One payment that matches the invoice total means paid in full.
     if (paymentCount <= 1 && balanceIsZero && paymentEqualsTotal) {
       return 'paid in full';
     }
 
+    // Multiple payments and the latest payment clears the balance means outstanding balance.
+    if (paymentCount > 1 && balanceIsZero) {
+      return 'outstanding balance';
+    }
+
+    // One payment, balance is zero, but payment is less than invoice total means outstanding balance.
+    if (balanceIsZero && invoiceTotal !== null && paymentAmount < invoiceTotal - 1.5) {
+      return 'outstanding balance';
+    }
+
+    // Deposit logic.
     if (!balanceIsZero && paymentIsHalf) {
       return '50% deposit';
     }
@@ -333,12 +355,10 @@
       return '50% deposit';
     }
 
-    if (balanceIsZero && invoiceTotal !== null && paymentAmount < invoiceTotal - 1.5) {
-      return 'outstanding balance';
-    }
-
+    // If balance is zero and we cannot prove it was multiple payments,
+    // treat it as paid in full.
     if (balanceIsZero) {
-      return 'outstanding balance';
+      return 'paid in full';
     }
 
     return 'part payment';
