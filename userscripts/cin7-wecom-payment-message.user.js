@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 WeCom Payment Message Copier
 // @namespace    livingculture
-// @version      1.8
+// @version      1.9
 // @description  Copies a WeCom payment message from Cin7 invoice/payment screen only.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -220,12 +220,7 @@
 
   function findLatestPaymentRow() {
     const rows = findPaymentRows();
-
-    if (rows.length) {
-      return rows[0];
-    }
-
-    return null;
+    return rows.length ? rows[0] : null;
   }
 
   function findPaymentMethod() {
@@ -309,21 +304,24 @@
     return null;
   }
 
-  function classifyPayment(invoiceTotal, paymentAmount, balanceDue) {
+  function classifyPayment(invoiceTotal, paymentAmount, balanceDue, paymentCount) {
     if (paymentAmount === null) return 'payment';
-
-    const halfTotal = invoiceTotal !== null ? invoiceTotal / 2 : null;
 
     const balanceIsZero = balanceDue !== null && nearlyEqual(balanceDue, 0, 0.05);
     const paymentEqualsTotal = invoiceTotal !== null && nearlyEqual(paymentAmount, invoiceTotal, 1.5);
+    const halfTotal = invoiceTotal !== null ? invoiceTotal / 2 : null;
     const paymentIsHalf = halfTotal !== null && nearlyEqual(paymentAmount, halfTotal, 2.5);
     const balanceRoughlyEqualsPayment = balanceDue !== null && nearlyEqual(balanceDue, paymentAmount, 2.5);
 
-    if (balanceIsZero && invoiceTotal !== null && paymentAmount < invoiceTotal - 1.5) {
+    // This is the key rule:
+    // If there is more than one payment and the latest one clears the balance,
+    // it is the outstanding balance, not paid in full.
+    if (paymentCount > 1 && balanceIsZero) {
       return 'outstanding balance';
     }
 
-    if (balanceIsZero && paymentEqualsTotal) {
+    // Only say paid in full when the whole invoice amount was paid in one payment.
+    if (paymentCount <= 1 && balanceIsZero && paymentEqualsTotal) {
       return 'paid in full';
     }
 
@@ -335,21 +333,26 @@
       return '50% deposit';
     }
 
+    if (balanceIsZero && invoiceTotal !== null && paymentAmount < invoiceTotal - 1.5) {
+      return 'outstanding balance';
+    }
+
     if (balanceIsZero) {
-      return 'paid in full';
+      return 'outstanding balance';
     }
 
     return 'part payment';
   }
 
   function buildMessage() {
+    const paymentRows = findPaymentRows();
     const orderNumber = findOrderNumber();
     const paymentMethod = findPaymentMethod();
     const paymentAmount = findPaymentAmount();
     const invoiceTotal = findInvoiceTotal();
     const balanceDue = findBalanceDue();
 
-    const paymentType = classifyPayment(invoiceTotal, paymentAmount, balanceDue);
+    const paymentType = classifyPayment(invoiceTotal, paymentAmount, balanceDue, paymentRows.length);
     const amount = paymentAmount !== null ? `$${formatMoney(paymentAmount)}` : '$';
 
     if (paymentType === 'paid in full') {
