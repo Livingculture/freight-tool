@@ -446,6 +446,164 @@ function formatMoney(cents) {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
+function parseMoneyTextToCents(value) {
+  const match = String(value || '')
+    .replace(/,/g, '')
+    .match(/\$?\s*(\d+(?:\.\d{1,2})?)/);
+
+  return match ? Math.round(Number(match[1]) * 100) : 0;
+}
+
+function formatMoneyFromCents(cents) {
+  const number = Number(cents) || 0;
+  return `$${(number / 100).toLocaleString('en-NZ', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })}`;
+}
+
+function cleanCartText(value) {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .replace(/\u00a0/g, ' ')
+    .trim();
+}
+
+function enrichCartItemsWithProducts(cartItems = [], products = []) {
+  return cartItems.map((item, index) => {
+    const product = products[index] || {};
+    const quantity = normaliseQuantity(item.quantity || product.quantity || 1);
+    const lineTotalCents = parseMoneyTextToCents(item.lineTotal);
+    const unitPriceCents = item.unitPrice
+      ? parseMoneyTextToCents(item.unitPrice)
+      : lineTotalCents && quantity
+        ? Math.round(lineTotalCents / quantity)
+        : 0;
+
+    return {
+      sku: product.sku || item.sku || '',
+      title: product.title || item.title || '',
+      quantity,
+      unitPrice: unitPriceCents ? formatMoneyFromCents(unitPriceCents) : item.unitPrice || '',
+      lineTotal: lineTotalCents ? formatMoneyFromCents(lineTotalCents) : item.lineTotal || '',
+      productUrl: product.url || product.productUrl || item.productUrl || '',
+      image: product.image || item.image || ''
+    };
+  });
+}
+
+async function readCheckoutCartSummary(page) {
+  return page.evaluate(() => {
+    const clean = value => String(value || '')
+      .replace(/\s+/g, ' ')
+      .replace(/\u00a0/g, ' ')
+      .trim();
+
+    const findMoney = value => {
+      const match = clean(value).match(/\$\s?\d[\d,]*(?:\.\d{2})?/);
+      return match ? match[0].replace(/\s+/g, '') : '';
+    };
+
+    const getText = selector => {
+      const element = document.querySelector(selector);
+      return element ? clean(element.innerText || element.textContent || '') : '';
+    };
+
+    const totalSelectors = [
+      '.payment-due__price',
+      '[data-checkout-payment-due-target]',
+      '[data-checkout-payment-due]',
+      '.total-line--total .total-line__price',
+      '.total-line__price.payment-due',
+      '[class*="payment-due"]',
+      '[class*="total"] [class*="price"]'
+    ];
+
+    let finalCartPrice = '';
+
+    for (const selector of totalSelectors) {
+      const text = getText(selector);
+      const money = findMoney(text);
+      if (money) {
+        finalCartPrice = money;
+        break;
+      }
+    }
+
+    if (!finalCartPrice) {
+      const lines = clean(document.body.innerText || '')
+        .split(/(?=Total|Subtotal|Shipping|\$)/i)
+        .map(clean)
+        .filter(Boolean);
+
+      const totalLine = lines.reverse().find(line => /total/i.test(line) && /\$\s?\d/.test(line));
+      finalCartPrice = findMoney(totalLine || '');
+    }
+
+    const rowSelectors = [
+      '[data-order-summary-section="line-items"] tr.product',
+      '.product-table tr.product',
+      'tr.product',
+      '[data-product-id]',
+      '.product'
+    ];
+
+    let rows = [];
+
+    for (const selector of rowSelectors) {
+      rows = Array.from(document.querySelectorAll(selector))
+        .filter(row => {
+          const text = clean(row.innerText || row.textContent || '');
+          return text && /\$\s?\d/.test(text);
+        });
+
+      if (rows.length) break;
+    }
+
+    const cartItems = rows.map(row => {
+      const title =
+        clean(row.querySelector('.product__description__name')?.innerText) ||
+        clean(row.querySelector('[class*="description__name"]')?.innerText) ||
+        clean(row.querySelector('[class*="product-title"]')?.innerText) ||
+        clean(row.querySelector('[class*="name"]')?.innerText) ||
+        '';
+
+      const variant =
+        clean(row.querySelector('.product__description__variant')?.innerText) ||
+        clean(row.querySelector('[class*="variant"]')?.innerText) ||
+        '';
+
+      const quantityText =
+        clean(row.querySelector('.product-thumbnail__quantity')?.innerText) ||
+        clean(row.querySelector('[class*="quantity"]')?.innerText) ||
+        '';
+
+      const quantityMatch = quantityText.match(/\d+/);
+      const quantity = quantityMatch ? Number(quantityMatch[0]) : 1;
+
+      const priceText =
+        clean(row.querySelector('.product__price .order-summary__emphasis')?.innerText) ||
+        clean(row.querySelector('.product__price')?.innerText) ||
+        clean(row.querySelector('[class*="price"]')?.innerText) ||
+        clean(row.innerText || row.textContent || '');
+
+      const lineTotal = findMoney(priceText);
+
+      return {
+        title: variant && title && !title.includes(variant) ? `${title} - ${variant}` : title,
+        quantity,
+        lineTotal
+      };
+    }).filter(item => item.title || item.lineTotal);
+
+    return {
+      finalCartPrice,
+      cartItems
+    };
+  });
+}
+
+
 function buildFreightBreakdown(products, priceText, itemShipping = []) {
   const totalCents = parseMoneyToCents(priceText);
   const basis = products.some(product => Number(product.cbm) > 0) ? 'CBM' : 'weight';
@@ -1443,13 +1601,24 @@ async function selectAddressAndGetPrice(page, addressText, timing = createTiming
   await timing.step('read freight', async () => {
     await page.waitForFunction(() => {
       const text = document.body?.innerText || '';
-      return /Shipping method/i.test(text) && !/Getting available shipping rates/i.test(text) && (/Ship from[\s\S]*\$\d/.test(text) || /Shipping\s+\$\d/.test(text));
+      return /Shipping method/i.test(text) &&
+        !/Getting available shipping rates/i.test(text) &&
+        (/Ship from[\s\S]*\$\d/.test(text) || /Shipping\s+\$\d/.test(text));
     }, { timeout: 60000 });
   });
 
-  const shipping = await timing.step('read freight', () => readShippingPrice(page));
+  const shipping = await timing.step('read freight price', () => readShippingPrice(page));
+  const cartSummary = await timing.step('read cart summary', () => readCheckoutCartSummary(page));
   const addressFields = await readAddressFields(page);
-  return { price: shipping.price, method: shipping.method, selectedAddress: clickedSuggestion || addressText, addressFields };
+
+  return {
+    price: shipping.price,
+    method: shipping.method,
+    selectedAddress: clickedSuggestion || addressText,
+    addressFields,
+    finalCartPrice: cartSummary.finalCartPrice || '',
+    cartItems: cartSummary.cartItems || []
+  };
 }
 
 async function clickMatchingSuggestion(page, addressText) {
@@ -1589,6 +1758,7 @@ app.get('/api/product-search', async (req, res) => {
 
 app.post('/api/price', async (req, res) => {
   const { productUrl, sku, skus, items, selectedAddress } = req.body;
+
   if (!normaliseItems({ productUrl, sku, skus, items }).length || !selectedAddress) {
     return res.status(400).json({ error: 'At least one SKU and selectedAddress are required' });
   }
@@ -1610,12 +1780,18 @@ app.post('/api/price', async (req, res) => {
 
       checkout.lastUsed = Date.now();
       scheduleCheckoutCleanup();
+
+      const cartItems = enrichCartItemsWithProducts(result.cartItems || [], checkout.products || []);
+
       return {
         ...result,
         products: checkout.products,
+        cartItems,
+        finalCartPrice: result.finalCartPrice || '',
         freightBreakdown: buildFreightBreakdown(checkout.products, result.price)
       };
     });
+
     return res.json(payload);
   } catch (error) {
     console.error(error);
@@ -1626,6 +1802,7 @@ app.post('/api/price', async (req, res) => {
 app.post('/get-freight', async (req, res) => {
   const { sku, productUrl, address, selectedAddress, quantity } = req.body;
   const freightAddress = selectedAddress || address;
+
   const items = Array.isArray(req.body.items) && req.body.items.length
     ? req.body.items.map(item => {
       const itemSkuLooksLikeUrl = /^https?:\/\/.+\/products\//i.test(String(item?.sku || ''));
@@ -1662,16 +1839,22 @@ app.post('/get-freight', async (req, res) => {
 
       checkout.lastUsed = Date.now();
       scheduleCheckoutCleanup();
+
+      const cartItems = enrichCartItemsWithProducts(result.cartItems || [], checkout.products || []);
+
       return {
         ...result,
         sku: checkout.products?.[0]?.sku || sku || '',
         skus: checkout.products?.map(product => product.sku).filter(Boolean) || [],
         price: result.price,
         priceNumber: parseMoneyToCents(result.price) / 100,
+        finalCartPrice: result.finalCartPrice || '',
+        cartItems,
         products: checkout.products,
         freightBreakdown: buildFreightBreakdown(checkout.products, result.price)
       };
     });
+
     return res.json(payload);
   } catch (error) {
     console.error(error);
