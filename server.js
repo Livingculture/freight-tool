@@ -280,6 +280,8 @@ function buildProductFromDetails(details, resolvedUrl, includeMetrics) {
     image: details.image,
     available: details.available,
     saleState: details.saleState || (details.available ? 'Add to cart' : 'Unavailable'),
+    priceCents: Number(details.priceCents || 0),
+    unitPrice: details.priceCents ? formatMoneyFromCents(Number(details.priceCents || 0)) : '',
     weightKg: null,
     cartons: [],
     unitsPerCarton: 1,
@@ -397,6 +399,7 @@ async function getProductDetails(page, { productUrl, sku }, { includeMetrics = f
       variantTitle: variant?.public_title || variant?.title || '',
       available: Boolean(variant?.available),
       saleState,
+      priceCents: Number(variant?.price || 0),
       weightGrams: Number(variant?.weight || 0),
       descriptionHtml: includeMetrics ? product?.description || '' : '',
       pageText: includeMetrics ? document.body?.innerText || '' : '',
@@ -456,40 +459,49 @@ function parseMoneyTextToCents(value) {
 
 function formatMoneyFromCents(cents) {
   const number = Number(cents) || 0;
+
   return `$${(number / 100).toLocaleString('en-NZ', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   })}`;
 }
 
-function cleanCartText(value) {
-  return String(value || '')
-    .replace(/\s+/g, ' ')
-    .replace(/\u00a0/g, ' ')
-    .trim();
-}
-
 function enrichCartItemsWithProducts(cartItems = [], products = []) {
-  return cartItems.map((item, index) => {
-    const product = products[index] || {};
-    const quantity = normaliseQuantity(item.quantity || product.quantity || 1);
-    const lineTotalCents = parseMoneyTextToCents(item.lineTotal);
-    const unitPriceCents = item.unitPrice
-      ? parseMoneyTextToCents(item.unitPrice)
-      : lineTotalCents && quantity
-        ? Math.round(lineTotalCents / quantity)
-        : 0;
+  return products.map((product, index) => {
+    const cartItem = cartItems[index] || {};
+    const quantity = normaliseQuantity(cartItem.quantity || product.quantity || 1);
+
+    const productUnitCents = Number(product.priceCents || 0);
+    const productLineCents = productUnitCents * quantity;
+
+    const cartLineTotalCents = parseMoneyTextToCents(cartItem.lineTotal);
+    const lineTotalCents = cartLineTotalCents || productLineCents;
+
+    const unitPriceCents = cartItem.unitPrice
+      ? parseMoneyTextToCents(cartItem.unitPrice)
+      : productUnitCents || (lineTotalCents && quantity ? Math.round(lineTotalCents / quantity) : 0);
 
     return {
-      sku: product.sku || item.sku || '',
-      title: product.title || item.title || '',
+      sku: product.sku || cartItem.sku || '',
+      title: product.title || cartItem.title || '',
       quantity,
-      unitPrice: unitPriceCents ? formatMoneyFromCents(unitPriceCents) : item.unitPrice || '',
-      lineTotal: lineTotalCents ? formatMoneyFromCents(lineTotalCents) : item.lineTotal || '',
-      productUrl: product.url || product.productUrl || item.productUrl || '',
-      image: product.image || item.image || ''
+      unitPrice: unitPriceCents ? formatMoneyFromCents(unitPriceCents) : '',
+      lineTotal: lineTotalCents ? formatMoneyFromCents(lineTotalCents) : '',
+      productUrl: product.url || product.productUrl || cartItem.productUrl || '',
+      image: product.image || cartItem.image || ''
     };
   });
+}
+
+function calculateFinalCartPrice(cartItems = [], freightPrice = '') {
+  const itemsTotalCents = cartItems.reduce((total, item) => {
+    return total + parseMoneyTextToCents(item.lineTotal);
+  }, 0);
+
+  const freightCents = parseMoneyTextToCents(freightPrice);
+  const finalCents = itemsTotalCents + freightCents;
+
+  return finalCents ? formatMoneyFromCents(finalCents) : '';
 }
 
 async function readCheckoutCartSummary(page) {
@@ -524,6 +536,7 @@ async function readCheckoutCartSummary(page) {
     for (const selector of totalSelectors) {
       const text = getText(selector);
       const money = findMoney(text);
+
       if (money) {
         finalCartPrice = money;
         break;
@@ -532,11 +545,11 @@ async function readCheckoutCartSummary(page) {
 
     if (!finalCartPrice) {
       const lines = clean(document.body.innerText || '')
-        .split(/(?=Total|Subtotal|Shipping|\$)/i)
+        .split('\n')
         .map(clean)
         .filter(Boolean);
 
-      const totalLine = lines.reverse().find(line => /total/i.test(line) && /\$\s?\d/.test(line));
+      const totalLine = [...lines].reverse().find(line => /total/i.test(line) && /\$\s?\d/.test(line));
       finalCartPrice = findMoney(totalLine || '');
     }
 
@@ -602,7 +615,6 @@ async function readCheckoutCartSummary(page) {
     };
   });
 }
-
 
 function buildFreightBreakdown(products, priceText, itemShipping = []) {
   const totalCents = parseMoneyToCents(priceText);
@@ -1265,6 +1277,7 @@ function buildProductFromStorefrontData(productData, resolvedUrl, requestedSku =
     variantTitle: variant.public_title || variant.title || '',
     available: Boolean(variant.available),
     saleState: variant.available ? 'Add to cart' : 'Unavailable',
+    priceCents: Number(variant.price || 0),
     weightGrams: Number(variant.weight || 0),
     descriptionHtml: includeMetrics ? productData.description || '' : '',
     pageText: '',
@@ -1782,12 +1795,13 @@ app.post('/api/price', async (req, res) => {
       scheduleCheckoutCleanup();
 
       const cartItems = enrichCartItemsWithProducts(result.cartItems || [], checkout.products || []);
+      const finalCartPrice = result.finalCartPrice || calculateFinalCartPrice(cartItems, result.price);
 
       return {
         ...result,
         products: checkout.products,
         cartItems,
-        finalCartPrice: result.finalCartPrice || '',
+        finalCartPrice,
         freightBreakdown: buildFreightBreakdown(checkout.products, result.price)
       };
     });
@@ -1841,6 +1855,7 @@ app.post('/get-freight', async (req, res) => {
       scheduleCheckoutCleanup();
 
       const cartItems = enrichCartItemsWithProducts(result.cartItems || [], checkout.products || []);
+      const finalCartPrice = result.finalCartPrice || calculateFinalCartPrice(cartItems, result.price);
 
       return {
         ...result,
@@ -1848,7 +1863,7 @@ app.post('/get-freight', async (req, res) => {
         skus: checkout.products?.map(product => product.sku).filter(Boolean) || [],
         price: result.price,
         priceNumber: parseMoneyToCents(result.price) / 100,
-        finalCartPrice: result.finalCartPrice || '',
+        finalCartPrice,
         cartItems,
         products: checkout.products,
         freightBreakdown: buildFreightBreakdown(checkout.products, result.price)
