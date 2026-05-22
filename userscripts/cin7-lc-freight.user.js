@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      5.4-cart-items
-// @description  Living Culture freight panel for Cin7 with editable quantities, remove/ignore options, freight total, final cart price, and cart item prices.
+// @version      5.3-fast
+// @description  Faster Living Culture freight panel for Cin7 with editable quantities, remove/ignore options, freight-first loading, and totals.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
 // @match        *://*.cin7.co/*
@@ -24,8 +24,6 @@
   const state = {
     price: '',
     priceNumber: '',
-    finalCartPrice: '',
-    finalCartPriceNumber: '',
     method: '',
     selectedAddress: '',
     addressTimer: null,
@@ -34,8 +32,7 @@
     lastAutoKey: '',
     queuedAutoKey: '',
     excludedSkus: new Set(),
-    freightCache: new Map(),
-    cartItems: []
+    freightCache: new Map()
   };
 
   function clean(value) {
@@ -43,38 +40,8 @@
   }
 
   function moneyToNumber(value) {
-    const match = String(value || '').replace(/,/g, '').match(/(\d+(?:\.\d{1,4})?)/);
+    const match = String(value || '').replace(/,/g, '').match(/(\d+(?:\.\d{1,2})?)/);
     return match ? Number(match[1]).toFixed(4) : '';
-  }
-
-  function moneyToFloat(value) {
-    const number = Number(moneyToNumber(value));
-    return Number.isFinite(number) ? number : 0;
-  }
-
-  function formatCurrency(value) {
-    const number = Number(value);
-
-    if (!Number.isFinite(number)) {
-      return '$0.00';
-    }
-
-    return `$${number.toLocaleString('en-NZ', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    })}`;
-  }
-
-  function normalisePriceText(value) {
-    if (value === null || value === undefined || value === '') return '';
-
-    const number = moneyToFloat(value);
-
-    if (!number) {
-      return clean(value);
-    }
-
-    return formatCurrency(number);
   }
 
   function escapeHtml(value) {
@@ -292,25 +259,16 @@
     status.style.color = isError ? '#9a2d20' : '#405f54';
   }
 
-  function setResult(price, method = '', finalCartPrice = '') {
+  function setResult(price, method = '') {
     state.price = price || '';
     state.priceNumber = moneyToNumber(price);
-    state.finalCartPrice = finalCartPrice || '';
-    state.finalCartPriceNumber = moneyToNumber(finalCartPrice);
     state.method = method || '';
 
     const result = document.getElementById('lc-freight-result');
-    const finalCart = document.getElementById('lc-final-cart-price');
     const methodBlock = document.getElementById('lc-freight-method');
 
     if (result) {
-      result.textContent = price ? `Freight: ${normalisePriceText(price)}` : 'Freight: -';
-    }
-
-    if (finalCart) {
-      finalCart.textContent = finalCartPrice
-        ? `Final cart price: ${normalisePriceText(finalCartPrice)}`
-        : 'Final cart price: not supplied by freight app';
+      result.textContent = price ? `Freight: ${price}` : 'Freight: -';
     }
 
     if (methodBlock) {
@@ -359,96 +317,7 @@
       .filter(Boolean))).join(' + ');
   }
 
-  function normaliseCartItems(cartItems = []) {
-    if (!Array.isArray(cartItems)) return [];
-
-    return cartItems
-      .map(item => {
-        const sku = clean(item.sku || item.productSku || item.code || item.variantSku);
-        const productUrl = clean(item.productUrl || item.url);
-        const title = clean(item.title || item.name || item.productTitle || item.variantTitle || sku || productUrl);
-        const quantity = normaliseQuantity(item.quantity || item.qty || 1);
-
-        const unitPriceRaw =
-          item.unitPrice ??
-          item.priceEach ??
-          item.eachPrice ??
-          item.price ??
-          item.unit_price ??
-          '';
-
-        const lineTotalRaw =
-          item.lineTotal ??
-          item.total ??
-          item.cartLineTotal ??
-          item.line_price ??
-          item.finalLinePrice ??
-          '';
-
-        const unitPriceNumber = moneyToFloat(unitPriceRaw);
-        const lineTotalNumber = moneyToFloat(lineTotalRaw);
-
-        return {
-          key: clean(sku || productUrl || title).toLowerCase(),
-          sku,
-          productUrl,
-          title,
-          quantity,
-          unitPrice: unitPriceNumber ? formatCurrency(unitPriceNumber) : clean(unitPriceRaw),
-          lineTotal: lineTotalNumber ? formatCurrency(lineTotalNumber) : clean(lineTotalRaw)
-        };
-      })
-      .filter(item => item.key || item.sku || item.productUrl || item.title);
-  }
-
-  function getCartItemForProduct(product, cartItems = state.cartItems) {
-    const keys = [
-      clean(product.sku).toLowerCase(),
-      clean(product.productUrl).toLowerCase(),
-      clean(product.url).toLowerCase(),
-      clean(product.title).toLowerCase()
-    ].filter(Boolean);
-
-    return cartItems.find(item => {
-      const itemKeys = [
-        clean(item.key).toLowerCase(),
-        clean(item.sku).toLowerCase(),
-        clean(item.productUrl).toLowerCase(),
-        clean(item.title).toLowerCase()
-      ].filter(Boolean);
-
-      return itemKeys.some(itemKey => keys.includes(itemKey));
-    });
-  }
-
-  function renderCartItemPrices(cartItems = state.cartItems) {
-    const block = document.getElementById('lc-cart-item-prices');
-    if (!block) return;
-
-    const items = normaliseCartItems(cartItems);
-
-    if (!items.length) {
-      block.innerHTML = '<div class="lc-cart-note">Cart item prices not supplied by freight app.</div>';
-      return;
-    }
-
-    block.innerHTML = `
-      <div class="lc-cart-prices-title">Cart item prices</div>
-      ${items.map(item => `
-        <div class="lc-cart-price-row">
-          <strong>${escapeHtml(item.sku || item.title || 'Cart item')}</strong>
-          ${item.title && item.title !== item.sku ? `<div>${escapeHtml(item.title)}</div>` : ''}
-          <div>
-            Qty ${escapeHtml(item.quantity)}
-            ${item.unitPrice ? ` · Unit ${escapeHtml(item.unitPrice)}` : ''}
-            ${item.lineTotal ? ` · Line ${escapeHtml(item.lineTotal)}` : ''}
-          </div>
-        </div>
-      `).join('')}
-    `;
-  }
-
-  function renderProductDetails(products = [], method = state.method, options = {}) {
+  function renderProductDetails(products = [], method = state.method) {
     const block = document.getElementById('lc-product-details');
     if (!block) return;
 
@@ -470,7 +339,6 @@
     const totalCbm = activeProducts.reduce((total, product) => total + getLineCbm(product), 0);
     const totalCartons = activeProducts.reduce((total, product) => total + getLineCartonCount(product), 0);
     const shippingLocation = getShippingLocation(method);
-    const cartItems = normaliseCartItems(options.cartItems || state.cartItems);
 
     block.classList.add('is-visible');
 
@@ -482,7 +350,6 @@
         const cartonCount = getLineCartonCount(product, quantity);
         const saleState = product.saleState || (product.available ? 'Add to cart' : 'Unavailable');
         const stock = product.available ? `Stock: ${shippingLocation || 'Available'}` : 'Stock: Unavailable';
-        const cartItem = getCartItemForProduct(product, cartItems);
 
         const detailsLine = product.metricsLoaded
           ? lineWeight && lineCbm && cartonCount ? '' : 'Some product metrics were not found'
@@ -491,10 +358,6 @@
         const detailsHtml = detailsLine ? `<div>${escapeHtml(detailsLine)}</div>` : '';
 
         const quantityLine = `<div>Qty ${quantity} · ${lineWeight.toFixed(2)} kg · ${lineCbm.toFixed(3)} CBM · ${cartonCount} ctns</div>`;
-
-        const cartPriceLine = cartItem
-          ? `<div class="lc-line-cart-price"><strong>Cart price:</strong>${cartItem.unitPrice ? ` Unit ${escapeHtml(cartItem.unitPrice)}` : ''}${cartItem.lineTotal ? ` · Line ${escapeHtml(cartItem.lineTotal)}` : ''}</div>`
-          : '';
 
         const image = product.image
           ? `<img src="${escapeHtml(product.image)}" alt="">`
@@ -512,7 +375,6 @@
             <div>
               <strong>${escapeHtml(product.title || product.sku || 'Living Culture product')}</strong>
               ${quantityLine}
-              ${cartPriceLine}
               ${detailsHtml}
               <div>${escapeHtml(`Status: ${saleState}`)}</div>
               <div>${escapeHtml(stock)}</div>
@@ -550,7 +412,7 @@
     });
   }
 
-  async function loadProductDetails(items, price, method, fallbackProducts = [], freightData = {}) {
+  async function loadProductDetails(items, price, method, fallbackProducts = []) {
     const requestedItems = normaliseFreightItems({ items });
 
     const itemsWithUrls = mergeProductDetails(requestedItems, fallbackProducts)
@@ -559,15 +421,7 @@
         productUrl: item.productUrl || item.url || ''
       }));
 
-    const cartItems = freightData.cartItems || freightData.cartLineItems || freightData.itemsWithPrices || state.cartItems;
-
-    renderProductDetails(itemsWithUrls, method, {
-      price,
-      finalCartPrice: freightData.finalCartPrice || freightData.cartFinalPrice || freightData.finalPrice || freightData.cartPrice || state.finalCartPrice,
-      cartItems
-    });
-
-    renderCartItemPrices(cartItems);
+    renderProductDetails(itemsWithUrls, method);
 
     if (!requestedItems.length) return;
 
@@ -584,13 +438,7 @@
         throw new Error(data.error || 'Product details unavailable');
       }
 
-      renderProductDetails(mergeProductDetails(itemsWithUrls, data.products || fallbackProducts), method, {
-        price,
-        finalCartPrice: freightData.finalCartPrice || freightData.cartFinalPrice || freightData.finalPrice || freightData.cartPrice || state.finalCartPrice,
-        cartItems
-      });
-
-      renderCartItemPrices(cartItems);
+      renderProductDetails(mergeProductDetails(itemsWithUrls, data.products || fallbackProducts), method);
     } catch (error) {
       console.error(error);
 
@@ -652,9 +500,7 @@
           };
         }),
         address,
-        selectedAddress: address,
-        includeCartItems: true,
-        includeCartPrices: true
+        selectedAddress: address
       })
     });
 
@@ -775,9 +621,7 @@
     }
 
     if (!items.length || !selectedAddress) {
-      setResult('', '', '');
-      state.cartItems = [];
-      renderCartItemPrices([]);
+      setResult('', '');
       renderProductDetails([], '');
       setStatus('No freight products selected, or could not detect shipping address.', true);
       return;
@@ -846,9 +690,7 @@
       const requestedItems = normaliseFreightItems({ sku, items });
 
       if (!requestedItems.length) {
-        setResult('', '', '');
-        state.cartItems = [];
-        renderCartItemPrices([]);
+        setResult('', '');
         renderProductDetails([], '');
         setStatus('No freight products selected.');
         return false;
@@ -862,33 +704,11 @@
         address
       });
 
-      const finalCartPrice =
-        data.finalCartPrice ||
-        data.cartFinalPrice ||
-        data.finalPrice ||
-        data.cartPrice ||
-        data.totalCartPrice ||
-        '';
-
-      const cartItems =
-        data.cartItems ||
-        data.cartLineItems ||
-        data.itemsWithPrices ||
-        data.itemPrices ||
-        [];
-
-      state.cartItems = normaliseCartItems(cartItems);
-
-      setResult(data.price, data.method, finalCartPrice);
-      renderCartItemPrices(state.cartItems);
+      setResult(data.price, data.method);
       setStatus(data.fromCache ? 'Freight loaded from recent lookup.' : 'Freight loaded.');
 
       setTimeout(() => {
-        loadProductDetails(requestedItems, data.price, data.method, data.products || [], {
-          ...data,
-          finalCartPrice,
-          cartItems: state.cartItems
-        });
+        loadProductDetails(requestedItems, data.price, data.method, data.products || []);
       }, 250);
 
       return true;
@@ -1142,11 +962,8 @@
 
       <div class="lc-block lc-result-block">
         <div id="lc-freight-result">Freight: -</div>
-        <div id="lc-final-cart-price">Final cart price: -</div>
         <div id="lc-freight-method"></div>
       </div>
-
-      <div id="lc-cart-item-prices" class="lc-block"></div>
 
       <div id="lc-product-details" class="lc-block"></div>
 
@@ -1162,7 +979,7 @@
         right: 16px;
         z-index: 2147483647;
         box-sizing: border-box;
-        width: 380px;
+        width: 360px;
         max-height: calc(100vh - 96px);
         overflow: auto;
         display: none;
@@ -1349,7 +1166,6 @@
       }
 
       #lc-freight-result,
-      #lc-final-cart-price,
       #lc-freight-method {
         grid-column: 1 / -1;
       }
@@ -1357,49 +1173,6 @@
       #lc-freight-result {
         font-weight: 800;
         font-size: 16px;
-      }
-
-      #lc-final-cart-price {
-        font-weight: 800;
-        font-size: 14px;
-        color: #2d5c4e;
-      }
-
-      #lc-cart-item-prices:empty {
-        display: none;
-      }
-
-      .lc-cart-prices-title {
-        color: #637061;
-        font-weight: 700;
-        text-transform: uppercase;
-        font-size: 11px;
-      }
-
-      .lc-cart-price-row {
-        padding: 7px 0;
-        border-bottom: 1px solid #ebe7dc;
-      }
-
-      .lc-cart-price-row:last-child {
-        border-bottom: 0;
-      }
-
-      .lc-cart-price-row strong {
-        display: block;
-        color: #1f2b24;
-        font-size: 13px;
-      }
-
-      .lc-cart-price-row div {
-        color: #637061;
-        font-size: 12px;
-      }
-
-      .lc-cart-note {
-        color: #8a7a52;
-        font-size: 12px;
-        font-weight: 700;
       }
 
       #lc-freight-status {
@@ -1448,16 +1221,6 @@
       .lc-product-row div div {
         color: #637061;
         font-size: 12px;
-      }
-
-      .lc-line-cart-price {
-        color: #2d5c4e !important;
-        font-size: 12px !important;
-      }
-
-      .lc-line-cart-price strong {
-        display: inline !important;
-        font-size: 12px !important;
       }
 
       .lc-product-website {
