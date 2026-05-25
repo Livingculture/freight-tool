@@ -1,6 +1,11 @@
 const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const path = require('path');
 const net = require('net');
+
+if (app.isPackaged) {
+  process.env.PLAYWRIGHT_BROWSERS_PATH = path.join(process.resourcesPath, 'ms-playwright');
+}
+
 const { startServer, closeActiveCheckout } = require('./server');
 
 let mainWindow = null;

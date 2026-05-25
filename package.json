@@ -9,8 +9,10 @@
     "start": "electron .",
     "dev": "electron .",
     "start:web": "node server.js",
-    "package:mac": "electron-builder --mac",
-    "package:win": "electron-builder --win",
+    "prepare-browser:mac": "node scripts/prepare-bundled-browser.js darwin",
+    "prepare-browser:win": "node scripts/prepare-bundled-browser.js win32",
+    "package:mac": "npm run prepare-browser:mac && electron-builder --mac",
+    "package:win": "npm run prepare-browser:win && electron-builder --win",
     "install-playwright": "npx playwright install chromium"
   },
   "dependencies": {
@@ -37,10 +39,28 @@
       "output": "dist"
     },
     "mac": {
-      "target": "zip"
+      "target": "zip",
+      "extraResources": [
+        {
+          "from": "build-resources/darwin/ms-playwright",
+          "to": "ms-playwright",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ]
     },
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "extraResources": [
+        {
+          "from": "build-resources/win32/ms-playwright",
+          "to": "ms-playwright",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ]
     }
   }
 }

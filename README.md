@@ -109,8 +109,20 @@ npm run package:win
 
 Build outputs are created in `dist/`.
 
+### Download A Windows Installer From GitHub
+
+Windows installers must be built on Windows so the packaged Playwright Chromium browser is the Windows version. The GitHub Actions workflow builds this automatically when app packaging changes are pushed to `main`.
+
+1. Open the `freight-tool` repository in GitHub.
+2. Open `Actions`, then `Build Windows installer`.
+3. Open the latest successful run.
+4. Download the `living-culture-freight-windows-installer` artifact.
+5. Unzip the artifact and use `Living Culture Freight Costing Setup 0.1.0.exe`.
+
+The workflow can also be started manually from `Actions` with `Run workflow`.
+
 ## Notes
 
-- Playwright runs hidden in the background.
+- Playwright runs hidden in the background and packaged desktop builds include their platform-specific Chromium browser.
 - The app uses Living Culture checkout to read address suggestions and freight pricing.
 - Do not commit `node_modules`, `dist`, `build`, `.env`, `user-data`, or unrelated project folders.
