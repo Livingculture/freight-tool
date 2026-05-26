@@ -5,7 +5,7 @@
     "server.js": {
       "maxDuration": 300,
       "includeFiles": "node_modules/@sparticuz/chromium/**",
-      "excludeFiles": "{main.js,preload.js,renderer/**,scripts/**,userscripts/**,STAFF_SETUP*,README.md,inspect_cart.js,product_cart_inspect*.js,node_modules/electron/**,node_modules/electron-builder/**,node_modules/electron-winstaller/**,node_modules/app-builder-bin/**,node_modules/app-builder-lib/**,node_modules/dmg-builder/**,node_modules/7zip-bin/**,node_modules/@electron/**,node_modules/playwright/**}"
+      "excludeFiles": "{main.js,preload.js,renderer/**,scripts/**,userscripts/**,STAFF_SETUP*,README.md,inspect_cart.js,product_cart_inspect*.js}"
     }
   }
 }
