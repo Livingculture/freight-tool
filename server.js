@@ -25,6 +25,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
 const DEFAULT_WAIT = 10000;
+const ADDRESS_PREDICTION_WAIT_MS = 6000;
 const HEADLESS = process.env.HEADLESS !== 'false';
 const CHECKOUT_IDLE_MS = 5 * 60 * 1000;
 const AUTOMATION_TIMEOUT_MS = 120000;
@@ -1710,10 +1711,14 @@ async function getSuggestionsForAddress(page, addressQuery, timing = createTimin
   const partialAddress = isPartialStreetAddress(addressQuery);
 
   for (const query of queries) {
+    let predictionSuggestions = [];
     await timing.step('type address', async () => {
-      await addressInput.fill('');
-      await addressInput.type(query, { delay: 20 });
+      predictionSuggestions = await typeAddressAndReadPredictions(page, addressInput, query);
     });
+
+    if (predictionSuggestions.length) {
+      return predictionSuggestions.slice(0, 10);
+    }
 
     const suggestions = await timing.step('read address suggestions', async () => {
       const waitTimeout = partialAddress && query === normaliseSuggestion(String(addressQuery || ''))
@@ -1739,13 +1744,22 @@ async function selectAddressAndGetPrice(page, addressText, timing = createTiming
     const addressQueries = makeAddressQueries(addressText);
 
     for (const query of addressQueries) {
+      let predictionSuggestions = [];
       await timing.step('type address', async () => {
-        await addressInput.fill('');
-        await addressInput.type(query, { delay: 20 });
+        predictionSuggestions = await typeAddressAndReadPredictions(page, addressInput, query);
       });
 
       await page.waitForSelector(SUGGESTION_SELECTORS.join(','), { timeout: DEFAULT_WAIT }).catch(() => {});
       clickedSuggestion = await timing.step('select address', () => clickMatchingSuggestion(page, addressText));
+      if (!clickedSuggestion) {
+        const predictedAddress = findMatchingSuggestion(predictionSuggestions, addressText);
+        if (predictedAddress) {
+          await addressInput.press('ArrowDown').catch(() => {});
+          await page.waitForTimeout(100);
+          await addressInput.press('Enter').catch(() => {});
+          clickedSuggestion = predictedAddress;
+        }
+      }
       if (clickedSuggestion) break;
     }
   }
@@ -1813,6 +1827,45 @@ function isPartialStreetAddress(addressText) {
   const address = normaliseSuggestion(String(addressText || ''));
   if (!/^\d+\s+\S+/.test(address) || address.includes(',')) return false;
   return !/\b(road|rd|street|st|avenue|ave|drive|dr|place|pl|crescent|cres|lane|ln|parade|terrace|tce|close|court|ct|way|highway|hwy)\b/i.test(address);
+}
+
+async function typeAddressAndReadPredictions(page, addressInput, query) {
+  const predictionResponse = page.waitForResponse(isAddressPredictionResponse, {
+    timeout: ADDRESS_PREDICTION_WAIT_MS
+  }).catch(() => null);
+
+  await addressInput.fill('');
+  await addressInput.type(query, { delay: 20 });
+
+  const response = await predictionResponse;
+  if (!response) return [];
+
+  const payload = await response.json().catch(() => null);
+  return Array.from(new Set((payload?.data?.predictions || [])
+    .map(prediction => normaliseSuggestion(String(prediction?.description || '')))
+    .filter(Boolean)));
+}
+
+function isAddressPredictionResponse(response) {
+  if (!/atlas\.shopifysvc\.com\/graphql/i.test(response.url())) return false;
+
+  try {
+    return JSON.parse(response.request().postData() || '{}').operationName === 'predictions';
+  } catch (error) {
+    return false;
+  }
+}
+
+function findMatchingSuggestion(suggestions, addressText) {
+  const wantedAddress = normaliseAddressForCompare(addressText);
+  const wantedStreet = normaliseAddressForCompare(String(addressText).split(',')[0] || '');
+
+  return suggestions.find(suggestion => {
+    const comparableSuggestion = normaliseAddressForCompare(suggestion);
+    return comparableSuggestion.includes(wantedAddress) ||
+      wantedAddress.includes(comparableSuggestion) ||
+      comparableSuggestion.includes(wantedStreet);
+  }) || '';
 }
 
 async function readSuggestions(page) {
