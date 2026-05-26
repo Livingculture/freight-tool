@@ -1665,10 +1665,10 @@ async function getProductSummaries(itemInput) {
 }
 
 async function openCheckoutForProducts(page, products, timing = createTiming('checkout')) {
-  const cartItems = products.map(product => ({
-    id: Number(product.variantId),
-    quantity: normaliseQuantity(product.quantity)
-  }));
+  const cartItems = products.map(product =>
+    `${product.variantId}:${normaliseQuantity(product.quantity)}`
+  ).join(',');
+  const checkoutCartUrl = `https://livingculture.co.nz/cart/${cartItems}`;
 
   await timing.step('clear cart', async () => {
     await page.goto('https://livingculture.co.nz/cart/clear.js', {
@@ -1678,22 +1678,16 @@ async function openCheckoutForProducts(page, products, timing = createTiming('ch
   });
 
   await timing.step('add to cart', async () => {
-    const result = await page.evaluate(async items => {
-      const response = await fetch('/cart/add.js', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items })
-      });
+    // Set the cart through Shopify's permalink endpoint without rendering the
+    // cart page. Rendering it consumes too much serverless browser memory,
+    // while POST /cart/add.js is challenged by Shopify from Vercel.
+    const response = await page.request.get(checkoutCartUrl, {
+      maxRedirects: 0
+    });
 
-      return {
-        ok: response.ok,
-        status: response.status,
-        message: response.ok ? '' : (await response.text()).slice(0, 200)
-      };
-    }, cartItems);
-
-    if (!result.ok) {
-      throw new Error(`Could not add products to Shopify cart (${result.status}): ${result.message}`);
+    if (response.status() < 200 || response.status() >= 400) {
+      const message = (await response.text().catch(() => '')).slice(0, 200);
+      throw new Error(`Could not add products to Shopify cart (${response.status()}): ${message}`);
     }
   });
 
