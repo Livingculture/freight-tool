@@ -1,6 +1,6 @@
 const express = require('express');
 const path = require('path');
-const { chromium } = require(process.env.VERCEL ? 'playwright-core' : 'playwright');
+const { chromium } = require('playwright-core');
 
 const app = express();
 app.use((req, res, next) => {
