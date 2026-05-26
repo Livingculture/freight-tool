@@ -1,4 +1,6 @@
 const express = require('express');
+const fs = require('fs/promises');
+const os = require('os');
 const path = require('path');
 const { chromium } = require('playwright-core');
 
@@ -34,6 +36,19 @@ const BLOCKED_AUTOMATION_URLS = [
   /static\.hsappstatic\.net/i,
   /googletagmanager\.com/i,
   /google-analytics\.com/i
+];
+const AUTOMATION_TEMP_PREFIXES = [
+  'playwright_chromiumdev_profile-'
+];
+const PARTIAL_ADDRESS_SUFFIXES = [
+  'Road',
+  'Street',
+  'Avenue',
+  'Drive',
+  'Place',
+  'Crescent',
+  'Lane',
+  'Parade'
 ];
 const productCache = new Map();
 const productSummaryCache = new Map();
@@ -166,7 +181,8 @@ async function invalidateSharedAutomation() {
 async function getSharedBrowser() {
   if (sharedBrowser) return sharedBrowser;
   if (!sharedBrowserPromise) {
-    sharedBrowserPromise = getBrowserLaunchOptions()
+    sharedBrowserPromise = cleanupServerlessBrowserProfiles()
+      .then(() => getBrowserLaunchOptions())
       .then(options => chromium.launch(options))
       .then(browser => {
         sharedBrowser = browser;
@@ -184,6 +200,21 @@ async function getSharedBrowser() {
       });
   }
   return sharedBrowserPromise;
+}
+
+async function cleanupServerlessBrowserProfiles() {
+  if (!process.env.VERCEL) return;
+
+  const tempDirectory = os.tmpdir();
+  const entries = await fs.readdir(tempDirectory, { withFileTypes: true }).catch(() => []);
+  const staleProfiles = entries
+    .filter(entry => entry.isDirectory() && AUTOMATION_TEMP_PREFIXES.some(prefix => entry.name.startsWith(prefix)))
+    .map(entry => path.join(tempDirectory, entry.name));
+
+  if (!staleProfiles.length) return;
+
+  await Promise.all(staleProfiles.map(directory => fs.rm(directory, { recursive: true, force: true }).catch(() => {})));
+  console.log(`[automation] removed ${staleProfiles.length} stale Chromium profile director${staleProfiles.length === 1 ? 'y' : 'ies'}`);
 }
 
 async function getBrowserLaunchOptions() {
@@ -1689,6 +1720,7 @@ async function readAddressFields(page) {
 async function getSuggestionsForAddress(page, addressQuery, timing = createTiming('suggestions')) {
   const addressInput = page.locator(ADDRESS_INPUT_SELECTORS.join(',')).first();
   const queries = makeAddressQueries(addressQuery);
+  const partialAddress = isPartialStreetAddress(addressQuery);
 
   for (const query of queries) {
     await timing.step('type address', async () => {
@@ -1697,7 +1729,10 @@ async function getSuggestionsForAddress(page, addressQuery, timing = createTimin
     });
 
     const suggestions = await timing.step('read address suggestions', async () => {
-      await page.waitForSelector(SUGGESTION_SELECTORS.join(','), { timeout: DEFAULT_WAIT }).catch(() => {});
+      const waitTimeout = partialAddress && query === normaliseSuggestion(String(addressQuery || ''))
+        ? 2000
+        : DEFAULT_WAIT;
+      await page.waitForSelector(SUGGESTION_SELECTORS.join(','), { timeout: waitTimeout }).catch(() => {});
       return readSuggestions(page);
     });
 
@@ -1773,12 +1808,24 @@ async function selectAddressAndGetPrice(page, addressText, timing = createTiming
 }
 
 function makeAddressQueries(addressText) {
+  const exactAddress = normaliseSuggestion(String(addressText || ''));
+  const partialAddressQueries = isPartialStreetAddress(exactAddress)
+    ? PARTIAL_ADDRESS_SUFFIXES.map(suffix => `${exactAddress} ${suffix}`)
+    : [];
+
   return Array.from(new Set([
-    addressText,
+    exactAddress,
+    ...partialAddressQueries,
     String(addressText).replace(/,\s*New Zealand$/i, ''),
     String(addressText).split(',').slice(0, 2).join(','),
     String(addressText).split(',')[0]
   ].map(value => normaliseSuggestion(String(value || ''))).filter(Boolean)));
+}
+
+function isPartialStreetAddress(addressText) {
+  const address = normaliseSuggestion(String(addressText || ''));
+  if (!/^\d+\s+\S+/.test(address) || address.includes(',')) return false;
+  return !/\b(road|rd|street|st|avenue|ave|drive|dr|place|pl|crescent|cres|lane|ln|parade|terrace|tce|close|court|ct|way|highway|hwy)\b/i.test(address);
 }
 
 async function readSuggestions(page) {
