@@ -522,10 +522,7 @@ function scheduleSuggestionLookup(delay = AUTO_SUGGEST_DELAY_MS) {
     return;
   }
 
-  showSuggestionMessage(preparedSkuKey === getSkuKey()
-    ? 'Searching address suggestions...'
-    : 'Preparing checkout, then searching address suggestions...');
-  suggestionTimer = setTimeout(fetchSuggestions, delay);
+  showSuggestionMessage('Click Find address to search matching delivery addresses.');
 }
 
 async function fetchSuggestions() {
@@ -704,7 +701,7 @@ function resetLookupState({ preserveAddress = false, refreshPrice = false } = {}
   setStatus('');
 }
 
-btnSuggest.hidden = true;
+btnSuggest.hidden = false;
 addressInput.addEventListener('input', () => scheduleSuggestionLookup());
 addressInput.addEventListener('keydown', event => {
   if (event.key === 'Enter') {

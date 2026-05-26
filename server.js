@@ -1767,17 +1767,17 @@ async function selectAddressAndGetPrice(page, addressText, timing = createTiming
         predictionSuggestions = await typeAddressAndReadPredictions(page, addressInput, query);
       });
 
+      const predictedAddress = findMatchingSuggestion(predictionSuggestions, addressText);
+      if (predictedAddress) {
+        await addressInput.press('ArrowDown').catch(() => {});
+        await page.waitForTimeout(100);
+        await addressInput.press('Enter').catch(() => {});
+        clickedSuggestion = predictedAddress;
+        break;
+      }
+
       await page.waitForSelector(SUGGESTION_SELECTORS.join(','), { timeout: DEFAULT_WAIT }).catch(() => {});
       clickedSuggestion = await timing.step('select address', () => clickMatchingSuggestion(page, addressText));
-      if (!clickedSuggestion) {
-        const predictedAddress = findMatchingSuggestion(predictionSuggestions, addressText);
-        if (predictedAddress) {
-          await addressInput.press('ArrowDown').catch(() => {});
-          await page.waitForTimeout(100);
-          await addressInput.press('Enter').catch(() => {});
-          clickedSuggestion = predictedAddress;
-        }
-      }
       if (clickedSuggestion) break;
     }
   }
@@ -1848,6 +1848,7 @@ function makeAddressQueries(addressText) {
     exactAddress,
     ...partialAddressQueries,
     String(addressText).replace(/,\s*New Zealand$/i, ''),
+    String(addressText).replace(/\s+New Zealand$/i, ''),
     String(addressText).split(',').slice(0, 2).join(','),
     String(addressText).split(',')[0]
   ].map(value => normaliseSuggestion(String(value || ''))).filter(Boolean)));
