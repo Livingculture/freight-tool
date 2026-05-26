@@ -1664,25 +1664,12 @@ async function openCheckoutForProducts(page, products, timing = createTiming('ch
   });
 
   await timing.step('open checkout/cart', async () => {
-    if (!/\/checkouts\//.test(page.url())) {
-      await page.locator('#CartTerms:visible, input.cart__terms-checkbox:visible').first().check({ timeout: DEFAULT_WAIT }).catch(() => {});
-
-      const checkoutButton = page
-        .locator('button[name="checkout"]:visible, input[name="checkout"]:visible, a[href*="/checkout"]:visible, button:has-text("Checkout"):visible, input[value*="Checkout" i]:visible')
-        .first();
-
-      try {
-        await Promise.all([
-          page.waitForURL(/\/checkouts\//, { timeout: 60000 }).catch(() => {}),
-          checkoutButton.click({ timeout: DEFAULT_WAIT })
-        ]);
-      } catch (error) {
-        await page.goto('https://livingculture.co.nz/checkout?skip_shop_pay=true', {
-          waitUntil: 'domcontentloaded',
-          timeout: 60000
-        });
-      }
-    }
+    // The cart checkout button can open Shop Pay, which does not expose the
+    // normal delivery address autocomplete used for freight quoting.
+    await page.goto('https://livingculture.co.nz/checkout?skip_shop_pay=true', {
+      waitUntil: 'domcontentloaded',
+      timeout: 60000
+    });
 
     await page.waitForURL(/\/checkouts\/.*\/information/, { timeout: 30000, waitUntil: 'domcontentloaded' }).catch(() => {});
 
@@ -1955,7 +1942,9 @@ app.post('/api/suggestions', async (req, res) => {
       scheduleCheckoutCleanup();
       return { suggestions, products: checkout.products };
     });
-    addressSuggestionCache.set(cacheKey, payload);
+    if (payload.suggestions.length) {
+      addressSuggestionCache.set(cacheKey, payload);
+    }
     return res.json(payload);
   } catch (error) {
     console.error(error);
@@ -2136,7 +2125,9 @@ app.post('/address-suggestions', async (req, res) => {
       scheduleCheckoutCleanup();
       return { suggestions, products: checkout.products };
     });
-    addressSuggestionCache.set(cacheKey, payload);
+    if (payload.suggestions.length) {
+      addressSuggestionCache.set(cacheKey, payload);
+    }
     return res.json(payload);
   } catch (error) {
     console.error(error);
