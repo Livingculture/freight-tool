@@ -28,7 +28,7 @@ const DEFAULT_WAIT = 10000;
 const ADDRESS_PREDICTION_WAIT_MS = 6000;
 const HEADLESS = process.env.HEADLESS !== 'false';
 const CHECKOUT_IDLE_MS = 5 * 60 * 1000;
-const AUTOMATION_TIMEOUT_MS = 120000;
+const AUTOMATION_TIMEOUT_MS = process.env.VERCEL ? 270000 : 120000;
 const BLOCKED_RESOURCE_TYPES = new Set(['image', 'font', 'media']);
 const BLOCKED_AUTOMATION_URLS = [
   /cdn\.shopify\.com\/extensions\//i,
