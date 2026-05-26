@@ -27,6 +27,14 @@ const HEADLESS = process.env.HEADLESS !== 'false';
 const CHECKOUT_IDLE_MS = 5 * 60 * 1000;
 const AUTOMATION_TIMEOUT_MS = 120000;
 const BLOCKED_RESOURCE_TYPES = new Set(['image', 'font', 'media']);
+const BLOCKED_AUTOMATION_URLS = [
+  /cdn\.shopify\.com\/extensions\//i,
+  /popup\.1clicklabs\.io/i,
+  /placement-api\.afterpay\.com/i,
+  /static\.hsappstatic\.net/i,
+  /googletagmanager\.com/i,
+  /google-analytics\.com/i
+];
 const productCache = new Map();
 const productSummaryCache = new Map();
 const skuUrlCache = new Map();
@@ -89,20 +97,65 @@ async function findElement(page, selectors) {
   throw new Error(`None of these selectors were found: ${selectors.join(', ')}`);
 }
 
+function handleAutomationRoute(route) {
+  const request = route.request();
+  if (BLOCKED_RESOURCE_TYPES.has(request.resourceType())
+    || BLOCKED_AUTOMATION_URLS.some(pattern => pattern.test(request.url()))) {
+    return route.abort().catch(() => {});
+  }
+  return route.continue().catch(() => {});
+}
+
 async function createBrowserSession() {
-  const browser = await getSharedBrowser();
-  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
-  await context.route('**/*', route => {
-    if (BLOCKED_RESOURCE_TYPES.has(route.request().resourceType())) {
-      return route.abort().catch(() => {});
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const browser = await getSharedBrowser();
+      const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+      await context.route('**/*', handleAutomationRoute);
+      const page = await context.newPage();
+      return {
+        page,
+        close: () => context.close().catch(() => {})
+      };
+    } catch (error) {
+      if (!isClosedBrowserError(error) || attempt > 0) throw error;
+      console.error('New automation session lost browser; retrying with a new browser.');
+      await invalidateSharedAutomation();
     }
-    return route.continue().catch(() => {});
-  });
-  const page = await context.newPage();
-  return {
-    page,
-    close: () => context.close().catch(() => {})
-  };
+  }
+  throw new Error('Could not create a browser session');
+}
+
+function isClosedBrowserError(error) {
+  return /target page, context or browser has been closed|browsercontext\.newpage|browser has been closed|browser closed|browser disconnected/i
+    .test(String(error?.message || error || ''));
+}
+
+function clearCheckoutReference() {
+  if (!activeCheckout) return;
+  clearTimeout(activeCheckout.cleanupTimer);
+  activeCheckout = null;
+}
+
+async function invalidateSharedAutomation() {
+  clearCheckoutReference();
+  const page = sharedPage;
+  const context = sharedContext;
+  const browser = sharedBrowser;
+  sharedPage = null;
+  sharedContext = null;
+  sharedBrowser = null;
+  sharedBrowserPromise = null;
+
+  if (page && !page.isClosed()) {
+    await page.close().catch(() => {});
+  }
+  if (context) {
+    await context.close().catch(() => {});
+  }
+  if (browser) {
+    await browser.close().catch(() => {});
+  }
 }
 
 async function getSharedBrowser() {
@@ -112,6 +165,13 @@ async function getSharedBrowser() {
       .then(options => chromium.launch(options))
       .then(browser => {
         sharedBrowser = browser;
+        browser.on('disconnected', () => {
+          if (sharedBrowser !== browser) return;
+          clearCheckoutReference();
+          sharedPage = null;
+          sharedContext = null;
+          sharedBrowser = null;
+        });
         return browser;
       })
       .finally(() => {
@@ -140,20 +200,23 @@ async function getSharedContext() {
   const browser = await getSharedBrowser();
 
   sharedContext = await browser.newContext({ viewport: { width: 1280, height: 900 } });
-  await sharedContext.route('**/*', route => {
-    if (BLOCKED_RESOURCE_TYPES.has(route.request().resourceType())) {
-      return route.abort().catch(() => {});
-    }
-    return route.continue().catch(() => {});
-  });
+  await sharedContext.route('**/*', handleAutomationRoute);
   return sharedContext;
 }
 
 async function getSharedPage() {
   const context = await getSharedContext();
   if (sharedPage && !sharedPage.isClosed()) return sharedPage;
-  sharedPage = await context.newPage();
-  return sharedPage;
+  try {
+    sharedPage = await context.newPage();
+    return sharedPage;
+  } catch (error) {
+    if (!isClosedBrowserError(error)) throw error;
+    await invalidateSharedAutomation();
+    const retryContext = await getSharedContext();
+    sharedPage = await retryContext.newPage();
+    return sharedPage;
+  }
 }
 
 async function resetSharedPage() {
@@ -167,22 +230,30 @@ async function resetSharedPage() {
 function withAutomationPage(label, work, timeoutMs = AUTOMATION_TIMEOUT_MS) {
   const previous = automationQueue.catch(() => {});
   const task = previous.then(async () => {
-    const page = await getSharedPage();
-    let timeoutId;
-    const timeout = new Promise((_, reject) => {
-      timeoutId = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
-    });
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const page = await getSharedPage();
+      let timeoutId;
+      const timeout = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+      });
 
-    try {
-      return await Promise.race([work(page), timeout]);
-    } catch (error) {
-      if (/timed out/i.test(error.message)) {
-        await resetSharedPage();
+      try {
+        return await Promise.race([work(page), timeout]);
+      } catch (error) {
+        if (isClosedBrowserError(error) && attempt === 0) {
+          console.error(`${label} lost browser session; retrying with a new browser.`);
+          await invalidateSharedAutomation();
+          continue;
+        }
+        if (/timed out/i.test(error.message)) {
+          await resetSharedPage();
+        }
+        throw error;
+      } finally {
+        clearTimeout(timeoutId);
       }
-      throw error;
-    } finally {
-      clearTimeout(timeoutId);
     }
+    throw new Error(`${label} could not restore its browser session`);
   });
   automationQueue = task.catch(() => {});
   return task;
