@@ -1757,6 +1757,11 @@ async function getSuggestionsForAddress(page, addressQuery, timing = createTimin
 
 async function selectAddressAndGetPrice(page, addressText, timing = createTiming('price')) {
   let clickedSuggestion = await timing.step('select address', () => clickMatchingSuggestion(page, addressText));
+  const manualAddress = getManualAddressFallback(addressText)[0];
+
+  if (!clickedSuggestion && manualAddress) {
+    clickedSuggestion = await timing.step('enter manual address', () => fillManualCheckoutAddress(page, manualAddress));
+  }
 
   if (!clickedSuggestion) {
     const addressInput = page.locator(ADDRESS_INPUT_SELECTORS.join(',')).first();
@@ -1790,13 +1795,9 @@ async function selectAddressAndGetPrice(page, addressText, timing = createTiming
 
   if (!clickedSuggestion) {
     clickedSuggestion = await timing.step('enter manual address', async () => {
-      const manualAddress = getManualAddressFallback(addressText)[0];
       if (!manualAddress) return '';
 
-      const addressInput = page.locator(ADDRESS_INPUT_SELECTORS.join(',')).first();
-      await addressInput.fill(manualAddress);
-      await addressInput.press('Tab').catch(() => {});
-      return manualAddress;
+      return fillManualCheckoutAddress(page, manualAddress);
     });
   }
 
@@ -1828,12 +1829,22 @@ async function selectAddressAndGetPrice(page, addressText, timing = createTiming
   });
 
   await timing.step('read freight', async () => {
-    await page.waitForFunction(() => {
-      const text = document.body?.innerText || '';
-      return /Shipping method/i.test(text) &&
-        !/Getting available shipping rates/i.test(text) &&
-        (/Ship from[\s\S]*\$\d/.test(text) || /Shipping\s+\$\d/.test(text));
-    }, { timeout: 60000 });
+    try {
+      await page.waitForFunction(() => {
+        const text = document.body?.innerText || '';
+        return /Shipping method/i.test(text) &&
+          !/Getting available shipping rates/i.test(text) &&
+          (/Ship from[\s\S]*\$\d/.test(text) || /Shipping\s+\$\d/.test(text));
+      }, { timeout: 60000 });
+    } catch (error) {
+      const checkoutText = await page.locator('body').innerText({ timeout: 5000 }).catch(() => '');
+      const addressFields = await readAddressFields(page).catch(() => []);
+      throw new Error(
+        `Shipping rates did not load on ${page.url()}. ` +
+        `Address fields: ${JSON.stringify(addressFields)}. ` +
+        `Checkout text: ${normaliseSuggestion(checkoutText).slice(0, 600)}`
+      );
+    }
   });
 
   const shipping = await timing.step('read freight price', () => readShippingPrice(page));
@@ -1873,6 +1884,57 @@ function getManualAddressFallback(addressText) {
     normaliseSuggestion(String(addressText || ''));
   if (!address.includes(',') || !/\bnew zealand\b/i.test(address)) return [];
   return [address];
+}
+
+function parseNewZealandAddress(addressText) {
+  const address = normaliseSuggestion(String(addressText || ''));
+  const withoutCountry = address.replace(/,\s*New Zealand$/i, '');
+  if (withoutCountry === address) return null;
+
+  const parts = withoutCountry.split(',').map(part => part.trim()).filter(Boolean);
+  if (parts.length < 2) return null;
+
+  const cityAndPostcode = parts.pop();
+  const match = cityAndPostcode.match(/^(.*?)\s+(\d{4})$/);
+  if (!match) return null;
+
+  return {
+    address1: parts.shift(),
+    address2: parts.join(', '),
+    city: match[1].trim(),
+    postcode: match[2]
+  };
+}
+
+async function fillFirstAvailable(page, selectors, value) {
+  if (!value) return false;
+  const field = page.locator(selectors.join(',')).first();
+  if (!await field.count()) return false;
+  await field.fill(value);
+  return true;
+}
+
+async function fillManualCheckoutAddress(page, addressText) {
+  const fields = parseNewZealandAddress(addressText);
+  if (!fields) return '';
+
+  await fillFirstAvailable(page, ['#shipping-address1:visible', 'input[name="address1"]:visible'], fields.address1);
+  await fillFirstAvailable(page, ['#shipping-address2:visible', 'input[name="address2"]:visible'], fields.address2);
+  await fillFirstAvailable(page, ['input[name="city"]:visible', 'input[autocomplete="address-level2"]:visible'], fields.city);
+  await fillFirstAvailable(page, ['input[name="postalCode"]:visible', 'input[name="zip"]:visible', 'input[autocomplete="postal-code"]:visible'], fields.postcode);
+
+  const country = page.locator('select[name="countryCode"]:visible').first();
+  if (await country.count()) {
+    await country.selectOption('NZ').catch(() => country.selectOption({ label: 'New Zealand' }).catch(() => {}));
+  }
+
+  const region = page.locator('select[name="zone"]:visible, select[autocomplete="address-level1"]:visible').first();
+  if (await region.count()) {
+    await region.selectOption({ label: fields.city }).catch(() => {});
+  }
+
+  await page.locator(ADDRESS_INPUT_SELECTORS.join(',')).first().press('Tab').catch(() => {});
+  return addressText;
 }
 
 function formatCin7CheckoutAddress(addressText) {
