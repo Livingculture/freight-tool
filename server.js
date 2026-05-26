@@ -1688,28 +1688,24 @@ async function openCheckoutForProducts(page, products, timing = createTiming('ch
   });
 
   await timing.step('open checkout/cart', async () => {
-    // The cart checkout button can open Shop Pay, which does not expose the
-    // normal delivery address autocomplete used for freight quoting.
-    await page.goto('https://livingculture.co.nz/checkout?skip_shop_pay=true', {
-      waitUntil: 'domcontentloaded',
-      timeout: 60000
-    });
-
-    await page.waitForURL(/\/checkouts\/.*\/information/, { timeout: 30000, waitUntil: 'domcontentloaded' }).catch(() => {});
-
     const addressSelector = ADDRESS_INPUT_SELECTORS.join(',');
-    try {
-      await page.waitForSelector(addressSelector, { timeout: 20000 });
-    } catch (error) {
+
+    // Shopify's cart permalink normally commits directly to its standard
+    // checkout. Reusing that page avoids a second checkout navigation, which
+    // closes the serverless Chromium page on Vercel.
+    if (!/\/checkouts\//.test(page.url())) {
       await page.goto('https://livingculture.co.nz/checkout?skip_shop_pay=true', {
         waitUntil: 'domcontentloaded',
         timeout: 60000
-      }).catch(() => {});
-      await page.waitForSelector(addressSelector, { timeout: 20000 }).catch(async () => {
-        const bodyText = await page.locator('body').innerText({ timeout: 5000 }).catch(() => '');
-        throw new Error(`Checkout address field was not available on ${page.url()}: ${bodyText.slice(0, 500)}`);
       });
+    } else {
+      await page.waitForLoadState('domcontentloaded', { timeout: 60000 }).catch(() => {});
     }
+
+    await page.waitForSelector(addressSelector, { timeout: 20000 }).catch(async () => {
+      const bodyText = await page.locator('body').innerText({ timeout: 5000 }).catch(() => '');
+      throw new Error(`Checkout address field was not available on ${page.url()}: ${bodyText.slice(0, 500)}`);
+    });
   });
 }
 
@@ -1774,10 +1770,15 @@ async function selectAddressAndGetPrice(page, addressText, timing = createTiming
 
       const predictedAddress = findMatchingSuggestion(predictionSuggestions, query);
       if (predictedAddress) {
-        await addressInput.press('ArrowDown').catch(() => {});
-        await page.waitForTimeout(100);
-        await addressInput.press('Enter').catch(() => {});
-        clickedSuggestion = predictedAddress;
+        await page.waitForSelector(SUGGESTION_SELECTORS.join(','), { timeout: 3000 }).catch(() => {});
+        clickedSuggestion = await timing.step('select address', () => clickMatchingSuggestion(page, predictedAddress));
+
+        if (!clickedSuggestion) {
+          await addressInput.press('ArrowDown').catch(() => {});
+          await page.waitForTimeout(100);
+          await addressInput.press('Enter').catch(() => {});
+          clickedSuggestion = predictedAddress;
+        }
         break;
       }
 
