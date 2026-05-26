@@ -1678,17 +1678,13 @@ async function openCheckoutForProducts(page, products, timing = createTiming('ch
   });
 
   await timing.step('add to cart', async () => {
-    // Set the cart through Shopify's permalink endpoint without rendering the
-    // cart page. Rendering it consumes too much serverless browser memory,
-    // while POST /cart/add.js is challenged by Shopify from Vercel.
-    const response = await page.request.get(checkoutCartUrl, {
-      maxRedirects: 0
+    // Navigate only until Shopify commits the cart permalink redirect. This
+    // uses normal browser traffic to pass Shopify verification on Vercel, but
+    // avoids rendering the heavy cart page that exhausts Chromium storage.
+    await page.goto(checkoutCartUrl, {
+      waitUntil: 'commit',
+      timeout: 30000
     });
-
-    if (response.status() < 200 || response.status() >= 400) {
-      const message = (await response.text().catch(() => '')).slice(0, 200);
-      throw new Error(`Could not add products to Shopify cart (${response.status()}): ${message}`);
-    }
   });
 
   await timing.step('open checkout/cart', async () => {
@@ -1776,7 +1772,7 @@ async function selectAddressAndGetPrice(page, addressText, timing = createTiming
         predictionSuggestions = await typeAddressAndReadPredictions(page, addressInput, query);
       });
 
-      const predictedAddress = findMatchingSuggestion(predictionSuggestions, addressText);
+      const predictedAddress = findMatchingSuggestion(predictionSuggestions, query);
       if (predictedAddress) {
         await addressInput.press('ArrowDown').catch(() => {});
         await page.waitForTimeout(100);
