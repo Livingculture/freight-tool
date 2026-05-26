@@ -1406,6 +1406,7 @@ async function getFastProductUrlBySKU(sku) {
   suggestUrl.searchParams.set('q', sku);
   suggestUrl.searchParams.set('resources[type]', 'product');
   suggestUrl.searchParams.set('resources[limit]', '8');
+  suggestUrl.searchParams.set('resources[options][fields]', 'title,variants.sku');
 
   const response = await fetch(suggestUrl);
   if (!response.ok) {
@@ -1463,6 +1464,7 @@ async function searchProducts(query) {
   suggestUrl.searchParams.set('q', query);
   suggestUrl.searchParams.set('resources[type]', 'product');
   suggestUrl.searchParams.set('resources[limit]', '8');
+  suggestUrl.searchParams.set('resources[options][fields]', 'title,variants.sku');
 
   const response = await fetch(suggestUrl);
   if (!response.ok) {
@@ -1519,7 +1521,13 @@ async function prepareCheckout(page, itemInput, timing = createTiming('checkout'
   const products = [];
   await timing.step('resolve SKU', async () => {
     for (const item of items) {
-      const product = { ...(await getProductDetails(page, item)) };
+      let product;
+      try {
+        product = { ...(await getProductDetailsFast(item)) };
+      } catch (error) {
+        console.error(`Fast checkout lookup failed for ${item.sku || item.productUrl}:`, error.message);
+        product = { ...(await getProductDetails(page, item)) };
+      }
       product.quantity = item.quantity;
       products.push(product);
     }
@@ -1571,11 +1579,27 @@ async function getProductSummaries(itemInput) {
     throw new Error('At least one SKU is required');
   }
 
+  const fastProducts = await Promise.all(items.map(async item => {
+    const product = { ...(await getProductDetailsFast(item)) };
+    product.quantity = item.quantity;
+    return product;
+  }).map(promise => promise.catch(error => ({ error }))));
+
+  if (fastProducts.every(product => !product.error)) {
+    return fastProducts;
+  }
+
   const session = await createBrowserSession();
   try {
     const products = [];
-    for (const item of items) {
-      const product = { ...(await getProductDetails(session.page, item, { includeMetrics: false })) };
+    for (const [index, item] of items.entries()) {
+      if (!fastProducts[index]?.error) {
+        products.push(fastProducts[index]);
+        continue;
+      }
+
+      console.error(`Fast product summary failed for ${item.sku || item.productUrl}:`, fastProducts[index].error.message);
+      const product = { ...(await getProductDetails(session.page, item)) };
       product.quantity = item.quantity;
       products.push(product);
     }
@@ -1659,20 +1683,25 @@ async function readAddressFields(page) {
 
 async function getSuggestionsForAddress(page, addressQuery, timing = createTiming('suggestions')) {
   const addressInput = page.locator(ADDRESS_INPUT_SELECTORS.join(',')).first();
+  const queries = makeAddressQueries(addressQuery);
 
-  await timing.step('type address', async () => {
-    await addressInput.fill('');
-    await addressInput.type(addressQuery, { delay: 20 });
-  });
+  for (const query of queries) {
+    await timing.step('type address', async () => {
+      await addressInput.fill('');
+      await addressInput.type(query, { delay: 20 });
+    });
 
-  const suggestions = await timing.step('read address suggestions', async () => {
-    await page.waitForSelector(SUGGESTION_SELECTORS.join(','), { timeout: DEFAULT_WAIT });
-    return page.$$eval(SUGGESTION_SELECTORS.join(','), nodes =>
-      Array.from(new Set(Array.from(nodes).map(node => node.textContent || '').map(text => text.replace(/\s+/g, ' ').trim()).filter(Boolean)))
-    );
-  });
+    const suggestions = await timing.step('read address suggestions', async () => {
+      await page.waitForSelector(SUGGESTION_SELECTORS.join(','), { timeout: DEFAULT_WAIT }).catch(() => {});
+      return readSuggestions(page);
+    });
 
-  return suggestions.slice(0, 10);
+    if (suggestions.length) {
+      return suggestions.slice(0, 10);
+    }
+  }
+
+  return [];
 }
 
 async function selectAddressAndGetPrice(page, addressText, timing = createTiming('price')) {
@@ -1680,11 +1709,7 @@ async function selectAddressAndGetPrice(page, addressText, timing = createTiming
 
   if (!clickedSuggestion) {
     const addressInput = page.locator(ADDRESS_INPUT_SELECTORS.join(',')).first();
-    const addressQueries = Array.from(new Set([
-      addressText,
-      String(addressText).split(',')[0],
-      String(addressText).replace(/,\s*New Zealand$/i, '')
-    ].map(value => normaliseSuggestion(String(value || ''))).filter(Boolean)));
+    const addressQueries = makeAddressQueries(addressText);
 
     for (const query of addressQueries) {
       await timing.step('type address', async () => {
@@ -1740,6 +1765,24 @@ async function selectAddressAndGetPrice(page, addressText, timing = createTiming
     finalCartPrice: cartSummary.finalCartPrice || '',
     cartItems: cartSummary.cartItems || []
   };
+}
+
+function makeAddressQueries(addressText) {
+  return Array.from(new Set([
+    addressText,
+    String(addressText).replace(/,\s*New Zealand$/i, ''),
+    String(addressText).split(',').slice(0, 2).join(','),
+    String(addressText).split(',')[0]
+  ].map(value => normaliseSuggestion(String(value || ''))).filter(Boolean)));
+}
+
+async function readSuggestions(page) {
+  return page.$$eval(SUGGESTION_SELECTORS.join(','), nodes =>
+    Array.from(new Set(Array.from(nodes)
+      .map(node => node.textContent || '')
+      .map(text => text.replace(/\s+/g, ' ').trim())
+      .filter(Boolean)))
+  );
 }
 
 async function clickMatchingSuggestion(page, addressText) {
