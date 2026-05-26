@@ -2130,6 +2130,16 @@ app.post('/api/suggestions', async (req, res) => {
   }
 
   try {
+    const manualAddress = getManualAddressFallback(address)[0];
+    if (manualAddress) {
+      const payload = {
+        suggestions: [manualAddress],
+        products: await getProductSummaries({ productUrl, sku, skus, items })
+      };
+      addressSuggestionCache.set(cacheKey, payload);
+      return res.json(payload);
+    }
+
     const payload = await withAutomationPage('api suggestions', async page => {
       const timing = createTiming('api suggestions');
       const checkout = await getCheckoutSession({ productUrl, sku, skus, items }, page, timing);
@@ -2313,6 +2323,16 @@ app.post('/address-suggestions', async (req, res) => {
   }
 
   try {
+    const manualAddress = getManualAddressFallback(address)[0];
+    if (manualAddress) {
+      const payload = {
+        suggestions: [manualAddress],
+        products: await getProductSummaries({ items })
+      };
+      addressSuggestionCache.set(cacheKey, payload);
+      return res.json(payload);
+    }
+
     const payload = await withAutomationPage('address suggestions', async page => {
       const timing = createTiming('address suggestions');
       const checkout = await getCheckoutSession({ items }, page, timing);
