@@ -225,7 +225,12 @@ async function getBrowserLaunchOptions() {
 
   const serverlessChromium = require('@sparticuz/chromium');
   return {
-    args: serverlessChromium.args,
+    args: [
+      ...serverlessChromium.args.filter(argument => !argument.startsWith('--disk-cache-size=')),
+      '--disk-cache-size=0',
+      '--media-cache-size=0',
+      '--disable-gpu-shader-disk-cache'
+    ],
     executablePath: await serverlessChromium.executablePath(),
     headless: true
   };
@@ -267,30 +272,43 @@ async function resetSharedPage() {
 function withAutomationPage(label, work, timeoutMs = AUTOMATION_TIMEOUT_MS) {
   const previous = automationQueue.catch(() => {});
   const task = previous.then(async () => {
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const page = await getSharedPage();
-      let timeoutId;
-      const timeout = new Promise((_, reject) => {
-        timeoutId = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
-      });
+    try {
+      if (process.env.VERCEL) {
+        await invalidateSharedAutomation();
+        await cleanupServerlessBrowserProfiles();
+      }
 
-      try {
-        return await Promise.race([work(page), timeout]);
-      } catch (error) {
-        if (isClosedBrowserError(error) && attempt === 0) {
-          console.error(`${label} lost browser session; retrying with a new browser.`);
-          await invalidateSharedAutomation();
-          continue;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const page = await getSharedPage();
+        let timeoutId;
+        const timeout = new Promise((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+        });
+
+        try {
+          return await Promise.race([work(page), timeout]);
+        } catch (error) {
+          if (isClosedBrowserError(error) && attempt === 0) {
+            console.error(`${label} lost browser session; retrying with a new browser.`);
+            await invalidateSharedAutomation();
+            continue;
+          }
+          if (/timed out/i.test(error.message)) {
+            await resetSharedPage();
+          }
+          throw error;
+        } finally {
+          clearTimeout(timeoutId);
         }
-        if (/timed out/i.test(error.message)) {
-          await resetSharedPage();
-        }
-        throw error;
-      } finally {
-        clearTimeout(timeoutId);
+      }
+
+      throw new Error(`${label} could not restore its browser session`);
+    } finally {
+      if (process.env.VERCEL) {
+        await invalidateSharedAutomation();
+        await cleanupServerlessBrowserProfiles();
       }
     }
-    throw new Error(`${label} could not restore its browser session`);
   });
   automationQueue = task.catch(() => {});
   return task;
@@ -1733,7 +1751,7 @@ async function getSuggestionsForAddress(page, addressQuery, timing = createTimin
     }
   }
 
-  return [];
+  return getManualAddressFallback(addressQuery);
 }
 
 async function selectAddressAndGetPrice(page, addressText, timing = createTiming('price')) {
@@ -1765,7 +1783,19 @@ async function selectAddressAndGetPrice(page, addressText, timing = createTiming
   }
 
   if (!clickedSuggestion) {
-    throw new Error(`Could not select address suggestion for "${addressText}"`);
+    clickedSuggestion = await timing.step('enter manual address', async () => {
+      const manualAddress = getManualAddressFallback(addressText)[0];
+      if (!manualAddress) return '';
+
+      const addressInput = page.locator(ADDRESS_INPUT_SELECTORS.join(',')).first();
+      await addressInput.fill(manualAddress);
+      await addressInput.press('Tab').catch(() => {});
+      return manualAddress;
+    });
+  }
+
+  if (!clickedSuggestion) {
+    throw new Error(`Could not select an address suggestion for "${addressText}". Enter a complete delivery address to quote manually.`);
   }
 
   await page.waitForTimeout(1000);
@@ -1821,6 +1851,12 @@ function makeAddressQueries(addressText) {
     String(addressText).split(',').slice(0, 2).join(','),
     String(addressText).split(',')[0]
   ].map(value => normaliseSuggestion(String(value || ''))).filter(Boolean)));
+}
+
+function getManualAddressFallback(addressText) {
+  const address = normaliseSuggestion(String(addressText || ''));
+  if (!address.includes(',') || !/\bnew zealand\b/i.test(address)) return [];
+  return [address];
 }
 
 function isPartialStreetAddress(addressText) {
