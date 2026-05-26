@@ -131,6 +131,11 @@ function isClosedBrowserError(error) {
     .test(String(error?.message || error || ''));
 }
 
+function isTransientNavigationError(error) {
+  return /execution context was destroyed|most likely because of a navigation|cannot find context with specified id|frame was detached|element is not attached/i
+    .test(String(error?.message || error || ''));
+}
+
 function clearCheckoutReference() {
   if (!activeCheckout) return;
   clearTimeout(activeCheckout.cleanupTimer);
@@ -1777,35 +1782,56 @@ function makeAddressQueries(addressText) {
 }
 
 async function readSuggestions(page) {
-  return page.$$eval(SUGGESTION_SELECTORS.join(','), nodes =>
-    Array.from(new Set(Array.from(nodes)
-      .map(node => node.textContent || '')
-      .map(text => text.replace(/\s+/g, ' ').trim())
-      .filter(Boolean)))
-  );
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await page.$$eval(SUGGESTION_SELECTORS.join(','), nodes =>
+        Array.from(new Set(Array.from(nodes)
+          .map(node => node.textContent || '')
+          .map(text => text.replace(/\s+/g, ' ').trim())
+          .filter(Boolean)))
+      );
+    } catch (error) {
+      if (!isTransientNavigationError(error) || attempt === 2) throw error;
+      await page.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(250);
+    }
+  }
+
+  return [];
 }
 
 async function clickMatchingSuggestion(page, addressText) {
-  const suggestionHandles = await page.$$(SUGGESTION_SELECTORS.join(','));
   const wantedAddress = normaliseSuggestion(addressText).toLowerCase();
   const wantedStreet = normaliseSuggestion(String(addressText).split(',')[0] || '').toLowerCase();
   const comparableWantedAddress = normaliseAddressForCompare(addressText);
   const comparableWantedStreet = normaliseAddressForCompare(String(addressText).split(',')[0] || '');
 
-  for (const handle of suggestionHandles) {
-    const text = normaliseSuggestion((await handle.textContent()) || '');
-    const normalisedText = text.toLowerCase();
-    const comparableText = normaliseAddressForCompare(text);
-    if (
-      normalisedText.includes(wantedAddress) ||
-      wantedAddress.includes(normalisedText) ||
-      normalisedText === wantedAddress ||
-      (wantedStreet && normalisedText.includes(wantedStreet)) ||
-      (comparableWantedAddress && comparableText.includes(comparableWantedAddress)) ||
-      (comparableWantedStreet && comparableText.includes(comparableWantedStreet))
-    ) {
-      await handle.click();
-      return text;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const suggestionHandles = await page.$$(SUGGESTION_SELECTORS.join(','));
+
+      for (const handle of suggestionHandles) {
+        const text = normaliseSuggestion((await handle.textContent()) || '');
+        const normalisedText = text.toLowerCase();
+        const comparableText = normaliseAddressForCompare(text);
+        if (
+          normalisedText.includes(wantedAddress) ||
+          wantedAddress.includes(normalisedText) ||
+          normalisedText === wantedAddress ||
+          (wantedStreet && normalisedText.includes(wantedStreet)) ||
+          (comparableWantedAddress && comparableText.includes(comparableWantedAddress)) ||
+          (comparableWantedStreet && comparableText.includes(comparableWantedStreet))
+        ) {
+          await handle.click();
+          return text;
+        }
+      }
+
+      return null;
+    } catch (error) {
+      if (!isTransientNavigationError(error) || attempt === 2) throw error;
+      await page.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(250);
     }
   }
 
