@@ -1864,19 +1864,36 @@ async function selectAddressAndGetPrice(page, addressText, timing = createTiming
 function makeAddressQueries(addressText) {
   const exactAddress = normaliseSuggestion(String(addressText || ''));
   const formattedCin7Address = formatCin7CheckoutAddress(exactAddress);
-  const partialAddressQueries = isPartialStreetAddress(exactAddress)
-    ? PARTIAL_ADDRESS_SUFFIXES.map(suffix => `${exactAddress} ${suffix}`)
+  const isPartialAddress = isPartialStreetAddress(exactAddress);
+  const partialAddressQueries = isPartialAddress
+    ? makePartialStreetAddressQueries(exactAddress)
     : [];
 
   return Array.from(new Set([
     formattedCin7Address,
-    exactAddress,
     ...partialAddressQueries,
-    String(addressText).replace(/,\s*New Zealand$/i, ''),
-    String(addressText).replace(/\s+New Zealand$/i, ''),
-    String(addressText).split(',').slice(0, 2).join(','),
-    String(addressText).split(',')[0]
+    exactAddress,
+    ...(!isPartialAddress ? [
+      String(addressText).replace(/,\s*New Zealand$/i, ''),
+      String(addressText).replace(/\s+New Zealand$/i, ''),
+      String(addressText).split(',').slice(0, 2).join(','),
+      String(addressText).split(',')[0]
+    ] : [])
   ].map(value => normaliseSuggestion(String(value || ''))).filter(Boolean)));
+}
+
+function makePartialStreetAddressQueries(addressText) {
+  const trailingStreetInitial = addressText.match(/^(.*)\s+(r|ro|roa)$/i);
+  if (trailingStreetInitial) {
+    return [
+      `${trailingStreetInitial[1]} Road`,
+      `${trailingStreetInitial[1]} Rd`
+    ];
+  }
+
+  return PARTIAL_ADDRESS_SUFFIXES
+    .slice(0, 4)
+    .map(suffix => `${addressText} ${suffix}`);
 }
 
 function getManualAddressFallback(addressText) {
