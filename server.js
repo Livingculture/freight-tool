@@ -1812,13 +1812,19 @@ async function selectAddressAndGetPrice(page, addressText, timing = createTiming
     .locator('button:has-text("Continue to shipping"), button:has-text("Continue"), button[type="submit"]:visible')
     .first();
 
-  await timing.step('open checkout/cart', async () => {
-    await Promise.all([
-      page.waitForURL(/\/shipping/, { timeout: 45000, waitUntil: 'domcontentloaded' }).catch(() => {}),
-      continueButton.click({ timeout: DEFAULT_WAIT })
-    ]);
+  await timing.step('continue to shipping', async () => {
+    await continueButton.click({ timeout: DEFAULT_WAIT });
 
-    await page.waitForURL(/\/shipping/, { timeout: 45000, waitUntil: 'domcontentloaded' }).catch(() => {});
+    // Shopify may render shipping methods in its one-page checkout without
+    // changing the URL to /shipping. Do not spend the serverless time budget
+    // waiting for a navigation that may never occur.
+    await Promise.race([
+      page.waitForURL(/\/shipping/, { timeout: 30000, waitUntil: 'domcontentloaded' }),
+      page.waitForFunction(() => {
+        const text = document.body?.innerText || '';
+        return /Shipping method|Getting available shipping rates|Ship from/i.test(text);
+      }, { timeout: 30000 })
+    ]).catch(() => {});
   });
 
   await timing.step('read freight', async () => {
