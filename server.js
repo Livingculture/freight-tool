@@ -1665,8 +1665,10 @@ async function getProductSummaries(itemInput) {
 }
 
 async function openCheckoutForProducts(page, products, timing = createTiming('checkout')) {
-  const cartItems = products.map(product => `${product.variantId}:${normaliseQuantity(product.quantity)}`).join(',');
-  const checkoutUrl = `https://livingculture.co.nz/cart/${cartItems}`;
+  const cartItems = products.map(product => ({
+    id: Number(product.variantId),
+    quantity: normaliseQuantity(product.quantity)
+  }));
 
   await timing.step('clear cart', async () => {
     await page.goto('https://livingculture.co.nz/cart/clear.js', {
@@ -1676,10 +1678,23 @@ async function openCheckoutForProducts(page, products, timing = createTiming('ch
   });
 
   await timing.step('add to cart', async () => {
-    await page.goto(checkoutUrl, {
-      waitUntil: 'domcontentloaded',
-      timeout: 60000
-    });
+    const result = await page.evaluate(async items => {
+      const response = await fetch('/cart/add.js', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items })
+      });
+
+      return {
+        ok: response.ok,
+        status: response.status,
+        message: response.ok ? '' : (await response.text()).slice(0, 200)
+      };
+    }, cartItems);
+
+    if (!result.ok) {
+      throw new Error(`Could not add products to Shopify cart (${result.status}): ${result.message}`);
+    }
   });
 
   await timing.step('open checkout/cart', async () => {
@@ -1840,11 +1855,13 @@ async function selectAddressAndGetPrice(page, addressText, timing = createTiming
 
 function makeAddressQueries(addressText) {
   const exactAddress = normaliseSuggestion(String(addressText || ''));
+  const formattedCin7Address = formatCin7CheckoutAddress(exactAddress);
   const partialAddressQueries = isPartialStreetAddress(exactAddress)
     ? PARTIAL_ADDRESS_SUFFIXES.map(suffix => `${exactAddress} ${suffix}`)
     : [];
 
   return Array.from(new Set([
+    formattedCin7Address,
     exactAddress,
     ...partialAddressQueries,
     String(addressText).replace(/,\s*New Zealand$/i, ''),
@@ -1855,9 +1872,22 @@ function makeAddressQueries(addressText) {
 }
 
 function getManualAddressFallback(addressText) {
-  const address = normaliseSuggestion(String(addressText || ''));
+  const address = formatCin7CheckoutAddress(addressText) ||
+    normaliseSuggestion(String(addressText || ''));
   if (!address.includes(',') || !/\bnew zealand\b/i.test(address)) return [];
   return [address];
+}
+
+function formatCin7CheckoutAddress(addressText) {
+  const address = normaliseSuggestion(String(addressText || ''));
+  const match = address.match(
+    /^(.*?\b(?:road|rd|street|st|avenue|ave|drive|dr|place|pl|crescent|cres|lane|ln|parade|terrace|tce|close|court|ct|way|highway|hwy))\s+([^,]+),\s*(.+?)\s+([a-z][a-z -]+?)\s+region\s+(\d{4})\s+new zealand$/i
+  );
+
+  if (!match) return '';
+
+  const [, street, suburb, city, , postcode] = match;
+  return `${street}, ${suburb}, ${city} ${postcode}, New Zealand`;
 }
 
 function isPartialStreetAddress(addressText) {
