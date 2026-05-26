@@ -1,13 +1,20 @@
 const express = require('express');
 const path = require('path');
-const { chromium } = require('playwright');
+const { chromium } = require(process.env.VERCEL ? 'playwright-core' : 'playwright');
 
 const app = express();
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  const origin = String(req.headers.origin || '');
+  if (isAllowedBrowserOrigin(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') {
+    if (origin && !isAllowedBrowserOrigin(origin)) {
+      return res.sendStatus(403);
+    }
     return res.sendStatus(204);
   }
   return next();
@@ -58,6 +65,22 @@ const SUGGESTION_SELECTORS = [
   '[class*="dropdown" i] li'
 ];
 
+function isAllowedBrowserOrigin(origin) {
+  if (!origin) return true;
+  try {
+    const url = new URL(origin);
+    if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') return true;
+    return [
+      /(^|\.)cin7\.com$/i,
+      /(^|\.)cin7\.co$/i,
+      /(^|\.)cin7core\.com$/i,
+      /(^|\.)dearsystems\.com$/i
+    ].some(pattern => pattern.test(url.hostname));
+  } catch (error) {
+    return false;
+  }
+}
+
 async function findElement(page, selectors) {
   for (const selector of selectors) {
     const handle = await page.$(selector);
@@ -85,7 +108,8 @@ async function createBrowserSession() {
 async function getSharedBrowser() {
   if (sharedBrowser) return sharedBrowser;
   if (!sharedBrowserPromise) {
-    sharedBrowserPromise = chromium.launch({ headless: HEADLESS })
+    sharedBrowserPromise = getBrowserLaunchOptions()
+      .then(options => chromium.launch(options))
       .then(browser => {
         sharedBrowser = browser;
         return browser;
@@ -95,6 +119,19 @@ async function getSharedBrowser() {
       });
   }
   return sharedBrowserPromise;
+}
+
+async function getBrowserLaunchOptions() {
+  if (!process.env.VERCEL) {
+    return { headless: HEADLESS };
+  }
+
+  const serverlessChromium = require('@sparticuz/chromium');
+  return {
+    args: serverlessChromium.args,
+    executablePath: await serverlessChromium.executablePath(),
+    headless: true
+  };
 }
 
 async function getSharedContext() {
@@ -1739,6 +1776,14 @@ app.post('/api/suggestions', async (req, res) => {
   }
 });
 
+app.get('/api/health', (req, res) => {
+  res.json({
+    ok: true,
+    service: 'living-culture-freight',
+    runtime: process.env.VERCEL ? 'vercel' : 'local'
+  });
+});
+
 app.post('/api/prepare', async (req, res) => {
   const { productUrl, sku, skus, items } = req.body;
   if (!normaliseItems({ productUrl, sku, skus, items }).length) {
@@ -1972,8 +2017,7 @@ if (require.main === module) {
   });
 }
 
-module.exports = {
-  app,
-  startServer,
-  closeActiveCheckout
-};
+app.app = app;
+app.startServer = startServer;
+app.closeActiveCheckout = closeActiveCheckout;
+module.exports = app;

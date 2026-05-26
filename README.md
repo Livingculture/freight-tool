@@ -1,6 +1,6 @@
 # Living Culture Freight Costing
 
-A desktop app for checking Living Culture freight pricing without staff needing to open VS Code, Terminal, or a browser URL.
+A freight pricing service for Cin7, with a desktop fallback while the hosted Vercel service is being commissioned.
 
 ## Staff Setup Guide
 
@@ -35,7 +35,9 @@ https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/li
 
 Install each link once in Tampermonkey on every computer. After that, Tampermonkey checks GitHub for script updates automatically because the scripts include `@updateURL` and `@downloadURL`.
 
-Keep the Freight Costing app running locally. In Cin7, click `LC Freight` to open the freight panel, or `Quote Memo Info` to open the quote memo panel.
+Once the hosted freight service is deployed and its URL is entered in `userscripts/cin7-lc-freight.user.js`, staff only need Tampermonkey. In Cin7, click `LC Freight` to open the freight panel, or `Quote Memo Info` to open the quote memo panel.
+
+Until the hosted service is commissioned, keep the Freight Costing desktop app running locally when using `LC Freight`.
 
 On Living Culture product pages, click `Copy SKU` to copy the current product SKU.
 
@@ -92,6 +94,20 @@ Then open:
 ```text
 http://localhost:3001
 ```
+
+## Hosted Cin7 Freight Service
+
+The hosted service uses the existing Express freight endpoints on Vercel. When deployed, Vercel launches serverless Chromium to obtain freight prices from the Living Culture checkout flow. The desktop app remains a fallback and uses its packaged Playwright browser.
+
+1. Import this GitHub repository as a new Vercel project.
+2. Use Node.js `24.x` for the Vercel project.
+3. Deploy the project and copy the production domain, such as `https://your-freight-domain.vercel.app`.
+4. Set `HOSTED_API_BASE` in `userscripts/cin7-lc-freight.user.js` to that production domain.
+5. Push the userscript update so Tampermonkey installs the hosted version.
+6. Confirm `https://your-freight-domain.vercel.app/api/health` returns an `ok` response.
+7. Test `LC Freight` from a Cin7 quote before releasing it to staff.
+
+The hosted API only enables browser access from Cin7, Cin7 Core, Dear Systems and local development pages. Do not expose the hosted domain broadly; browser automation has Vercel compute cost.
 
 ## Build Apps
 

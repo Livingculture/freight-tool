@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      5.3-fast
-// @description  Faster Living Culture freight panel for Cin7 with editable quantities, remove/ignore options, freight-first loading, and totals.
+// @version      5.4-hosted-ready
+// @description  Living Culture freight panel for Cin7 using the hosted freight service when configured.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
 // @match        *://*.cin7.co/*
@@ -19,7 +19,10 @@
 (function () {
   'use strict';
 
-  const API_BASE = 'http://localhost:3001';
+  // Enter the production Vercel freight service URL after the project is deployed.
+  // Until then, the desktop freight app remains available as a local fallback.
+  const HOSTED_API_BASE = '';
+  const API_BASE = HOSTED_API_BASE || 'http://localhost:3001';
 
   const state = {
     price: '',

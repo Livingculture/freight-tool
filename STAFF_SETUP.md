@@ -4,7 +4,8 @@ Use this guide to set up the Living Culture freight app and browser helpers on a
 
 ## What Gets Installed
 
-- Freight Costing app: the standalone app that calculates freight.
+- Hosted Freight Costing service: calculates freight when the `LC Freight` button is used in Cin7.
+- Freight Costing app: local fallback only, used before the hosted service is released or if directed by support.
 - Tampermonkey: the Chrome extension that runs the helpers inside Cin7 and on livingculture.co.nz.
 - Cin7 LC Freight helper: adds the `LC Freight` button in Cin7.
 - Quote Memo Info helper: adds the `Quote Memo Info` button in Cin7.
@@ -59,9 +60,11 @@ https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/li
 
 After installing, Tampermonkey will automatically check GitHub for updates.
 
-## 5. Install The Freight Costing App
+## 5. Freight Costing Service
 
-Install the Freight Costing app supplied by Living Culture.
+After the hosted service is released, no standalone Freight Costing app needs to be installed. Open Cin7 in Chrome and use the `LC Freight` button.
+
+Only install the desktop fallback app when Living Culture support supplies it for testing or outage fallback.
 
 On Mac:
 
@@ -76,7 +79,7 @@ On Windows:
 2. Follow the prompts.
 3. Open `Freight Costing`.
 
-Keep the Freight Costing app open while using the Cin7 `LC Freight` helper.
+When using the fallback app, keep it open while using the Cin7 `LC Freight` helper.
 
 ## 6. Check Cin7
 
@@ -172,7 +175,7 @@ To manually check:
 3. Go to `Utilities`.
 4. Click `Check for userscript updates`.
 
-For the Freight Costing app, install the newest app version supplied by Living Culture.
+For the normal hosted Freight Costing service, Tampermonkey receives script updates automatically. If using the fallback app, install the newest app version supplied by Living Culture.
 
 ## Troubleshooting
 
@@ -191,10 +194,11 @@ For the Freight Costing app, install the newest app version supplied by Living C
 
 ### LC Freight Does Not Load A Price
 
-1. Make sure the Freight Costing app is open.
+1. Refresh the Cin7 page and try `LC Freight` again.
 2. Check the quote has a product SKU.
 3. Check the quote has a shipping address.
 4. Close and reopen the `LC Freight` panel.
+5. If support has told you to use the fallback desktop app, check that it is open.
 
 ### Install Fees Does Not Show Updated Sheet Data
 
