@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      5.8-hosted
+// @version      5.9-hosted
 // @description  Living Culture freight panel for Cin7 using the hosted freight service.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -258,6 +258,7 @@
     if (!status) return;
 
     status.textContent = message || '';
+    status.style.display = message ? '' : 'none';
     status.style.color = isError ? '#9a2d20' : '#405f54';
   }
 
@@ -276,6 +277,28 @@
     if (methodBlock) {
       methodBlock.textContent = method || '';
     }
+  }
+
+  function renderQuantityAdjustments(adjustments = []) {
+    const block = document.getElementById('lc-freight-adjustments');
+    if (!block) return;
+
+    const adjustedItems = adjustments.filter(adjustment => {
+      const preSaleQuantity = adjustment.preSaleQuantity ??
+        (Number(adjustment.requestedQuantity) - Number(adjustment.availableQuantity));
+      return normaliseQuantityAllowZero(preSaleQuantity) > 0;
+    });
+
+    block.innerHTML = adjustedItems.map(adjustment => {
+      const availableQuantity = normaliseQuantity(adjustment.availableQuantity);
+      const preSaleQuantity = normaliseQuantityAllowZero(
+        adjustment.preSaleQuantity ??
+        (Number(adjustment.requestedQuantity) - Number(adjustment.availableQuantity))
+      );
+
+      return `<div><b>${escapeHtml(adjustment.sku)}:</b> ${availableQuantity} add to cart and <strong class="lc-presale-pulse">${preSaleQuantity} PRE-SALE</strong></div>`;
+    }).join('');
+    block.classList.toggle('is-visible', Boolean(adjustedItems.length));
   }
 
   function getLineCartonCount(product, quantity = normaliseQuantity(product?.quantity)) {
@@ -351,9 +374,7 @@
         const lineCbm = getLineCbm(product, quantity);
         const cartonCount = getLineCartonCount(product, quantity);
         const preSaleQuantity = normaliseQuantityAllowZero(product.preSaleQuantity);
-        const saleState = preSaleQuantity
-          ? `${quantity} add to cart and ${preSaleQuantity} pre sale`
-          : product.saleState || (product.available ? 'Add to cart' : 'Unavailable');
+        const saleState = product.saleState || (product.available ? 'Add to cart' : 'Unavailable');
         const stock = product.available ? `Stock: ${shippingLocation || 'Available'}` : 'Stock: Unavailable';
 
         const detailsLine = product.metricsLoaded
@@ -363,6 +384,9 @@
         const detailsHtml = detailsLine ? `<div>${escapeHtml(detailsLine)}</div>` : '';
 
         const quantityLine = `<div>Qty ${quantity} · ${lineWeight.toFixed(2)} kg · ${lineCbm.toFixed(3)} CBM · ${cartonCount} ctns</div>`;
+        const statusLine = preSaleQuantity
+          ? `<div>Status: ${quantity} add to cart and <strong class="lc-presale-pulse">${preSaleQuantity} PRE-SALE</strong></div>`
+          : `<div>${escapeHtml(`Status: ${saleState}`)}</div>`;
 
         const image = product.image
           ? `<img src="${escapeHtml(product.image)}" alt="">`
@@ -381,7 +405,7 @@
               <strong>${escapeHtml(product.title || product.sku || 'Living Culture product')}</strong>
               ${quantityLine}
               ${detailsHtml}
-              <div>${escapeHtml(`Status: ${saleState}`)}</div>
+              ${statusLine}
               <div>${escapeHtml(stock)}</div>
               ${websiteLine}
             </div>
@@ -691,6 +715,7 @@
   async function getAndApplyFreight({ sku, items, address, fill }) {
     try {
       setStatus('Getting freight...');
+      renderQuantityAdjustments([]);
 
       const requestedItems = normaliseFreightItems({ sku, items });
 
@@ -730,14 +755,9 @@
       });
 
       setResult(data.price, data.method);
+      renderQuantityAdjustments(adjustments);
       if (adjustments.length) {
-        const changes = adjustments.map(adjustment =>
-          `${adjustment.sku}: ${adjustment.availableQuantity} add to cart and ${
-            adjustment.preSaleQuantity ??
-            (Number(adjustment.requestedQuantity) - Number(adjustment.availableQuantity))
-          } pre sale`
-        ).join('; ');
-        setStatus(`Freight quoted for available stock only (${changes}). Pre-sale items are not included in this freight price.`);
+        setStatus('');
       } else {
         setStatus(data.fromCache ? 'Freight loaded from recent lookup.' : 'Freight loaded.');
       }
@@ -997,6 +1017,7 @@
       <div class="lc-block lc-result-block">
         <div id="lc-freight-result">Freight: -</div>
         <div id="lc-freight-method"></div>
+        <div id="lc-freight-adjustments"></div>
       </div>
 
       <div id="lc-product-details" class="lc-block"></div>
@@ -1207,6 +1228,28 @@
       #lc-freight-result {
         font-weight: 800;
         font-size: 16px;
+      }
+
+      #lc-freight-adjustments {
+        display: none;
+        margin-top: 8px;
+        line-height: 1.45;
+      }
+
+      #lc-freight-adjustments.is-visible {
+        display: grid;
+        gap: 4px;
+      }
+
+      .lc-presale-pulse {
+        color: #9a2d20;
+        font-weight: 900;
+        animation: lc-presale-pulse 1.5s ease-in-out infinite;
+      }
+
+      @keyframes lc-presale-pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.45; }
       }
 
       #lc-freight-status {
