@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      5.5-hosted
+// @version      5.6-hosted
 // @description  Living Culture freight panel for Cin7 using the hosted freight service.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -708,9 +708,8 @@
       setResult(data.price, data.method);
       setStatus(data.fromCache ? 'Freight loaded from recent lookup.' : 'Freight loaded.');
 
-      setTimeout(() => {
-        loadProductDetails(requestedItems, data.price, data.method, data.products || []);
-      }, 250);
+      // Show quote and product summary now; enrich measurements in the background.
+      loadProductDetails(requestedItems, data.price, data.method, data.products || []);
 
       return true;
     } catch (error) {
