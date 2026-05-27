@@ -665,7 +665,9 @@ async function fetchPrice() {
     renderAddressFields(data.addressFields || []);
     setStatus('');
     fetchProductMetrics(latestPriceData);
-    fetchItemShippingDetails(latestPriceData);
+    if (items.length > 1) {
+      fetchItemShippingDetails(latestPriceData);
+    }
   } catch (error) {
     if (error.name === 'AbortError') {
       setStatus('Freight price timed out. Please try again, or use the standalone app for this address.');

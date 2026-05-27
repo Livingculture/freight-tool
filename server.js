@@ -55,6 +55,8 @@ const productCache = new Map();
 const productSummaryCache = new Map();
 const skuUrlCache = new Map();
 const addressSuggestionCache = new Map();
+const freightQuoteCache = new Map();
+const FREIGHT_QUOTE_CACHE_MS = 10 * 60 * 1000;
 let activeCheckout = null;
 let sharedBrowser = null;
 let sharedBrowserPromise = null;
@@ -383,6 +385,24 @@ function makeProductKey({ productUrl, sku, skus, items }) {
 
 function makeAddressSuggestionKey({ productUrl, sku, skus, items, address }) {
   return `${makeProductKey({ productUrl, sku, skus, items })}|address:${normaliseSuggestion(String(address || '')).toLowerCase()}`;
+}
+
+function makeFreightQuoteKey(route, itemInput, address) {
+  return `${route}|${makeProductKey(itemInput)}|address:${normaliseSuggestion(String(address || '')).toLowerCase()}`;
+}
+
+function getCachedFreightQuote(key) {
+  const cached = freightQuoteCache.get(key);
+  if (!cached) return null;
+  if (Date.now() - cached.createdAt > FREIGHT_QUOTE_CACHE_MS) {
+    freightQuoteCache.delete(key);
+    return null;
+  }
+  return cached.payload;
+}
+
+function cacheFreightQuote(key, payload) {
+  freightQuoteCache.set(key, { createdAt: Date.now(), payload });
 }
 
 function scheduleCheckoutCleanup() {
@@ -2240,6 +2260,12 @@ app.post('/api/price', async (req, res) => {
     return res.status(400).json({ error: 'At least one SKU and selectedAddress are required' });
   }
 
+  const cacheKey = makeFreightQuoteKey('api-price', { productUrl, sku, skus, items }, selectedAddress);
+  const cachedPayload = getCachedFreightQuote(cacheKey);
+  if (cachedPayload) {
+    return res.json({ ...cachedPayload, fromCache: true });
+  }
+
   try {
     const payload = await withAutomationPage('api price', async page => {
       const timing = createTiming('api price');
@@ -2271,6 +2297,7 @@ app.post('/api/price', async (req, res) => {
       };
     });
 
+    cacheFreightQuote(cacheKey, payload);
     return res.json(payload);
   } catch (error) {
     console.error(error);
@@ -2299,6 +2326,12 @@ app.post('/get-freight', async (req, res) => {
 
   if (!normaliseItems({ items }).length || !freightAddress) {
     return res.status(400).json({ error: 'SKU or product URL and address are required' });
+  }
+
+  const cacheKey = makeFreightQuoteKey('get-freight', { items }, freightAddress);
+  const cachedPayload = getCachedFreightQuote(cacheKey);
+  if (cachedPayload) {
+    return res.json({ ...cachedPayload, fromCache: true });
   }
 
   try {
@@ -2336,6 +2369,7 @@ app.post('/get-freight', async (req, res) => {
       };
     });
 
+    cacheFreightQuote(cacheKey, payload);
     return res.json(payload);
   } catch (error) {
     console.error(error);
