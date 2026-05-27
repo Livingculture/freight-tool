@@ -1923,8 +1923,41 @@ function parseNewZealandAddress(addressText) {
     address1: parts.shift(),
     address2: parts.join(', '),
     city: match[1].trim(),
-    postcode: match[2]
+    postcode: match[2],
+    region: inferNewZealandRegion(match[1].trim(), match[2])
   };
+}
+
+function inferNewZealandRegion(city, postcode) {
+  const cityRegions = new Map([
+    ['auckland', 'Auckland'],
+    ['hamilton', 'Waikato'],
+    ['tauranga', 'Bay of Plenty'],
+    ['rotorua', 'Bay of Plenty'],
+    ['gisborne', 'Gisborne'],
+    ['napier', 'Hawke’s Bay'],
+    ['hastings', 'Hawke’s Bay'],
+    ['new plymouth', 'Taranaki'],
+    ['palmerston north', 'Manawatū-Whanganui'],
+    ['wellington', 'Wellington'],
+    ['nelson', 'Nelson'],
+    ['blenheim', 'Marlborough'],
+    ['christchurch', 'Canterbury'],
+    ['dunedin', 'Otago'],
+    ['invercargill', 'Southland']
+  ]);
+  const cityRegion = cityRegions.get(String(city || '').toLowerCase());
+  if (cityRegion) return cityRegion;
+
+  const postalNumber = Number.parseInt(postcode, 10);
+  if (postalNumber >= 600 && postalNumber <= 2699) return 'Auckland';
+  if (postalNumber >= 3000 && postalNumber <= 3199) return 'Bay of Plenty';
+  if (postalNumber >= 3200 && postalNumber <= 3999) return 'Waikato';
+  if (postalNumber >= 4000 && postalNumber <= 4099) return 'Gisborne';
+  if (postalNumber >= 4100 && postalNumber <= 4299) return 'Hawke’s Bay';
+  if (postalNumber >= 4300 && postalNumber <= 4399) return 'Taranaki';
+  if (postalNumber >= 4400 && postalNumber <= 4999) return 'Manawatū-Whanganui';
+  return '';
 }
 
 async function fillFirstAvailable(page, selectors, value) {
@@ -1950,8 +1983,8 @@ async function fillManualCheckoutAddress(page, addressText) {
   }
 
   const region = page.locator('select[name="zone"]:visible, select[autocomplete="address-level1"]:visible').first();
-  if (await region.count()) {
-    await region.selectOption({ label: fields.city }).catch(() => {});
+  if (await region.count() && fields.region) {
+    await region.selectOption({ label: fields.region }).catch(() => {});
   }
 
   await page.locator(ADDRESS_INPUT_SELECTORS.join(',')).first().press('Tab').catch(() => {});
