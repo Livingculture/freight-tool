@@ -15,7 +15,7 @@ let scanner = null;
 let scannerRunning = false;
 
 function escapeHtml(value) {
-  return String(value || '').replace(/[&<>"']/g, char => ({
+  return String(value ?? '').replace(/[&<>"']/g, char => ({
     '&': '&amp;',
     '<': '&lt;',
     '>': '&gt;',
@@ -131,7 +131,8 @@ function renderAvailability(products) {
     const requested = Math.max(1, Number(product.quantity) || 1);
     const addToCart = Math.max(0, Number(product.addToCartQuantity) || 0);
     const preSale = Math.max(0, Number(product.preSaleQuantity) || 0);
-    const unavailable = addToCart === 0 && preSale === 0;
+    const storefrontUnavailable = Boolean(product.storefrontError);
+    const unavailable = !storefrontUnavailable && addToCart === 0 && preSale === 0;
     const className = unavailable ? 'unavailable' : preSale ? 'presale' : '';
     const image = product.image
       ? `<img class="product-image" src="${escapeHtml(product.image)}" alt="">`
@@ -139,10 +140,12 @@ function renderAvailability(products) {
     const websiteUrl = product.url || product.productUrl || '';
 
     let pills = '';
-    if (addToCart) {
+    if (storefrontUnavailable) {
+      pills += `<span class="pill pending">${escapeHtml(product.storefrontError)}</span>`;
+    } else if (addToCart) {
       pills += `<span class="pill">${addToCart} add to cart</span>`;
     }
-    if (preSale) {
+    if (!storefrontUnavailable && preSale) {
       pills += `<span class="pill presale">${preSale} pre-sale</span>`;
     }
     if (unavailable) {
@@ -158,9 +161,55 @@ function renderAvailability(products) {
           <div class="availability">${pills}</div>
           ${websiteUrl ? `<a class="product-link" href="${escapeHtml(websiteUrl)}" target="_blank" rel="noopener noreferrer">View product</a>` : ''}
         </div>
+        ${renderCin7Stock(product.cin7Stock)}
       </article>
     `;
   }).join('');
+}
+
+function renderCin7Stock(stock) {
+  if (!stock?.connected) {
+    return `
+      <section class="stock">
+        <div class="stock-title">Cin7 location stock</div>
+        <p class="stock-message">Cin7 connection is not available.</p>
+      </section>
+    `;
+  }
+
+  if (stock.error) {
+    return `
+      <section class="stock">
+        <div class="stock-title">Cin7 location stock</div>
+        <p class="stock-message error">${escapeHtml(stock.error)}</p>
+      </section>
+    `;
+  }
+
+  if (!stock.locations?.length) {
+    return `
+      <section class="stock">
+        <div class="stock-title">Cin7 location stock</div>
+        <p class="stock-message">No stock is recorded for this SKU.</p>
+      </section>
+    `;
+  }
+
+  return `
+    <section class="stock">
+      <div class="stock-title">Cin7 location stock</div>
+      <div class="stock-columns"><span>Location</span><span>Avail.</span><span>Hand</span><span>Alloc.</span><span>Order</span></div>
+      ${stock.locations.map(location => `
+        <div class="stock-row">
+          <strong>${escapeHtml(location.location)}</strong>
+          <span class="${location.available > 0 ? 'stock-positive' : ''}">${escapeHtml(location.available)}</span>
+          <span>${escapeHtml(location.onHand)}</span>
+          <span>${escapeHtml(location.allocated)}</span>
+          <span>${escapeHtml(location.onOrder)}</span>
+        </div>
+      `).join('')}
+    </section>
+  `;
 }
 
 async function checkAvailability() {

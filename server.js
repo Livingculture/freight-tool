@@ -29,6 +29,9 @@ const ADDRESS_PREDICTION_WAIT_MS = 6000;
 const HEADLESS = process.env.HEADLESS !== 'false';
 const CHECKOUT_IDLE_MS = 5 * 60 * 1000;
 const AUTOMATION_TIMEOUT_MS = process.env.VERCEL ? 270000 : 120000;
+const CIN7_CORE_BASE_URL = process.env.CIN7_CORE_API_BASE_URL || 'https://inventory.dearsystems.com/ExternalApi/v2';
+const CIN7_CORE_ACCOUNT_ID = process.env.CIN7_CORE_ACCOUNT_ID;
+const CIN7_CORE_APPLICATION_KEY = process.env.CIN7_CORE_APPLICATION_KEY;
 const BLOCKED_RESOURCE_TYPES = new Set(['image', 'font', 'media']);
 const BLOCKED_AUTOMATION_URLS = [
   /cdn\.shopify\.com\/extensions\//i,
@@ -57,6 +60,8 @@ const skuUrlCache = new Map();
 const addressSuggestionCache = new Map();
 const freightQuoteCache = new Map();
 const FREIGHT_QUOTE_CACHE_MS = 10 * 60 * 1000;
+const cin7AvailabilityCache = new Map();
+const CIN7_AVAILABILITY_CACHE_MS = 2 * 60 * 1000;
 let activeCheckout = null;
 let sharedBrowser = null;
 let sharedBrowserPromise = null;
@@ -105,6 +110,93 @@ function isAllowedBrowserOrigin(origin) {
   } catch (error) {
     return false;
   }
+}
+
+function isCin7Configured() {
+  return Boolean(CIN7_CORE_ACCOUNT_ID && CIN7_CORE_APPLICATION_KEY);
+}
+
+function numberValue(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function getCachedCin7Availability(sku) {
+  const cached = cin7AvailabilityCache.get(sku);
+  if (!cached) return null;
+  if (Date.now() - cached.cachedAt > CIN7_AVAILABILITY_CACHE_MS) {
+    cin7AvailabilityCache.delete(sku);
+    return null;
+  }
+  return cached.payload;
+}
+
+async function getCin7ProductAvailability(sku) {
+  const normalisedSku = String(sku || '').trim().toUpperCase();
+  if (!normalisedSku) {
+    return { connected: isCin7Configured(), locations: [] };
+  }
+  if (!isCin7Configured()) {
+    return { connected: false, locations: [] };
+  }
+
+  const cached = getCachedCin7Availability(normalisedSku);
+  if (cached) return cached;
+
+  const endpoints = ['ref/productavailability', 'ProductAvailability'];
+  let response;
+  for (const endpoint of endpoints) {
+    const url = new URL(`${CIN7_CORE_BASE_URL.replace(/\/$/, '')}/${endpoint}`);
+    url.searchParams.set('Sku', normalisedSku);
+    url.searchParams.set('Limit', '1000');
+    response = await fetch(url, {
+      headers: {
+        Accept: 'application/json',
+        'api-auth-accountid': CIN7_CORE_ACCOUNT_ID,
+        'api-auth-applicationkey': CIN7_CORE_APPLICATION_KEY
+      },
+      signal: AbortSignal.timeout(15000)
+    });
+    if (response.status !== 404) break;
+  }
+
+  if (!response?.ok) {
+    const message = await response?.text().catch(() => '') || '';
+    throw new Error(`Cin7 stock lookup failed (${response?.status || 'network'}): ${message.slice(0, 120)}`);
+  }
+
+  const body = await response.json();
+  const records = Array.isArray(body)
+    ? body
+    : body.ProductAvailabilityList || body.ProductAvailability || body.productAvailability || body.Availability || [];
+  const locationTotals = new Map();
+
+  records
+    .filter(record => String(record.SKU || record.Sku || '').trim().toUpperCase() === normalisedSku)
+    .forEach(record => {
+      const location = String(record.Location || 'Unspecified location').trim() || 'Unspecified location';
+      const total = locationTotals.get(location) || {
+        location,
+        available: 0,
+        onHand: 0,
+        allocated: 0,
+        onOrder: 0
+      };
+      total.available += numberValue(record.Available);
+      total.onHand += numberValue(record.OnHand);
+      total.allocated += numberValue(record.Allocated);
+      total.onOrder += numberValue(record.OnOrder);
+      locationTotals.set(location, total);
+    });
+
+  const payload = {
+    connected: true,
+    locations: Array.from(locationTotals.values()).sort((left, right) =>
+      right.available - left.available || left.location.localeCompare(right.location)
+    )
+  };
+  cin7AvailabilityCache.set(normalisedSku, { cachedAt: Date.now(), payload });
+  return payload;
 }
 
 async function findElement(page, selectors) {
@@ -1745,7 +1837,7 @@ async function getProductAvailability(page, itemInput, timing = createTiming('av
     });
   }
 
-  return products.map(product => {
+  const productAvailability = products.map(product => {
     const requestedQuantity = normaliseQuantity(product.requestedQuantity || product.quantity);
     const addToCartQuantity = Math.max(0, Number(product.availableQuantity) || 0);
     const preSaleQuantity = Math.max(0, requestedQuantity - addToCartQuantity);
@@ -1757,6 +1849,29 @@ async function getProductAvailability(page, itemInput, timing = createTiming('av
       preSaleQuantity
     };
   });
+
+  return addCin7StockToProducts(productAvailability);
+}
+
+async function addCin7StockToProducts(products) {
+  return Promise.all(products.map(async product => {
+    try {
+      return {
+        ...product,
+        cin7Stock: await getCin7ProductAvailability(product.sku)
+      };
+    } catch (error) {
+      console.error(`Cin7 stock lookup failed for ${product.sku}:`, error.message);
+      return {
+        ...product,
+        cin7Stock: {
+          connected: true,
+          locations: [],
+          error: 'Cin7 stock could not be loaded.'
+        }
+      };
+    }
+  }));
 }
 
 async function openCheckoutForProducts(page, products, timing = createTiming('checkout')) {
@@ -2402,14 +2517,29 @@ app.get('/api/product-search', async (req, res) => {
 
 app.post('/api/availability', async (req, res) => {
   const { productUrl, sku, skus, items } = req.body;
-  if (!normaliseItems({ productUrl, sku, skus, items }).length) {
+  const requestedItems = normaliseItems({ productUrl, sku, skus, items });
+  if (!requestedItems.length) {
     return res.status(400).json({ error: 'At least one SKU is required' });
   }
 
   try {
-    const products = await withAutomationPage('availability', async page => {
-      return getProductAvailability(page, { productUrl, sku, skus, items });
-    });
+    let products;
+    try {
+      products = await withAutomationPage('availability', async page => {
+        return getProductAvailability(page, { productUrl, sku, skus, items });
+      });
+    } catch (error) {
+      console.error('Website availability lookup failed; returning Cin7 stock only:', error.message);
+      const productSummaries = await getProductSummaries({ productUrl, sku, skus, items }).catch(() =>
+        requestedItems.map(item => ({ sku: item.sku || '', title: item.sku || 'Product' }))
+      );
+      products = await addCin7StockToProducts(requestedItems.map((item, index) => ({
+        ...productSummaries[index],
+        sku: productSummaries[index]?.sku || item.sku,
+        quantity: item.quantity,
+        storefrontError: 'Website add-to-cart status could not be loaded.'
+      })));
+    }
     return res.json({ products });
   } catch (error) {
     console.error(error);
