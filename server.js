@@ -152,6 +152,10 @@ function isTransientNavigationError(error) {
     .test(String(error?.message || error || ''));
 }
 
+function isRetryableCheckoutError(error) {
+  return isClosedBrowserError(error) || isTransientNavigationError(error);
+}
+
 function clearCheckoutReference() {
   if (!activeCheckout) return;
   clearTimeout(activeCheckout.cleanupTimer);
@@ -2212,6 +2216,7 @@ app.post('/api/price', async (req, res) => {
       try {
         result = await selectAddressAndGetPrice(checkout.page, selectedAddress, timing);
       } catch (firstError) {
+        if (!isRetryableCheckoutError(firstError)) throw firstError;
         console.error('Retrying freight price with a fresh checkout session:', firstError.message);
         await closeActiveCheckout();
         checkout = await getCheckoutSession({ productUrl, sku, skus, items }, page, timing);
@@ -2272,6 +2277,7 @@ app.post('/get-freight', async (req, res) => {
       try {
         result = await selectAddressAndGetPrice(checkout.page, freightAddress, timing);
       } catch (firstError) {
+        if (!isRetryableCheckoutError(firstError)) throw firstError;
         console.error('Retrying Cin7 freight with a fresh checkout session:', firstError.message);
         await closeActiveCheckout();
         checkout = await getCheckoutSession({ items }, page, timing);

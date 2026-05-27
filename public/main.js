@@ -17,6 +17,7 @@ let productSearchTimer = null;
 let activeSuggestionRequest = null;
 let activePrepareRequest = null;
 let activeProductSearchRequest = null;
+let activePriceRequest = null;
 let activeSuggestionAddress = '';
 let preparedSkuKey = '';
 let latestPriceData = null;
@@ -27,6 +28,7 @@ const AUTO_SUGGEST_DELAY_MS = 600;
 const PREPARE_DELAY_MS = 700;
 const PRODUCT_SEARCH_DELAY_MS = 300;
 const ADDRESS_SEARCH_TIMEOUT_MS = 45000;
+const PRICE_REQUEST_TIMEOUT_MS = 90000;
 
 function getSkus() {
   return getItems().map(item => item.sku);
@@ -302,7 +304,7 @@ function renderSuggestions(suggestions) {
   clearSuggestions();
   showSuggestionsList();
   if (!suggestions.length) {
-    suggestionsContainer.innerHTML = '<div class="suggestion-empty">No suggestions found. Try a more complete address.</div>';
+    suggestionsContainer.innerHTML = '<div class="suggestion-empty">No address found. Enter the full address including suburb, city, postcode and New Zealand.</div>';
     return;
   }
 
@@ -529,7 +531,7 @@ async function fetchSuggestions() {
   const items = getItems();
   const address = addressInput.value.trim();
   if (!items.length || !address) {
-    setStatus('Enter at least one SKU and a partial address.');
+    setStatus('Enter at least one SKU and a complete delivery address.');
     return;
   }
 
@@ -546,12 +548,12 @@ async function fetchSuggestions() {
   }
   activeSuggestionRequest = new AbortController();
   activeSuggestionAddress = address;
-  setStatus('Loading suggestions from the site...');
+  setStatus('Checking the complete delivery address...');
   setResult('');
   renderAddressFields([]);
   clearSuggestions();
   showSuggestionsList();
-  suggestionsContainer.innerHTML = '<div class="suggestion-empty">Loading address suggestions...</div>';
+  suggestionsContainer.innerHTML = '<div class="suggestion-empty">Checking delivery address...</div>';
 
   const timeout = setTimeout(() => activeSuggestionRequest?.abort(), ADDRESS_SEARCH_TIMEOUT_MS);
   try {
@@ -566,12 +568,14 @@ async function fetchSuggestions() {
 
     renderSuggestions(data.suggestions || []);
     renderProductPreview(data.products || data.product || null);
-    setStatus('Suggestions loaded. Click one to select it, then get the freight price.');
+    setStatus((data.suggestions || []).length
+      ? 'Address ready. Click it to select it, then get the freight price.'
+      : 'No address found. Enter the full address including suburb, city, postcode and New Zealand.');
   } catch (error) {
     if (error.name === 'AbortError') {
       if (addressInput.value.trim() !== address) return;
-      showSuggestionMessage('Address search timed out or was replaced. Keep typing or try again.');
-      setStatus('Address search stopped.');
+      showSuggestionMessage('Address check timed out. Enter the full address including suburb, city, postcode and New Zealand, then try again.');
+      setStatus('Address check stopped.');
       return;
     }
     setStatus(`Error: ${error.message}`);
@@ -592,14 +596,20 @@ async function fetchPrice() {
     return;
   }
 
+  if (activePriceRequest) return;
+
+  activePriceRequest = new AbortController();
+  btnPrice.disabled = true;
   setStatus('Requesting freight price...');
   setResult('');
 
+  const timeout = setTimeout(() => activePriceRequest?.abort(), PRICE_REQUEST_TIMEOUT_MS);
   try {
     const response = await fetch('/api/price', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items, selectedAddress })
+      body: JSON.stringify({ items, selectedAddress }),
+      signal: activePriceRequest.signal
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Price request failed');
@@ -612,7 +622,15 @@ async function fetchPrice() {
     setStatus('');
     fetchItemShippingDetails(latestPriceData);
   } catch (error) {
-    setStatus(`Error: ${error.message}`);
+    if (error.name === 'AbortError') {
+      setStatus('Freight price timed out. Please try again, or use the standalone app for this address.');
+    } else {
+      setStatus(`Error: ${error.message}`);
+    }
+  } finally {
+    clearTimeout(timeout);
+    activePriceRequest = null;
+    btnPrice.disabled = !selectedAddress;
   }
 }
 
