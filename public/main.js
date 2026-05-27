@@ -269,9 +269,10 @@ async function fetchItemShippingDetails(priceData) {
 
     latestPriceData = {
       ...priceData,
-      products: data.products || priceData.products,
+      ...latestPriceData,
+      products: latestPriceData?.products || data.products || priceData.products,
       itemShipping,
-      freightBreakdown: enrichedBreakdown
+      freightBreakdown: latestPriceData?.freightBreakdown || enrichedBreakdown
     };
 
     if (requestSkuKey !== getSkuKey()) return;
@@ -589,6 +590,49 @@ async function fetchSuggestions() {
   }
 }
 
+async function fetchProductMetrics(priceData) {
+  const items = getItems();
+  const requestSkuKey = getSkuKey();
+  if (!items.length) return;
+
+  setStatus('Freight price loaded. Loading weight, CBM and carton details...');
+
+  try {
+    const productsBySku = new Map((latestPriceData?.products || priceData.products || [])
+      .filter(product => product?.sku)
+      .map(product => [String(product.sku).toLowerCase(), product]));
+    const metricItems = items.map(item => {
+      const product = productsBySku.get(String(item.sku || '').toLowerCase());
+      return product?.url ? { ...item, productUrl: product.url } : item;
+    });
+
+    const response = await fetch('/api/product-metrics', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        items: metricItems,
+        price: priceData.price,
+        itemShipping: latestPriceData?.itemShipping || []
+      })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Product metrics failed');
+    if (requestSkuKey !== getSkuKey()) return;
+
+    latestPriceData = {
+      ...priceData,
+      ...latestPriceData,
+      products: data.products || latestPriceData?.products || priceData.products,
+      freightBreakdown: data.freightBreakdown || latestPriceData?.freightBreakdown || priceData.freightBreakdown
+    };
+    renderFreightResult(latestPriceData);
+    renderProductPreview(latestPriceData.products || [], latestPriceData.itemShipping || []);
+    setStatus('');
+  } catch (error) {
+    setStatus(`Freight price loaded. Product details unavailable: ${error.message}`);
+  }
+}
+
 async function fetchPrice() {
   const items = getItems();
   if (!items.length || !selectedAddress) {
@@ -620,6 +664,7 @@ async function fetchPrice() {
     renderSelectedAddress(data.selectedAddress || selectedAddress);
     renderAddressFields(data.addressFields || []);
     setStatus('');
+    fetchProductMetrics(latestPriceData);
     fetchItemShippingDetails(latestPriceData);
   } catch (error) {
     if (error.name === 'AbortError') {
