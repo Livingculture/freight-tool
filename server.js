@@ -1599,12 +1599,18 @@ async function prepareCheckout(page, itemInput, timing = createTiming('checkout'
 
   const products = [];
   await timing.step('resolve SKU', async () => {
-    for (const item of items) {
-      let product;
+    const fastProducts = await Promise.all(items.map(async item => {
       try {
-        product = { ...(await getProductDetailsFast(item)) };
+        return { product: await getProductDetailsFast(item) };
       } catch (error) {
-        console.error(`Fast checkout lookup failed for ${item.sku || item.productUrl}:`, error.message);
+        return { error };
+      }
+    }));
+
+    for (const [index, item] of items.entries()) {
+      let product = fastProducts[index].product ? { ...fastProducts[index].product } : null;
+      if (!product) {
+        console.error(`Fast checkout lookup failed for ${item.sku || item.productUrl}:`, fastProducts[index].error.message);
         product = { ...(await getProductDetails(page, item)) };
       }
       product.quantity = item.quantity;

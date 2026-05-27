@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      6.0-hosted
+// @version      6.1-hosted
 // @description  Living Culture freight panel for Cin7 using the hosted freight service.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -419,7 +419,23 @@
     });
   }
 
-  async function loadProductDetails(items, price, method, fallbackProducts = []) {
+  async function requestProductDetails(items, price = '') {
+    const response = await fetch(`${API_BASE}/api/product-metrics`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items, price })
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Product details unavailable');
+    }
+
+    return data;
+  }
+
+  async function loadProductDetails(items, price, method, fallbackProducts = [], pendingProductDetails = null) {
     const requestedItems = normaliseFreightItems({ items });
 
     const itemsWithUrls = mergeProductDetails(requestedItems, fallbackProducts)
@@ -433,17 +449,9 @@
     if (!requestedItems.length) return;
 
     try {
-      const response = await fetch(`${API_BASE}/api/product-metrics`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: itemsWithUrls, price })
-      });
-
-      const data = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Product details unavailable');
-      }
+      const pendingResult = pendingProductDetails ? await pendingProductDetails : null;
+      if (pendingResult?.error) throw pendingResult.error;
+      const data = pendingResult?.data || await requestProductDetails(itemsWithUrls, price);
 
       renderProductDetails(mergeProductDetails(itemsWithUrls, data.products || fallbackProducts), method);
     } catch (error) {
@@ -704,6 +712,9 @@
       }
 
       renderProductDetails(requestedItems, state.method);
+      const pendingProductDetails = requestProductDetails(requestedItems)
+        .then(data => ({ data }))
+        .catch(error => ({ error }));
 
       const data = await requestFreight({
         sku,
@@ -739,7 +750,7 @@
       }
 
       // Show quote and product summary now; enrich measurements in the background.
-      loadProductDetails(quotedItems, data.price, data.method, data.products || []);
+      loadProductDetails(quotedItems, data.price, data.method, data.products || [], pendingProductDetails);
 
       return true;
     } catch (error) {
