@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      5.9-hosted
+// @version      6.0-hosted
 // @description  Living Culture freight panel for Cin7 using the hosted freight service.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -279,28 +279,6 @@
     }
   }
 
-  function renderQuantityAdjustments(adjustments = []) {
-    const block = document.getElementById('lc-freight-adjustments');
-    if (!block) return;
-
-    const adjustedItems = adjustments.filter(adjustment => {
-      const preSaleQuantity = adjustment.preSaleQuantity ??
-        (Number(adjustment.requestedQuantity) - Number(adjustment.availableQuantity));
-      return normaliseQuantityAllowZero(preSaleQuantity) > 0;
-    });
-
-    block.innerHTML = adjustedItems.map(adjustment => {
-      const availableQuantity = normaliseQuantity(adjustment.availableQuantity);
-      const preSaleQuantity = normaliseQuantityAllowZero(
-        adjustment.preSaleQuantity ??
-        (Number(adjustment.requestedQuantity) - Number(adjustment.availableQuantity))
-      );
-
-      return `<div><b>${escapeHtml(adjustment.sku)}:</b> ${availableQuantity} add to cart and <strong class="lc-presale-pulse">${preSaleQuantity} PRE-SALE</strong></div>`;
-    }).join('');
-    block.classList.toggle('is-visible', Boolean(adjustedItems.length));
-  }
-
   function getLineCartonCount(product, quantity = normaliseQuantity(product?.quantity)) {
     const baseCartons = Array.isArray(product.cartons)
       ? product.cartons.reduce((total, carton) => total + (Number(carton.quantity) || 1), 0)
@@ -403,9 +381,9 @@
             ${image}
             <div>
               <strong>${escapeHtml(product.title || product.sku || 'Living Culture product')}</strong>
+              ${statusLine}
               ${quantityLine}
               ${detailsHtml}
-              ${statusLine}
               <div>${escapeHtml(stock)}</div>
               ${websiteLine}
             </div>
@@ -715,7 +693,6 @@
   async function getAndApplyFreight({ sku, items, address, fill }) {
     try {
       setStatus('Getting freight...');
-      renderQuantityAdjustments([]);
 
       const requestedItems = normaliseFreightItems({ sku, items });
 
@@ -755,7 +732,6 @@
       });
 
       setResult(data.price, data.method);
-      renderQuantityAdjustments(adjustments);
       if (adjustments.length) {
         setStatus('');
       } else {
@@ -1017,7 +993,6 @@
       <div class="lc-block lc-result-block">
         <div id="lc-freight-result">Freight: -</div>
         <div id="lc-freight-method"></div>
-        <div id="lc-freight-adjustments"></div>
       </div>
 
       <div id="lc-product-details" class="lc-block"></div>
@@ -1228,17 +1203,6 @@
       #lc-freight-result {
         font-weight: 800;
         font-size: 16px;
-      }
-
-      #lc-freight-adjustments {
-        display: none;
-        margin-top: 8px;
-        line-height: 1.45;
-      }
-
-      #lc-freight-adjustments.is-visible {
-        display: grid;
-        gap: 4px;
       }
 
       .lc-presale-pulse {
