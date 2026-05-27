@@ -1777,7 +1777,8 @@ function buildQuantityAdjustments(products = []) {
     .map(product => ({
       sku: product.sku,
       requestedQuantity: Number(product.requestedQuantity),
-      availableQuantity: Number(product.quantity)
+      availableQuantity: Number(product.quantity),
+      preSaleQuantity: Math.max(0, Number(product.requestedQuantity) - Number(product.quantity))
     }));
 }
 

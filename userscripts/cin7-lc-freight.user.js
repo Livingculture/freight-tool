@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      5.7-hosted
+// @version      5.8-hosted
 // @description  Living Culture freight panel for Cin7 using the hosted freight service.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -69,6 +69,7 @@
     const sourceItems = Array.isArray(items) && items.length ? items : [{ sku, quantity }];
     return sourceItems
       .map(item => ({
+        ...item,
         sku: clean(item?.sku),
         productUrl: clean(item?.productUrl),
         quantity: normaliseQuantity(item?.quantity)
@@ -349,7 +350,10 @@
         const lineWeight = getLineWeight(product, quantity);
         const lineCbm = getLineCbm(product, quantity);
         const cartonCount = getLineCartonCount(product, quantity);
-        const saleState = product.saleState || (product.available ? 'Add to cart' : 'Unavailable');
+        const preSaleQuantity = normaliseQuantityAllowZero(product.preSaleQuantity);
+        const saleState = preSaleQuantity
+          ? `${quantity} add to cart and ${preSaleQuantity} pre sale`
+          : product.saleState || (product.available ? 'Add to cart' : 'Unavailable');
         const stock = product.available ? `Stock: ${shippingLocation || 'Available'}` : 'Stock: Unavailable';
 
         const detailsLine = product.metricsLoaded
@@ -706,28 +710,34 @@
       });
 
       const adjustments = Array.isArray(data.quantityAdjustments) ? data.quantityAdjustments : [];
-      const availableBySku = new Map(adjustments.map(adjustment => [
+      const adjustmentBySku = new Map(adjustments.map(adjustment => [
         clean(adjustment.sku).toLowerCase(),
-        normaliseQuantity(adjustment.availableQuantity)
+        adjustment
       ]));
-      const quotedItems = requestedItems.map(item => ({
-        ...item,
-        quantity: availableBySku.get(clean(item.sku).toLowerCase()) || item.quantity
-      }));
+      const quotedItems = requestedItems.map(item => {
+        const adjustment = adjustmentBySku.get(clean(item.sku).toLowerCase());
+        if (!adjustment) return item;
 
-      adjustments.forEach(adjustment => {
-        const row = Array.from(document.querySelectorAll('#lc-auto-sku .lc-detected-item'))
-          .find(item => clean(item.dataset.sku).toLowerCase() === clean(adjustment.sku).toLowerCase());
-        const input = row?.querySelector('.lc-detected-qty');
-        if (input) input.value = String(adjustment.availableQuantity);
+        return {
+          ...item,
+          quantity: normaliseQuantity(adjustment.availableQuantity),
+          requestedQuantity: normaliseQuantity(adjustment.requestedQuantity),
+          preSaleQuantity: normaliseQuantityAllowZero(
+            adjustment.preSaleQuantity ??
+            (Number(adjustment.requestedQuantity) - Number(adjustment.availableQuantity))
+          )
+        };
       });
 
       setResult(data.price, data.method);
       if (adjustments.length) {
         const changes = adjustments.map(adjustment =>
-          `${adjustment.sku}: ${adjustment.requestedQuantity} -> ${adjustment.availableQuantity}`
-        ).join(', ');
-        setStatus(`Freight loaded for available stock quantities (${changes}).`);
+          `${adjustment.sku}: ${adjustment.availableQuantity} add to cart and ${
+            adjustment.preSaleQuantity ??
+            (Number(adjustment.requestedQuantity) - Number(adjustment.availableQuantity))
+          } pre sale`
+        ).join('; ');
+        setStatus(`Freight quoted for available stock only (${changes}). Pre-sale items are not included in this freight price.`);
       } else {
         setStatus(data.fromCache ? 'Freight loaded from recent lookup.' : 'Freight loaded.');
       }
