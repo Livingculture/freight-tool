@@ -2255,12 +2255,13 @@ app.get('/api/product-search', async (req, res) => {
 
 app.post('/api/price', async (req, res) => {
   const { productUrl, sku, skus, items, selectedAddress } = req.body;
+  const freightAddress = getManualAddressFallback(selectedAddress)[0] || selectedAddress;
 
-  if (!normaliseItems({ productUrl, sku, skus, items }).length || !selectedAddress) {
+  if (!normaliseItems({ productUrl, sku, skus, items }).length || !freightAddress) {
     return res.status(400).json({ error: 'At least one SKU and selectedAddress are required' });
   }
 
-  const cacheKey = makeFreightQuoteKey('api-price', { productUrl, sku, skus, items }, selectedAddress);
+  const cacheKey = makeFreightQuoteKey('api-price', { productUrl, sku, skus, items }, freightAddress);
   const cachedPayload = getCachedFreightQuote(cacheKey);
   if (cachedPayload) {
     return res.json({ ...cachedPayload, fromCache: true });
@@ -2273,13 +2274,13 @@ app.post('/api/price', async (req, res) => {
       let result;
 
       try {
-        result = await selectAddressAndGetPrice(checkout.page, selectedAddress, timing);
+        result = await selectAddressAndGetPrice(checkout.page, freightAddress, timing);
       } catch (firstError) {
         if (!isRetryableCheckoutError(firstError)) throw firstError;
         console.error('Retrying freight price with a fresh checkout session:', firstError.message);
         await closeActiveCheckout();
         checkout = await getCheckoutSession({ productUrl, sku, skus, items }, page, timing);
-        result = await selectAddressAndGetPrice(checkout.page, selectedAddress, timing);
+        result = await selectAddressAndGetPrice(checkout.page, freightAddress, timing);
       }
 
       checkout.lastUsed = Date.now();
@@ -2307,7 +2308,8 @@ app.post('/api/price', async (req, res) => {
 
 app.post('/get-freight', async (req, res) => {
   const { sku, productUrl, address, selectedAddress, quantity } = req.body;
-  const freightAddress = selectedAddress || address;
+  const requestedAddress = selectedAddress || address;
+  const freightAddress = getManualAddressFallback(requestedAddress)[0] || requestedAddress;
 
   const items = Array.isArray(req.body.items) && req.body.items.length
     ? req.body.items.map(item => {
