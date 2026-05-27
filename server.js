@@ -143,26 +143,24 @@ async function getCin7ProductAvailability(sku) {
   const cached = getCachedCin7Availability(normalisedSku);
   if (cached) return cached;
 
-  const endpoints = ['ref/productavailability', 'ProductAvailability'];
-  let response;
-  for (const endpoint of endpoints) {
-    const url = new URL(`${CIN7_CORE_BASE_URL.replace(/\/$/, '')}/${endpoint}`);
-    url.searchParams.set('Sku', normalisedSku);
-    url.searchParams.set('Limit', '1000');
-    response = await fetch(url, {
-      headers: {
-        Accept: 'application/json',
-        'api-auth-accountid': CIN7_CORE_ACCOUNT_ID,
-        'api-auth-applicationkey': CIN7_CORE_APPLICATION_KEY
-      },
-      signal: AbortSignal.timeout(15000)
-    });
-    if (response.status !== 404) break;
-  }
+  const url = new URL(`${CIN7_CORE_BASE_URL.replace(/\/$/, '')}/ProductAvailability`);
+  url.searchParams.set('sku', normalisedSku);
+  url.searchParams.set('limit', '1000');
+  const response = await fetch(url, {
+    headers: {
+      Accept: 'application/json',
+      'api-auth-accountid': CIN7_CORE_ACCOUNT_ID,
+      'api-auth-applicationkey': CIN7_CORE_APPLICATION_KEY
+    },
+    signal: AbortSignal.timeout(15000)
+  });
 
-  if (!response?.ok) {
-    const message = await response?.text().catch(() => '') || '';
-    throw new Error(`Cin7 stock lookup failed (${response?.status || 'network'}): ${message.slice(0, 120)}`);
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      throw new Error(`Cin7 credentials were rejected (${response.status}).`);
+    }
+    const message = await response.text().catch(() => '') || '';
+    throw new Error(`Cin7 stock request failed (${response.status}): ${message.slice(0, 120)}`);
   }
 
   const body = await response.json();
@@ -1867,7 +1865,7 @@ async function addCin7StockToProducts(products) {
         cin7Stock: {
           connected: true,
           locations: [],
-          error: 'Cin7 stock could not be loaded.'
+          error: error.message
         }
       };
     }
