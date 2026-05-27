@@ -1,182 +1,193 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en-NZ">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Freight Costing</title>
+  <title>Product Availability | Living Culture</title>
   <style>
     :root {
-      --brand-green: #2d5c4e;
-      --brand-green-dark: #112922;
-      --brand-cream: #f3f1e8;
-      --brand-white: #ffffff;
-      --brand-text: #1f2b24;
-      --brand-muted: #5e6a5b;
-      --brand-border: #d8d6cc;
-      --button-green: #2d5c4e;
-      --button-green-hover: #254c41;
+      --green: #285c4b;
+      --green-dark: #163b31;
+      --mint: #e5f1eb;
+      --teal: #08788b;
+      --yellow: #f4b340;
+      --yellow-soft: #fff1d7;
+      --red: #b54837;
+      --ink: #1d2d28;
+      --muted: #64786f;
+      --paper: #ffffff;
+      --surface: #f4f6f3;
+      --line: #d8e1db;
+      --shadow: 0 16px 36px rgba(22, 48, 40, 0.08);
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
       min-height: 100vh;
-      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: linear-gradient(180deg, #f7f7f5 0%, #e9e7dd 100%);
-      color: var(--brand-text);
-      zoom: 0.75;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+      background: var(--surface);
+      color: var(--ink);
     }
 
-    .page-shell {
-      max-width: 780px;
+    button,
+    input {
+      font: inherit;
+      letter-spacing: 0;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    .app {
+      max-width: 760px;
       margin: 0 auto;
-      padding: 24px 22px 40px;
+      min-height: 100vh;
+      background: var(--paper);
     }
 
-    .hero {
-      background: var(--brand-green);
-      color: var(--brand-white);
-      padding: 26px;
-      border-radius: 20px;
-      box-shadow: 0 22px 55px rgba(27, 62, 48, 0.16);
+    .topbar {
+      background: var(--green);
+      color: #fff;
+      padding: 22px 20px 20px;
     }
 
-    .hero__top {
+    .topbar__row {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 20px;
-      margin-bottom: 18px;
+      gap: 18px;
     }
 
-    .hero__logo img {
-      width: 140px;
-      max-width: 100%;
+    .logo {
+      width: 126px;
       display: block;
     }
 
-    .hero h1 {
+    h1 {
       margin: 0;
-      font-size: clamp(1.8rem, 2.4vw, 2.4rem);
-      line-height: 1.05;
+      font-size: 1.8rem;
+      line-height: 1.1;
       text-align: right;
     }
 
-    .hero p {
-      margin: 0;
-      max-width: 700px;
-      color: rgba(255, 255, 255, 0.94);
-      font-size: 1rem;
-      line-height: 1.7;
-      text-align: justify;
-      text-align-last: left;
+    .content {
+      padding: 18px 16px 36px;
     }
 
-    .card {
-      background: var(--brand-white);
-      border: 1px solid var(--brand-border);
-      border-radius: 24px;
-      padding: 26px;
-      margin-top: 24px;
-      box-shadow: 0 18px 38px rgba(28, 42, 32, 0.08);
+    .tools {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      background: var(--paper);
     }
 
-    label {
-      display: block;
-      margin-bottom: 10px;
+    .section-title {
+      margin: 0 0 14px;
+      font-size: 1.05rem;
       font-weight: 700;
-      color: var(--brand-text);
-    }
-
-    input,
-    textarea,
-    button {
-      width: 100%;
-      border: 1px solid #d8d6cc;
-      border-radius: 14px;
-      padding: 14px 16px;
-      font-size: 1rem;
-      font-family: inherit;
-      color: var(--brand-text);
-    }
-
-    label + input,
-    label + textarea {
-      margin-bottom: 18px;
-    }
-
-    input:focus,
-    textarea:focus {
-      outline: 2px solid rgba(46, 95, 73, 0.2);
-      border-color: var(--button-green);
-    }
-
-    textarea {
-      resize: vertical;
-      min-height: 100px;
-    }
-
-    button {
-      background: var(--button-green);
-      color: var(--brand-white);
-      border: none;
-      font-weight: 700;
-      transition: background 150ms ease;
-      margin-top: 18px;
-    }
-
-    button:hover {
-      background: var(--button-green-hover);
-    }
-
-    button:disabled {
-      opacity: 0.55;
-      cursor: not-allowed;
-    }
-
-    .form-row {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 8px;
-      margin-bottom: 18px;
     }
 
     .sku-row {
       display: grid;
-      grid-template-columns: 1fr 82px auto;
-      gap: 10px;
-      align-items: end;
+      grid-template-columns: minmax(0, 1fr) 70px 44px;
+      gap: 8px;
       margin-bottom: 10px;
-    }
-
-    .sku-row input {
-      margin-bottom: 0;
+      align-items: start;
     }
 
     .sku-search {
       position: relative;
     }
 
-    .sku-qty {
+    input {
+      width: 100%;
+      height: 46px;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--ink);
+      background: #fff;
+    }
+
+    input:focus {
+      border-color: var(--green);
+      outline: 2px solid rgba(40, 92, 75, 0.16);
+    }
+
+    .qty {
       text-align: center;
+    }
+
+    .icon-button,
+    .secondary-button,
+    .scan-button,
+    .lookup-button,
+    .close-button {
+      height: 46px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--green-dark);
+      font-weight: 600;
+    }
+
+    .icon-button {
+      display: grid;
+      place-items: center;
+      width: 44px;
+      font-size: 1.25rem;
+    }
+
+    .icon-button:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+
+    .actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin: 12px 0 10px;
+    }
+
+    .scan-button,
+    .lookup-button {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .lookup-button {
+      border-color: var(--green);
+      background: var(--green);
+      color: #fff;
+    }
+
+    .lookup-button:disabled {
+      opacity: 0.55;
+      cursor: wait;
+    }
+
+    .secondary-button {
+      width: 100%;
+      color: var(--green);
     }
 
     .sku-product-suggestions {
       position: absolute;
-      top: calc(100% + 4px);
-      left: 0;
-      right: 0;
+      inset: calc(100% + 4px) 0 auto;
       display: none;
-      max-height: 280px;
-      overflow-y: auto;
-      border: 1px solid #e1ded2;
-      border-radius: 14px;
-      background: #fbfaf6;
-      box-shadow: 0 18px 36px rgba(28, 42, 32, 0.14);
-      z-index: 20;
+      z-index: 10;
+      max-height: 250px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: var(--shadow);
     }
 
     .sku-product-suggestions.is-visible {
@@ -184,295 +195,233 @@
     }
 
     .sku-product-option {
-      display: grid;
-      grid-template-columns: 52px 1fr;
+      display: flex;
       gap: 10px;
-      width: 100%;
       padding: 10px;
-      border-bottom: 1px solid #ece8db;
+      border-bottom: 1px solid var(--line);
       cursor: pointer;
-      text-align: left;
     }
 
-    .sku-product-option:last-child {
-      border-bottom: none;
-    }
-
-    .sku-product-option:hover {
-      background: #f1f3ee;
-    }
+    .sku-product-option:last-child { border-bottom: 0; }
+    .sku-product-option:hover { background: var(--mint); }
 
     .sku-product-option img {
-      width: 52px;
-      height: 52px;
-      border-radius: 10px;
-      object-fit: cover;
-      background: #f1f3ee;
+      width: 44px;
+      height: 44px;
+      object-fit: contain;
+      flex: 0 0 44px;
     }
 
     .sku-product-option strong,
     .sku-product-option span {
       display: block;
+      font-size: 0.9rem;
     }
 
     .sku-product-option span {
-      margin-top: 2px;
-      color: var(--brand-muted);
-      font-size: 0.9rem;
+      color: var(--muted);
+      margin-top: 4px;
     }
 
     .sku-product-empty {
       padding: 12px;
-      color: var(--brand-muted);
+      color: var(--muted);
+      font-size: 0.9rem;
     }
 
-    .sku-remove {
-      width: auto;
-      margin-top: 0;
-      border: 1px solid var(--brand-border);
-      background: #fbfaf6;
-      color: var(--brand-text);
+    #status {
+      min-height: 22px;
+      margin: 14px 0;
+      color: var(--muted);
+      font-size: 0.92rem;
     }
 
-    .sku-remove {
-      min-width: 52px;
-      padding-inline: 14px;
+    #status.error { color: var(--red); }
+
+    .results {
+      display: grid;
+      gap: 10px;
     }
 
-    .secondary-button {
-      width: 100%;
-      margin-top: 0;
-      margin-bottom: 18px;
-      background: var(--button-green);
-      color: var(--brand-white);
-      border: 1px solid var(--button-green);
+    .product-card {
+      position: relative;
+      display: grid;
+      grid-template-columns: 78px 1fr;
+      gap: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      overflow: hidden;
     }
 
-    .sku-remove:hover {
-      background: #f1f3ee;
+    .product-card::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 5px;
+      background: #39ae7e;
     }
 
-    .secondary-button:hover {
-      background: var(--button-green-hover);
-      border-color: var(--button-green-hover);
+    .product-card.presale::before { background: var(--yellow); }
+    .product-card.unavailable::before { background: var(--red); }
+
+    .product-image {
+      width: 78px;
+      height: 78px;
+      object-fit: contain;
     }
 
-    #suggestions {
-      margin-top: 0;
-      margin-bottom: 18px;
-      border: 1px solid #e1ded2;
-      border-radius: 16px;
-      max-height: 260px;
-      overflow-y: auto;
-      background: #fbfaf6;
-      min-height: 52px;
-    }
-
-    .suggestion-item {
-      padding: 14px 16px;
-      border-bottom: 1px solid #ece8db;
-      cursor: pointer;
-      transition: background 120ms ease;
-    }
-
-    .suggestion-item:last-child {
-      border-bottom: none;
-    }
-
-    .suggestion-item:hover,
-    .suggestion-item.selected {
-      background: #f1f3ee;
-    }
-
-    .suggestion-empty {
-      padding: 14px 16px;
-      color: var(--brand-muted);
-    }
-
-    .selected-address,
-    .address-fields,
-    .product-preview {
-      display: none;
-      margin-top: 18px;
-      padding: 22px 24px 24px;
-      border: 1px solid #e1ded2;
-      border-radius: 20px;
-      background: #fffefb;
-      line-height: 1.35;
-    }
-
-    .selected-address.is-visible,
-    .address-fields.is-visible,
-    .product-preview.is-visible {
-      display: block;
-    }
-
-    .selected-address strong,
-    .address-fields strong {
-      display: block;
+    .product-sku {
+      color: var(--teal);
+      font-size: 0.88rem;
+      font-weight: 700;
       margin-bottom: 4px;
     }
 
-    .product-preview strong {
-      display: block;
-      margin-bottom: 8px;
-      color: var(--brand-text);
-      font-size: 1.35rem;
-      line-height: 1.15;
-      font-weight: 500;
+    .product-name {
+      margin: 0 0 10px;
+      font-size: 1.05rem;
+      line-height: 1.25;
     }
 
-    .product-preview__inner {
-      display: grid;
-      grid-template-columns: 128px 1fr;
-      gap: 18px;
+    .availability {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 9px;
+    }
+
+    .pill {
+      display: inline-flex;
       align-items: center;
-      padding: 4px 0 16px;
+      min-height: 30px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: var(--mint);
+      color: var(--green);
+      font-size: 0.84rem;
+      font-weight: 700;
     }
 
-    .product-preview__inner + .product-preview__inner {
-      border-top: 1px solid #ece8db;
+    .pill.presale {
+      color: #865700;
+      background: var(--yellow-soft);
     }
 
-    .product-preview img {
-      width: 112px;
-      height: 86px;
+    .pill.unavailable {
+      color: var(--red);
+      background: #f8e7e4;
+    }
+
+    .product-link {
+      color: var(--green);
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+
+    .scanner-backdrop {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: end;
+      justify-content: center;
+      padding: 16px;
+      background: rgba(16, 32, 27, 0.52);
+      z-index: 50;
+    }
+
+    .scanner-backdrop.open { display: flex; }
+
+    .scanner {
+      width: min(500px, 100%);
       border-radius: 8px;
-      object-fit: contain;
       background: #fff;
+      padding: 16px;
     }
 
-    .product-preview__meta,
-    .product-preview__totals {
-      margin-top: 4px;
-      color: var(--brand-muted);
-      font-size: 1.25rem;
+    .scanner__head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
     }
 
-    .product-preview__website a {
-      color: var(--brand-green);
-      font-weight: 800;
-      text-decoration: underline;
+    .scanner__head h2 {
+      font-size: 1.1rem;
+      margin: 0;
     }
 
-    .product-preview__totals {
-      border-top: 1px solid #e1ded2;
-      padding-top: 20px;
-      font-size: 1.35rem;
-      font-weight: 900;
-      color: var(--brand-text);
+    .close-button {
+      width: 42px;
+      font-size: 1.3rem;
     }
 
-    #status,
-    #result {
-      margin-top: 18px;
-      line-height: 1.6;
-    }
-
-    #result {
-      font-weight: 700;
-    }
-
-    .freight-breakdown {
-      margin-top: 18px;
-      border: 1px solid #e1ded2;
-      border-radius: 16px;
+    #reader {
+      min-height: 250px;
       overflow: hidden;
-      background: #fbfaf6;
-      font-weight: 400;
+      border-radius: 8px;
+      background: #101a17;
     }
 
-    .freight-breakdown__row {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 12px;
-      padding: 12px 16px;
-      border-bottom: 1px solid #ece8db;
+    .scanner p {
+      margin: 12px 0 0;
+      color: var(--muted);
+      font-size: 0.9rem;
     }
 
-    .freight-breakdown__row:last-child {
-      border-bottom: none;
-    }
-
-    .freight-breakdown__total {
-      font-weight: 700;
-      background: var(--button-green);
-      color: var(--brand-white);
-      border-bottom: none;
-      padding-block: 16px;
-    }
-
-    .freight-breakdown__meta {
-      color: var(--brand-muted);
-      font-size: 0.92rem;
-      margin-top: 2px;
-    }
-
-    @media (max-width: 640px) {
-      .page-shell {
-        padding: 20px 16px 32px;
-      }
-
-      .hero {
-        padding: 20px;
-      }
-
-      .hero__top {
-        align-items: flex-start;
-        flex-direction: column;
-      }
-
-      .hero h1 {
-        text-align: left;
-      }
+    @media (min-width: 700px) {
+      .topbar { border-radius: 0 0 8px 8px; }
+      .content { padding: 24px 20px 42px; }
+      .results { grid-template-columns: 1fr 1fr; }
     }
   </style>
 </head>
 <body>
-  <main class="page-shell">
-    <section class="hero">
-      <div class="hero__top">
-        <div class="hero__logo">
-          <img src="https://livingculture.co.nz/cdn/shop/files/logo_ec2b0c5e-42ca-4695-8c7e-43b344144c58.png?v=1675047511&width=300" alt="Living Culture logo" />
-        </div>
-        <h1>Freight Costing</h1>
+  <main class="app">
+    <header class="topbar">
+      <div class="topbar__row">
+        <img class="logo" src="https://livingculture.co.nz/cdn/shop/files/logo_ec2b0c5e-42ca-4695-8c7e-43b344144c58.png?v=1675047511&width=300" alt="Living Culture" />
+        <h1>Product<br>Availability</h1>
       </div>
-      <p>Enter one or more SKUs and a complete delivery address, including postcode and New Zealand. The tool will show shipping quotes from the Living Culture checkout flow.</p>
-    </section>
+    </header>
 
-    <section class="card">
-      <div class="form-row">
-        <label>Select Products</label>
+    <section class="content">
+      <section class="tools" aria-label="Product availability search">
+        <h2 class="section-title">Products</h2>
         <div id="skuList">
           <div class="sku-row">
             <div class="sku-search">
-              <input class="sku-input" type="search" autocomplete="off" />
+              <input class="sku-input" type="search" autocomplete="off" placeholder="Enter SKU or scan code" aria-label="Product SKU" />
               <div class="sku-product-suggestions"></div>
             </div>
-            <input class="sku-qty" type="number" min="1" step="1" value="1" aria-label="Quantity" />
-            <button class="sku-remove" type="button" aria-label="Remove SKU" disabled>Remove</button>
+            <input class="qty" type="number" min="1" step="1" value="1" aria-label="Quantity" />
+            <button class="icon-button remove" type="button" aria-label="Remove product" title="Remove product" disabled>&times;</button>
           </div>
         </div>
-        <button id="btnAddSku" class="secondary-button" type="button">Add another SKU</button>
-      </div>
+        <button id="addSku" class="secondary-button" type="button">Add product</button>
+        <div class="actions">
+          <button id="scan" class="scan-button" type="button" title="Scan a QR code or barcode">Scan code</button>
+          <button id="check" class="lookup-button" type="button">Check availability</button>
+        </div>
+        <div id="status" aria-live="polite"></div>
+      </section>
 
-      <div class="form-row">
-        <label for="address">Complete delivery address</label>
-        <input id="address" type="search" autocomplete="off" />
-      </div>
-
-      <button id="btnSuggest" type="button">Use this address</button>
-      <div id="productPreview" class="product-preview"></div>
-      <div id="suggestions"></div>
-      <div id="selectedAddress" class="selected-address"></div>
-      <button id="btnPrice" disabled>Get freight price for selected address</button>
-
-      <div id="status"></div>
-      <div id="result"></div>
-      <div id="addressFields" class="address-fields"></div>
+      <section id="results" class="results" aria-live="polite"></section>
     </section>
   </main>
 
+  <div id="scannerBackdrop" class="scanner-backdrop" role="dialog" aria-modal="true" aria-labelledby="scannerTitle">
+    <div class="scanner">
+      <div class="scanner__head">
+        <h2 id="scannerTitle">Scan product code</h2>
+        <button id="closeScanner" class="close-button" type="button" aria-label="Close scanner">&times;</button>
+      </div>
+      <div id="reader"></div>
+      <p>Point the camera at a QR code or barcode. The scanned SKU is entered automatically.</p>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <script src="main.js"></script>
 </body>
 </html>

@@ -495,14 +495,14 @@ function buildProductFromDetails(details, resolvedUrl, includeMetrics) {
   return product;
 }
 
-async function getProductDetails(page, { productUrl, sku }, { includeMetrics = false } = {}) {
+async function getProductDetails(page, { productUrl, sku }, { includeMetrics = false, forcePage = false } = {}) {
   const cacheKey = makeProductKey({ productUrl, sku });
   const cache = includeMetrics ? productCache : productSummaryCache;
-  if (cache.has(cacheKey)) {
+  if (!forcePage && cache.has(cacheKey)) {
     return cache.get(cacheKey);
   }
 
-  if (includeMetrics && productCache.has(cacheKey)) {
+  if (!forcePage && includeMetrics && productCache.has(cacheKey)) {
     return productCache.get(cacheKey);
   }
 
@@ -1694,6 +1694,71 @@ async function getProductSummaries(itemInput) {
   }
 }
 
+async function getProductAvailability(page, itemInput, timing = createTiming('availability')) {
+  const items = normaliseItems(itemInput);
+  if (!items.length) {
+    throw new Error('At least one SKU is required');
+  }
+
+  const summaries = await getProductSummaries({ items });
+  const products = [];
+  await timing.step('read product action states', async () => {
+    for (const [index, item] of items.entries()) {
+      const product = { ...(await getProductDetails(page, {
+        ...item,
+        productUrl: summaries[index]?.url || item.productUrl
+      }, { forcePage: true })) };
+      product.quantity = item.quantity;
+      products.push(product);
+    }
+  });
+
+  products.forEach(product => {
+    product.requestedQuantity = normaliseQuantity(product.quantity);
+    product.availableQuantity = product.available && !/pre[\s-]?sale|pre[\s-]?order/i.test(product.saleState)
+      ? product.requestedQuantity
+      : 0;
+  });
+
+  const cartProducts = products.filter(product => product.availableQuantity > 0 && product.variantId);
+  if (cartProducts.length) {
+    const cartItems = cartProducts.map(product =>
+      `${product.variantId}:${normaliseQuantity(product.requestedQuantity)}`
+    ).join(',');
+
+    await timing.step('clear cart', async () => {
+      await page.goto('https://livingculture.co.nz/cart/clear.js', {
+        waitUntil: 'domcontentloaded',
+        timeout: 30000
+      }).catch(() => {});
+    });
+
+    await timing.step('check cart availability', async () => {
+      await page.goto(`https://livingculture.co.nz/cart/${cartItems}`, {
+        waitUntil: 'commit',
+        timeout: 30000
+      });
+      await page.waitForLoadState('domcontentloaded', { timeout: 30000 }).catch(() => {});
+      if (/\/stock-problems/.test(page.url())) {
+        await applyAvailableCheckoutQuantities(page, cartProducts);
+      }
+    });
+  }
+
+  return products.map(product => {
+    const requestedQuantity = normaliseQuantity(product.requestedQuantity || product.quantity);
+    const addToCartQuantity = Math.max(0, Number(product.availableQuantity) || 0);
+    const preSaleQuantity = Math.max(0, requestedQuantity - addToCartQuantity);
+
+    return {
+      ...product,
+      quantity: requestedQuantity,
+      addToCartQuantity,
+      preSaleQuantity
+    };
+  });
+}
+
 async function openCheckoutForProducts(page, products, timing = createTiming('checkout')) {
   const cartItems = products.map(product =>
     `${product.variantId}:${normaliseQuantity(product.quantity)}`
@@ -1771,8 +1836,9 @@ async function applyAvailableCheckoutQuantities(page, products) {
 
     const requestedQuantity = Number(match[1]);
     const availableQuantity = Number(match[2]);
-    if (!Number.isFinite(availableQuantity) || availableQuantity < 1) return;
+    if (!Number.isFinite(availableQuantity) || availableQuantity < 0) return;
     product.requestedQuantity = requestedQuantity;
+    product.availableQuantity = availableQuantity;
     product.quantity = availableQuantity;
   });
 }
@@ -2327,6 +2393,23 @@ app.get('/api/product-search', async (req, res) => {
 
   try {
     const products = await searchProducts(query);
+    return res.json({ products });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/availability', async (req, res) => {
+  const { productUrl, sku, skus, items } = req.body;
+  if (!normaliseItems({ productUrl, sku, skus, items }).length) {
+    return res.status(400).json({ error: 'At least one SKU is required' });
+  }
+
+  try {
+    const products = await withAutomationPage('availability', async page => {
+      return getProductAvailability(page, { productUrl, sku, skus, items });
+    });
     return res.json({ products });
   } catch (error) {
     console.error(error);
