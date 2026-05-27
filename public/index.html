@@ -308,6 +308,11 @@
       background: var(--yellow-soft);
     }
 
+    .pill.pending {
+      color: var(--muted);
+      background: #eef2f2;
+    }
+
     .pill.unavailable {
       color: var(--red);
       background: #f8e7e4;
@@ -317,6 +322,66 @@
       color: var(--green);
       font-size: 0.9rem;
       font-weight: 600;
+    }
+
+    .stock {
+      grid-column: 1 / -1;
+      margin-top: 4px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+
+    .stock-title {
+      margin-bottom: 8px;
+      color: var(--green);
+      font-size: 0.88rem;
+      font-weight: 700;
+    }
+
+    .stock-columns,
+    .stock-row {
+      display: grid;
+      grid-template-columns: minmax(72px, 1fr) repeat(4, 47px);
+      align-items: center;
+      gap: 5px;
+      font-size: 0.78rem;
+    }
+
+    .stock-columns {
+      margin-bottom: 5px;
+      color: var(--muted);
+    }
+
+    .stock-columns span:not(:first-child),
+    .stock-row span {
+      text-align: right;
+    }
+
+    .stock-row {
+      padding: 7px 0;
+      border-top: 1px solid #edf2ef;
+      color: var(--muted);
+    }
+
+    .stock-row strong {
+      overflow-wrap: anywhere;
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .stock-positive {
+      color: var(--green);
+      font-weight: 700;
+    }
+
+    .stock-message {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.86rem;
+    }
+
+    .stock-message.error {
+      color: var(--red);
     }
 
     .scanner-backdrop {
