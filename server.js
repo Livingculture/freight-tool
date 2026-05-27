@@ -1726,19 +1726,28 @@ async function openCheckoutForProducts(page, products, timing = createTiming('ch
       await page.waitForLoadState('domcontentloaded', { timeout: 60000 }).catch(() => {});
     }
 
-    if (/\/stock-problems/.test(page.url())) {
-      await applyAvailableCheckoutQuantities(page, products);
-      await Promise.all([
-        page.waitForURL(/\/information/, { timeout: 30000, waitUntil: 'domcontentloaded' }).catch(() => {}),
-        page.locator('button:has-text("Continue"), button[type="submit"]:visible').first().click({ timeout: DEFAULT_WAIT })
-      ]);
-    }
+    await continuePastStockProblems(page, products);
 
     await page.waitForSelector(addressSelector, { timeout: 20000 }).catch(async () => {
+      if (await continuePastStockProblems(page, products)) {
+        await page.waitForSelector(addressSelector, { timeout: 20000 });
+        return;
+      }
       const bodyText = await page.locator('body').innerText({ timeout: 5000 }).catch(() => '');
       throw new Error(`Checkout address field was not available on ${page.url()}: ${bodyText.slice(0, 500)}`);
     });
   });
+}
+
+async function continuePastStockProblems(page, products) {
+  if (!/\/stock-problems/.test(page.url())) return false;
+
+  await applyAvailableCheckoutQuantities(page, products);
+  await Promise.all([
+    page.waitForURL(/\/information/, { timeout: 30000, waitUntil: 'domcontentloaded' }).catch(() => {}),
+    page.locator('button:has-text("Continue"), button[type="submit"]:visible').first().click({ timeout: DEFAULT_WAIT })
+  ]);
+  return true;
 }
 
 async function applyAvailableCheckoutQuantities(page, products) {
