@@ -1726,11 +1726,50 @@ async function openCheckoutForProducts(page, products, timing = createTiming('ch
       await page.waitForLoadState('domcontentloaded', { timeout: 60000 }).catch(() => {});
     }
 
+    if (/\/stock-problems/.test(page.url())) {
+      await applyAvailableCheckoutQuantities(page, products);
+      await Promise.all([
+        page.waitForURL(/\/information/, { timeout: 30000, waitUntil: 'domcontentloaded' }).catch(() => {}),
+        page.locator('button:has-text("Continue"), button[type="submit"]:visible').first().click({ timeout: DEFAULT_WAIT })
+      ]);
+    }
+
     await page.waitForSelector(addressSelector, { timeout: 20000 }).catch(async () => {
       const bodyText = await page.locator('body').innerText({ timeout: 5000 }).catch(() => '');
       throw new Error(`Checkout address field was not available on ${page.url()}: ${bodyText.slice(0, 500)}`);
     });
   });
+}
+
+async function applyAvailableCheckoutQuantities(page, products) {
+  const bodyText = await page.locator('body').innerText({ timeout: DEFAULT_WAIT });
+  const comparableText = normaliseSuggestion(bodyText).toLowerCase();
+
+  products.forEach(product => {
+    const title = normaliseSuggestion(String(product.title || '').replace(/\s+-\s+.*$/, '')).toLowerCase();
+    const titleIndex = title ? comparableText.indexOf(title) : -1;
+    if (titleIndex < 0) return;
+
+    const match = comparableText.slice(titleIndex, titleIndex + title.length + 100)
+      .match(/(\d+)\s*→\s*(\d+)/);
+    if (!match) return;
+
+    const requestedQuantity = Number(match[1]);
+    const availableQuantity = Number(match[2]);
+    if (!Number.isFinite(availableQuantity) || availableQuantity < 1) return;
+    product.requestedQuantity = requestedQuantity;
+    product.quantity = availableQuantity;
+  });
+}
+
+function buildQuantityAdjustments(products = []) {
+  return products
+    .filter(product => Number(product.requestedQuantity) !== Number(product.quantity))
+    .map(product => ({
+      sku: product.sku,
+      requestedQuantity: Number(product.requestedQuantity),
+      availableQuantity: Number(product.quantity)
+    }));
 }
 
 function normaliseSuggestion(text) {
@@ -2294,6 +2333,7 @@ app.post('/api/price', async (req, res) => {
         products: checkout.products,
         cartItems,
         finalCartPrice,
+        quantityAdjustments: buildQuantityAdjustments(checkout.products),
         freightBreakdown: buildFreightBreakdown(checkout.products, result.price)
       };
     });
@@ -2367,6 +2407,7 @@ app.post('/get-freight', async (req, res) => {
         finalCartPrice,
         cartItems,
         products: checkout.products,
+        quantityAdjustments: buildQuantityAdjustments(checkout.products),
         freightBreakdown: buildFreightBreakdown(checkout.products, result.price)
       };
     });

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      5.6-hosted
+// @version      5.7-hosted
 // @description  Living Culture freight panel for Cin7 using the hosted freight service.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -705,11 +705,35 @@
         address
       });
 
+      const adjustments = Array.isArray(data.quantityAdjustments) ? data.quantityAdjustments : [];
+      const availableBySku = new Map(adjustments.map(adjustment => [
+        clean(adjustment.sku).toLowerCase(),
+        normaliseQuantity(adjustment.availableQuantity)
+      ]));
+      const quotedItems = requestedItems.map(item => ({
+        ...item,
+        quantity: availableBySku.get(clean(item.sku).toLowerCase()) || item.quantity
+      }));
+
+      adjustments.forEach(adjustment => {
+        const row = Array.from(document.querySelectorAll('#lc-auto-sku .lc-detected-item'))
+          .find(item => clean(item.dataset.sku).toLowerCase() === clean(adjustment.sku).toLowerCase());
+        const input = row?.querySelector('.lc-detected-qty');
+        if (input) input.value = String(adjustment.availableQuantity);
+      });
+
       setResult(data.price, data.method);
-      setStatus(data.fromCache ? 'Freight loaded from recent lookup.' : 'Freight loaded.');
+      if (adjustments.length) {
+        const changes = adjustments.map(adjustment =>
+          `${adjustment.sku}: ${adjustment.requestedQuantity} -> ${adjustment.availableQuantity}`
+        ).join(', ');
+        setStatus(`Freight loaded for available stock quantities (${changes}).`);
+      } else {
+        setStatus(data.fromCache ? 'Freight loaded from recent lookup.' : 'Freight loaded.');
+      }
 
       // Show quote and product summary now; enrich measurements in the background.
-      loadProductDetails(requestedItems, data.price, data.method, data.products || []);
+      loadProductDetails(quotedItems, data.price, data.method, data.products || []);
 
       return true;
     } catch (error) {
