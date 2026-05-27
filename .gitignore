@@ -9,3 +9,5 @@ test-results/
 user-data/
 moonbag-pro/
 moonbag/
+.vercel
+.env*

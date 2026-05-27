@@ -1,0 +1,16 @@
+node_modules
+dist
+build-resources
+build
+.git
+.vercel
+.env
+.DS_Store
+playwright-report
+test-results
+user-data
+moonbag-pro
+moonbag
+*.zip
+*.dmg
+*.exe
