@@ -176,11 +176,13 @@ async function getCin7ProductAvailability(sku) {
     body = await response.json();
   } catch (error) {
     const raw = await response.text().catch(() => '');
+    const statusInfo = `${response.status} ${response.statusText}`.trim();
+    const contentType = response.headers.get('content-type') || 'unknown';
     const snippet = String(raw || '').replace(/\s+/g, ' ').trim().slice(0, 120);
     if (snippet) {
-      throw new Error(`Cin7 returned a non-JSON response: ${snippet}`);
+      throw new Error(`Cin7 returned non-JSON (${statusInfo}, content-type: ${contentType}): ${snippet}`);
     }
-    throw new Error('Cin7 returned a non-JSON response.');
+    throw new Error(`Cin7 returned non-JSON (${statusInfo}, content-type: ${contentType}) with an empty body.`);
   }
   const records = Array.isArray(body)
     ? body
