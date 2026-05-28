@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.6.0
+// @version      1.7.0
 // @description  Adds a Site Visit button beside Install Fees/Scan, opens editable card popup, then saves to Workflow planner.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -253,6 +253,13 @@
       .find((element) => clean(element.textContent || '').toLowerCase() === label.toLowerCase());
   }
 
+  function findCommentsAnchor() {
+    const headings = Array.from(document.querySelectorAll('legend, label, h1, h2, h3, h4, div, span'))
+      .filter(isVisible)
+      .filter((node) => normalizeLabel(node.textContent || '') === 'comments');
+    return headings[0] || null;
+  }
+
   function readValueNearLabel(labelText) {
     const wanted = normalizeLabel(labelText);
 
@@ -499,10 +506,12 @@
 
   function addButton() {
     if (document.getElementById(BUTTON_ID)) return;
-    const anchor = findButtonByLabel('Install Fees') || findButtonByLabel('Scan');
+    const commentsAnchor = findCommentsAnchor();
+    const installAnchor = findButtonByLabel('Install Fees') || findButtonByLabel('Scan');
+    const anchor = commentsAnchor || installAnchor;
     if (!anchor) return;
 
-    const rect = anchor.getBoundingClientRect();
+    const rect = installAnchor ? installAnchor.getBoundingClientRect() : { height: 34 };
     const button = document.createElement('button');
     button.id = BUTTON_ID;
     button.type = 'button';
@@ -516,7 +525,8 @@
     button.style.cursor = 'pointer';
     button.style.height = `${Math.max(34, rect.height || 34)}px`;
     button.style.lineHeight = '1';
-    button.style.marginLeft = '8px';
+    button.style.marginLeft = commentsAnchor ? '0' : '8px';
+    button.style.marginBottom = commentsAnchor ? '10px' : '0';
     button.style.whiteSpace = 'nowrap';
     button.style.verticalAlign = 'middle';
     button.addEventListener('mouseenter', () => {
@@ -528,7 +538,11 @@
       button.style.borderColor = '#05cbbf';
     });
     button.addEventListener('click', openPanel);
-    anchor.insertAdjacentElement('afterend', button);
+    if (commentsAnchor) {
+      commentsAnchor.insertAdjacentElement('beforebegin', button);
+    } else {
+      anchor.insertAdjacentElement('afterend', button);
+    }
   }
 
   function boot() {
