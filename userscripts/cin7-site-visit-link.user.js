@@ -26,6 +26,14 @@
     return String(value || '').replace(/\s+/g, ' ').trim();
   }
 
+  function normalizeLabel(value) {
+    return clean(value || '')
+      .toLowerCase()
+      .replace(/[*:]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
   function localDateKey(date = new Date()) {
     const y = date.getFullYear();
     const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -48,16 +56,47 @@
   }
 
   function readValueNearLabel(labelText) {
+    const wanted = normalizeLabel(labelText);
+
+    const fieldsets = Array.from(document.querySelectorAll('fieldset'))
+      .filter(isVisible)
+      .filter((fieldset) => {
+        const legend = fieldset.querySelector('legend');
+        return normalizeLabel(legend?.textContent || '') === wanted;
+      });
+
+    for (const fieldset of fieldsets) {
+      const directControl = fieldset.querySelector('input:not([type="hidden"]), textarea, select');
+      if (directControl) {
+        const value = clean(directControl.value || directControl.getAttribute('value') || '');
+        if (value) return value;
+      }
+
+      const displayNode = fieldset.querySelector('.select2-chosen, .chosen-container .chosen-single span, .k-input, .ui-select-match-text');
+      if (displayNode) {
+        const value = clean(displayNode.textContent || '');
+        if (value && value !== 'choose...' && value !== 'type to search...') return value;
+      }
+    }
+
     const labels = Array.from(document.querySelectorAll('label, legend, span, div'))
       .filter(isVisible)
-      .filter((node) => clean(node.textContent || '').toLowerCase() === labelText.toLowerCase());
+      .filter((node) => normalizeLabel(node.textContent || '') === wanted);
+
     for (const label of labels) {
       const root = label.closest('fieldset, .row, .col, .form-group, .input-group, div');
       if (!root) continue;
-      const control = root.querySelector('input, textarea, select');
-      if (!control) continue;
-      const value = control.value || control.getAttribute('value') || '';
-      if (clean(value)) return clean(value);
+      const controls = Array.from(root.querySelectorAll('input:not([type="hidden"]), textarea, select'));
+      for (const control of controls) {
+        const value = clean(control.value || control.getAttribute('value') || '');
+        if (value) return value;
+      }
+
+      const displayNodes = root.querySelectorAll('.select2-chosen, .chosen-container .chosen-single span, .k-input, .ui-select-match-text');
+      for (const node of displayNodes) {
+        const value = clean(node.textContent || '');
+        if (value && value !== 'choose...' && value !== 'type to search...') return value;
+      }
     }
     return '';
   }
