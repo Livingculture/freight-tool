@@ -34,6 +34,59 @@
       .trim();
   }
 
+  function extractOrderId(text) {
+    const match = clean(text).match(/\bNZSO-\d+\b/i);
+    return match ? match[0].toUpperCase() : '';
+  }
+
+  function deriveBranchFromRep(repName) {
+    const raw = clean(repName);
+    const code = raw.split('-')[0].trim().toUpperCase();
+    if (!code) return '';
+    return code;
+  }
+
+  function extractProductLines() {
+    const candidates = [];
+    const selectors = [
+      'input[placeholder*="product" i]',
+      'input[placeholder*="item" i]',
+      'input[placeholder*="description" i]',
+      'textarea[placeholder*="description" i]',
+      'input[name*="product" i]',
+      'input[name*="item" i]',
+      'input[name*="description" i]',
+      'textarea[name*="description" i]'
+    ];
+    document.querySelectorAll(selectors.join(',')).forEach((node) => {
+      if (!isVisible(node)) return;
+      const value = clean(node.value || node.textContent || '');
+      if (!value) return;
+      if (value.toLowerCase() === 'choose...' || value.toLowerCase() === 'type to search...') return;
+      candidates.push(value);
+    });
+    const lineRows = Array.from(document.querySelectorAll('tr, .line-item-row, .k-grid-content tr'));
+    lineRows.forEach((row) => {
+      if (!isVisible(row)) return;
+      const text = clean(row.textContent || '');
+      if (!text) return;
+      if (!/[a-z]{3,}/i.test(text)) return;
+      if (text.length > 200) return;
+      if (/^\d+(\.\d+)?$/.test(text)) return;
+      if (/qty|price|tax|amount/i.test(text) && text.length < 25) return;
+      candidates.push(text);
+    });
+    const uniq = [];
+    const seen = new Set();
+    for (const item of candidates) {
+      const key = item.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      uniq.push(item);
+    }
+    return uniq.slice(0, 8).join(' | ');
+  }
+
   function localDateKey(date = new Date()) {
     const y = date.getFullYear();
     const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -105,23 +158,26 @@
     const address1 = readValueNearLabel('Shipping address line 1') || readValueNearLabel('Billing address line 1');
     const address2 = readValueNearLabel('Shipping address line 2') || readValueNearLabel('Billing address line 2');
     const dateRaw = readValueNearLabel('Date');
+    const reference = readValueNearLabel('Reference');
+    const rep = readValueNearLabel('Sales rep');
     const parsedDate = /^\d{2}\/\d{2}\/\d{4}$/.test(dateRaw)
       ? `${dateRaw.slice(6, 10)}-${dateRaw.slice(3, 5)}-${dateRaw.slice(0, 2)}`
       : localDateKey();
+    const pageOrderId = extractOrderId(document.body ? document.body.innerText : '');
     return {
       status: 'To be confirmed',
       bookedDate: parsedDate,
       time: '',
-      orderId: readValueNearLabel('Reference'),
-      placedBy: readValueNearLabel('Sales rep'),
+      orderId: extractOrderId(reference) || pageOrderId || reference,
+      placedBy: rep,
       visitBy: '',
       customerName: readValueNearLabel('Customer'),
       address: clean(`${address1} ${address2}`),
       phone: readValueNearLabel('Phone'),
       email: readValueNearLabel('Email'),
-      product: '',
+      product: extractProductLines(),
       comments: '',
-      area: '',
+      area: deriveBranchFromRep(rep),
       sourceUrl: window.location.href
     };
   }
@@ -197,7 +253,8 @@
       email: clean(field('lcSvEmail').value),
       product: clean(field('lcSvProduct').value),
       comments: clean(field('lcSvComments').value),
-      area: clean(field('lcSvArea').value),
+      lcBranch: clean(field('lcSvArea').value).toUpperCase(),
+      area: clean(field('lcSvArea').value).toUpperCase(),
       sourceUrl: window.location.href
     };
   }
@@ -252,7 +309,7 @@
           <div class="lc-sv-note">Pre-filled from visible Cin7 fields. Edit anything before saving.</div>
           <div class="lc-sv-grid">
             <div class="lc-sv-field"><label>Status</label><select id="lcSvStatus">${STATUSES.map((s) => `<option>${s}</option>`).join('')}</select></div>
-            <div class="lc-sv-field"><label>Area</label><input id="lcSvArea" /></div>
+            <div class="lc-sv-field"><label>LC Branch</label><input id="lcSvArea" placeholder="AKL / PEN / CHCH / HAM / WHG / NAP" /></div>
           </div>
           <div class="lc-sv-grid">
             <div class="lc-sv-field"><label>Booked Date</label><input id="lcSvDate" type="date" /></div>
