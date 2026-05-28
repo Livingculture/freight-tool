@@ -172,7 +172,7 @@ function renderCin7Stock(stock) {
     return `
       <section class="stock">
         <div class="stock-title">Cin7 location stock</div>
-        <p class="stock-message">Cin7 connection is not available.</p>
+        <p class="stock-message">Cin7 connection is not available (missing CIN7_CORE_ACCOUNT_ID or CIN7_CORE_APPLICATION_KEY).</p>
       </section>
     `;
   }
