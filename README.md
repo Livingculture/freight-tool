@@ -25,7 +25,7 @@ The app will show the product details, estimated weight and CBM, warehouse infor
 The Tampermonkey helpers are installed from GitHub:
 
 ```text
-https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-lc-freight.user.js
+https://raw.githubusercontent.com/Livingculture/freight-tool/freight-mobile/userscripts/cin7-lc-freight.user.js
 https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-quote-memo-info.user.js
 https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-install-fee-helper.user.js
 https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-custom-product-helper.user.js
