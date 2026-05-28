@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.5.0
+// @version      1.6.0
 // @description  Adds a Site Visit button beside Install Fees/Scan, opens editable card popup, then saves to Workflow planner.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -18,6 +18,7 @@
   const BUTTON_ID = 'lc-site-visit-inline-button-v2';
   const OVERLAY_ID = 'lc-site-visit-overlay-v2';
   const WORKFLOW_API_URL = 'https://living-culture-workflow.vercel.app/api/site-visits';
+  const WORKFLOW_PLANNER_URL = 'https://living-culture-workflow.vercel.app/';
   const API_KEY = '';
   const STATUSES = ['To be confirmed', 'Site Visit Confirmed', 'Completed', 'Hold'];
   const VISIT_BY = ['', 'Ian', 'Steve', 'Jaine', 'Vitalii', 'Pakjira', 'Blair', 'James', 'Ian/Steve', 'Ian/Jaine', 'Ian/Vitalii', 'Ian/Pakjira', 'Vitalii/James', 'Blair/James'];
@@ -45,6 +46,15 @@
     const code = raw.split('-')[0].trim().toUpperCase();
     if (!code) return '';
     return code;
+  }
+
+  function openPlannerWithCard(payload) {
+    const params = new URLSearchParams();
+    params.set('planner', 'site-visit');
+    if (payload.lcBranch) params.set('siteVisitBranch', payload.lcBranch);
+    if (payload.bookedDate) params.set('siteVisitDate', payload.bookedDate);
+    if (payload.orderId) params.set('siteVisitOrderId', payload.orderId.toUpperCase());
+    window.open(`${WORKFLOW_PLANNER_URL}?${params.toString()}`, '_blank', 'noopener,noreferrer');
   }
 
   function extractProductLines() {
@@ -420,6 +430,7 @@
         const data = JSON.parse(response.responseText || '{}');
         if (response.status >= 200 && response.status < 300 && data.ok) {
           setMessage('Saved to Site Visit planner.', false);
+          openPlannerWithCard(payload);
           window.setTimeout(closePanel, 700);
         } else {
           setMessage(data.error || `Save failed (${response.status}).`, true);
