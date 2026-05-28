@@ -390,11 +390,23 @@
 
     block.innerHTML = `
       ${activeProducts.map(product => {
-        const quantity = normaliseQuantity(product.quantity);
+        const requestedQuantity = normaliseQuantity(product.requestedQuantity || product.quantity);
+        const addToCartQuantityRaw = normaliseQuantityAllowZero(
+          product.addToCartQuantity != null ? product.addToCartQuantity : product.quantity
+        );
+        const cin7AvailableTotal = Array.isArray(product.cin7Stock?.locations)
+          ? product.cin7Stock.locations.reduce((sum, row) => sum + (Number(row.available) || 0), 0)
+          : 0;
+        const addToCartQuantity = Math.max(
+          0,
+          addToCartQuantityRaw || Math.min(requestedQuantity, cin7AvailableTotal)
+        );
+        const quantity = addToCartQuantity || requestedQuantity;
         const lineWeight = getLineWeight(product, quantity);
         const lineCbm = getLineCbm(product, quantity);
         const cartonCount = getLineCartonCount(product, quantity);
-        const preSaleQuantity = normaliseQuantityAllowZero(product.preSaleQuantity);
+        const preSaleQuantityRaw = normaliseQuantityAllowZero(product.preSaleQuantity);
+        const preSaleQuantity = preSaleQuantityRaw || Math.max(0, requestedQuantity - addToCartQuantity);
         const saleState = product.saleState || (product.available ? 'Add to cart' : 'Unavailable');
         const cin7StockLine = formatCin7StockLine(product.cin7Stock);
         const shippingLine = shippingLocation ? `Ship from: ${shippingLocation}` : '';
@@ -405,9 +417,9 @@
 
         const detailsHtml = detailsLine ? `<div>${escapeHtml(detailsLine)}</div>` : '';
 
-        const quantityLine = `<div>Qty ${quantity} · ${lineWeight.toFixed(2)} kg · ${lineCbm.toFixed(3)} CBM · ${cartonCount} ctns</div>`;
+        const quantityLine = `<div>Qty ${requestedQuantity} · ${lineWeight.toFixed(2)} kg · ${lineCbm.toFixed(3)} CBM · ${cartonCount} ctns</div>`;
         const statusLine = preSaleQuantity
-          ? `<div>Status: ${quantity} add to cart and <strong class="lc-presale-pulse">${preSaleQuantity} PRE-SALE</strong></div>`
+          ? `<div>Status: ${addToCartQuantity} add to cart and <strong class="lc-presale-pulse">${preSaleQuantity} PRE-SALE</strong></div>`
           : `<div>${escapeHtml(`Status: ${saleState}`)}</div>`;
 
         const image = product.image
