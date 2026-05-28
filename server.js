@@ -175,6 +175,11 @@ async function getCin7ProductAvailability(sku) {
   try {
     body = await response.json();
   } catch (error) {
+    const raw = await response.text().catch(() => '');
+    const snippet = String(raw || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+    if (snippet) {
+      throw new Error(`Cin7 returned a non-JSON response: ${snippet}`);
+    }
     throw new Error('Cin7 returned a non-JSON response.');
   }
   const records = Array.isArray(body)
