@@ -171,14 +171,15 @@ async function getCin7ProductAvailability(sku) {
     throw new Error(`Cin7 stock request failed (${response.status}): ${message.slice(0, 120)}`);
   }
 
+  const raw = await response.text().catch(() => '');
+  const statusInfo = `${response.status} ${response.statusText}`.trim();
+  const contentType = response.headers.get('content-type') || 'unknown';
+
   let body;
   try {
-    body = await response.json();
+    body = JSON.parse(raw);
   } catch (error) {
-    const raw = await response.text().catch(() => '');
-    const statusInfo = `${response.status} ${response.statusText}`.trim();
-    const contentType = response.headers.get('content-type') || 'unknown';
-    const snippet = String(raw || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+    const snippet = String(raw || '').replace(/\s+/g, ' ').trim().slice(0, 160);
     if (snippet) {
       throw new Error(`Cin7 returned non-JSON (${statusInfo}, content-type: ${contentType}): ${snippet}`);
     }
