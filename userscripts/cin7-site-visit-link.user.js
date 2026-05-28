@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Living Culture Cin7 Site Visit Card
+// @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.1.0
+// @version      1.2.0
 // @description  Adds a Site Visit button beside Install Fees/Scan, opens editable card popup, then saves to Workflow planner.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -15,8 +15,8 @@
 (function () {
   'use strict';
 
-  const BUTTON_ID = 'lc-site-visit-inline-button';
-  const OVERLAY_ID = 'lc-site-visit-overlay';
+  const BUTTON_ID = 'lc-site-visit-inline-button-v2';
+  const OVERLAY_ID = 'lc-site-visit-overlay-v2';
   const WORKFLOW_API_URL = 'https://living-culture-workflow.vercel.app/api/site-visits';
   const API_KEY = '';
   const STATUSES = ['To be confirmed', 'Site Visit Confirmed', 'Completed', 'Hold'];
