@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      6.4-hosted
+// @version      6.5-hosted
 // @description  Living Culture freight panel for Cin7 using the hosted freight service.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -343,26 +343,6 @@
       .filter(Boolean))).join(' + ');
   }
 
-  function formatCin7StockLine(cin7Stock) {
-    if (!cin7Stock || cin7Stock.connected === false) {
-      return 'Cin7 stock: unavailable';
-    }
-
-    const locations = Array.isArray(cin7Stock.locations) ? cin7Stock.locations : [];
-    if (!locations.length) {
-      return cin7Stock.error ? `Cin7 stock: ${cin7Stock.error}` : 'Cin7 stock: no location data';
-    }
-
-    const summary = locations
-      .filter(location => Number(location.available) > 0)
-      .slice(0, 3)
-      .map(location => `${location.location} ${Number(location.available)}`)
-      .join(' · ');
-
-    if (summary) return `Cin7 stock: ${summary}`;
-    return 'Cin7 stock: out of stock across locations';
-  }
-
   function renderProductDetails(products = [], method = state.method) {
     const block = document.getElementById('lc-product-details');
     if (!block) return;
@@ -390,26 +370,14 @@
 
     block.innerHTML = `
       ${activeProducts.map(product => {
-        const requestedQuantity = normaliseQuantity(product.requestedQuantity || product.quantity);
-        const hasServerAddToCart = product.addToCartQuantity != null;
-        const addToCartQuantityRaw = hasServerAddToCart
-          ? normaliseQuantityAllowZero(product.addToCartQuantity)
-          : 0;
-        const cin7AvailableTotal = Array.isArray(product.cin7Stock?.locations)
-          ? product.cin7Stock.locations.reduce((sum, row) => sum + (Number(row.available) || 0), 0)
-          : 0;
-        const addToCartQuantity = hasServerAddToCart
-          ? Math.max(0, addToCartQuantityRaw)
-          : Math.max(0, Math.min(requestedQuantity, cin7AvailableTotal || requestedQuantity));
-        const quantity = addToCartQuantity || requestedQuantity;
+        const quantity = normaliseQuantity(product.quantity);
+        const requestedQuantity = normaliseQuantity(product.requestedQuantity || quantity);
         const lineWeight = getLineWeight(product, quantity);
         const lineCbm = getLineCbm(product, quantity);
         const cartonCount = getLineCartonCount(product, quantity);
-        const preSaleQuantityRaw = normaliseQuantityAllowZero(product.preSaleQuantity);
-        const preSaleQuantity = preSaleQuantityRaw || Math.max(0, requestedQuantity - addToCartQuantity);
+        const preSaleQuantity = normaliseQuantityAllowZero(product.preSaleQuantity);
         const saleState = product.saleState || (product.available ? 'Add to cart' : 'Unavailable');
-        const cin7StockLine = formatCin7StockLine(product.cin7Stock);
-        const shippingLine = shippingLocation ? `Ship from: ${shippingLocation}` : '';
+        const stock = product.available ? `Stock: ${shippingLocation || 'Available'}` : 'Stock: Unavailable';
 
         const detailsLine = product.metricsLoaded
           ? lineWeight && lineCbm && cartonCount ? '' : 'Some product metrics were not found'
@@ -419,7 +387,7 @@
 
         const quantityLine = `<div>Qty ${requestedQuantity} · ${lineWeight.toFixed(2)} kg · ${lineCbm.toFixed(3)} CBM · ${cartonCount} ctns</div>`;
         const statusLine = preSaleQuantity
-          ? `<div>Status: ${addToCartQuantity} add to cart and <strong class="lc-presale-pulse">${preSaleQuantity} PRE-SALE</strong></div>`
+          ? `<div>Status: ${quantity} add to cart and <strong class="lc-presale-pulse">${preSaleQuantity} PRE-SALE</strong></div>`
           : `<div>${escapeHtml(`Status: ${saleState}`)}</div>`;
 
         const image = product.image
@@ -440,8 +408,7 @@
               ${statusLine}
               ${quantityLine}
               ${detailsHtml}
-              <div>${escapeHtml(cin7StockLine)}</div>
-              ${shippingLine ? `<div>${escapeHtml(shippingLine)}</div>` : ''}
+              <div>${escapeHtml(stock)}</div>
               ${websiteLine}
             </div>
           </div>
