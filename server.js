@@ -2068,14 +2068,40 @@ async function fillManualCheckoutAddress(page, addressText) {
 
 function formatCin7CheckoutAddress(addressText) {
   const address = normaliseSuggestion(String(addressText || ''));
-  const match = address.match(
+  const regionMatch = address.match(
     /^(.*?\b(?:road|rd|street|st|avenue|ave|drive|dr|place|pl|crescent|cres|lane|ln|parade|terrace|tce|close|court|ct|way|highway|hwy))\s+([^,]+),\s*(.+?)\s+([a-z][a-z -]+?)\s+region\s+(\d{4})\s+new zealand$/i
   );
 
-  if (!match) return '';
+  if (regionMatch) {
+    const [, street, suburb, city, , postcode] = regionMatch;
+    return `${street}, ${suburb}, ${city} ${postcode}, New Zealand`;
+  }
 
-  const [, street, suburb, city, , postcode] = match;
+  const cin7Match = address.match(
+    /^(.*?\b(?:road|rd|street|st|avenue|ave|drive|dr|place|pl|crescent|cres|lane|ln|parade|terrace|tce|close|court|ct|way|highway|hwy))\s+([^,]+),\s*(.+?)\s+(\d{4})\s+new zealand$/i
+  );
+
+  if (!cin7Match) return '';
+
+  const [, street, suburb, cityText, postcode] = cin7Match;
+  const city = normaliseRepeatedAddressWords(cityText);
   return `${street}, ${suburb}, ${city} ${postcode}, New Zealand`;
+}
+
+function normaliseRepeatedAddressWords(text) {
+  const words = normaliseSuggestion(String(text || '')).split(' ').filter(Boolean);
+
+  if (words.length % 2 === 0) {
+    const midpoint = words.length / 2;
+    const firstHalf = words.slice(0, midpoint).join(' ').toLowerCase();
+    const secondHalf = words.slice(midpoint).join(' ').toLowerCase();
+
+    if (firstHalf === secondHalf) {
+      return words.slice(0, midpoint).join(' ');
+    }
+  }
+
+  return words.join(' ');
 }
 
 function isPartialStreetAddress(addressText) {

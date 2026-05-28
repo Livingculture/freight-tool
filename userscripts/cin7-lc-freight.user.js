@@ -755,6 +755,14 @@
       return true;
     } catch (error) {
       console.error(error);
+      const fallbackProducts = await pendingProductDetails
+        .then(result => result?.data?.products || [])
+        .catch(() => []);
+
+      if (fallbackProducts.length) {
+        renderProductDetails(mergeProductDetails(requestedItems, fallbackProducts), state.method);
+      }
+
       setStatus(error.message || 'Error getting freight.', true);
       return false;
     }
