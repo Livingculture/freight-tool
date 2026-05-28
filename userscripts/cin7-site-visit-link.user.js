@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.3.0
+// @version      1.4.0
 // @description  Adds a Site Visit button beside Install Fees/Scan, opens editable card popup, then saves to Workflow planner.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -47,44 +47,65 @@
   }
 
   function extractProductLines() {
-    const candidates = [];
-    const selectors = [
-      'input[placeholder*="product" i]',
-      'input[placeholder*="item" i]',
-      'input[placeholder*="description" i]',
-      'textarea[placeholder*="description" i]',
-      'input[name*="product" i]',
-      'input[name*="item" i]',
-      'input[name*="description" i]',
-      'textarea[name*="description" i]'
-    ];
-    document.querySelectorAll(selectors.join(',')).forEach((node) => {
-      if (!isVisible(node)) return;
-      const value = clean(node.value || node.textContent || '');
-      if (!value) return;
-      if (value.toLowerCase() === 'choose...' || value.toLowerCase() === 'type to search...') return;
-      candidates.push(value);
-    });
-    const lineRows = Array.from(document.querySelectorAll('tr, .line-item-row, .k-grid-content tr'));
-    lineRows.forEach((row) => {
-      if (!isVisible(row)) return;
-      const text = clean(row.textContent || '');
-      if (!text) return;
-      if (!/[a-z]{3,}/i.test(text)) return;
-      if (text.length > 200) return;
-      if (/^\d+(\.\d+)?$/.test(text)) return;
-      if (/qty|price|tax|amount/i.test(text) && text.length < 25) return;
-      candidates.push(text);
-    });
-    const uniq = [];
+    const products = [];
+
+    const productHeaders = Array.from(document.querySelectorAll('th, td, div, span'))
+      .filter(isVisible)
+      .filter((node) => normalizeLabel(node.textContent || '') === 'product');
+
+    for (const header of productHeaders) {
+      const table = header.closest('table');
+      if (!table) continue;
+
+      const headerRow = header.closest('tr');
+      if (!headerRow) continue;
+      const headerCells = Array.from(headerRow.children);
+      const productColumnIndex = headerCells.indexOf(header.closest('th, td'));
+      if (productColumnIndex < 0) continue;
+
+      const rows = Array.from(table.querySelectorAll('tbody tr'));
+      for (const row of rows) {
+        if (!isVisible(row)) continue;
+        const cells = Array.from(row.children);
+        if (!cells[productColumnIndex]) continue;
+        const cell = cells[productColumnIndex];
+
+        const anchor = cell.querySelector('a');
+        const raw = clean(anchor ? anchor.textContent : cell.textContent || '');
+        if (!raw) continue;
+        if (/^total:?$/i.test(raw)) continue;
+        if (/add more items|export|import/i.test(raw)) continue;
+        if (/^\d[\d\s,.-]*$/.test(raw)) continue;
+
+        products.push(raw);
+      }
+    }
+
+    // Fallback for editable line inputs if table selectors fail.
+    if (!products.length) {
+      const inputs = document.querySelectorAll(
+        'input[placeholder*="product" i], input[placeholder*="description" i], textarea[placeholder*="description" i]'
+      );
+      inputs.forEach((node) => {
+        if (!isVisible(node)) return;
+        const value = clean(node.value || '');
+        if (!value) return;
+        if (/^total:?$/i.test(value)) return;
+        if (/^\d[\d\s,.-]*$/.test(value)) return;
+        products.push(value);
+      });
+    }
+
+    const unique = [];
     const seen = new Set();
-    for (const item of candidates) {
-      const key = item.toLowerCase();
+    for (const line of products) {
+      const key = line.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
-      uniq.push(item);
+      unique.push(line);
     }
-    return uniq.slice(0, 8).join(' | ');
+
+    return unique.slice(0, 8).join(' | ');
   }
 
   function localDateKey(date = new Date()) {
