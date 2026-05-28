@@ -18,7 +18,7 @@
   const BUTTON_ID = 'lc-site-visit-inline-button';
   const OVERLAY_ID = 'lc-site-visit-overlay';
   const WORKFLOW_API_URL = 'https://living-culture-workflow.vercel.app/api/site-visits';
-  const API_KEY = 'REPLACE_WITH_INSTALLFLOW_TAMPERMONKEY_KEY';
+  const API_KEY = '';
   const STATUSES = ['To be confirmed', 'Site Visit Confirmed', 'Completed', 'Hold'];
   const VISIT_BY = ['', 'Ian', 'Steve', 'Jaine', 'Vitalii', 'Pakjira', 'Blair', 'James', 'Ian/Steve', 'Ian/Jaine', 'Ian/Vitalii', 'Ian/Pakjira', 'Vitalii/James', 'Blair/James'];
 
@@ -170,10 +170,6 @@
 
   function submitSiteVisit(event) {
     event.preventDefault();
-    if (API_KEY === 'REPLACE_WITH_INSTALLFLOW_TAMPERMONKEY_KEY') {
-      setMessage('Set API key inside script first (INSTALLFLOW_TAMPERMONKEY_KEY).', true);
-      return;
-    }
     const payload = readForm();
     if (!payload.customerName && !payload.orderId && !payload.address) {
       setMessage('Add customer, order ID, or address before save.', true);
@@ -181,13 +177,13 @@
     }
     setMessage('Saving site visit card...', false);
 
+    const headers = { 'Content-Type': 'application/json' };
+    if (API_KEY) headers.Authorization = `Bearer ${API_KEY}`;
+
     GM_xmlhttpRequest({
       method: 'POST',
       url: WORKFLOW_API_URL,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${API_KEY}`
-      },
+      headers,
       data: JSON.stringify(payload),
       onload: (response) => {
         const data = JSON.parse(response.responseText || '{}');
