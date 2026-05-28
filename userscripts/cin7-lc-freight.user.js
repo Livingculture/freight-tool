@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      6.3-hosted
+// @version      6.4-hosted
 // @description  Living Culture freight panel for Cin7 using the hosted freight service.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -391,16 +391,16 @@
     block.innerHTML = `
       ${activeProducts.map(product => {
         const requestedQuantity = normaliseQuantity(product.requestedQuantity || product.quantity);
-        const addToCartQuantityRaw = normaliseQuantityAllowZero(
-          product.addToCartQuantity != null ? product.addToCartQuantity : product.quantity
-        );
+        const hasServerAddToCart = product.addToCartQuantity != null;
+        const addToCartQuantityRaw = hasServerAddToCart
+          ? normaliseQuantityAllowZero(product.addToCartQuantity)
+          : 0;
         const cin7AvailableTotal = Array.isArray(product.cin7Stock?.locations)
           ? product.cin7Stock.locations.reduce((sum, row) => sum + (Number(row.available) || 0), 0)
           : 0;
-        const addToCartQuantity = Math.max(
-          0,
-          addToCartQuantityRaw || Math.min(requestedQuantity, cin7AvailableTotal)
-        );
+        const addToCartQuantity = hasServerAddToCart
+          ? Math.max(0, addToCartQuantityRaw)
+          : Math.max(0, Math.min(requestedQuantity, cin7AvailableTotal || requestedQuantity));
         const quantity = addToCartQuantity || requestedQuantity;
         const lineWeight = getLineWeight(product, quantity);
         const lineCbm = getLineCbm(product, quantity);
