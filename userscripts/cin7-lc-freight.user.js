@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      6.1-hosted
+// @version      6.2-hosted
 // @description  Living Culture freight panel for Cin7 using the hosted freight service.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -188,13 +188,14 @@
 
   function getItemsFromCin7() {
     const rawItems = [];
+    const skuPattern = /\b([A-Z]{1,6}\d{3,}(?:-\d+)?)\b/i;
 
     const skuLinks = Array.from(document.querySelectorAll('a'))
       .filter(isVisible)
       .filter(anchor => !isInjectedPanelElement(anchor))
       .map(anchor => {
         const text = clean(anchor.textContent || '');
-        const match = text.match(/^([A-Z]{1,6}\d{3,}(?:-\d+)?)\s*:/i);
+        const match = text.match(/^([A-Z]{1,6}\d{3,}(?:-\d+)?)\s*:/i) || text.match(skuPattern);
 
         if (!match) return null;
 
@@ -210,12 +211,34 @@
     for (const item of skuLinks) {
       rawItems.push({
         sku: item.sku,
-        quantity: 1
+        quantity: normaliseQuantity(item.quantity)
       });
     }
 
+    // Table-row fallback: handles Cin7 layout variants where SKU appears without trailing ":".
     if (!rawItems.length) {
-      const matches = Array.from((document.body.innerText || '').matchAll(/\b([A-Z]{1,6}\d{3,}(?:-\d+)?)\s*:/gi));
+      const rows = Array.from(document.querySelectorAll('table tr'))
+        .filter(isVisible)
+        .filter(row => !isInjectedPanelElement(row));
+
+      for (const row of rows) {
+        const rowText = clean(row.textContent || '');
+        const skuMatch = rowText.match(skuPattern);
+        if (!skuMatch) continue;
+
+        const cells = Array.from(row.querySelectorAll('td,th'));
+        const qtyCell = cells.find(cell => /^\d+$/.test(clean(cell.textContent || '')));
+        const qty = qtyCell ? normaliseQuantity(clean(qtyCell.textContent || '')) : 1;
+
+        rawItems.push({
+          sku: skuMatch[1].toUpperCase(),
+          quantity: qty
+        });
+      }
+    }
+
+    if (!rawItems.length) {
+      const matches = Array.from((document.body.innerText || '').matchAll(/\b([A-Z]{1,6}\d{3,}(?:-\d+)?)\b/gi));
 
       for (const match of matches) {
         rawItems.push({
