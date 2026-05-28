@@ -2753,7 +2753,8 @@ app.post('/api/product-metrics', async (req, res) => {
   }
 
   try {
-    const products = await getProductMetrics({ productUrl, sku, skus, items });
+    const baseProducts = await getProductMetrics({ productUrl, sku, skus, items });
+    const products = await addCin7StockToProducts(baseProducts);
     return res.json({
       products,
       freightBreakdown: price ? buildFreightBreakdown(products, price, itemShipping || []) : null

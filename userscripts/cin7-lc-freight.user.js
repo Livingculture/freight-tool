@@ -343,6 +343,26 @@
       .filter(Boolean))).join(' + ');
   }
 
+  function formatCin7StockLine(cin7Stock) {
+    if (!cin7Stock || cin7Stock.connected === false) {
+      return 'Cin7 stock: unavailable';
+    }
+
+    const locations = Array.isArray(cin7Stock.locations) ? cin7Stock.locations : [];
+    if (!locations.length) {
+      return cin7Stock.error ? `Cin7 stock: ${cin7Stock.error}` : 'Cin7 stock: no location data';
+    }
+
+    const summary = locations
+      .filter(location => Number(location.available) > 0)
+      .slice(0, 3)
+      .map(location => `${location.location} ${Number(location.available)}`)
+      .join(' · ');
+
+    if (summary) return `Cin7 stock: ${summary}`;
+    return 'Cin7 stock: out of stock across locations';
+  }
+
   function renderProductDetails(products = [], method = state.method) {
     const block = document.getElementById('lc-product-details');
     if (!block) return;
@@ -376,7 +396,8 @@
         const cartonCount = getLineCartonCount(product, quantity);
         const preSaleQuantity = normaliseQuantityAllowZero(product.preSaleQuantity);
         const saleState = product.saleState || (product.available ? 'Add to cart' : 'Unavailable');
-        const stock = product.available ? `Stock: ${shippingLocation || 'Available'}` : 'Stock: Unavailable';
+        const cin7StockLine = formatCin7StockLine(product.cin7Stock);
+        const shippingLine = shippingLocation ? `Ship from: ${shippingLocation}` : '';
 
         const detailsLine = product.metricsLoaded
           ? lineWeight && lineCbm && cartonCount ? '' : 'Some product metrics were not found'
@@ -407,7 +428,8 @@
               ${statusLine}
               ${quantityLine}
               ${detailsHtml}
-              <div>${escapeHtml(stock)}</div>
+              <div>${escapeHtml(cin7StockLine)}</div>
+              ${shippingLine ? `<div>${escapeHtml(shippingLine)}</div>` : ''}
               ${websiteLine}
             </div>
           </div>
