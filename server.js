@@ -2510,9 +2510,14 @@ app.post('/api/availability', async (req, res) => {
   try {
     let products;
     try {
-      products = await withAutomationPage('availability', async page => {
-        return getProductAvailability(page, { productUrl, sku, skus, items });
-      });
+      products = await Promise.race([
+        withAutomationPage('availability', async page => {
+          return getProductAvailability(page, { productUrl, sku, skus, items });
+        }),
+        new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Website availability lookup timed out after 30s.')), 30000);
+        })
+      ]);
     } catch (error) {
       console.error('Website availability lookup failed; returning Cin7 stock only:', error.message);
       const productSummaries = await getProductSummaries({ productUrl, sku, skus, items }).catch(() =>
