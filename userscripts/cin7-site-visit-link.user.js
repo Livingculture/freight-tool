@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.4.0
+// @version      1.5.0
 // @description  Adds a Site Visit button beside Install Fees/Scan, opens editable card popup, then saves to Workflow planner.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -21,6 +21,7 @@
   const API_KEY = '';
   const STATUSES = ['To be confirmed', 'Site Visit Confirmed', 'Completed', 'Hold'];
   const VISIT_BY = ['', 'Ian', 'Steve', 'Jaine', 'Vitalii', 'Pakjira', 'Blair', 'James', 'Ian/Steve', 'Ian/Jaine', 'Ian/Vitalii', 'Ian/Pakjira', 'Vitalii/James', 'Blair/James'];
+  let apiProductCache = [];
 
   function clean(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
@@ -47,6 +48,8 @@
   }
 
   function extractProductLines() {
+    if (apiProductCache.length) return apiProductCache.join(' | ');
+
     const products = [];
 
     const productHeaders = Array.from(document.querySelectorAll('th, td, div, span'))
@@ -106,6 +109,117 @@
     }
 
     return unique.slice(0, 8).join(' | ');
+  }
+
+  function collectProductCandidatesFromObject(node, out) {
+    if (!node) return;
+    if (Array.isArray(node)) {
+      node.forEach((item) => collectProductCandidatesFromObject(item, out));
+      return;
+    }
+    if (typeof node !== 'object') return;
+
+    const keys = Object.keys(node);
+    const keySet = new Set(keys.map((key) => key.toLowerCase()));
+    const possibleLine =
+      keySet.has('product') ||
+      keySet.has('productname') ||
+      keySet.has('itemname') ||
+      keySet.has('name') ||
+      keySet.has('description') ||
+      keySet.has('itemdescription');
+
+    if (possibleLine) {
+      const candidates = [
+        node.ProductName,
+        node.Product,
+        node.ItemName,
+        node.Name,
+        node.Description,
+        node.ItemDescription,
+        node.Comment
+      ];
+      candidates.forEach((raw) => {
+        const value = clean(raw);
+        if (!value) return;
+        if (/^total:?$/i.test(value)) return;
+        if (/^\d[\d\s,.-]*$/.test(value)) return;
+        if (/tax|discount|subtotal|total/i.test(value) && value.length < 30) return;
+        if (!/[a-z]/i.test(value)) return;
+        out.push(value);
+      });
+    }
+
+    keys.forEach((key) => {
+      collectProductCandidatesFromObject(node[key], out);
+    });
+  }
+
+  function extractProductsFromApiPayload(payload) {
+    const candidates = [];
+    collectProductCandidatesFromObject(payload, candidates);
+    const unique = [];
+    const seen = new Set();
+    for (const line of candidates) {
+      const key = line.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(line);
+    }
+    return unique.slice(0, 8);
+  }
+
+  function inspectApiTextForProducts(text) {
+    if (!text || typeof text !== 'string') return;
+    if (text.length < 5 || text[0] !== '{' && text[0] !== '[') return;
+    try {
+      const json = JSON.parse(text);
+      const products = extractProductsFromApiPayload(json);
+      if (products.length) apiProductCache = products;
+    } catch (error) {
+      // Not JSON payload
+    }
+  }
+
+  function hookNetworkForProductLines() {
+    const nativeFetch = window.fetch;
+    if (nativeFetch && !window.__lcSiteVisitFetchHooked) {
+      window.__lcSiteVisitFetchHooked = true;
+      window.fetch = async function patchedFetch(...args) {
+        const response = await nativeFetch.apply(this, args);
+        try {
+          const url = String((args[0] && args[0].url) || args[0] || '');
+          if (/sale|quote|order|advancedsale/i.test(url)) {
+            response.clone().text().then(inspectApiTextForProducts).catch(() => {});
+          }
+        } catch (error) {
+          // ignore
+        }
+        return response;
+      };
+    }
+
+    if (!window.__lcSiteVisitXhrHooked) {
+      window.__lcSiteVisitXhrHooked = true;
+      const open = XMLHttpRequest.prototype.open;
+      const send = XMLHttpRequest.prototype.send;
+      XMLHttpRequest.prototype.open = function patchedOpen(method, url, ...rest) {
+        this.__lcReqUrl = String(url || '');
+        return open.call(this, method, url, ...rest);
+      };
+      XMLHttpRequest.prototype.send = function patchedSend(...args) {
+        this.addEventListener('load', function onLoad() {
+          try {
+            if (!/sale|quote|order|advancedsale/i.test(this.__lcReqUrl || '')) return;
+            if (typeof this.responseText !== 'string') return;
+            inspectApiTextForProducts(this.responseText);
+          } catch (error) {
+            // ignore
+          }
+        });
+        return send.apply(this, args);
+      };
+    }
   }
 
   function localDateKey(date = new Date()) {
@@ -418,6 +532,8 @@
   } else {
     boot();
   }
+
+  hookNetworkForProductLines();
 
   const observer = new MutationObserver(() => addButton());
   observer.observe(document.documentElement, { childList: true, subtree: true });
