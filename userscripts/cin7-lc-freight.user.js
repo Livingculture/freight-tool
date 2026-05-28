@@ -9,8 +9,8 @@
 // @match        *://*.cin7core.com/*
 // @match        *://*.dearsystems.com/*
 // @match        https://inventory.dearsystems.com/*
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/freight-mobile/userscripts/cin7-lc-freight.user.js
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/freight-mobile/userscripts/cin7-lc-freight.user.js
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-lc-freight.user.js
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-lc-freight.user.js
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
 // @grant        none
