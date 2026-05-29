@@ -2738,7 +2738,7 @@ app.post('/get-freight', async (req, res) => {
         quantityAdjustments: buildQuantityAdjustments(checkout.products),
         freightBreakdown: buildFreightBreakdown(checkout.products, result.price)
       };
-    });
+    }, 55000);
 
     cacheFreightQuote(cacheKey, payload);
     return res.json(payload);
