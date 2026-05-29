@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      6.5-hosted
+// @version      6.6-hosted
 // @description  Living Culture freight panel for Cin7 using the hosted freight service.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -35,6 +35,7 @@
     excludedSkus: new Set(),
     freightCache: new Map()
   };
+  const IGNORED_SKU_PREFIXES = new Set(['AS']);
 
   function clean(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
@@ -76,6 +77,11 @@
       }))
       .filter(item => item.sku || item.productUrl)
       .filter(item => item.quantity > 0);
+  }
+
+  function isFreightSku(sku) {
+    const prefix = String(sku || '').match(/^[A-Z]+/)?.[0] || '';
+    return Boolean(sku) && !IGNORED_SKU_PREFIXES.has(prefix);
   }
 
   function isVisible(element) {
@@ -188,14 +194,15 @@
 
   function getItemsFromCin7() {
     const rawItems = [];
-    const skuPattern = /\b([A-Z]{1,6}\d{3,}(?:-\d+)?)\b/i;
+    const skuPattern = /\b([A-Z]{2,6}\d{3,}(?:-\d+)?)\b/i;
+    const hasFreightItems = () => rawItems.some(item => isFreightSku(item.sku));
 
     const skuLinks = Array.from(document.querySelectorAll('a'))
       .filter(isVisible)
       .filter(anchor => !isInjectedPanelElement(anchor))
       .map(anchor => {
         const text = clean(anchor.textContent || '');
-        const match = text.match(/^([A-Z]{1,6}\d{3,}(?:-\d+)?)\s*:/i) || text.match(skuPattern);
+        const match = text.match(/^([A-Z]{2,6}\d{3,}(?:-\d+)?)\s*:/i) || text.match(skuPattern);
 
         if (!match) return null;
 
@@ -216,7 +223,7 @@
     }
 
     // Table-row fallback: handles Cin7 layout variants where SKU appears without trailing ":".
-    if (!rawItems.length) {
+    if (!hasFreightItems()) {
       const rows = Array.from(document.querySelectorAll('table tr'))
         .filter(isVisible)
         .filter(row => !isInjectedPanelElement(row));
@@ -237,8 +244,8 @@
       }
     }
 
-    if (!rawItems.length) {
-      const matches = Array.from((document.body.innerText || '').matchAll(/\b([A-Z]{1,6}\d{3,}(?:-\d+)?)\b/gi));
+    if (!hasFreightItems()) {
+      const matches = Array.from((document.body.innerText || '').matchAll(/\b([A-Z]{2,6}\d{3,}(?:-\d+)?)\b/gi));
 
       for (const match of matches) {
         rawItems.push({
@@ -251,6 +258,7 @@
     const grouped = new Map();
 
     for (const item of rawItems) {
+      if (!isFreightSku(item.sku)) continue;
       const current = grouped.get(item.sku) || 0;
       grouped.set(item.sku, current + normaliseQuantity(item.quantity));
     }
