@@ -2146,18 +2146,24 @@ function updateCookieHeader(cookieHeader, headers) {
     .join('; ');
 }
 
+function getStorefrontHeaders(cookieHeader = '', hasBody = false) {
+  return {
+    Accept: 'application/json',
+    'Accept-Language': 'en-NZ,en;q=0.9',
+    Origin: 'https://livingculture.co.nz',
+    Referer: 'https://livingculture.co.nz/',
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
+    ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
+    ...(cookieHeader ? { Cookie: cookieHeader } : {})
+  };
+}
+
 async function requestShopifyCartJson(path, options = {}, cookieHeader = '') {
   const response = await fetch(`https://livingculture.co.nz${path}`, {
     ...options,
     signal: options.signal || AbortSignal.timeout(25000),
     headers: {
-      Accept: 'application/json',
-      'Accept-Language': 'en-NZ,en;q=0.9',
-      Origin: 'https://livingculture.co.nz',
-      Referer: 'https://livingculture.co.nz/',
-      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
-      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-      ...(cookieHeader ? { Cookie: cookieHeader } : {}),
+      ...getStorefrontHeaders(cookieHeader, Boolean(options.body)),
       ...(options.headers || {})
     }
   });
@@ -2171,7 +2177,7 @@ async function requestShopifyCartJson(path, options = {}, cookieHeader = '') {
   return { data, cookieHeader: nextCookieHeader };
 }
 
-async function prepareFastCartShipping(itemInput, addressText, timing = createTiming('fast freight')) {
+async function prepareFastCartShipping(itemInput, addressText, timing = createTiming('fast freight'), { checkAvailability = true } = {}) {
   const fields = parseNewZealandAddress(addressText);
   if (!fields) {
     throw new Error('Fast freight needs a complete New Zealand address');
@@ -2181,25 +2187,33 @@ async function prepareFastCartShipping(itemInput, addressText, timing = createTi
     return getProductSummaries(itemInput);
   });
 
-  await timing.step('check fast cart availability', async () => {
-    products.forEach(product => {
-      product.requestedQuantity = normaliseQuantity(product.quantity);
-      product.availableQuantity = product.available && !/pre[\s-]?sale|pre[\s-]?order/i.test(product.saleState)
-        ? product.requestedQuantity
-        : 0;
-    });
-
-    await applyCartAddAvailability(products);
-
-    products.forEach(product => {
-      const availableQuantity = Math.max(0, Math.min(
-        normaliseQuantity(product.requestedQuantity || product.quantity),
-        Number(product.availableQuantity) || 0
-      ));
-      product.quantity = availableQuantity;
-      product.availableQuantity = availableQuantity;
-    });
+  products.forEach(product => {
+    product.requestedQuantity = normaliseQuantity(product.quantity);
+    product.availableQuantity = product.available && !/pre[\s-]?sale|pre[\s-]?order/i.test(product.saleState)
+      ? product.requestedQuantity
+      : 0;
   });
+
+  if (checkAvailability) {
+    await timing.step('check fast cart availability', async () => {
+      await applyCartAddAvailability(products);
+
+      products.forEach(product => {
+        const availableQuantity = Math.max(0, Math.min(
+          normaliseQuantity(product.requestedQuantity || product.quantity),
+          Number(product.availableQuantity) || 0
+        ));
+        product.quantity = availableQuantity;
+        product.availableQuantity = availableQuantity;
+      });
+    });
+  } else {
+    products.forEach(product => {
+      product.quantity = normaliseQuantity(product.quantity);
+      product.availableQuantity = normaliseQuantity(product.quantity);
+    });
+  }
+
 
   const cartItems = products.map(product => ({
     id: product.variantId,
@@ -2221,11 +2235,45 @@ async function getDirectCartShippingQuote(cartItems, fields) {
   }, cookieHeader);
   cookieHeader = cleared.cookieHeader;
 
-  const added = await requestShopifyCartJson('/cart/add.js', {
-    method: 'POST',
-    body: JSON.stringify({ items: cartItems })
-  }, cookieHeader);
-  cookieHeader = added.cookieHeader;
+  const addItemsToCart = async itemsToAdd => {
+    const response = await fetch('https://livingculture.co.nz/cart/add.js', {
+      method: 'POST',
+      signal: AbortSignal.timeout(25000),
+      headers: getStorefrontHeaders(cookieHeader, true),
+      body: JSON.stringify({ items: itemsToAdd })
+    });
+    cookieHeader = updateCookieHeader(cookieHeader, response.headers);
+    const data = await response.json().catch(() => ({}));
+    return { response, data };
+  };
+
+  let added = await addItemsToCart(cartItems);
+
+  if (!added.response.ok) {
+    const message = `${added.data.message || ''} ${added.data.description || ''}`;
+    const partialMatch = cartItems.length === 1
+      ? message.match(/only\s+(\d+)\s+items?\s+were\s+added/i)
+      : null;
+
+    if (!partialMatch) {
+      throw new Error(added.data.description || added.data.message || `Cart add failed (${added.response.status})`);
+    }
+
+    const partialQuantity = Math.max(0, Math.min(cartItems[0].quantity, Number(partialMatch[1]) || 0));
+    if (!partialQuantity) {
+      throw new Error(added.data.description || added.data.message || `Cart add failed (${added.response.status})`);
+    }
+
+    await requestShopifyCartJson('/cart/clear.js', { method: 'POST' }, cookieHeader)
+      .then(result => {
+        cookieHeader = result.cookieHeader;
+      });
+    added = await addItemsToCart([{ ...cartItems[0], quantity: partialQuantity }]);
+
+    if (!added.response.ok) {
+      throw new Error(added.data.description || added.data.message || `Cart add failed (${added.response.status})`);
+    }
+  }
 
   const params = new URLSearchParams();
   params.set('shipping_address[address1]', fields.address1 || '');
@@ -2266,6 +2314,21 @@ async function getDirectCartShippingQuote(cartItems, fields) {
 }
 
 function buildFastCartShippingResult(result, products, addressText) {
+  const cartQuantityBySku = new Map((result.cartItems || [])
+    .filter(item => item.sku)
+    .map(item => [String(item.sku).toLowerCase(), normaliseQuantity(item.quantity)]));
+  const quotedProducts = products.map(product => {
+    const cartQuantity = cartQuantityBySku.get(String(product.sku || '').toLowerCase());
+    if (cartQuantity == null) return product;
+
+    return {
+      ...product,
+      quantity: cartQuantity,
+      availableQuantity: cartQuantity,
+      requestedQuantity: normaliseQuantity(product.requestedQuantity || product.quantity)
+    };
+  });
+
   return {
     ...result,
     selectedAddress: addressText,
@@ -2273,16 +2336,18 @@ function buildFastCartShippingResult(result, products, addressText) {
       label: 'address',
       value: addressText
     }],
-    products,
+    products: quotedProducts,
     finalCartPrice: calculateFinalCartPrice(
-      enrichCartItemsWithProducts(result.cartItems || [], products),
+      enrichCartItemsWithProducts(result.cartItems || [], quotedProducts),
       result.price
     )
   };
 }
 
 async function getDirectFastCartShippingQuote(itemInput, addressText, timing = createTiming('direct freight')) {
-  const { fields, products, cartItems } = await prepareFastCartShipping(itemInput, addressText, timing);
+  const { fields, products, cartItems } = await prepareFastCartShipping(itemInput, addressText, timing, {
+    checkAvailability: false
+  });
   const result = await timing.step('read direct cart shipping rates', () =>
     getDirectCartShippingQuote(cartItems, fields)
   );
