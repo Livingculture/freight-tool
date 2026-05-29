@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      6.9-hosted
+// @version      7.0-hosted
 // @description  Living Culture freight panel for Cin7 using the hosted freight service.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -363,7 +363,9 @@
       return;
     }
 
-    const activeProducts = products.filter(product => normaliseQuantityAllowZero(product.quantity) > 0);
+    const activeProducts = products.filter(product =>
+      normaliseQuantityAllowZero(product.requestedQuantity || product.quantity) > 0
+    );
 
     if (!activeProducts.length) {
       block.classList.add('is-visible');
@@ -380,12 +382,18 @@
 
     block.innerHTML = `
       ${activeProducts.map(product => {
-        const quantity = normaliseQuantity(product.quantity);
-        const requestedQuantity = normaliseQuantity(product.requestedQuantity || quantity);
+        const requestedQuantity = normaliseQuantity(product.requestedQuantity || product.quantity);
+        const preSaleQuantity = normaliseQuantityAllowZero(
+          product.preSaleQuantity ??
+          (product.addToCartQuantity != null ? requestedQuantity - Number(product.addToCartQuantity) : 0)
+        );
+        const addToCartQuantity = product.addToCartQuantity != null
+          ? normaliseQuantityAllowZero(product.addToCartQuantity)
+          : Math.max(0, requestedQuantity - preSaleQuantity);
+        const quantity = preSaleQuantity ? addToCartQuantity : normaliseQuantity(product.quantity);
         const lineWeight = getLineWeight(product, quantity);
         const lineCbm = getLineCbm(product, quantity);
         const cartonCount = getLineCartonCount(product, quantity);
-        const preSaleQuantity = normaliseQuantityAllowZero(product.preSaleQuantity);
         const saleState = product.saleState || (product.available ? 'Add to cart' : 'Unavailable');
         const stock = product.available ? `Stock: ${shippingLocation || 'Available'}` : 'Stock: Unavailable';
 
@@ -468,6 +476,22 @@
 
     if (!response.ok) {
       throw new Error(data.error || 'Product details unavailable');
+    }
+
+    return data;
+  }
+
+  async function requestProductAvailability(items) {
+    const response = await fetch(`${API_BASE}/api/availability`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items })
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Product availability unavailable');
     }
 
     return data;
@@ -754,6 +778,7 @@
   async function getAndApplyFreight({ sku, items, address, fill }) {
     let requestedItems = [];
     let pendingProductDetails = Promise.resolve({ data: { products: [] } });
+    let pendingAvailabilityDetails = Promise.resolve({ data: { products: [] } });
 
     try {
       setStatus('Getting freight...');
@@ -768,14 +793,20 @@
       }
 
       renderProductDetails(requestedItems, state.method);
+      let pendingDisplayProducts = requestedItems;
+      const applyPendingProducts = products => {
+        if (!products?.length) return;
+        pendingDisplayProducts = mergeProductDetails(pendingDisplayProducts, products);
+        renderProductDetails(pendingDisplayProducts, state.method);
+      };
       pendingProductDetails = requestProductDetails(requestedItems)
         .then(data => ({ data }))
         .catch(error => ({ error }));
-      pendingProductDetails.then(result => {
-        if (result?.data?.products?.length) {
-          renderProductDetails(mergeProductDetails(requestedItems, result.data.products), state.method);
-        }
-      });
+      pendingAvailabilityDetails = requestProductAvailability(requestedItems)
+        .then(data => ({ data }))
+        .catch(error => ({ error }));
+      pendingProductDetails.then(result => applyPendingProducts(result?.data?.products || []));
+      pendingAvailabilityDetails.then(result => applyPendingProducts(result?.data?.products || []));
 
       const data = await requestFreight({
         sku,
@@ -816,12 +847,17 @@
       return true;
     } catch (error) {
       console.error(error);
-      const fallbackProducts = await pendingProductDetails
-        .then(result => result?.data?.products || [])
-        .catch(() => []);
+      const [detailsResult, availabilityResult] = await Promise.all([
+        pendingProductDetails.catch(() => ({})),
+        pendingAvailabilityDetails.catch(() => ({}))
+      ]);
+      const fallbackProducts = mergeProductDetails(
+        mergeProductDetails(requestedItems, detailsResult?.data?.products || []),
+        availabilityResult?.data?.products || []
+      );
 
       if (fallbackProducts.length) {
-        renderProductDetails(mergeProductDetails(requestedItems, fallbackProducts), state.method);
+        renderProductDetails(fallbackProducts, state.method);
       }
 
       setStatus(error.message || 'Error getting freight.', true);
