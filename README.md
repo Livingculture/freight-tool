@@ -32,6 +32,7 @@ https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/ci
 https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js
 https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js
 https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/livingculture-copy-sku.user.js
+https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/luxiliving-copy-sku.user.js
 ```
 
 Install each link once in Tampermonkey on every computer. After that, Tampermonkey checks GitHub for script updates automatically because the scripts include `@updateURL` and `@downloadURL`.
