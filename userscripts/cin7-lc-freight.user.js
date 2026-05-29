@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      7.0-hosted
+// @version      7.1-hosted
 // @description  Living Culture freight panel for Cin7 using the hosted freight service.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -195,7 +195,8 @@
 
   function getItemsFromCin7() {
     const rawItems = [];
-    const skuPattern = /\b([A-Z]{2,6}\d{3,}(?:-\d+)?)\b/i;
+    const skuPattern = /\b([A-Z]{2,6}\d{3,}(?:-\d+)?(?:\([A-Z0-9-]+\))?)/i;
+    const skuAtStartPattern = /^([A-Z]{2,6}\d{3,}(?:-\d+)?(?:\([A-Z0-9-]+\))?)\s*:/i;
     const hasFreightItems = () => rawItems.some(item => isFreightSku(item.sku));
 
     const skuLinks = Array.from(document.querySelectorAll('a'))
@@ -203,7 +204,7 @@
       .filter(anchor => !isInjectedPanelElement(anchor))
       .map(anchor => {
         const text = clean(anchor.textContent || '');
-        const match = text.match(/^([A-Z]{2,6}\d{3,}(?:-\d+)?)\s*:/i) || text.match(skuPattern);
+        const match = text.match(skuAtStartPattern) || text.match(skuPattern);
 
         if (!match) return null;
 
@@ -246,7 +247,7 @@
     }
 
     if (!hasFreightItems()) {
-      const matches = Array.from((document.body.innerText || '').matchAll(/\b([A-Z]{2,6}\d{3,}(?:-\d+)?)\b/gi));
+      const matches = Array.from((document.body.innerText || '').matchAll(/\b([A-Z]{2,6}\d{3,}(?:-\d+)?(?:\([A-Z0-9-]+\))?)/gi));
 
       for (const match of matches) {
         rawItems.push({
