@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Installation Fee Helper
 // @namespace    livingculture-cin7
-// @version      3.0
+// @version      3.1
 // @description  Shows Living Culture installation fee SKUs and prices inside Cin7 for quick add. Loads Google Sheet pricing with built-in fallback.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
@@ -21,8 +21,8 @@
   // The Google Sheet must be accessible/published enough for the browser to read it.
   const REMOTE_DATA_URL = 'https://docs.google.com/spreadsheets/d/1rf8L1DDLwE6GQuFFarxMlcA1rUjRVVxKJwsLL6htDOY/edit?gid=1998708271#gid=1998708271';
 
-  const CACHE_KEY = 'lc-install-fee-data-v3';
-  const CACHE_TIME_KEY = 'lc-install-fee-data-time-v3';
+  const CACHE_KEY = 'lc-install-fee-data-v4';
+  const CACHE_TIME_KEY = 'lc-install-fee-data-time-v4';
 
   const RAW_DATA = `
 Product Code	Name	Price
@@ -177,12 +177,16 @@ AS10139	Assembly Roosevelt Motorised Sliding Gate & Post with Post with Bury int
     if (!lines.length) return [];
 
     const delimiter = lines[0].includes('\t') ? '\t' : ',';
+    const rows = lines.map(line => delimiter === '\t' ? line.split('\t') : parseCsvLine(line));
+    const headerIndex = rows.findIndex(row =>
+      /^product\s*code$/i.test(clean(row[0])) &&
+      /^name$/i.test(clean(row[1])) &&
+      /^price$/i.test(clean(row[2]))
+    );
+    const dataRows = rows.slice(headerIndex >= 0 ? headerIndex + 1 : 1);
 
-    return lines
-      .slice(1)
-      .map(line => {
-        const parts = delimiter === '\t' ? line.split('\t') : parseCsvLine(line);
-
+    return dataRows
+      .map(parts => {
         return {
           code: clean(parts[0]),
           name: clean(parts[1]),
@@ -236,7 +240,7 @@ AS10139	Assembly Roosevelt Motorised Sliding Gate & Post with Post with Bury int
     setSourceLabel('Loading Google Sheet pricing...');
 
     try {
-      const response = await fetch(remoteUrl, {
+      const response = await fetch(`${remoteUrl}${remoteUrl.includes('?') ? '&' : '?'}lc_cache_bust=${Date.now()}`, {
         cache: 'no-store',
         credentials: 'omit'
       });
