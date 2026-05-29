@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      7.3-hosted
+// @version      7.4-hosted
 // @description  Living Culture freight panel for Cin7 using the hosted freight service.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -33,7 +33,8 @@
     lastAutoKey: '',
     queuedAutoKey: '',
     excludedSkus: new Set(),
-    freightCache: new Map()
+    freightCache: new Map(),
+    lookupSeq: 0
   };
   const IGNORED_SKU_PREFIXES = new Set(['AS']);
   const FREIGHT_TIMEOUT_MS = 45000;
@@ -346,6 +347,39 @@
       : weightKg * quantity;
   }
 
+  function getProductRequestedQuantity(product) {
+    return normaliseQuantity(product.requestedQuantity || product.quantity);
+  }
+
+  function getProductAddToCartQuantity(product) {
+    const requestedQuantity = getProductRequestedQuantity(product);
+    const preSaleQuantity = normaliseQuantityAllowZero(
+      product.preSaleQuantity ??
+      (product.addToCartQuantity != null ? requestedQuantity - Number(product.addToCartQuantity) : 0)
+    );
+
+    return product.addToCartQuantity != null
+      ? normaliseQuantityAllowZero(product.addToCartQuantity)
+      : Math.max(0, requestedQuantity - preSaleQuantity);
+  }
+
+  function getProductPreSaleQuantity(product) {
+    const requestedQuantity = getProductRequestedQuantity(product);
+
+    return normaliseQuantityAllowZero(
+      product.preSaleQuantity ??
+      (product.addToCartQuantity != null ? requestedQuantity - Number(product.addToCartQuantity) : 0)
+    );
+  }
+
+  function getProductQuoteQuantity(product) {
+    const preSaleQuantity = getProductPreSaleQuantity(product);
+
+    return preSaleQuantity
+      ? getProductAddToCartQuantity(product)
+      : normaliseQuantity(product.quantity);
+  }
+
   function getShippingLocation(method) {
     const match = String(method || '').match(/Ship from\s+([^\n$]+)/i);
     if (!match) return '';
@@ -377,24 +411,21 @@
       return;
     }
 
-    const totalWeightKg = activeProducts.reduce((total, product) => total + getLineWeight(product), 0);
-    const totalCbm = activeProducts.reduce((total, product) => total + getLineCbm(product), 0);
-    const totalCartons = activeProducts.reduce((total, product) => total + getLineCartonCount(product), 0);
+    const totalWeightKg = activeProducts.reduce((total, product) =>
+      total + getLineWeight(product, getProductQuoteQuantity(product)), 0);
+    const totalCbm = activeProducts.reduce((total, product) =>
+      total + getLineCbm(product, getProductQuoteQuantity(product)), 0);
+    const totalCartons = activeProducts.reduce((total, product) =>
+      total + getLineCartonCount(product, getProductQuoteQuantity(product)), 0);
     const shippingLocation = getShippingLocation(method);
 
     block.classList.add('is-visible');
 
     block.innerHTML = `
       ${activeProducts.map(product => {
-        const requestedQuantity = normaliseQuantity(product.requestedQuantity || product.quantity);
-        const preSaleQuantity = normaliseQuantityAllowZero(
-          product.preSaleQuantity ??
-          (product.addToCartQuantity != null ? requestedQuantity - Number(product.addToCartQuantity) : 0)
-        );
-        const addToCartQuantity = product.addToCartQuantity != null
-          ? normaliseQuantityAllowZero(product.addToCartQuantity)
-          : Math.max(0, requestedQuantity - preSaleQuantity);
-        const quantity = preSaleQuantity ? addToCartQuantity : normaliseQuantity(product.quantity);
+        const requestedQuantity = getProductRequestedQuantity(product);
+        const preSaleQuantity = getProductPreSaleQuantity(product);
+        const quantity = getProductQuoteQuantity(product);
         const lineWeight = getLineWeight(product, quantity);
         const lineCbm = getLineCbm(product, quantity);
         const cartonCount = getLineCartonCount(product, quantity);
@@ -513,7 +544,14 @@
     return data;
   }
 
-  async function loadProductDetails(items, price, method, fallbackProducts = [], pendingProductDetails = null) {
+  async function loadProductDetails(
+    items,
+    price,
+    method,
+    fallbackProducts = [],
+    pendingProductDetails = null,
+    shouldRender = () => true
+  ) {
     const requestedItems = normaliseFreightItems({ items });
 
     const itemsWithUrls = mergeProductDetails(requestedItems, fallbackProducts)
@@ -522,17 +560,21 @@
         productUrl: item.productUrl || item.url || ''
       }));
 
+    if (!shouldRender()) return;
     renderProductDetails(itemsWithUrls, method);
 
     if (!requestedItems.length) return;
 
     try {
       const pendingResult = pendingProductDetails ? await pendingProductDetails : null;
+      if (!shouldRender()) return;
       if (pendingResult?.error) throw pendingResult.error;
       const data = pendingResult?.data || await requestProductDetails(itemsWithUrls, price);
 
+      if (!shouldRender()) return;
       renderProductDetails(mergeProductDetails(itemsWithUrls, data.products || fallbackProducts), method);
     } catch (error) {
+      if (!shouldRender()) return;
       console.error(error);
 
       if (!fallbackProducts.length) {
@@ -795,6 +837,9 @@
     let requestedItems = [];
     let pendingProductDetails = Promise.resolve({ data: { products: [] } });
     let pendingAvailabilityDetails = Promise.resolve({ data: { products: [] } });
+    const lookupSeq = state.lookupSeq + 1;
+    state.lookupSeq = lookupSeq;
+    const isCurrentLookup = () => lookupSeq === state.lookupSeq;
 
     try {
       setStatus('Getting freight...');
@@ -808,10 +853,11 @@
         return false;
       }
 
+      setResult('', '');
       renderProductDetails(requestedItems, state.method);
       let pendingDisplayProducts = requestedItems;
       const applyPendingProducts = products => {
-        if (!products?.length) return;
+        if (!isCurrentLookup() || !products?.length) return;
         pendingDisplayProducts = mergeProductDetails(pendingDisplayProducts, products);
         renderProductDetails(pendingDisplayProducts, state.method);
       };
@@ -829,6 +875,8 @@
         items: requestedItems,
         address
       });
+
+      if (!isCurrentLookup()) return false;
 
       const adjustments = Array.isArray(data.quantityAdjustments) ? data.quantityAdjustments : [];
       const adjustmentBySku = new Map(adjustments.map(adjustment => [
@@ -858,15 +906,27 @@
       }
 
       // Show quote and product summary now; enrich measurements in the background.
-      loadProductDetails(quotedItems, data.price, data.method, data.products || [], pendingProductDetails);
+      loadProductDetails(
+        quotedItems,
+        data.price,
+        data.method,
+        data.products || [],
+        pendingProductDetails,
+        isCurrentLookup
+      );
 
       return true;
     } catch (error) {
+      if (!isCurrentLookup()) return false;
+
       console.error(error);
       const [detailsResult, availabilityResult] = await Promise.all([
         pendingProductDetails.catch(() => ({})),
         pendingAvailabilityDetails.catch(() => ({}))
       ]);
+
+      if (!isCurrentLookup()) return false;
+
       const fallbackProducts = mergeProductDetails(
         mergeProductDetails(requestedItems, detailsResult?.data?.products || []),
         availabilityResult?.data?.products || []
