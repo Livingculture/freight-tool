@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      7.1-hosted
+// @version      7.2-hosted
 // @description  Living Culture freight panel for Cin7 using the hosted freight service.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -140,6 +140,7 @@
     const text = clean(value);
     return text.length >= 5 &&
       !/^(?:on|off|yes|no|\+|-)$/i.test(text) &&
+      !/^(?:on|off|yes|no)(?:\s*,\s*(?:on|off|yes|no))*$/i.test(text) &&
       !/^Shipping address line/i.test(text) &&
       /[a-z0-9]/i.test(text);
   }
@@ -275,15 +276,17 @@
     const line1 = getAddressLineByLabel('Shipping address line 1') || getFieldValueByLabel('Shipping address line 1');
     const line2 = getAddressLineByLabel('Shipping address line 2') || getFieldValueByLabel('Shipping address line 2');
 
-    return clean([line1, line2].filter(Boolean).join(', '));
+    return clean([line1, line2].filter(isAddressLike).join(', '));
   }
 
   function getAddressSearchFromCin7() {
-    return clean(
+    const address = clean(
       getAddressLineByLabel('Shipping address line 1') ||
       getFieldValueByLabel('Shipping address line 1') ||
       getAddressFromCin7()
     );
+
+    return isAddressLike(address) ? address : '';
   }
 
   function setStatus(message, isError = false) {

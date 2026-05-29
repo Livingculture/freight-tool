@@ -1293,8 +1293,9 @@ function parseGrossWeightKg(descriptionHtml) {
   const lines = descriptionToLines(descriptionHtml);
   const packageQuantities = parsePackageContents(descriptionHtml);
   const weights = [];
+  const labelledGrossWeightsOnly = [];
   const weightPattern = /(\d+(?:\.\d+)?)\s*kgs?\b/gi;
-  const stopPattern = /^(?:product dimensions?|package\s*(?:dimensions?|size)|packaging\s*dimensions?|packing\s*size|carton\s*dimensions?|specifications?|features?|good to know|care|assembly|materials?|colour|warranty)\b/i;
+  const stopPattern = /^(?:product dimensions?|package\s*(?:contents|dimensions?|size)|packaging\s*dimensions?|packing\s*size|carton\s*dimensions?|specifications?|features?|good to know|care|assembly|materials?|colour|warranty)\b/i;
   let inWeightSection = false;
 
   for (const line of lines) {
@@ -1311,7 +1312,7 @@ function parseGrossWeightKg(descriptionHtml) {
     if (labelledGrossWeights.length) {
       for (const match of labelledGrossWeights) {
         const label = getLineLabelBeforeMatch(line, match.index);
-        weights.push(Number(match[1]) * getPackageQuantity(packageQuantities, label));
+        labelledGrossWeightsOnly.push(Number(match[1]) * getPackageQuantity(packageQuantities, label));
       }
       continue;
     }
@@ -1323,6 +1324,11 @@ function parseGrossWeightKg(descriptionHtml) {
       const label = getLineLabelBeforeMatch(line, grossIndex >= 0 ? grossIndex + match.index : match.index);
       weights.push(Number(match[1]) * getPackageQuantity(packageQuantities, label));
     }
+  }
+
+  if (labelledGrossWeightsOnly.length) {
+    const totalWeight = labelledGrossWeightsOnly.reduce((total, weight) => total + weight, 0);
+    return totalWeight ? roundNumber(totalWeight, 2) : null;
   }
 
   if (!weights.length) {
