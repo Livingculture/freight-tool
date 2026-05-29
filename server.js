@@ -1897,6 +1897,32 @@ async function getProductSummaries(itemInput) {
   }
 }
 
+async function hydrateProductsWithMetrics(products = []) {
+  return Promise.all(products.map(async product => {
+    try {
+      const loaded = await getProductDetailsFast({
+        productUrl: product.url || product.productUrl,
+        sku: product.sku
+      }, { includeMetrics: true });
+
+      return {
+        ...product,
+        ...loaded,
+        quantity: product.quantity,
+        requestedQuantity: product.requestedQuantity,
+        availableQuantity: product.availableQuantity,
+        addToCartQuantity: product.addToCartQuantity,
+        preSaleQuantity: product.preSaleQuantity,
+        saleState: product.saleState || loaded.saleState,
+        available: product.available ?? loaded.available
+      };
+    } catch (error) {
+      console.error(`Metric hydration failed for ${product.sku || product.url}:`, error.message);
+      return product;
+    }
+  }));
+}
+
 async function getProductAvailability(page, itemInput, timing = createTiming('availability')) {
   const items = normaliseItems(itemInput);
   if (!items.length) {
@@ -2952,7 +2978,7 @@ app.post('/api/price', async (req, res) => {
         scheduleCheckoutCleanup();
       }
 
-      const products = result.products || checkout?.products || [];
+      const products = await hydrateProductsWithMetrics(result.products || checkout?.products || []);
       const cartItems = enrichCartItemsWithProducts(result.cartItems || [], products);
       const finalCartPrice = result.finalCartPrice || calculateFinalCartPrice(cartItems, result.price);
 
@@ -3033,7 +3059,7 @@ app.post('/get-freight', async (req, res) => {
         scheduleCheckoutCleanup();
       }
 
-      const products = result.products || checkout?.products || [];
+      const products = await hydrateProductsWithMetrics(result.products || checkout?.products || []);
       const cartItems = enrichCartItemsWithProducts(result.cartItems || [], products);
       const finalCartPrice = result.finalCartPrice || calculateFinalCartPrice(cartItems, result.price);
 
