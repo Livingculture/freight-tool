@@ -71,6 +71,9 @@ let automationQueue = Promise.resolve();
 const ADDRESS_INPUT_SELECTORS = [
   '#shipping-address1:visible',
   'input[name="address1"]:visible',
+  'input[autocomplete="shipping address-line1"]:visible',
+  'input[autocomplete="address-line1"]:visible',
+  'input[data-address-field="address1"]:visible',
   'input[autocomplete*="address"]',
   'input[placeholder*="address" i]',
   'input[name*="address" i]',
@@ -266,7 +269,10 @@ function isTransientNavigationError(error) {
 }
 
 function isRetryableCheckoutError(error) {
-  return isClosedBrowserError(error) || isTransientNavigationError(error);
+  return isClosedBrowserError(error) ||
+    isTransientNavigationError(error) ||
+    /ERR_INSUFFICIENT_RESOURCES|Checkout address field was not available|element is not enabled/i
+      .test(String(error?.message || error || ''));
 }
 
 function clearCheckoutReference() {
@@ -2092,14 +2098,16 @@ async function openCheckoutForProducts(page, products, timing = createTiming('ch
     }
 
     await continuePastStockProblems(page, products);
+    await fillCheckoutBasics(page);
 
-    await page.waitForSelector(addressSelector, { timeout: 20000 }).catch(async () => {
+    await page.waitForSelector(addressSelector, { timeout: 35000 }).catch(async () => {
       if (await continuePastStockProblems(page, products)) {
-        await page.waitForSelector(addressSelector, { timeout: 20000 });
+        await fillCheckoutBasics(page);
+        await page.waitForSelector(addressSelector, { timeout: 35000 });
         return;
       }
-      const bodyText = await page.locator('body').innerText({ timeout: 5000 }).catch(() => '');
-      throw new Error(`Checkout address field was not available on ${page.url()}: ${bodyText.slice(0, 500)}`);
+      const diagnostics = await readCheckoutDiagnostics(page);
+      throw new Error(`Checkout address field was not available on ${page.url()}: ${JSON.stringify(diagnostics)}`);
     });
   });
 }
@@ -2141,6 +2149,7 @@ function updateCookieHeader(cookieHeader, headers) {
 async function requestShopifyCartJson(path, options = {}, cookieHeader = '') {
   const response = await fetch(`https://livingculture.co.nz${path}`, {
     ...options,
+    signal: options.signal || AbortSignal.timeout(25000),
     headers: {
       Accept: 'application/json',
       'Accept-Language': 'en-NZ,en;q=0.9',
@@ -2160,6 +2169,48 @@ async function requestShopifyCartJson(path, options = {}, cookieHeader = '') {
   }
 
   return { data, cookieHeader: nextCookieHeader };
+}
+
+async function prepareFastCartShipping(itemInput, addressText, timing = createTiming('fast freight')) {
+  const fields = parseNewZealandAddress(addressText);
+  if (!fields) {
+    throw new Error('Fast freight needs a complete New Zealand address');
+  }
+
+  const products = await timing.step('resolve SKU fast shipping', async () => {
+    return getProductSummaries(itemInput);
+  });
+
+  await timing.step('check fast cart availability', async () => {
+    products.forEach(product => {
+      product.requestedQuantity = normaliseQuantity(product.quantity);
+      product.availableQuantity = product.available && !/pre[\s-]?sale|pre[\s-]?order/i.test(product.saleState)
+        ? product.requestedQuantity
+        : 0;
+    });
+
+    await applyCartAddAvailability(products);
+
+    products.forEach(product => {
+      const availableQuantity = Math.max(0, Math.min(
+        normaliseQuantity(product.requestedQuantity || product.quantity),
+        Number(product.availableQuantity) || 0
+      ));
+      product.quantity = availableQuantity;
+      product.availableQuantity = availableQuantity;
+    });
+  });
+
+  const cartItems = products.map(product => ({
+    id: product.variantId,
+    quantity: Math.max(0, Number(product.availableQuantity) || 0)
+  })).filter(item => item.id && item.quantity > 0);
+
+  if (!cartItems.length) {
+    throw new Error('Fast freight could not resolve in-stock variant quantities');
+  }
+
+  return { fields, products, cartItems };
 }
 
 async function getDirectCartShippingQuote(cartItems, fields) {
@@ -2214,44 +2265,37 @@ async function getDirectCartShippingQuote(cartItems, fields) {
   };
 }
 
+function buildFastCartShippingResult(result, products, addressText) {
+  return {
+    ...result,
+    selectedAddress: addressText,
+    addressFields: [{
+      label: 'address',
+      value: addressText
+    }],
+    products,
+    finalCartPrice: calculateFinalCartPrice(
+      enrichCartItemsWithProducts(result.cartItems || [], products),
+      result.price
+    )
+  };
+}
+
+async function getDirectFastCartShippingQuote(itemInput, addressText, timing = createTiming('direct freight')) {
+  const { fields, products, cartItems } = await prepareFastCartShipping(itemInput, addressText, timing);
+  const result = await timing.step('read direct cart shipping rates', () =>
+    getDirectCartShippingQuote(cartItems, fields)
+  );
+
+  if (!result.price) {
+    throw new Error('Direct cart freight did not return a price');
+  }
+
+  return buildFastCartShippingResult(result, products, addressText);
+}
+
 async function getFastCartShippingQuote(page, itemInput, addressText, timing = createTiming('fast freight')) {
-  const fields = parseNewZealandAddress(addressText);
-  if (!fields) {
-    throw new Error('Fast freight needs a complete New Zealand address');
-  }
-
-  const products = await timing.step('resolve SKU fast shipping', async () => {
-    return getProductSummaries(itemInput);
-  });
-
-  await timing.step('check fast cart availability', async () => {
-    products.forEach(product => {
-      product.requestedQuantity = normaliseQuantity(product.quantity);
-      product.availableQuantity = product.available && !/pre[\s-]?sale|pre[\s-]?order/i.test(product.saleState)
-        ? product.requestedQuantity
-        : 0;
-    });
-
-    await applyCartAddAvailability(products);
-
-    products.forEach(product => {
-      const availableQuantity = Math.max(0, Math.min(
-        normaliseQuantity(product.requestedQuantity || product.quantity),
-        Number(product.availableQuantity) || 0
-      ));
-      product.quantity = availableQuantity;
-      product.availableQuantity = availableQuantity;
-    });
-  });
-
-  const cartItems = products.map(product => ({
-    id: product.variantId,
-    quantity: Math.max(0, Number(product.availableQuantity) || 0)
-  })).filter(item => item.id && item.quantity > 0);
-
-  if (!cartItems.length) {
-    throw new Error('Fast freight could not resolve in-stock variant quantities');
-  }
+  const { fields, products, cartItems } = await prepareFastCartShipping(itemInput, addressText, timing);
 
   try {
     const result = await timing.step('read direct cart shipping rates', () =>
@@ -2262,19 +2306,7 @@ async function getFastCartShippingQuote(page, itemInput, addressText, timing = c
       throw new Error('Direct cart freight did not return a price');
     }
 
-    return {
-      ...result,
-      selectedAddress: addressText,
-      addressFields: [{
-        label: 'address',
-        value: addressText
-      }],
-      products,
-      finalCartPrice: calculateFinalCartPrice(
-        enrichCartItemsWithProducts(result.cartItems || [], products),
-        result.price
-      )
-    };
+    return buildFastCartShippingResult(result, products, addressText);
   } catch (error) {
     console.error('Direct cart freight failed, using browser cart:', error.message);
   }
@@ -2360,23 +2392,31 @@ async function getFastCartShippingQuote(page, itemInput, addressText, timing = c
     throw new Error('Fast freight did not return a price');
   }
 
-  return {
-    ...result,
-    selectedAddress: addressText,
-    addressFields: [{
-      label: 'address',
-      value: addressText
-    }],
-    products,
-    finalCartPrice: calculateFinalCartPrice(
-      enrichCartItemsWithProducts(result.cartItems || [], products),
-      result.price
-    )
-  };
+  return buildFastCartShippingResult(result, products, addressText);
 }
 
 function isFastFreightError(error) {
   return /Fast freight|Cart clear|Cart add|Shipping rates|No shipping rates|storefront/i.test(error?.message || '');
+}
+
+async function buildFreightResponsePayload(result, fallbackSku = '') {
+  const products = await hydrateProductsWithMetrics(result.products || []);
+  const cartItems = enrichCartItemsWithProducts(result.cartItems || [], products);
+  const finalCartPrice = result.finalCartPrice || calculateFinalCartPrice(cartItems, result.price);
+
+  return {
+    ...result,
+    sku: products?.[0]?.sku || fallbackSku || '',
+    skus: products?.map(product => product.sku).filter(Boolean) || [],
+    price: result.price,
+    priceNumber: parseMoneyToCents(result.price) / 100,
+    finalCartPrice,
+    cartItems,
+    products,
+    quantityAdjustments: buildQuantityAdjustments(products),
+    freightBreakdown: buildFreightBreakdown(products, result.price),
+    preSaleFreightEstimate: buildPreSaleFreightEstimate(products, result.price)
+  };
 }
 
 async function continuePastStockProblems(page, products) {
@@ -2414,13 +2454,22 @@ async function applyAvailableCheckoutQuantities(page, products) {
 
 function buildQuantityAdjustments(products = []) {
   return products
-    .filter(product => Number(product.requestedQuantity) !== Number(product.quantity))
-    .map(product => ({
-      sku: product.sku,
-      requestedQuantity: Number(product.requestedQuantity),
-      availableQuantity: Number(product.quantity),
-      preSaleQuantity: Math.max(0, Number(product.requestedQuantity) - Number(product.quantity))
-    }));
+    .map(product => {
+      const requestedQuantity = Number(product.requestedQuantity);
+      const availableQuantity = Number(product.quantity);
+
+      return {
+        sku: product.sku,
+        requestedQuantity,
+        availableQuantity,
+        preSaleQuantity: Math.max(0, requestedQuantity - availableQuantity)
+      };
+    })
+    .filter(adjustment =>
+      Number.isFinite(adjustment.requestedQuantity) &&
+      Number.isFinite(adjustment.availableQuantity) &&
+      adjustment.requestedQuantity !== adjustment.availableQuantity
+    );
 }
 
 function normaliseSuggestion(text) {
@@ -2891,6 +2940,38 @@ async function fillCheckoutBasics(page) {
   }
 }
 
+async function readCheckoutDiagnostics(page) {
+  const bodyText = await page.locator('body').innerText({ timeout: 5000 }).catch(() => '');
+  const visibleInputs = await page.$$eval('input, textarea, select, button', nodes =>
+    Array.from(nodes)
+      .filter(node => {
+        const rect = node.getBoundingClientRect();
+        const style = window.getComputedStyle(node);
+        return rect.width > 0 &&
+          rect.height > 0 &&
+          style.display !== 'none' &&
+          style.visibility !== 'hidden';
+      })
+      .slice(0, 25)
+      .map(node => ({
+        tag: node.tagName.toLowerCase(),
+        type: node.getAttribute('type') || '',
+        name: node.getAttribute('name') || '',
+        id: node.id || '',
+        autocomplete: node.getAttribute('autocomplete') || '',
+        placeholder: node.getAttribute('placeholder') || '',
+        ariaLabel: node.getAttribute('aria-label') || '',
+        disabled: Boolean(node.disabled),
+        text: (node.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80)
+      }))
+  ).catch(() => []);
+
+  return {
+    text: normaliseSuggestion(bodyText).slice(0, 700),
+    visibleInputs
+  };
+}
+
 app.post('/api/suggestions', async (req, res) => {
   const { productUrl, sku, skus, items, address } = req.body;
   if (!normaliseItems({ productUrl, sku, skus, items }).length || !address) {
@@ -3038,6 +3119,15 @@ app.post('/api/price', async (req, res) => {
   }
 
   try {
+    try {
+      const directResult = await getDirectFastCartShippingQuote({ productUrl, sku, skus, items }, freightAddress, createTiming('api price direct'));
+      const directPayload = await buildFreightResponsePayload(directResult, sku);
+      cacheFreightQuote(cacheKey, directPayload);
+      return res.json(directPayload);
+    } catch (directError) {
+      console.error('Direct freight price failed, using browser fallback:', directError.message);
+    }
+
     const payload = await withAutomationPage('api price', async page => {
       const timing = createTiming('api price');
       let result;
@@ -3065,19 +3155,10 @@ app.post('/api/price', async (req, res) => {
         scheduleCheckoutCleanup();
       }
 
-      const products = await hydrateProductsWithMetrics(result.products || checkout?.products || []);
-      const cartItems = enrichCartItemsWithProducts(result.cartItems || [], products);
-      const finalCartPrice = result.finalCartPrice || calculateFinalCartPrice(cartItems, result.price);
-
-      return {
+      return buildFreightResponsePayload({
         ...result,
-        products,
-        cartItems,
-        finalCartPrice,
-        quantityAdjustments: buildQuantityAdjustments(products),
-        freightBreakdown: buildFreightBreakdown(products, result.price),
-        preSaleFreightEstimate: buildPreSaleFreightEstimate(products, result.price)
-      };
+        products: result.products || checkout?.products || []
+      }, sku);
     });
 
     cacheFreightQuote(cacheKey, payload);
@@ -3119,6 +3200,15 @@ app.post('/get-freight', async (req, res) => {
   }
 
   try {
+    try {
+      const directResult = await getDirectFastCartShippingQuote({ items }, freightAddress, createTiming('get freight direct'));
+      const directPayload = await buildFreightResponsePayload(directResult, sku);
+      cacheFreightQuote(cacheKey, directPayload);
+      return res.json(directPayload);
+    } catch (directError) {
+      console.error('Direct Cin7 freight failed, using browser fallback:', directError.message);
+    }
+
     const payload = await withAutomationPage('get freight', async page => {
       const timing = createTiming('get freight');
       let result;
@@ -3146,24 +3236,11 @@ app.post('/get-freight', async (req, res) => {
         scheduleCheckoutCleanup();
       }
 
-      const products = await hydrateProductsWithMetrics(result.products || checkout?.products || []);
-      const cartItems = enrichCartItemsWithProducts(result.cartItems || [], products);
-      const finalCartPrice = result.finalCartPrice || calculateFinalCartPrice(cartItems, result.price);
-
-      return {
+      return buildFreightResponsePayload({
         ...result,
-        sku: products?.[0]?.sku || sku || '',
-        skus: products?.map(product => product.sku).filter(Boolean) || [],
-        price: result.price,
-        priceNumber: parseMoneyToCents(result.price) / 100,
-        finalCartPrice,
-        cartItems,
-        products,
-        quantityAdjustments: buildQuantityAdjustments(products),
-        freightBreakdown: buildFreightBreakdown(products, result.price),
-        preSaleFreightEstimate: buildPreSaleFreightEstimate(products, result.price)
-      };
-    });
+        products: result.products || checkout?.products || []
+      }, sku);
+    }, 55000);
 
     cacheFreightQuote(cacheKey, payload);
     return res.json(payload);
