@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      7.4-hosted
+// @version      7.5-hosted
 // @description  Living Culture freight panel for Cin7 using the hosted freight service.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -300,20 +300,33 @@
     status.classList.toggle('is-loading', Boolean(message && !isError && /getting|loading|reading|updating/i.test(message)));
   }
 
-  function setResult(price, method = '') {
+  function setResult(price, method = '', preSaleFreightEstimate = null) {
     state.price = price || '';
     state.priceNumber = moneyToNumber(price);
     state.method = method || '';
 
     const result = document.getElementById('lc-freight-result');
     const methodBlock = document.getElementById('lc-freight-method');
+    const preSaleBlock = document.getElementById('lc-presale-freight-estimate');
 
     if (result) {
-      result.textContent = price ? `Freight: ${price}` : 'Freight: -';
+      result.textContent = price ? `Freight now: ${price}` : 'Freight: -';
     }
 
     if (methodBlock) {
       methodBlock.textContent = method || '';
+    }
+
+    if (preSaleBlock) {
+      if (preSaleFreightEstimate?.price) {
+        preSaleBlock.innerHTML = `
+          <div><strong>Estimated pre-sale freight later: ${escapeHtml(preSaleFreightEstimate.price)}</strong></div>
+          ${preSaleFreightEstimate.total ? `<div>Estimated total freight: ${escapeHtml(preSaleFreightEstimate.total)}</div>` : ''}
+          ${preSaleFreightEstimate.note ? `<div class="lc-freight-note">${escapeHtml(preSaleFreightEstimate.note)}</div>` : ''}
+        `;
+      } else {
+        preSaleBlock.innerHTML = '';
+      }
     }
   }
 
@@ -417,6 +430,12 @@
       total + getLineCbm(product, getProductQuoteQuantity(product)), 0);
     const totalCartons = activeProducts.reduce((total, product) =>
       total + getLineCartonCount(product, getProductQuoteQuantity(product)), 0);
+    const totalPreSaleWeightKg = activeProducts.reduce((total, product) =>
+      total + getLineWeight(product, getProductPreSaleQuantity(product)), 0);
+    const totalPreSaleCbm = activeProducts.reduce((total, product) =>
+      total + getLineCbm(product, getProductPreSaleQuantity(product)), 0);
+    const totalPreSaleCartons = activeProducts.reduce((total, product) =>
+      total + getLineCartonCount(product, getProductPreSaleQuantity(product)), 0);
     const shippingLocation = getShippingLocation(method);
 
     block.classList.add('is-visible');
@@ -429,6 +448,9 @@
         const lineWeight = getLineWeight(product, quantity);
         const lineCbm = getLineCbm(product, quantity);
         const cartonCount = getLineCartonCount(product, quantity);
+        const preSaleWeight = getLineWeight(product, preSaleQuantity);
+        const preSaleCbm = getLineCbm(product, preSaleQuantity);
+        const preSaleCartons = getLineCartonCount(product, preSaleQuantity);
         const saleState = product.saleState || (product.available ? 'Add to cart' : 'Unavailable');
         const stock = product.available ? `Stock: ${shippingLocation || 'Available'}` : 'Stock: Unavailable';
 
@@ -442,7 +464,13 @@
             : `<div class="lc-loading-line"><span class="lc-spinner" aria-hidden="true"></span>${escapeHtml(detailsLine)}</div>`
           : '';
 
-        const quantityLine = `<div>Qty ${requestedQuantity} · ${lineWeight.toFixed(2)} kg · ${lineCbm.toFixed(3)} CBM · ${cartonCount} ctns</div>`;
+        const quantityLine = preSaleQuantity
+          ? `
+            <div>Qty ${requestedQuantity}</div>
+            <div>Ship now: ${lineWeight.toFixed(2)} kg · ${lineCbm.toFixed(3)} CBM · ${cartonCount} ctns</div>
+            <div>Pre-sale later: ${preSaleWeight.toFixed(2)} kg · ${preSaleCbm.toFixed(3)} CBM · ${preSaleCartons} ctns</div>
+          `
+          : `<div>Qty ${requestedQuantity} · ${lineWeight.toFixed(2)} kg · ${lineCbm.toFixed(3)} CBM · ${cartonCount} ctns</div>`;
         const statusLine = preSaleQuantity
           ? `<div>Status: ${quantity} add to cart and <strong class="lc-presale-pulse">${preSaleQuantity} PRE-SALE</strong></div>`
           : `<div>${escapeHtml(`Status: ${saleState}`)}</div>`;
@@ -473,9 +501,15 @@
       }).join('')}
 
       <div class="lc-product-totals">
-        Total weight: ${totalWeightKg ? totalWeightKg.toFixed(2) : '0.00'} kg ·
+        Ship now total: ${totalWeightKg ? totalWeightKg.toFixed(2) : '0.00'} kg ·
         Est CBM: ${totalCbm ? totalCbm.toFixed(3) : '0.000'} ·
         Ctns: ${totalCartons || 0}
+        ${totalPreSaleCartons ? `
+          <br>
+          Pre-sale later total: ${totalPreSaleWeightKg.toFixed(2)} kg ·
+          Est CBM: ${totalPreSaleCbm.toFixed(3)} ·
+          Ctns: ${totalPreSaleCartons}
+        ` : ''}
       </div>
     `;
   }
@@ -898,7 +932,7 @@
         };
       });
 
-      setResult(data.price, data.method);
+      setResult(data.price, data.method, data.preSaleFreightEstimate);
       if (adjustments.length) {
         setStatus('');
       } else {
@@ -1185,6 +1219,7 @@
       <div class="lc-block lc-result-block">
         <div id="lc-freight-result">Freight: -</div>
         <div id="lc-freight-method"></div>
+        <div id="lc-presale-freight-estimate"></div>
       </div>
 
       <div id="lc-product-details" class="lc-block"></div>
@@ -1388,13 +1423,24 @@
       }
 
       #lc-freight-result,
-      #lc-freight-method {
+      #lc-freight-method,
+      #lc-presale-freight-estimate {
         grid-column: 1 / -1;
       }
 
       #lc-freight-result {
         font-weight: 800;
         font-size: 16px;
+      }
+
+      #lc-presale-freight-estimate {
+        display: grid;
+        gap: 3px;
+        color: #405f54;
+      }
+
+      .lc-freight-note {
+        font-size: 11px;
       }
 
       .lc-presale-pulse {
