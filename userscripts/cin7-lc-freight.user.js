@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      6.7-hosted
+// @version      6.8-hosted
 // @description  Living Culture freight panel for Cin7 using the hosted freight service.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -747,10 +747,13 @@
   }
 
   async function getAndApplyFreight({ sku, items, address, fill }) {
+    let requestedItems = [];
+    let pendingProductDetails = Promise.resolve({ data: { products: [] } });
+
     try {
       setStatus('Getting freight...');
 
-      const requestedItems = normaliseFreightItems({ sku, items });
+      requestedItems = normaliseFreightItems({ sku, items });
 
       if (!requestedItems.length) {
         setResult('', '');
@@ -760,9 +763,14 @@
       }
 
       renderProductDetails(requestedItems, state.method);
-      const pendingProductDetails = requestProductDetails(requestedItems)
+      pendingProductDetails = requestProductDetails(requestedItems)
         .then(data => ({ data }))
         .catch(error => ({ error }));
+      pendingProductDetails.then(result => {
+        if (result?.data?.products?.length) {
+          renderProductDetails(mergeProductDetails(requestedItems, result.data.products), state.method);
+        }
+      });
 
       const data = await requestFreight({
         sku,
@@ -803,6 +811,14 @@
       return true;
     } catch (error) {
       console.error(error);
+      const fallbackProducts = await pendingProductDetails
+        .then(result => result?.data?.products || [])
+        .catch(() => []);
+
+      if (fallbackProducts.length) {
+        renderProductDetails(mergeProductDetails(requestedItems, fallbackProducts), state.method);
+      }
+
       setStatus(error.message || 'Error getting freight.', true);
       return false;
     }
