@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      7.5-hosted
+// @version      7.6-hosted
 // @description  Living Culture freight panel for Cin7 using the hosted freight service.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -500,17 +500,19 @@
         `;
       }).join('')}
 
-      <div class="lc-product-totals">
-        Ship now total: ${totalWeightKg ? totalWeightKg.toFixed(2) : '0.00'} kg ·
-        Est CBM: ${totalCbm ? totalCbm.toFixed(3) : '0.000'} ·
-        Ctns: ${totalCartons || 0}
-        ${totalPreSaleCartons ? `
-          <br>
-          Pre-sale later total: ${totalPreSaleWeightKg.toFixed(2)} kg ·
-          Est CBM: ${totalPreSaleCbm.toFixed(3)} ·
-          Ctns: ${totalPreSaleCartons}
-        ` : ''}
-      </div>
+      ${activeProducts.length > 1 ? `
+        <div class="lc-product-totals">
+          Ship now total: ${totalWeightKg ? totalWeightKg.toFixed(2) : '0.00'} kg ·
+          Est CBM: ${totalCbm ? totalCbm.toFixed(3) : '0.000'} ·
+          Ctns: ${totalCartons || 0}
+          ${totalPreSaleCartons ? `
+            <br>
+            Pre-sale later total: ${totalPreSaleWeightKg.toFixed(2)} kg ·
+            Est CBM: ${totalPreSaleCbm.toFixed(3)} ·
+            Ctns: ${totalPreSaleCartons}
+          ` : ''}
+        </div>
+      ` : ''}
     `;
   }
 
