@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      6.8-hosted
+// @version      6.9-hosted
 // @description  Living Culture freight panel for Cin7 using the hosted freight service.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -292,6 +292,7 @@
     status.textContent = message || '';
     status.style.display = message ? '' : 'none';
     status.style.color = isError ? '#9a2d20' : '#405f54';
+    status.classList.toggle('is-loading', Boolean(message && !isError && /getting|loading|reading|updating/i.test(message)));
   }
 
   function setResult(price, method = '') {
@@ -392,7 +393,11 @@
           ? lineWeight && lineCbm && cartonCount ? '' : 'Some product metrics were not found'
           : 'Weight, CBM and carton details loading...';
 
-        const detailsHtml = detailsLine ? `<div>${escapeHtml(detailsLine)}</div>` : '';
+        const detailsHtml = detailsLine
+          ? product.metricsLoaded
+            ? `<div>${escapeHtml(detailsLine)}</div>`
+            : `<div class="lc-loading-line"><span class="lc-spinner" aria-hidden="true"></span>${escapeHtml(detailsLine)}</div>`
+          : '';
 
         const quantityLine = `<div>Qty ${requestedQuantity} · ${lineWeight.toFixed(2)} kg · ${lineCbm.toFixed(3)} CBM · ${cartonCount} ctns</div>`;
         const statusLine = preSaleQuantity
@@ -1295,6 +1300,36 @@
         min-height: 20px;
         margin: 8px 10px 12px;
         color: #405f54;
+      }
+
+      #lc-freight-status.is-loading {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+
+      #lc-freight-status.is-loading::before,
+      .lc-spinner {
+        content: '';
+        display: inline-block;
+        width: 13px;
+        height: 13px;
+        flex: 0 0 13px;
+        box-sizing: border-box;
+        border: 2px solid rgba(45, 92, 78, 0.22);
+        border-top-color: #2d5c4e;
+        border-radius: 50%;
+        animation: lc-spin 0.85s linear infinite;
+      }
+
+      .lc-loading-line {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      @keyframes lc-spin {
+        to { transform: rotate(360deg); }
       }
 
       #lc-product-details {
