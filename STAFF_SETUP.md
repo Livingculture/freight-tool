@@ -12,7 +12,7 @@ Use this guide to set up the Living Culture freight app and browser helpers on a
 - Installation Fee helper: adds the `Install Fees` button in Cin7.
 - Custom Product helper: adds the `Custom Products` button in Cin7.
 - Promo Summary helper: adds the `Promo Summary` button in Cin7.
-- Copy SKU helper: adds the red `Copy SKU` button on Living Culture product pages.
+- Copy SKU helper: adds the red `Copy SKU` button on Living Culture and Luxi Living product pages.
 
 ## 1. Install Chrome
 
@@ -57,6 +57,7 @@ https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/ci
 https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js
 https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js
 https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/livingculture-copy-sku.user.js
+https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/luxiliving-copy-sku.user.js
 ```
 
 After installing, Tampermonkey will automatically check GitHub for updates.
