@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      6.6-hosted
+// @version      6.7-hosted
 // @description  Living Culture freight panel for Cin7 using the hosted freight service.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -36,6 +36,7 @@
     freightCache: new Map()
   };
   const IGNORED_SKU_PREFIXES = new Set(['AS']);
+  const FREIGHT_TIMEOUT_MS = 45000;
 
   function clean(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
@@ -529,27 +530,42 @@
 
     const firstItem = freightItems[0] || {};
     const firstIsUrl = /^https?:\/\/.+\/products\//i.test(firstItem.sku || firstItem.productUrl || '');
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), FREIGHT_TIMEOUT_MS);
 
-    const response = await fetch(`${API_BASE}/get-freight`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        sku: firstIsUrl ? '' : firstItem.sku,
-        productUrl: firstItem.productUrl || (firstIsUrl ? firstItem.sku : ''),
-        quantity: firstItem.quantity || 1,
-        items: freightItems.map(item => {
-          const isUrl = /^https?:\/\/.+\/products\//i.test(item.sku || item.productUrl || '');
+    let response;
 
-          return {
-            sku: isUrl ? '' : item.sku,
-            productUrl: item.productUrl || (isUrl ? item.sku : ''),
-            quantity: item.quantity || 1
-          };
-        }),
-        address,
-        selectedAddress: address
-      })
-    });
+    try {
+      response = await fetch(`${API_BASE}/get-freight`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          sku: firstIsUrl ? '' : firstItem.sku,
+          productUrl: firstItem.productUrl || (firstIsUrl ? firstItem.sku : ''),
+          quantity: firstItem.quantity || 1,
+          items: freightItems.map(item => {
+            const isUrl = /^https?:\/\/.+\/products\//i.test(item.sku || item.productUrl || '');
+
+            return {
+              sku: isUrl ? '' : item.sku,
+              productUrl: item.productUrl || (isUrl ? item.sku : ''),
+              quantity: item.quantity || 1
+            };
+          }),
+          address,
+          selectedAddress: address
+        })
+      });
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        throw new Error('Freight lookup is taking too long. Quote manually or try again in a moment.');
+      }
+
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     const data = await response.json().catch(() => ({}));
 
