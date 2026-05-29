@@ -1998,6 +1998,125 @@ async function openCheckoutForProducts(page, products, timing = createTiming('ch
   });
 }
 
+async function getFastCartShippingQuote(page, itemInput, addressText, timing = createTiming('fast freight')) {
+  const fields = parseNewZealandAddress(addressText);
+  if (!fields) {
+    throw new Error('Fast freight needs a complete New Zealand address');
+  }
+
+  const products = await timing.step('resolve SKU fast shipping', async () => {
+    return getProductSummaries(itemInput);
+  });
+
+  const cartItems = products.map(product => ({
+    id: product.variantId,
+    quantity: normaliseQuantity(product.quantity)
+  })).filter(item => item.id);
+
+  if (!cartItems.length) {
+    throw new Error('Fast freight could not resolve variant IDs');
+  }
+
+  await timing.step('open storefront fast shipping', async () => {
+    await page.goto('https://livingculture.co.nz/', {
+      waitUntil: 'domcontentloaded',
+      timeout: 20000
+    });
+  });
+
+  const result = await timing.step('read cart shipping rates', async () => {
+    return page.evaluate(async ({ cartItems: pageCartItems, fields: pageFields }) => {
+      const clean = value => String(value || '').replace(/\s+/g, ' ').trim();
+      const asMoney = value => {
+        const number = Number(value);
+        return Number.isFinite(number) ? `$${number.toFixed(2)}` : '';
+      };
+
+      const clearResponse = await fetch('/cart/clear.js', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' }
+      });
+      if (!clearResponse.ok) {
+        throw new Error(`Cart clear failed (${clearResponse.status})`);
+      }
+
+      const addResponse = await fetch('/cart/add.js', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ items: pageCartItems })
+      });
+      const addData = await addResponse.json().catch(() => ({}));
+      if (!addResponse.ok) {
+        throw new Error(addData.description || addData.message || `Cart add failed (${addResponse.status})`);
+      }
+
+      const params = new URLSearchParams();
+      params.set('shipping_address[address1]', pageFields.address1 || '');
+      params.set('shipping_address[address2]', pageFields.address2 || '');
+      params.set('shipping_address[city]', pageFields.city || '');
+      params.set('shipping_address[zip]', pageFields.postcode || '');
+      params.set('shipping_address[province]', pageFields.region || '');
+      params.set('shipping_address[country]', 'New Zealand');
+
+      const ratesResponse = await fetch(`/cart/shipping_rates.json?${params.toString()}`, {
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' }
+      });
+      const ratesData = await ratesResponse.json().catch(() => ({}));
+      if (!ratesResponse.ok) {
+        throw new Error(ratesData.description || ratesData.message || `Shipping rates failed (${ratesResponse.status})`);
+      }
+
+      const rates = Array.isArray(ratesData.shipping_rates) ? ratesData.shipping_rates : [];
+      const rate = rates.find(item => /ship|freight|delivery/i.test(clean(item.name || item.title || item.code))) || rates[0];
+      if (!rate) {
+        throw new Error('No shipping rates returned');
+      }
+
+      return {
+        price: asMoney(rate.price),
+        method: clean(rate.name || rate.title || rate.code || 'Shipping'),
+        cartItems: (Array.isArray(addData.items) ? addData.items : []).map(item => ({
+          sku: item.sku || '',
+          title: item.product_title || item.title || '',
+          quantity: item.quantity || 1,
+          unitPrice: item.price ? asMoney(Number(item.price) / 100) : '',
+          lineTotal: item.line_price ? asMoney(Number(item.line_price) / 100) : '',
+          productUrl: item.url ? new URL(item.url, location.origin).toString() : '',
+          image: item.image || ''
+        }))
+      };
+    }, { cartItems, fields });
+  });
+
+  if (!result.price) {
+    throw new Error('Fast freight did not return a price');
+  }
+
+  return {
+    ...result,
+    selectedAddress: addressText,
+    addressFields: [{
+      label: 'address',
+      value: addressText
+    }],
+    products,
+    finalCartPrice: calculateFinalCartPrice(
+      enrichCartItemsWithProducts(result.cartItems || [], products),
+      result.price
+    )
+  };
+}
+
+function isFastFreightError(error) {
+  return /Fast freight|Cart clear|Cart add|Shipping rates|No shipping rates|storefront/i.test(error?.message || '');
+}
+
 async function continuePastStockProblems(page, products) {
   if (!/\/stock-problems/.test(page.url())) return false;
 
@@ -2659,32 +2778,42 @@ app.post('/api/price', async (req, res) => {
   try {
     const payload = await withAutomationPage('api price', async page => {
       const timing = createTiming('api price');
-      let checkout = await getCheckoutSession({ productUrl, sku, skus, items }, page, timing);
       let result;
+      let checkout = null;
 
       try {
-        result = await selectAddressAndGetPrice(checkout.page, freightAddress, timing);
-      } catch (firstError) {
-        if (!isRetryableCheckoutError(firstError)) throw firstError;
-        console.error('Retrying freight price with a fresh checkout session:', firstError.message);
-        await closeActiveCheckout();
+        result = await getFastCartShippingQuote(page, { productUrl, sku, skus, items }, freightAddress, timing);
+      } catch (fastError) {
+        console.error('Fast freight price failed, using checkout:', fastError.message);
         checkout = await getCheckoutSession({ productUrl, sku, skus, items }, page, timing);
-        result = await selectAddressAndGetPrice(checkout.page, freightAddress, timing);
+
+        try {
+          result = await selectAddressAndGetPrice(checkout.page, freightAddress, timing);
+        } catch (firstError) {
+          if (!isRetryableCheckoutError(firstError) || isFastFreightError(fastError)) throw firstError;
+          console.error('Retrying freight price with a fresh checkout session:', firstError.message);
+          await closeActiveCheckout();
+          checkout = await getCheckoutSession({ productUrl, sku, skus, items }, page, timing);
+          result = await selectAddressAndGetPrice(checkout.page, freightAddress, timing);
+        }
       }
 
-      checkout.lastUsed = Date.now();
-      scheduleCheckoutCleanup();
+      if (checkout) {
+        checkout.lastUsed = Date.now();
+        scheduleCheckoutCleanup();
+      }
 
-      const cartItems = enrichCartItemsWithProducts(result.cartItems || [], checkout.products || []);
+      const products = result.products || checkout?.products || [];
+      const cartItems = enrichCartItemsWithProducts(result.cartItems || [], products);
       const finalCartPrice = result.finalCartPrice || calculateFinalCartPrice(cartItems, result.price);
 
       return {
         ...result,
-        products: checkout.products,
+        products,
         cartItems,
         finalCartPrice,
-        quantityAdjustments: buildQuantityAdjustments(checkout.products),
-        freightBreakdown: buildFreightBreakdown(checkout.products, result.price)
+        quantityAdjustments: buildQuantityAdjustments(products),
+        freightBreakdown: buildFreightBreakdown(products, result.price)
       };
     });
 
@@ -2729,36 +2858,46 @@ app.post('/get-freight', async (req, res) => {
   try {
     const payload = await withAutomationPage('get freight', async page => {
       const timing = createTiming('get freight');
-      let checkout = await getCheckoutSession({ items }, page, timing);
       let result;
+      let checkout = null;
 
       try {
-        result = await selectAddressAndGetPrice(checkout.page, freightAddress, timing);
-      } catch (firstError) {
-        if (!isRetryableCheckoutError(firstError)) throw firstError;
-        console.error('Retrying Cin7 freight with a fresh checkout session:', firstError.message);
-        await closeActiveCheckout();
+        result = await getFastCartShippingQuote(page, { items }, freightAddress, timing);
+      } catch (fastError) {
+        console.error('Fast Cin7 freight failed, using checkout:', fastError.message);
         checkout = await getCheckoutSession({ items }, page, timing);
-        result = await selectAddressAndGetPrice(checkout.page, freightAddress, timing);
+
+        try {
+          result = await selectAddressAndGetPrice(checkout.page, freightAddress, timing);
+        } catch (firstError) {
+          if (!isRetryableCheckoutError(firstError) || isFastFreightError(fastError)) throw firstError;
+          console.error('Retrying Cin7 freight with a fresh checkout session:', firstError.message);
+          await closeActiveCheckout();
+          checkout = await getCheckoutSession({ items }, page, timing);
+          result = await selectAddressAndGetPrice(checkout.page, freightAddress, timing);
+        }
       }
 
-      checkout.lastUsed = Date.now();
-      scheduleCheckoutCleanup();
+      if (checkout) {
+        checkout.lastUsed = Date.now();
+        scheduleCheckoutCleanup();
+      }
 
-      const cartItems = enrichCartItemsWithProducts(result.cartItems || [], checkout.products || []);
+      const products = result.products || checkout?.products || [];
+      const cartItems = enrichCartItemsWithProducts(result.cartItems || [], products);
       const finalCartPrice = result.finalCartPrice || calculateFinalCartPrice(cartItems, result.price);
 
       return {
         ...result,
-        sku: checkout.products?.[0]?.sku || sku || '',
-        skus: checkout.products?.map(product => product.sku).filter(Boolean) || [],
+        sku: products?.[0]?.sku || sku || '',
+        skus: products?.map(product => product.sku).filter(Boolean) || [],
         price: result.price,
         priceNumber: parseMoneyToCents(result.price) / 100,
         finalCartPrice,
         cartItems,
-        products: checkout.products,
-        quantityAdjustments: buildQuantityAdjustments(checkout.products),
-        freightBreakdown: buildFreightBreakdown(checkout.products, result.price)
+        products,
+        quantityAdjustments: buildQuantityAdjustments(products),
+        freightBreakdown: buildFreightBreakdown(products, result.price)
       };
     });
 
