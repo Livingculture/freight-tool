@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      7.6-hosted
+// @version      7.7-hosted
 // @description  Living Culture freight panel for Cin7 using the hosted freight service.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -294,10 +294,14 @@
     const status = document.getElementById('lc-freight-status');
     if (!status) return;
 
-    status.textContent = message || '';
+    const isQueuedUpdate = !isError && /^Cin7 products changed\./i.test(message || '');
+
+    status.textContent = isQueuedUpdate ? '' : message || '';
+    status.setAttribute('aria-label', isQueuedUpdate ? message : '');
     status.style.display = message ? '' : 'none';
     status.style.color = isError ? '#9a2d20' : '#405f54';
-    status.classList.toggle('is-loading', Boolean(message && !isError && /getting|loading|reading|updating/i.test(message)));
+    status.classList.toggle('is-queued-update', isQueuedUpdate);
+    status.classList.toggle('is-loading', Boolean(message && !isQueuedUpdate && !isError && /getting|loading|reading|updating/i.test(message)));
   }
 
   function setResult(price, method = '', preSaleFreightEstimate = null) {
@@ -1468,6 +1472,23 @@
         gap: 7px;
       }
 
+      #lc-freight-status.is-queued-update {
+        position: relative;
+        height: 24px;
+        min-height: 24px;
+        overflow: hidden;
+      }
+
+      #lc-freight-status.is-queued-update::before {
+        content: '\\1F69A';
+        position: absolute;
+        left: 0;
+        top: 1px;
+        font-size: 16px;
+        line-height: 1;
+        animation: lc-truck-shuttle 1.35s ease-in-out infinite alternate;
+      }
+
       #lc-freight-status.is-loading::before,
       .lc-spinner {
         content: '';
@@ -1490,6 +1511,11 @@
 
       @keyframes lc-spin {
         to { transform: rotate(360deg); }
+      }
+
+      @keyframes lc-truck-shuttle {
+        from { transform: translateX(0); }
+        to { transform: translateX(54px); }
       }
 
       #lc-product-details {
