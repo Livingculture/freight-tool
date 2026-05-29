@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Living Culture Workflow - Moving Parts and Click Map</title>
+  <style>
+    :root{
+      --bg:#f4f7f7;
+      --panel:#fff;
+      --ink:#1d2b29;
+      --muted:#536664;
+      --line:#c9d8d5;
+      --accent:#2e6b62;
+      --accent-soft:#e8f2f0;
+      --warn:#fff4d8;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family:Arial,sans-serif;
+      background:var(--bg);
+      color:var(--ink);
+      line-height:1.4;
+      padding:20px;
+    }
+    .wrap{max-width:1400px;margin:0 auto}
+    h1{margin:0 0 8px;font-size:30px}
+    .sub{margin:0 0 16px;color:var(--muted)}
+    .note{
+      background:var(--warn);
+      border:1px solid #f0dfac;
+      border-radius:8px;
+      padding:10px 12px;
+      margin:0 0 18px;
+      color:#6f5a22;
+    }
+    .toc{
+      background:var(--panel);
+      border:1px solid var(--line);
+      border-radius:10px;
+      padding:12px 14px;
+      margin-bottom:16px;
+    }
+    .toc a{color:#0f5d96;text-decoration:none}
+    .toc a:hover{text-decoration:underline}
+    .toc ul{margin:8px 0 0;padding-left:18px}
+    .section{
+      background:var(--panel);
+      border:1px solid var(--line);
+      border-radius:10px;
+      padding:16px;
+      margin-bottom:14px;
+    }
+    .section h2{margin:0 0 10px;color:var(--accent)}
+    .chips{margin:6px 0 12px}
+    .chip{
+      display:inline-block;
+      margin:0 6px 6px 0;
+      padding:4px 10px;
+      border-radius:999px;
+      background:var(--accent-soft);
+      border:1px solid #d4e5e1;
+      color:#2b5b53;
+      font-size:12px;
+    }
+    table{
+      width:100%;
+      border-collapse:collapse;
+      font-size:14px;
+      margin-top:8px;
+    }
+    th,td{
+      border:1px solid var(--line);
+      padding:8px 10px;
+      text-align:left;
+      vertical-align:top;
+    }
+    th{
+      background:#edf5f3;
+      color:#2c5d55;
+      font-weight:700;
+    }
+    code{
+      background:#eef3f3;
+      border:1px solid #d8e2e0;
+      border-radius:4px;
+      padding:1px 4px;
+      font-size:12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Living Culture Workflow: Moving Parts and Click Map</h1>
+    <p class="sub">Deep detail reference for staff and support. Covers Cin7, Tampermonkey helpers, Freight API, Workflow app, and Supabase.</p>
+    <p class="note"><strong>As of:</strong> May 29, 2026. This document reflects current setup on <code>main</code> of <code>Livingculture/freight-tool</code> and <code>Livingculture/workflow</code>.</p>
+
+    <div class="toc">
+      <strong>Sections</strong>
+      <ul>
+        <li><a href="#moving-parts">1. All Moving Parts</a></li>
+        <li><a href="#cin7-buttons">2. Cin7 Buttons and What Each Click Does</a></li>
+        <li><a href="#site-visit-flow">3. Site Visit End-to-End Flow</a></li>
+        <li><a href="#freight-flow">4. Freight Costing End-to-End Flow</a></li>
+        <li><a href="#workflow-planner-clicks">5. Workflow Planner Click Map</a></li>
+        <li><a href="#data-model">6. Data Objects and Key Fields</a></li>
+        <li><a href="#troubleshooting">7. Fast Troubleshooting by Symptom</a></li>
+      </ul>
+    </div>
+
+    <section class="section" id="moving-parts">
+      <h2>1) All Moving Parts</h2>
+      <div class="chips">
+        <span class="chip">Cin7 / Dear Systems</span>
+        <span class="chip">Tampermonkey</span>
+        <span class="chip">freight-tool (GitHub)</span>
+        <span class="chip">workflow (GitHub)</span>
+        <span class="chip">living-culture-freight.vercel.app</span>
+        <span class="chip">living-culture-workflow.vercel.app</span>
+        <span class="chip">Supabase (workflow)</span>
+      </div>
+      <table>
+        <thead>
+          <tr><th>Part</th><th>Purpose</th><th>Where Config Lives</th><th>Primary Failure Mode</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Cin7 Sale Screen</td>
+            <td>Staff work quotes/orders and click helper buttons.</td>
+            <td>Cin7 UI</td>
+            <td>DOM layout shifts can break button placement or field scraping.</td>
+          </tr>
+          <tr>
+            <td>Tampermonkey scripts</td>
+            <td>Inject buttons/panels and call backend endpoints.</td>
+            <td><code>userscripts/*.user.js</code> in freight-tool</td>
+            <td>Old cached script version, wrong branch update URL, duplicate scripts enabled.</td>
+          </tr>
+          <tr>
+            <td>Freight API</td>
+            <td>Returns freight price, product metrics, and Cin7 stock availability.</td>
+            <td><code>server.js</code> in freight-tool deployed on Vercel</td>
+            <td>Missing/invalid Cin7 env vars, endpoint mismatch, automation timeout.</td>
+          </tr>
+          <tr>
+            <td>Workflow app</td>
+            <td>Install/Deliver/Collect/Site Visit planner interface.</td>
+            <td>workflow repo + Vercel project</td>
+            <td>Wrong project/branch/domain mapping; stale deployment.</td>
+          </tr>
+          <tr>
+            <td>Workflow API route (<code>/api/site-visits</code>)</td>
+            <td>Receives Site Visit saves and stores shared records.</td>
+            <td>workflow repo</td>
+            <td>Missing table/policy/env var mismatches.</td>
+          </tr>
+          <tr>
+            <td>Supabase (workflow)</td>
+            <td>Persistent shared data, cards, staff info, photos.</td>
+            <td>Supabase project connected to workflow</td>
+            <td>Missing table/columns, RLS policy blocking writes, wrong project selected.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section" id="cin7-buttons">
+      <h2>2) Cin7 Buttons and What Each Click Does</h2>
+      <table>
+        <thead>
+          <tr><th>Button</th><th>Click Action</th><th>Network Call</th><th>UI Result</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>LC Freight</strong></td>
+            <td>Opens Freight Costing popup and auto-detects SKU(s), quantity, and shipping address from Cin7.</td>
+            <td>Calls freight API endpoints from userscript.</td>
+            <td>Shows freight price, ship-from line, product metrics, and Cin7 stock summary.</td>
+          </tr>
+          <tr>
+            <td><strong>Refresh freight with these quantities</strong></td>
+            <td>Re-reads edited quantity rows in popup and re-runs quote.</td>
+            <td><code>POST /get-freight</code>, <code>POST /api/product-metrics</code></td>
+            <td>Updates freight total and status lines (<code>X add to cart + Y PRE-SALE</code>).</td>
+          </tr>
+          <tr>
+            <td><strong>Site Visit</strong></td>
+            <td>Opens editable Site Visit popup prefilled from Cin7 fields.</td>
+            <td>No call on open (local scrape only).</td>
+            <td>User can edit fields before save.</td>
+          </tr>
+          <tr>
+            <td><strong>Save Site Visit Card</strong></td>
+            <td>Validates form then posts site visit payload.</td>
+            <td><code>POST https://living-culture-workflow.vercel.app/api/site-visits</code></td>
+            <td>Saves card, auto-opens planner focused to branch/date/order card.</td>
+          </tr>
+          <tr>
+            <td><strong>Quote Memo Info</strong></td>
+            <td>Builds quote memo text block with stock/pre-sale messaging and terms.</td>
+            <td>Script-local logic + optional lookup</td>
+            <td>Outputs memo content for quote notes/messages.</td>
+          </tr>
+          <tr>
+            <td><strong>Install Fees</strong></td>
+            <td>Opens install fee helper panel for fee calculations and injection.</td>
+            <td>Depends on helper script route/logic</td>
+            <td>Creates/upgrades install fee rows in quote lines.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section" id="site-visit-flow">
+      <h2>3) Site Visit End-to-End Flow</h2>
+      <table>
+        <thead>
+          <tr><th>Step</th><th>User Click</th><th>Data Read</th><th>Data Write</th><th>Output</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td>Click <strong>Site Visit</strong> on Cin7 Sale</td>
+            <td>Customer, sales rep, address, order ID, product line text</td>
+            <td>None</td>
+            <td>Popup opens with prefilled draft card</td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td>Edit fields in popup</td>
+            <td>Local form state</td>
+            <td>None</td>
+            <td>Ready-to-save card</td>
+          </tr>
+          <tr>
+            <td>3</td>
+            <td>Click <strong>Save Site Visit Card</strong></td>
+            <td>Current popup form payload</td>
+            <td>Workflow API <code>/api/site-visits</code> -> Supabase</td>
+            <td>Record persisted for all staff</td>
+          </tr>
+          <tr>
+            <td>4</td>
+            <td>Auto-open planner</td>
+            <td>URL params: <code>planner</code>, <code>siteVisitBranch</code>, <code>siteVisitDate</code>, <code>siteVisitOrderId</code></td>
+            <td>None</td>
+            <td>Workflow opens on Site Visit board and scrolls to booked day / highlighted card</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section" id="freight-flow">
+      <h2>4) Freight Costing End-to-End Flow</h2>
+      <table>
+        <thead>
+          <tr><th>Step</th><th>Trigger</th><th>Backend</th><th>Result</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td>Open LC Freight</td>
+            <td>Userscript detects SKU rows + shipping address</td>
+            <td>Popup shows detected items</td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td>Refresh freight / auto run</td>
+            <td><code>POST /get-freight</code> (freight price + method)</td>
+            <td>Freight dollar result and ship-from line</td>
+          </tr>
+          <tr>
+            <td>3</td>
+            <td>Same refresh cycle</td>
+            <td><code>POST /api/product-metrics</code> (title, image, CBM/weight + Cin7 stock)</td>
+            <td>Product cards with status and stock rows</td>
+          </tr>
+          <tr>
+            <td>4</td>
+            <td>Status render</td>
+            <td>Requested qty + available qty + pre-sale qty</td>
+            <td><code>X add to cart</code> and pulsing <code>Y PRE-SALE</code> when partial stock</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section" id="workflow-planner-clicks">
+      <h2>5) Workflow Planner Click Map</h2>
+      <table>
+        <thead>
+          <tr><th>Area</th><th>Click</th><th>What Happens</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Top planner tabs</td>
+            <td>Install / Deliver / Collect / Site Visit</td>
+            <td>Switches board mode and data filters for that planner context.</td>
+          </tr>
+          <tr>
+            <td>Site Visit branch tabs</td>
+            <td>AKL / PEN / CHCH / HAM / WHG / NAP ...</td>
+            <td>Shows cards for selected LC branch segment only.</td>
+          </tr>
+          <tr>
+            <td>Day columns</td>
+            <td>Drag card to another day</td>
+            <td>Updates booked date and persists change to shared data store.</td>
+          </tr>
+          <tr>
+            <td>Card status control</td>
+            <td>Change status dropdown</td>
+            <td>Updates status field and color state on card edge/label.</td>
+          </tr>
+          <tr>
+            <td>Card detail / edit</td>
+            <td>Open card then edit fields</td>
+            <td>Writes updated card payload and refreshes board view.</td>
+          </tr>
+          <tr>
+            <td>Photo upload</td>
+            <td>Add visit/install photos</td>
+            <td>Saves files + metadata; can be linked by same order number for install photo view.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section" id="data-model">
+      <h2>6) Data Objects and Key Fields</h2>
+      <table>
+        <thead>
+          <tr><th>Object</th><th>Core Fields</th><th>Used By</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Freight item payload</td>
+            <td><code>sku</code>, <code>quantity</code>, <code>requestedQuantity</code>, <code>addToCartQuantity</code>, <code>preSaleQuantity</code>, <code>cin7Stock.locations[]</code></td>
+            <td>LC Freight popup status, stock, and totals</td>
+          </tr>
+          <tr>
+            <td>Site visit card</td>
+            <td><code>status</code>, <code>bookedDate</code>, <code>time</code>, <code>orderId</code>, <code>placedBy</code>, <code>visitBy</code>, <code>lcBranch</code>, <code>customerName</code>, <code>address</code>, <code>product</code>, <code>comments</code></td>
+            <td>Site Visit popup + planner board</td>
+          </tr>
+          <tr>
+            <td>Photo linkage</td>
+            <td><code>orderId</code> + file refs</td>
+            <td>Cross-view display between site visit/install photo panels</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section" id="troubleshooting">
+      <h2>7) Fast Troubleshooting by Symptom</h2>
+      <table>
+        <thead>
+          <tr><th>Symptom</th><th>Most Likely Cause</th><th>Check First</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Button missing in Cin7</td>
+            <td>Script disabled, wrong @match, stale script version</td>
+            <td>Tampermonkey dashboard -> enabled + latest version + reload Cin7</td>
+          </tr>
+          <tr>
+            <td>Shows wrong stock status</td>
+            <td>Old freight script cache or missing Cin7 stock in response</td>
+            <td>Confirm script version; inspect network for <code>/api/product-metrics</code> payload</td>
+          </tr>
+          <tr>
+            <td>Site Visit saves but planner does not focus card</td>
+            <td>Old site-visit script or old workflow deployment</td>
+            <td>Check URL params appended after save; verify workflow deploy version</td>
+          </tr>
+          <tr>
+            <td>Cin7 non-JSON / empty response</td>
+            <td>Wrong Cin7 base URL or credentials rejected</td>
+            <td>Vercel env vars: <code>CIN7_CORE_API_BASE_URL</code>, <code>CIN7_CORE_ACCOUNT_ID</code>, <code>CIN7_CORE_APPLICATION_KEY</code></td>
+          </tr>
+          <tr>
+            <td>Staff can’t get updates</td>
+            <td>Script installed from old branch/pinned commit URL</td>
+            <td>Ensure install/update URL uses <code>/main/userscripts/...</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </div>
+</body>
+</html>
