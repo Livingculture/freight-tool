@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      6.4-hosted
+// @version      6.9-hosted
 // @description  Living Culture freight panel for Cin7 using the hosted freight service.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -9,8 +9,8 @@
 // @match        *://*.cin7core.com/*
 // @match        *://*.dearsystems.com/*
 // @match        https://inventory.dearsystems.com/*
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-lc-freight.user.js
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-lc-freight.user.js
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/freight-mobile/userscripts/cin7-lc-freight.user.js
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/freight-mobile/userscripts/cin7-lc-freight.user.js
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
 // @grant        none
@@ -35,6 +35,8 @@
     excludedSkus: new Set(),
     freightCache: new Map()
   };
+  const IGNORED_SKU_PREFIXES = new Set(['AS']);
+  const FREIGHT_TIMEOUT_MS = 45000;
 
   function clean(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
@@ -76,6 +78,11 @@
       }))
       .filter(item => item.sku || item.productUrl)
       .filter(item => item.quantity > 0);
+  }
+
+  function isFreightSku(sku) {
+    const prefix = String(sku || '').match(/^[A-Z]+/)?.[0] || '';
+    return Boolean(sku) && !IGNORED_SKU_PREFIXES.has(prefix);
   }
 
   function isVisible(element) {
@@ -188,14 +195,15 @@
 
   function getItemsFromCin7() {
     const rawItems = [];
-    const skuPattern = /\b([A-Z]{1,6}\d{3,}(?:-\d+)?)\b/i;
+    const skuPattern = /\b([A-Z]{2,6}\d{3,}(?:-\d+)?)\b/i;
+    const hasFreightItems = () => rawItems.some(item => isFreightSku(item.sku));
 
     const skuLinks = Array.from(document.querySelectorAll('a'))
       .filter(isVisible)
       .filter(anchor => !isInjectedPanelElement(anchor))
       .map(anchor => {
         const text = clean(anchor.textContent || '');
-        const match = text.match(/^([A-Z]{1,6}\d{3,}(?:-\d+)?)\s*:/i) || text.match(skuPattern);
+        const match = text.match(/^([A-Z]{2,6}\d{3,}(?:-\d+)?)\s*:/i) || text.match(skuPattern);
 
         if (!match) return null;
 
@@ -216,7 +224,7 @@
     }
 
     // Table-row fallback: handles Cin7 layout variants where SKU appears without trailing ":".
-    if (!rawItems.length) {
+    if (!hasFreightItems()) {
       const rows = Array.from(document.querySelectorAll('table tr'))
         .filter(isVisible)
         .filter(row => !isInjectedPanelElement(row));
@@ -237,8 +245,8 @@
       }
     }
 
-    if (!rawItems.length) {
-      const matches = Array.from((document.body.innerText || '').matchAll(/\b([A-Z]{1,6}\d{3,}(?:-\d+)?)\b/gi));
+    if (!hasFreightItems()) {
+      const matches = Array.from((document.body.innerText || '').matchAll(/\b([A-Z]{2,6}\d{3,}(?:-\d+)?)\b/gi));
 
       for (const match of matches) {
         rawItems.push({
@@ -251,6 +259,7 @@
     const grouped = new Map();
 
     for (const item of rawItems) {
+      if (!isFreightSku(item.sku)) continue;
       const current = grouped.get(item.sku) || 0;
       grouped.set(item.sku, current + normaliseQuantity(item.quantity));
     }
@@ -283,6 +292,7 @@
     status.textContent = message || '';
     status.style.display = message ? '' : 'none';
     status.style.color = isError ? '#9a2d20' : '#405f54';
+    status.classList.toggle('is-loading', Boolean(message && !isError && /getting|loading|reading|updating/i.test(message)));
   }
 
   function setResult(price, method = '') {
@@ -343,26 +353,6 @@
       .filter(Boolean))).join(' + ');
   }
 
-  function formatCin7StockLine(cin7Stock) {
-    if (!cin7Stock || cin7Stock.connected === false) {
-      return 'Cin7 stock: unavailable';
-    }
-
-    const locations = Array.isArray(cin7Stock.locations) ? cin7Stock.locations : [];
-    if (!locations.length) {
-      return cin7Stock.error ? `Cin7 stock: ${cin7Stock.error}` : 'Cin7 stock: no location data';
-    }
-
-    const summary = locations
-      .filter(location => Number(location.available) > 0)
-      .slice(0, 3)
-      .map(location => `${location.location} ${Number(location.available)}`)
-      .join(' · ');
-
-    if (summary) return `Cin7 stock: ${summary}`;
-    return 'Cin7 stock: out of stock across locations';
-  }
-
   function renderProductDetails(products = [], method = state.method) {
     const block = document.getElementById('lc-product-details');
     if (!block) return;
@@ -390,36 +380,28 @@
 
     block.innerHTML = `
       ${activeProducts.map(product => {
-        const requestedQuantity = normaliseQuantity(product.requestedQuantity || product.quantity);
-        const hasServerAddToCart = product.addToCartQuantity != null;
-        const addToCartQuantityRaw = hasServerAddToCart
-          ? normaliseQuantityAllowZero(product.addToCartQuantity)
-          : 0;
-        const cin7AvailableTotal = Array.isArray(product.cin7Stock?.locations)
-          ? product.cin7Stock.locations.reduce((sum, row) => sum + (Number(row.available) || 0), 0)
-          : 0;
-        const addToCartQuantity = hasServerAddToCart
-          ? Math.max(0, addToCartQuantityRaw)
-          : Math.max(0, Math.min(requestedQuantity, cin7AvailableTotal || requestedQuantity));
-        const quantity = addToCartQuantity || requestedQuantity;
+        const quantity = normaliseQuantity(product.quantity);
+        const requestedQuantity = normaliseQuantity(product.requestedQuantity || quantity);
         const lineWeight = getLineWeight(product, quantity);
         const lineCbm = getLineCbm(product, quantity);
         const cartonCount = getLineCartonCount(product, quantity);
-        const preSaleQuantityRaw = normaliseQuantityAllowZero(product.preSaleQuantity);
-        const preSaleQuantity = preSaleQuantityRaw || Math.max(0, requestedQuantity - addToCartQuantity);
+        const preSaleQuantity = normaliseQuantityAllowZero(product.preSaleQuantity);
         const saleState = product.saleState || (product.available ? 'Add to cart' : 'Unavailable');
-        const cin7StockLine = formatCin7StockLine(product.cin7Stock);
-        const shippingLine = shippingLocation ? `Ship from: ${shippingLocation}` : '';
+        const stock = product.available ? `Stock: ${shippingLocation || 'Available'}` : 'Stock: Unavailable';
 
         const detailsLine = product.metricsLoaded
           ? lineWeight && lineCbm && cartonCount ? '' : 'Some product metrics were not found'
           : 'Weight, CBM and carton details loading...';
 
-        const detailsHtml = detailsLine ? `<div>${escapeHtml(detailsLine)}</div>` : '';
+        const detailsHtml = detailsLine
+          ? product.metricsLoaded
+            ? `<div>${escapeHtml(detailsLine)}</div>`
+            : `<div class="lc-loading-line"><span class="lc-spinner" aria-hidden="true"></span>${escapeHtml(detailsLine)}</div>`
+          : '';
 
         const quantityLine = `<div>Qty ${requestedQuantity} · ${lineWeight.toFixed(2)} kg · ${lineCbm.toFixed(3)} CBM · ${cartonCount} ctns</div>`;
         const statusLine = preSaleQuantity
-          ? `<div>Status: ${addToCartQuantity} add to cart and <strong class="lc-presale-pulse">${preSaleQuantity} PRE-SALE</strong></div>`
+          ? `<div>Status: ${quantity} add to cart and <strong class="lc-presale-pulse">${preSaleQuantity} PRE-SALE</strong></div>`
           : `<div>${escapeHtml(`Status: ${saleState}`)}</div>`;
 
         const image = product.image
@@ -440,8 +422,7 @@
               ${statusLine}
               ${quantityLine}
               ${detailsHtml}
-              <div>${escapeHtml(cin7StockLine)}</div>
-              ${shippingLine ? `<div>${escapeHtml(shippingLine)}</div>` : ''}
+              <div>${escapeHtml(stock)}</div>
               ${websiteLine}
             </div>
           </div>
@@ -554,27 +535,42 @@
 
     const firstItem = freightItems[0] || {};
     const firstIsUrl = /^https?:\/\/.+\/products\//i.test(firstItem.sku || firstItem.productUrl || '');
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), FREIGHT_TIMEOUT_MS);
 
-    const response = await fetch(`${API_BASE}/get-freight`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        sku: firstIsUrl ? '' : firstItem.sku,
-        productUrl: firstItem.productUrl || (firstIsUrl ? firstItem.sku : ''),
-        quantity: firstItem.quantity || 1,
-        items: freightItems.map(item => {
-          const isUrl = /^https?:\/\/.+\/products\//i.test(item.sku || item.productUrl || '');
+    let response;
 
-          return {
-            sku: isUrl ? '' : item.sku,
-            productUrl: item.productUrl || (isUrl ? item.sku : ''),
-            quantity: item.quantity || 1
-          };
-        }),
-        address,
-        selectedAddress: address
-      })
-    });
+    try {
+      response = await fetch(`${API_BASE}/get-freight`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          sku: firstIsUrl ? '' : firstItem.sku,
+          productUrl: firstItem.productUrl || (firstIsUrl ? firstItem.sku : ''),
+          quantity: firstItem.quantity || 1,
+          items: freightItems.map(item => {
+            const isUrl = /^https?:\/\/.+\/products\//i.test(item.sku || item.productUrl || '');
+
+            return {
+              sku: isUrl ? '' : item.sku,
+              productUrl: item.productUrl || (isUrl ? item.sku : ''),
+              quantity: item.quantity || 1
+            };
+          }),
+          address,
+          selectedAddress: address
+        })
+      });
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        throw new Error('Freight lookup is taking too long. Quote manually or try again in a moment.');
+      }
+
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     const data = await response.json().catch(() => ({}));
 
@@ -756,10 +752,13 @@
   }
 
   async function getAndApplyFreight({ sku, items, address, fill }) {
+    let requestedItems = [];
+    let pendingProductDetails = Promise.resolve({ data: { products: [] } });
+
     try {
       setStatus('Getting freight...');
 
-      const requestedItems = normaliseFreightItems({ sku, items });
+      requestedItems = normaliseFreightItems({ sku, items });
 
       if (!requestedItems.length) {
         setResult('', '');
@@ -769,9 +768,14 @@
       }
 
       renderProductDetails(requestedItems, state.method);
-      const pendingProductDetails = requestProductDetails(requestedItems)
+      pendingProductDetails = requestProductDetails(requestedItems)
         .then(data => ({ data }))
         .catch(error => ({ error }));
+      pendingProductDetails.then(result => {
+        if (result?.data?.products?.length) {
+          renderProductDetails(mergeProductDetails(requestedItems, result.data.products), state.method);
+        }
+      });
 
       const data = await requestFreight({
         sku,
@@ -1296,6 +1300,36 @@
         min-height: 20px;
         margin: 8px 10px 12px;
         color: #405f54;
+      }
+
+      #lc-freight-status.is-loading {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+
+      #lc-freight-status.is-loading::before,
+      .lc-spinner {
+        content: '';
+        display: inline-block;
+        width: 13px;
+        height: 13px;
+        flex: 0 0 13px;
+        box-sizing: border-box;
+        border: 2px solid rgba(45, 92, 78, 0.22);
+        border-top-color: #2d5c4e;
+        border-radius: 50%;
+        animation: lc-spin 0.85s linear infinite;
+      }
+
+      .lc-loading-line {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      @keyframes lc-spin {
+        to { transform: rotate(360deg); }
       }
 
       #lc-product-details {
