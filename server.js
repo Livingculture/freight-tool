@@ -2104,6 +2104,112 @@ async function openCheckoutForProducts(page, products, timing = createTiming('ch
   });
 }
 
+function readSetCookies(headers) {
+  if (typeof headers.getSetCookie === 'function') {
+    return headers.getSetCookie();
+  }
+
+  const header = headers.get('set-cookie');
+  if (!header) return [];
+
+  return header.split(/,(?=\s*[^;,=]+=[^;,]+)/);
+}
+
+function updateCookieHeader(cookieHeader, headers) {
+  const cookies = new Map(String(cookieHeader || '')
+    .split(';')
+    .map(value => value.trim())
+    .filter(Boolean)
+    .map(value => {
+      const index = value.indexOf('=');
+      return index > 0 ? [value.slice(0, index), value.slice(index + 1)] : ['', ''];
+    })
+    .filter(([name]) => name));
+
+  for (const cookie of readSetCookies(headers)) {
+    const pair = String(cookie || '').split(';')[0];
+    const index = pair.indexOf('=');
+    if (index <= 0) continue;
+    cookies.set(pair.slice(0, index), pair.slice(index + 1));
+  }
+
+  return Array.from(cookies.entries())
+    .map(([name, value]) => `${name}=${value}`)
+    .join('; ');
+}
+
+async function requestShopifyCartJson(path, options = {}, cookieHeader = '') {
+  const response = await fetch(`https://livingculture.co.nz${path}`, {
+    ...options,
+    headers: {
+      Accept: 'application/json',
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(cookieHeader ? { Cookie: cookieHeader } : {}),
+      ...(options.headers || {})
+    }
+  });
+  const nextCookieHeader = updateCookieHeader(cookieHeader, response.headers);
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(data.description || data.message || `Shopify cart request failed (${response.status})`);
+  }
+
+  return { data, cookieHeader: nextCookieHeader };
+}
+
+async function getDirectCartShippingQuote(cartItems, fields) {
+  let cookieHeader = '';
+
+  const cleared = await requestShopifyCartJson('/cart/clear.js', {
+    method: 'POST'
+  }, cookieHeader);
+  cookieHeader = cleared.cookieHeader;
+
+  const added = await requestShopifyCartJson('/cart/add.js', {
+    method: 'POST',
+    body: JSON.stringify({ items: cartItems })
+  }, cookieHeader);
+  cookieHeader = added.cookieHeader;
+
+  const params = new URLSearchParams();
+  params.set('shipping_address[address1]', fields.address1 || '');
+  params.set('shipping_address[address2]', fields.address2 || '');
+  params.set('shipping_address[city]', fields.city || '');
+  params.set('shipping_address[zip]', fields.postcode || '');
+  params.set('shipping_address[province]', fields.region || '');
+  params.set('shipping_address[country]', 'New Zealand');
+
+  const rates = await requestShopifyCartJson(`/cart/shipping_rates.json?${params.toString()}`, {
+    method: 'GET'
+  }, cookieHeader);
+
+  const shippingRates = Array.isArray(rates.data.shipping_rates) ? rates.data.shipping_rates : [];
+  const rate = shippingRates.find(item => /ship|freight|delivery/i.test(normaliseSuggestion(item.name || item.title || item.code))) || shippingRates[0];
+  if (!rate) {
+    throw new Error('No shipping rates returned');
+  }
+
+  const asMoney = value => {
+    const number = Number(value);
+    return Number.isFinite(number) ? `$${number.toFixed(2)}` : '';
+  };
+
+  return {
+    price: asMoney(rate.price),
+    method: normaliseSuggestion(rate.name || rate.title || rate.code || 'Shipping'),
+    cartItems: (Array.isArray(added.data.items) ? added.data.items : []).map(item => ({
+      sku: item.sku || '',
+      title: item.product_title || item.title || '',
+      quantity: item.quantity || 1,
+      unitPrice: item.price ? asMoney(Number(item.price) / 100) : '',
+      lineTotal: item.line_price ? asMoney(Number(item.line_price) / 100) : '',
+      productUrl: item.url ? `https://livingculture.co.nz${item.url}` : '',
+      image: item.image || ''
+    }))
+  };
+}
+
 async function getFastCartShippingQuote(page, itemInput, addressText, timing = createTiming('fast freight')) {
   const fields = parseNewZealandAddress(addressText);
   if (!fields) {
@@ -2141,6 +2247,32 @@ async function getFastCartShippingQuote(page, itemInput, addressText, timing = c
 
   if (!cartItems.length) {
     throw new Error('Fast freight could not resolve in-stock variant quantities');
+  }
+
+  try {
+    const result = await timing.step('read direct cart shipping rates', () =>
+      getDirectCartShippingQuote(cartItems, fields)
+    );
+
+    if (!result.price) {
+      throw new Error('Direct cart freight did not return a price');
+    }
+
+    return {
+      ...result,
+      selectedAddress: addressText,
+      addressFields: [{
+        label: 'address',
+        value: addressText
+      }],
+      products,
+      finalCartPrice: calculateFinalCartPrice(
+        enrichCartItemsWithProducts(result.cartItems || [], products),
+        result.price
+      )
+    };
+  } catch (error) {
+    console.error('Direct cart freight failed, using browser cart:', error.message);
   }
 
   await timing.step('open storefront fast shipping', async () => {
