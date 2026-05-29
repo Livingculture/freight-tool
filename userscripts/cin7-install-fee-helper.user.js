@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Installation Fee Helper
 // @namespace    livingculture-cin7
-// @version      3.1
+// @version      3.2
 // @description  Shows Living Culture installation fee SKUs and prices inside Cin7 for quick add. Loads Google Sheet pricing with built-in fallback.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
@@ -10,7 +10,9 @@
 // @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-install-fee-helper.user.js
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
-// @grant        none
+// @grant        GM_xmlhttpRequest
+// @connect      docs.google.com
+// @connect      googleusercontent.com
 // ==/UserScript==
 
 (function () {
@@ -229,6 +231,41 @@ AS10139	Assembly Roosevelt Motorised Sliding Gate & Post with Post with Bury int
     return value;
   }
 
+  function requestText(url) {
+    return new Promise((resolve, reject) => {
+      if (typeof GM_xmlhttpRequest === 'function') {
+        GM_xmlhttpRequest({
+          method: 'GET',
+          url,
+          headers: {
+            'Cache-Control': 'no-cache'
+          },
+          onload: response => {
+            if (response.status >= 200 && response.status < 300) {
+              resolve(response.responseText || '');
+            } else {
+              reject(new Error(`Google Sheet returned ${response.status}`));
+            }
+          },
+          onerror: () => reject(new Error('Could not load Google Sheet'))
+        });
+
+        return;
+      }
+
+      fetch(url, {
+        cache: 'no-store',
+        credentials: 'omit'
+      })
+        .then(response => {
+          if (!response.ok) throw new Error(`Google Sheet returned ${response.status}`);
+          return response.text();
+        })
+        .then(resolve)
+        .catch(reject);
+    });
+  }
+
   async function loadRemoteInstallFees() {
     const remoteUrl = normaliseRemoteDataUrl(REMOTE_DATA_URL);
 
@@ -240,16 +277,7 @@ AS10139	Assembly Roosevelt Motorised Sliding Gate & Post with Post with Bury int
     setSourceLabel('Loading Google Sheet pricing...');
 
     try {
-      const response = await fetch(`${remoteUrl}${remoteUrl.includes('?') ? '&' : '?'}lc_cache_bust=${Date.now()}`, {
-        cache: 'no-store',
-        credentials: 'omit'
-      });
-
-      if (!response.ok) {
-        throw new Error(`Google Sheet returned ${response.status}`);
-      }
-
-      const raw = await response.text();
+      const raw = await requestText(`${remoteUrl}${remoteUrl.includes('?') ? '&' : '?'}lc_cache_bust=${Date.now()}`);
       const nextItems = parseData(raw);
 
       if (!nextItems.length) {
