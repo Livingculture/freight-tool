@@ -924,7 +924,9 @@ function buildFreightBreakdown(products, priceText, itemShipping = []) {
   const totalCents = parseMoneyToCents(priceText);
   const basis = products.some(product => Number(product.cbm) > 0) ? 'CBM' : 'weight';
   const basisValues = products.map(product => {
-    const quantity = normaliseQuantity(product.quantity);
+    const quantity = product.requestedQuantity != null
+      ? Math.max(0, Number(product.quantity) || 0)
+      : normaliseQuantity(product.quantity);
     if (basis === 'CBM') {
       return getLineCbm(product, quantity);
     }
@@ -941,7 +943,9 @@ function buildFreightBreakdown(products, priceText, itemShipping = []) {
       items: products.map((product, index) => ({
         sku: product.sku,
         title: product.title,
-        quantity: normaliseQuantity(product.quantity),
+        quantity: product.requestedQuantity != null
+          ? Math.max(0, Number(product.quantity) || 0)
+          : normaliseQuantity(product.quantity),
         basisValue: basisValues[index] || null,
         itemShipping: shippingBySku.get(product.sku),
         price: null
@@ -958,7 +962,9 @@ function buildFreightBreakdown(products, priceText, itemShipping = []) {
     return {
       sku: product.sku,
       title: product.title,
-      quantity: normaliseQuantity(product.quantity),
+      quantity: product.requestedQuantity != null
+        ? Math.max(0, Number(product.quantity) || 0)
+        : normaliseQuantity(product.quantity),
       basisValue: basisValues[index],
       itemShipping: shippingBySku.get(product.sku),
       price: formatMoney(cents)
@@ -973,6 +979,80 @@ function getLineCbm(product, quantity = normaliseQuantity(product.quantity)) {
   const unitsPerCarton = normaliseQuantity(product.unitsPerCarton);
   if (!cbm || unitsPerCarton <= 1) return cbm * quantity;
   return cbm * Math.ceil(quantity / unitsPerCarton);
+}
+
+function getLineWeight(product, quantity = normaliseQuantity(product.quantity)) {
+  const weightKg = Number(product.weightKg) || 0;
+  const unitsPerCarton = normaliseQuantity(product.unitsPerCarton);
+  if (!weightKg || unitsPerCarton <= 1) return weightKg * quantity;
+  return weightKg * Math.ceil(quantity / unitsPerCarton);
+}
+
+function getFreightBasisValue(product, quantity, basis) {
+  return basis === 'CBM'
+    ? getLineCbm(product, quantity)
+    : getLineWeight(product, quantity);
+}
+
+function buildPreSaleFreightEstimate(products = [], priceText = '') {
+  const totalCents = parseMoneyToCents(priceText);
+  const basis = products.some(product => Number(product.cbm) > 0) ? 'CBM' : 'weight';
+  const rows = products.map(product => {
+    const requestedQuantity = normaliseQuantity(product.requestedQuantity || product.quantity);
+    const availableQuantity = Math.max(0, Number(product.quantity) || 0);
+    const preSaleQuantity = Math.max(0, requestedQuantity - availableQuantity);
+    const shipNowBasis = getFreightBasisValue(product, availableQuantity, basis);
+    const preSaleBasis = getFreightBasisValue(product, preSaleQuantity, basis);
+
+    return {
+      sku: product.sku,
+      title: product.title,
+      requestedQuantity,
+      availableQuantity,
+      preSaleQuantity,
+      shipNowBasis,
+      preSaleBasis
+    };
+  }).filter(row => row.preSaleQuantity > 0);
+
+  if (!rows.length) return null;
+
+  const shipNowBasisTotal = products.reduce((total, product) =>
+    total + getFreightBasisValue(product, Math.max(0, Number(product.quantity) || 0), basis), 0);
+  const preSaleBasisTotal = rows.reduce((total, row) => total + row.preSaleBasis, 0);
+
+  if (!totalCents || !shipNowBasisTotal || !preSaleBasisTotal) {
+    return {
+      basis,
+      price: null,
+      total: null,
+      note: 'Pre-sale freight could not be estimated from available freight.',
+      items: rows
+    };
+  }
+
+  let allocatedCents = 0;
+  const items = rows.map((row, index) => {
+    const cents = index === rows.length - 1
+      ? Math.round((preSaleBasisTotal / shipNowBasisTotal) * totalCents) - allocatedCents
+      : Math.round((row.preSaleBasis / shipNowBasisTotal) * totalCents);
+    allocatedCents += cents;
+
+    return {
+      ...row,
+      price: formatMoney(cents)
+    };
+  });
+  const estimateCents = items.reduce((total, item) => total + parseMoneyToCents(item.price), 0);
+
+  return {
+    basis,
+    price: formatMoney(estimateCents),
+    priceNumber: estimateCents / 100,
+    total: formatMoney(totalCents + estimateCents),
+    note: 'Estimated from the current freight rate and pre-sale weight/CBM.',
+    items
+  };
 }
 
 async function getSingleProductShippingSummaries(products, selectedAddress) {
@@ -2016,13 +2096,33 @@ async function getFastCartShippingQuote(page, itemInput, addressText, timing = c
     return getProductSummaries(itemInput);
   });
 
+  await timing.step('check fast cart availability', async () => {
+    products.forEach(product => {
+      product.requestedQuantity = normaliseQuantity(product.quantity);
+      product.availableQuantity = product.available && !/pre[\s-]?sale|pre[\s-]?order/i.test(product.saleState)
+        ? product.requestedQuantity
+        : 0;
+    });
+
+    await applyCartAddAvailability(products);
+
+    products.forEach(product => {
+      const availableQuantity = Math.max(0, Math.min(
+        normaliseQuantity(product.requestedQuantity || product.quantity),
+        Number(product.availableQuantity) || 0
+      ));
+      product.quantity = availableQuantity;
+      product.availableQuantity = availableQuantity;
+    });
+  });
+
   const cartItems = products.map(product => ({
     id: product.variantId,
-    quantity: normaliseQuantity(product.quantity)
-  })).filter(item => item.id);
+    quantity: Math.max(0, Number(product.availableQuantity) || 0)
+  })).filter(item => item.id && item.quantity > 0);
 
   if (!cartItems.length) {
-    throw new Error('Fast freight could not resolve variant IDs');
+    throw new Error('Fast freight could not resolve in-stock variant quantities');
   }
 
   await timing.step('open storefront fast shipping', async () => {
@@ -2862,7 +2962,8 @@ app.post('/api/price', async (req, res) => {
         cartItems,
         finalCartPrice,
         quantityAdjustments: buildQuantityAdjustments(products),
-        freightBreakdown: buildFreightBreakdown(products, result.price)
+        freightBreakdown: buildFreightBreakdown(products, result.price),
+        preSaleFreightEstimate: buildPreSaleFreightEstimate(products, result.price)
       };
     });
 
@@ -2946,7 +3047,8 @@ app.post('/get-freight', async (req, res) => {
         cartItems,
         products,
         quantityAdjustments: buildQuantityAdjustments(products),
-        freightBreakdown: buildFreightBreakdown(products, result.price)
+        freightBreakdown: buildFreightBreakdown(products, result.price),
+        preSaleFreightEstimate: buildPreSaleFreightEstimate(products, result.price)
       };
     }, 55000);
 
