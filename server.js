@@ -2143,6 +2143,10 @@ async function requestShopifyCartJson(path, options = {}, cookieHeader = '') {
     ...options,
     headers: {
       Accept: 'application/json',
+      'Accept-Language': 'en-NZ,en;q=0.9',
+      Origin: 'https://livingculture.co.nz',
+      Referer: 'https://livingculture.co.nz/',
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
       ...(options.body ? { 'Content-Type': 'application/json' } : {}),
       ...(cookieHeader ? { Cookie: cookieHeader } : {}),
       ...(options.headers || {})
