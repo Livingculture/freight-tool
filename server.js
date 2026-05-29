@@ -1831,6 +1831,10 @@ async function getProductAvailability(page, itemInput, timing = createTiming('av
       : 0;
   });
 
+  await timing.step('check cart add availability', async () => {
+    await applyCartAddAvailability(products);
+  });
+
   const cartProducts = products.filter(product => product.availableQuantity > 0 && product.variantId);
   if (cartProducts.length) {
     const cartItems = cartProducts.map(product =>
@@ -1870,6 +1874,50 @@ async function getProductAvailability(page, itemInput, timing = createTiming('av
   });
 
   return addCin7StockToProducts(productAvailability);
+}
+
+async function applyCartAddAvailability(products = []) {
+  await Promise.all(products.map(async product => {
+    const requestedQuantity = normaliseQuantity(product.requestedQuantity || product.quantity);
+    if (!product.variantId || !requestedQuantity) return;
+
+    try {
+      const response = await fetch('https://livingculture.co.nz/cart/add.js', {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          items: [{
+            id: product.variantId,
+            quantity: requestedQuantity
+          }]
+        }),
+        signal: AbortSignal.timeout(15000)
+      });
+      const text = await response.text();
+      const data = JSON.parse(text || '{}');
+
+      if (response.ok) {
+        product.availableQuantity = requestedQuantity;
+        return;
+      }
+
+      const message = `${data.message || ''} ${data.description || ''}`;
+      const partialMatch = message.match(/only\s+(\d+)\s+items?\s+were\s+added/i);
+      if (partialMatch) {
+        product.availableQuantity = Math.max(0, Math.min(requestedQuantity, Number(partialMatch[1]) || 0));
+        return;
+      }
+
+      if (/sold out|not enough|unavailable|cannot be added/i.test(message)) {
+        product.availableQuantity = 0;
+      }
+    } catch (error) {
+      console.error(`Cart add availability check failed for ${product.sku}:`, error.message);
+    }
+  }));
 }
 
 async function addCin7StockToProducts(products) {
