@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      7.2-hosted
+// @version      7.3-hosted
 // @description  Living Culture freight panel for Cin7 using the hosted freight service.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -455,13 +455,25 @@
       product
     ]));
 
+    const hasMetrics = product =>
+      Boolean(product?.metricsLoaded) ||
+      Number(product?.weightKg) > 0 ||
+      Number(product?.cbm) > 0 ||
+      (Array.isArray(product?.cartons) && product.cartons.length > 0);
+
     return requestedItems.map(item => {
       const key = clean(item.sku || item.productUrl).toLowerCase();
       const loaded = loadedByKey.get(key) || {};
+      const keepExistingMetrics = hasMetrics(item) && !hasMetrics(loaded);
 
       return {
         ...item,
         ...loaded,
+        weightKg: keepExistingMetrics ? item.weightKg : loaded.weightKg ?? item.weightKg,
+        cartons: keepExistingMetrics ? item.cartons : loaded.cartons ?? item.cartons,
+        unitsPerCarton: keepExistingMetrics ? item.unitsPerCarton : loaded.unitsPerCarton ?? item.unitsPerCarton,
+        cbm: keepExistingMetrics ? item.cbm : loaded.cbm ?? item.cbm,
+        metricsLoaded: keepExistingMetrics ? item.metricsLoaded : loaded.metricsLoaded ?? item.metricsLoaded,
         sku: loaded.sku || item.sku,
         productUrl: loaded.productUrl || item.productUrl,
         quantity: normaliseQuantityAllowZero(item.quantity)
