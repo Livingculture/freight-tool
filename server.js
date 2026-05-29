@@ -2605,12 +2605,29 @@ app.post('/api/availability', async (req, res) => {
       const productSummaries = await getProductSummaries({ productUrl, sku, skus, items }).catch(() =>
         requestedItems.map(item => ({ sku: item.sku || '', title: item.sku || 'Product' }))
       );
-      products = await addCin7StockToProducts(requestedItems.map((item, index) => ({
-        ...productSummaries[index],
-        sku: productSummaries[index]?.sku || item.sku,
-        quantity: item.quantity,
-        storefrontError: 'Website add-to-cart status could not be loaded.'
-      })));
+      const fallbackProducts = requestedItems.map((item, index) => {
+        const requestedQuantity = normaliseQuantity(item.quantity);
+        const product = {
+          ...productSummaries[index],
+          sku: productSummaries[index]?.sku || item.sku,
+          requestedQuantity,
+          availableQuantity: productSummaries[index]?.available ? requestedQuantity : 0,
+          quantity: item.quantity,
+          storefrontError: 'Website add-to-cart status could not be loaded.'
+        };
+        return product;
+      });
+      await applyCartAddAvailability(fallbackProducts);
+      products = await addCin7StockToProducts(fallbackProducts.map(product => {
+        const requestedQuantity = normaliseQuantity(product.requestedQuantity || product.quantity);
+        const addToCartQuantity = Math.max(0, Number(product.availableQuantity) || 0);
+        return {
+          ...product,
+          quantity: requestedQuantity,
+          addToCartQuantity,
+          preSaleQuantity: Math.max(0, requestedQuantity - addToCartQuantity)
+        };
+      }));
     }
     return res.json({ products });
   } catch (error) {
