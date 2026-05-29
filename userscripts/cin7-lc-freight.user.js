@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      7.7-hosted
+// @version      7.8-hosted
 // @description  Living Culture freight panel for Cin7 using the hosted freight service.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -37,7 +37,7 @@
     lookupSeq: 0
   };
   const IGNORED_SKU_PREFIXES = new Set(['AS']);
-  const FREIGHT_TIMEOUT_MS = 45000;
+  const FREIGHT_TIMEOUT_MS = 85000;
 
   function clean(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
@@ -331,6 +331,21 @@
       } else {
         preSaleBlock.innerHTML = '';
       }
+    }
+  }
+
+  function setResultLoading() {
+    const result = document.getElementById('lc-freight-result');
+    const preSaleBlock = document.getElementById('lc-presale-freight-estimate');
+
+    if (result) {
+      result.textContent = state.price
+        ? `Freight now: ${state.price} (updating...)`
+        : 'Freight: updating...';
+    }
+
+    if (preSaleBlock) {
+      preSaleBlock.innerHTML = '';
     }
   }
 
@@ -876,7 +891,6 @@
   async function getAndApplyFreight({ sku, items, address, fill }) {
     let requestedItems = [];
     let pendingProductDetails = Promise.resolve({ data: { products: [] } });
-    let pendingAvailabilityDetails = Promise.resolve({ data: { products: [] } });
     const lookupSeq = state.lookupSeq + 1;
     state.lookupSeq = lookupSeq;
     const isCurrentLookup = () => lookupSeq === state.lookupSeq;
@@ -893,7 +907,7 @@
         return false;
       }
 
-      setResult('', '');
+      setResultLoading();
       renderProductDetails(requestedItems, state.method);
       let pendingDisplayProducts = requestedItems;
       const applyPendingProducts = products => {
@@ -904,11 +918,7 @@
       pendingProductDetails = requestProductDetails(requestedItems)
         .then(data => ({ data }))
         .catch(error => ({ error }));
-      pendingAvailabilityDetails = requestProductAvailability(requestedItems)
-        .then(data => ({ data }))
-        .catch(error => ({ error }));
       pendingProductDetails.then(result => applyPendingProducts(result?.data?.products || []));
-      pendingAvailabilityDetails.then(result => applyPendingProducts(result?.data?.products || []));
 
       const data = await requestFreight({
         sku,
@@ -960,23 +970,20 @@
       if (!isCurrentLookup()) return false;
 
       console.error(error);
-      const [detailsResult, availabilityResult] = await Promise.all([
-        pendingProductDetails.catch(() => ({})),
-        pendingAvailabilityDetails.catch(() => ({}))
-      ]);
+      const detailsResult = await pendingProductDetails.catch(() => ({}));
 
       if (!isCurrentLookup()) return false;
 
-      const fallbackProducts = mergeProductDetails(
-        mergeProductDetails(requestedItems, detailsResult?.data?.products || []),
-        availabilityResult?.data?.products || []
-      );
+      const fallbackProducts = mergeProductDetails(requestedItems, detailsResult?.data?.products || []);
 
       if (fallbackProducts.length) {
         renderProductDetails(fallbackProducts, state.method);
       }
 
-      setStatus(error.message || 'Error getting freight.', true);
+      const message = state.price
+        ? `${error.message || 'Error getting freight.'} Showing previous freight quote.`
+        : error.message || 'Error getting freight.';
+      setStatus(message, true);
       return false;
     }
   }
