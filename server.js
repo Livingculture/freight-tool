@@ -71,6 +71,9 @@ let automationQueue = Promise.resolve();
 const ADDRESS_INPUT_SELECTORS = [
   '#shipping-address1:visible',
   'input[name="address1"]:visible',
+  'input[autocomplete="shipping address-line1"]:visible',
+  'input[autocomplete="address-line1"]:visible',
+  'input[data-address-field="address1"]:visible',
   'input[autocomplete*="address"]',
   'input[placeholder*="address" i]',
   'input[name*="address" i]',
@@ -266,7 +269,10 @@ function isTransientNavigationError(error) {
 }
 
 function isRetryableCheckoutError(error) {
-  return isClosedBrowserError(error) || isTransientNavigationError(error);
+  return isClosedBrowserError(error) ||
+    isTransientNavigationError(error) ||
+    /ERR_INSUFFICIENT_RESOURCES|Checkout address field was not available|element is not enabled/i
+      .test(String(error?.message || error || ''));
 }
 
 function clearCheckoutReference() {
@@ -1932,14 +1938,16 @@ async function openCheckoutForProducts(page, products, timing = createTiming('ch
     }
 
     await continuePastStockProblems(page, products);
+    await fillCheckoutBasics(page);
 
-    await page.waitForSelector(addressSelector, { timeout: 20000 }).catch(async () => {
+    await page.waitForSelector(addressSelector, { timeout: 35000 }).catch(async () => {
       if (await continuePastStockProblems(page, products)) {
-        await page.waitForSelector(addressSelector, { timeout: 20000 });
+        await fillCheckoutBasics(page);
+        await page.waitForSelector(addressSelector, { timeout: 35000 });
         return;
       }
-      const bodyText = await page.locator('body').innerText({ timeout: 5000 }).catch(() => '');
-      throw new Error(`Checkout address field was not available on ${page.url()}: ${bodyText.slice(0, 500)}`);
+      const diagnostics = await readCheckoutDiagnostics(page);
+      throw new Error(`Checkout address field was not available on ${page.url()}: ${JSON.stringify(diagnostics)}`);
     });
   });
 }
@@ -2454,6 +2462,38 @@ async function fillCheckoutBasics(page) {
       await field.fill(value).catch(() => {});
     }
   }
+}
+
+async function readCheckoutDiagnostics(page) {
+  const bodyText = await page.locator('body').innerText({ timeout: 5000 }).catch(() => '');
+  const visibleInputs = await page.$$eval('input, textarea, select, button', nodes =>
+    Array.from(nodes)
+      .filter(node => {
+        const rect = node.getBoundingClientRect();
+        const style = window.getComputedStyle(node);
+        return rect.width > 0 &&
+          rect.height > 0 &&
+          style.display !== 'none' &&
+          style.visibility !== 'hidden';
+      })
+      .slice(0, 25)
+      .map(node => ({
+        tag: node.tagName.toLowerCase(),
+        type: node.getAttribute('type') || '',
+        name: node.getAttribute('name') || '',
+        id: node.id || '',
+        autocomplete: node.getAttribute('autocomplete') || '',
+        placeholder: node.getAttribute('placeholder') || '',
+        ariaLabel: node.getAttribute('aria-label') || '',
+        disabled: Boolean(node.disabled),
+        text: (node.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80)
+      }))
+  ).catch(() => []);
+
+  return {
+    text: normaliseSuggestion(bodyText).slice(0, 700),
+    visibleInputs
+  };
 }
 
 app.post('/api/suggestions', async (req, res) => {
