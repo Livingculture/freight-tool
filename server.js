@@ -1987,13 +1987,22 @@ async function applyAvailableCheckoutQuantities(page, products) {
 
 function buildQuantityAdjustments(products = []) {
   return products
-    .filter(product => Number(product.requestedQuantity) !== Number(product.quantity))
-    .map(product => ({
-      sku: product.sku,
-      requestedQuantity: Number(product.requestedQuantity),
-      availableQuantity: Number(product.quantity),
-      preSaleQuantity: Math.max(0, Number(product.requestedQuantity) - Number(product.quantity))
-    }));
+    .map(product => {
+      const requestedQuantity = Number(product.requestedQuantity);
+      const availableQuantity = Number(product.quantity);
+
+      return {
+        sku: product.sku,
+        requestedQuantity,
+        availableQuantity,
+        preSaleQuantity: Math.max(0, requestedQuantity - availableQuantity)
+      };
+    })
+    .filter(adjustment =>
+      Number.isFinite(adjustment.requestedQuantity) &&
+      Number.isFinite(adjustment.availableQuantity) &&
+      adjustment.requestedQuantity !== adjustment.availableQuantity
+    );
 }
 
 function normaliseSuggestion(text) {
