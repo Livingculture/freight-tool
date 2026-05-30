@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.8.0
+// @version      1.9.0
 // @description  Adds a Site Visit button beside Install Fees/Scan, opens editable card popup, then saves to Workflow planner.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -60,6 +60,22 @@
     return text;
   }
 
+  function getAnchorBestProductText(anchor) {
+    if (!anchor) return '';
+    const candidates = [
+      anchor.getAttribute('title'),
+      anchor.getAttribute('aria-label'),
+      anchor.dataset?.originalTitle,
+      anchor.dataset?.title,
+      anchor.textContent
+    ];
+    for (const candidate of candidates) {
+      const line = cleanProductLine(candidate || '');
+      if (line) return line;
+    }
+    return '';
+  }
+
   function openPlannerWithCard(payload) {
     const params = new URLSearchParams();
     params.set('planner', 'site-visit');
@@ -77,7 +93,7 @@
     // Primary: quote line anchors that usually look like "SKU: Description".
     const quoteAnchors = Array.from(document.querySelectorAll('table a'))
       .filter(isVisible)
-      .map((anchor) => cleanProductLine(anchor.textContent || ''))
+      .map((anchor) => getAnchorBestProductText(anchor))
       .filter(Boolean);
 
     if (quoteAnchors.length) {
@@ -106,11 +122,32 @@
         const cell = cells[productColumnIndex];
 
         const anchor = cell.querySelector('a');
-        const raw = cleanProductLine(anchor ? anchor.textContent : cell.textContent || '');
+        const raw = cleanProductLine(anchor ? getAnchorBestProductText(anchor) : cell.textContent || '');
         if (!raw) continue;
 
         products.push(raw);
       }
+    }
+
+    // Additional fallback: rows that contain SKU + product description in adjacent cells.
+    if (!products.length) {
+      const rows = Array.from(document.querySelectorAll('table tr')).filter(isVisible);
+      rows.forEach((row) => {
+        const cells = Array.from(row.querySelectorAll('td,th'));
+        if (!cells.length) return;
+        const rowText = clean(row.textContent || '');
+        if (!/\b[A-Z]{1,8}\d{3,}(?:-\d+)?\b/.test(rowText)) return;
+
+        const bestCell = cells
+          .map((cell) => {
+            const line = cleanProductLine(cell.textContent || '');
+            return { line, len: line.length };
+          })
+          .filter((item) => item.line && item.len > 10)
+          .sort((a, b) => b.len - a.len)[0];
+
+        if (bestCell?.line) products.push(bestCell.line);
+      });
     }
 
     // Fallback for editable line inputs if table selectors fail.
@@ -328,19 +365,15 @@
   function cin7Draft() {
     const address1 = readValueNearLabel('Shipping address line 1') || readValueNearLabel('Billing address line 1');
     const address2 = readValueNearLabel('Shipping address line 2') || readValueNearLabel('Billing address line 2');
-    const dateRaw = readValueNearLabel('Date');
     const reference = readValueNearLabel('Reference');
     const rep = readValueNearLabel('Sales rep');
-    const parsedDate = /^\d{2}\/\d{2}\/\d{4}$/.test(dateRaw)
-      ? `${dateRaw.slice(6, 10)}-${dateRaw.slice(3, 5)}-${dateRaw.slice(0, 2)}`
-      : localDateKey();
     const pageText = document.body ? document.body.innerText : '';
     const titleOrderId = extractOrderId(document.title || '');
     const pageOrderId = extractOrderId(pageText);
     const referenceOrderId = extractOrderId(reference);
     return {
       status: 'To be confirmed',
-      bookedDate: parsedDate,
+      bookedDate: localDateKey(),
       time: '',
       orderId: referenceOrderId || titleOrderId || pageOrderId || reference,
       placedBy: rep,
