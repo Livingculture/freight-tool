@@ -1,15 +1,15 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.9.4
+// @version      1.9.5
 // @description  Adds a Site Visit button beside Install Fees/Scan, opens editable card popup, then saves to Workflow planner.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
 // @grant        GM_xmlhttpRequest
 // @connect      living-culture-workflow.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js
+// @downloadURL  https://github.com/Livingculture/freight-tool/raw/main/userscripts/cin7-site-visit-link.user.js
+// @updateURL    https://github.com/Livingculture/freight-tool/raw/main/userscripts/cin7-site-visit-link.user.js
 // ==/UserScript==
 
 (function () {
