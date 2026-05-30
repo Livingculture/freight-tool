@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.9.1
+// @version      1.9.2
 // @description  Adds a Site Visit button beside Install Fees/Scan, opens editable card popup, then saves to Workflow planner.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -60,6 +60,54 @@
     return text;
   }
 
+  function extractQuoteProductLines() {
+    const products = [];
+    const tables = Array.from(document.querySelectorAll('table')).filter(isVisible);
+
+    for (const table of tables) {
+      const headerCells = Array.from(table.querySelectorAll('thead th, tr th'))
+        .map((cell) => normalizeLabel(cell.textContent || ''));
+      const hasProductHeader = headerCells.includes('product');
+      const hasQuantityHeader = headerCells.includes('quantity');
+      const hasPriceHeader = headerCells.includes('price');
+
+      // Target the quote lines table shape only.
+      if (!hasProductHeader || !hasQuantityHeader || !hasPriceHeader) continue;
+
+      const rows = Array.from(table.querySelectorAll('tbody tr, tr'))
+        .filter(isVisible);
+
+      for (const row of rows) {
+        const rowText = clean(row.textContent || '');
+        if (!rowText) continue;
+        if (/^total:?$/i.test(rowText) || /^add more items/i.test(rowText)) continue;
+        if (/additional charges and services/i.test(rowText)) continue;
+
+        const productLink = row.querySelector('a');
+        const productText = cleanProductLine(
+          productLink?.getAttribute('title') ||
+          productLink?.getAttribute('aria-label') ||
+          productLink?.textContent ||
+          ''
+        );
+
+        // Accept product lines that include a SKU prefix pattern in the visible row.
+        if (!productText || !/\b[A-Z]{1,8}\d{3,}(?:-\d+)?\b/.test(rowText)) continue;
+        products.push(productText);
+      }
+    }
+
+    const unique = [];
+    const seen = new Set();
+    for (const line of products) {
+      const key = line.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(line);
+    }
+    return unique.slice(0, 8);
+  }
+
   function getAnchorBestProductText(anchor) {
     if (!anchor) return '';
     const candidates = [
@@ -86,7 +134,8 @@
   }
 
   function extractProductLines() {
-    if (apiProductCache.length) return apiProductCache.join(' | ');
+    const quoteProducts = extractQuoteProductLines();
+    if (quoteProducts.length) return quoteProducts.join(' | ');
 
     const products = [];
 
@@ -170,6 +219,11 @@
       if (seen.has(key)) continue;
       seen.add(key);
       unique.push(line);
+    }
+
+    // If we still have nothing useful from DOM, allow API-captured lines as final fallback.
+    if (!unique.length && apiProductCache.length) {
+      return apiProductCache.join(' | ');
     }
 
     return unique.slice(0, 8).join(' | ');
