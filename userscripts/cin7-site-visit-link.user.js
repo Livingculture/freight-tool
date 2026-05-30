@@ -544,6 +544,25 @@
     field('lcSvProduct').value = data.product || '';
     field('lcSvComments').value = data.comments || '';
     field('lcSvArea').value = data.area || '';
+    updateSubmitButtonLabel();
+  }
+
+  function formatDateForLabel(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return raw;
+    return `${match[3]}/${match[2]}/${match[1]}`;
+  }
+
+  function updateSubmitButtonLabel() {
+    const button = field('lcSvSubmitBtn');
+    if (!button) return;
+    const dateValue = field('lcSvDate')?.value || '';
+    const timeValue = clean(field('lcSvTime')?.value || '');
+    const dateText = formatDateForLabel(dateValue);
+    const suffix = [dateText, timeValue].filter(Boolean).join(' · ');
+    button.textContent = suffix ? `Book Site Visit (${suffix})` : 'Book Site Visit';
   }
 
   function readForm() {
@@ -635,7 +654,7 @@
           <div class="lc-sv-field"><label>Product</label><textarea id="lcSvProduct"></textarea></div>
           <div class="lc-sv-field"><label>Comments</label><textarea id="lcSvComments"></textarea></div>
           <div class="lc-sv-actions">
-            <button type="submit" class="lc-sv-primary">Export Site Visit Card to Planner</button>
+            <button type="submit" class="lc-sv-primary" id="lcSvSubmitBtn">Book Site Visit</button>
             <button type="button" class="lc-sv-close" id="lcSvCloseBtn">Close</button>
           </div>
           <div id="lcSvMsg" class="lc-sv-msg"></div>
@@ -645,9 +664,12 @@
     document.body.appendChild(overlay);
     field('lcSvCloseBtn').addEventListener('click', closePanel);
     field('lcSvForm').addEventListener('submit', submitSiteVisit);
+    field('lcSvDate').addEventListener('change', updateSubmitButtonLabel);
+    field('lcSvTime').addEventListener('change', updateSubmitButtonLabel);
     overlay.addEventListener('click', (event) => {
       if (event.target === overlay) closePanel();
     });
+    updateSubmitButtonLabel();
   }
 
   function openPanel() {
