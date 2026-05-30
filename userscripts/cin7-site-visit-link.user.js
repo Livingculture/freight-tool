@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.9.7
+// @version      1.9.8
 // @description  Adds a Site Visit button beside Install Fees/Scan, opens editable card popup, then saves to Workflow planner.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -21,6 +21,7 @@
   const WORKFLOW_PLANNER_URL = 'https://living-culture-workflow.vercel.app/';
   const API_KEY = '';
   const STATUSES = ['To be confirmed', 'Site Visit Confirmed', 'Completed', 'Hold'];
+  const POPUP_STATUSES = ['To be confirmed', 'Site Visit Confirmed'];
   const VISIT_BY = ['', 'Ian', 'Steve', 'Jaine', 'Vitalii', 'Pakjira', 'Blair', 'James', 'Ian/Steve', 'Ian/Jaine', 'Ian/Vitalii', 'Ian/Pakjira', 'Vitalii/James', 'Blair/James'];
   let apiProductCache = [];
   const TIME_OPTIONS = (() => {
@@ -610,7 +611,7 @@
         </div>
         <form id="lcSvForm" class="lc-sv-body">
           <div class="lc-sv-grid">
-            <div class="lc-sv-field"><label>Status</label><select id="lcSvStatus">${STATUSES.map((s) => `<option>${s}</option>`).join('')}</select></div>
+            <div class="lc-sv-field"><label>Status</label><select id="lcSvStatus">${POPUP_STATUSES.map((s) => `<option>${s}</option>`).join('')}</select></div>
             <div class="lc-sv-field"><label>LC Branch</label><input id="lcSvArea" placeholder="AKL / PEN / CHCH / HAM / WHG / NAP" /></div>
           </div>
           <div class="lc-sv-grid">
