@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.9.6
+// @version      1.9.7
 // @description  Adds a Site Visit button beside Install Fees/Scan, opens editable card popup, then saves to Workflow planner.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -23,6 +23,18 @@
   const STATUSES = ['To be confirmed', 'Site Visit Confirmed', 'Completed', 'Hold'];
   const VISIT_BY = ['', 'Ian', 'Steve', 'Jaine', 'Vitalii', 'Pakjira', 'Blair', 'James', 'Ian/Steve', 'Ian/Jaine', 'Ian/Vitalii', 'Ian/Pakjira', 'Vitalii/James', 'Blair/James'];
   let apiProductCache = [];
+  const TIME_OPTIONS = (() => {
+    const options = [''];
+    for (let hour = 6; hour <= 20; hour += 1) {
+      for (let minute = 0; minute < 60; minute += 15) {
+        const isPm = hour >= 12;
+        const displayHour = hour % 12 === 0 ? 12 : hour % 12;
+        const displayMinute = String(minute).padStart(2, '0');
+        options.push(`${displayHour}:${displayMinute} ${isPm ? 'pm' : 'am'}`);
+      }
+    }
+    return options;
+  })();
 
   function clean(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
@@ -603,7 +615,7 @@
           </div>
           <div class="lc-sv-grid">
             <div class="lc-sv-field"><label>Booked Date</label><input id="lcSvDate" type="date" /></div>
-            <div class="lc-sv-field"><label>Time</label><input id="lcSvTime" placeholder="10:00 am" /></div>
+            <div class="lc-sv-field"><label>Time</label><select id="lcSvTime">${TIME_OPTIONS.map((t) => `<option value="${t}">${t || '—'}</option>`).join('')}</select></div>
           </div>
           <div class="lc-sv-grid">
             <div class="lc-sv-field"><label>Order ID</label><input id="lcSvOrder" /></div>
