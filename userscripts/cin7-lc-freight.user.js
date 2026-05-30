@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      7.9-hosted
+// @version      8.0-hosted
 // @description  Living Culture freight panel for Cin7 using the hosted freight service.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -56,6 +56,45 @@
       '"': '&quot;',
       "'": '&#39;'
     }[char]));
+  }
+
+  function normaliseTitleToken(value) {
+    return String(value || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  }
+
+  function cleanProductTitle(value, fallbackSku = '') {
+    const raw = clean(value);
+    if (!raw) return fallbackSku || 'Living Culture product';
+
+    const withoutNulls = raw
+      .replace(/\bnull\b/gi, ' ')
+      .replace(/\bundefined\b/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const withoutUuidPrefix = withoutNulls
+      .replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\s+/i, '')
+      .trim();
+
+    const parts = withoutUuidPrefix
+      .split(/\s+\|\s+/)
+      .map(part => clean(part))
+      .filter(Boolean);
+
+    const unique = [];
+    const seen = new Set();
+
+    for (const part of parts.length ? parts : [withoutUuidPrefix]) {
+      const key = normaliseTitleToken(part);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      unique.push(part);
+    }
+
+    return clean(unique.join(' | ')) || fallbackSku || 'Living Culture product';
   }
 
   function normaliseQuantity(value) {
@@ -504,6 +543,7 @@
         const image = product.image
           ? `<img src="${escapeHtml(product.image)}" alt="">`
           : '<div class="lc-product-image-placeholder"></div>';
+        const title = cleanProductTitle(product.title || product.sku || '', product.sku || '');
 
         const websiteUrl = clean(product.url || product.productUrl);
 
@@ -515,7 +555,7 @@
           <div class="lc-product-row">
             ${image}
             <div>
-              <strong>${escapeHtml(product.title || product.sku || 'Living Culture product')}</strong>
+              <strong>${escapeHtml(title)}</strong>
               ${statusLine}
               ${quantityLine}
               ${detailsHtml}
@@ -548,12 +588,6 @@
       product
     ]));
 
-    const hasMetrics = product =>
-      Boolean(product?.metricsLoaded) ||
-      Number(product?.weightKg) > 0 ||
-      Number(product?.cbm) > 0 ||
-      (Array.isArray(product?.cartons) && product.cartons.length > 0);
-
     return requestedItems.map(item => {
       const key = clean(item.sku || item.productUrl).toLowerCase();
       const loaded = loadedByKey.get(key) || {};
@@ -574,6 +608,13 @@
     });
   }
 
+  function hasMetrics(product) {
+    return Boolean(product?.metricsLoaded) ||
+      Number(product?.weightKg) > 0 ||
+      Number(product?.cbm) > 0 ||
+      (Array.isArray(product?.cartons) && product.cartons.length > 0);
+  }
+
   async function requestProductDetails(items, price = '') {
     const response = await fetch(`${API_BASE}/api/product-metrics`, {
       method: 'POST',
@@ -588,6 +629,40 @@
     }
 
     return data;
+  }
+
+  function unresolvedMetricItems(items = []) {
+    return items
+      .filter(item => !hasMetrics(item))
+      .map(item => ({
+        sku: item.sku || '',
+        productUrl: item.productUrl || item.url || '',
+        quantity: normaliseQuantity(item.quantity)
+      }))
+      .filter(item => item.sku || item.productUrl);
+  }
+
+  async function requestProductDetailsWithRetry(items, price = '') {
+    const first = await requestProductDetails(items, price);
+    const firstProducts = Array.isArray(first?.products) ? first.products : [];
+
+    const mergedFirst = mergeProductDetails(items, firstProducts);
+    const unresolved = unresolvedMetricItems(mergedFirst);
+    if (!unresolved.length) return { ...first, products: firstProducts };
+
+    await new Promise(resolve => setTimeout(resolve, 350));
+
+    try {
+      const second = await requestProductDetails(unresolved, price);
+      const secondProducts = Array.isArray(second?.products) ? second.products : [];
+      return {
+        ...first,
+        products: mergeProductDetails(firstProducts, secondProducts)
+      };
+    } catch (error) {
+      console.warn('Second product-metrics attempt failed:', error);
+      return { ...first, products: firstProducts };
+    }
   }
 
   async function requestProductAvailability(items) {
@@ -922,7 +997,7 @@
         pendingDisplayProducts = mergeProductDetails(pendingDisplayProducts, products);
         renderProductDetails(pendingDisplayProducts, state.method);
       };
-      pendingProductDetails = requestProductDetails(requestedItems)
+      pendingProductDetails = requestProductDetailsWithRetry(requestedItems)
         .then(data => ({ data }))
         .catch(error => ({ error }));
       pendingProductDetails.then(result => applyPendingProducts(result?.data?.products || []));
