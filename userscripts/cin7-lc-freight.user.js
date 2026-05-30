@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      7.8-hosted
+// @version      7.9-hosted
 // @description  Living Culture freight panel for Cin7 using the hosted freight service.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -335,13 +335,20 @@
   }
 
   function setResultLoading() {
+    state.price = '';
+    state.priceNumber = '';
+    state.method = '';
+
     const result = document.getElementById('lc-freight-result');
+    const methodBlock = document.getElementById('lc-freight-method');
     const preSaleBlock = document.getElementById('lc-presale-freight-estimate');
 
     if (result) {
-      result.textContent = state.price
-        ? `Freight now: ${state.price} (updating...)`
-        : 'Freight: updating...';
+      result.textContent = 'Freight: updating...';
+    }
+
+    if (methodBlock) {
+      methodBlock.textContent = '';
     }
 
     if (preSaleBlock) {
@@ -980,10 +987,8 @@
         renderProductDetails(fallbackProducts, state.method);
       }
 
-      const message = state.price
-        ? `${error.message || 'Error getting freight.'} Showing previous freight quote.`
-        : error.message || 'Error getting freight.';
-      setStatus(message, true);
+      setResult('', '');
+      setStatus(error.message || 'Error getting freight.', true);
       return false;
     }
   }
