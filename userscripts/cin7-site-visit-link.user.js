@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.9.2
+// @version      1.9.3
 // @description  Adds a Site Visit button beside Install Fees/Scan, opens editable card popup, then saves to Workflow planner.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -49,7 +49,13 @@
   }
 
   function cleanProductLine(value) {
-    const text = clean(value)
+    let text = clean(value);
+    const skuStart = text.match(/\b[A-Z]{1,8}\d{3,}(?:-\d+)?\b/i);
+    if (skuStart && typeof skuStart.index === 'number') {
+      text = text.slice(skuStart.index);
+    }
+    text = text
+      .replace(/^null\s+/i, '')
       .replace(/^[A-Z]{1,8}\d{3,}(?:-\d+)?\s*:\s*/i, '')
       .replace(/\s+/g, ' ')
       .trim();
@@ -58,6 +64,13 @@
     if (/add more items|export|import|before tax|tax|discount|subtotal|total/i.test(text) && text.length < 48) return '';
     if (/^\d[\d\s,.-]*$/.test(text)) return '';
     return text;
+  }
+
+  function productCompareKey(value) {
+    return cleanProductLine(value)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
   }
 
   function extractQuoteProductLines() {
@@ -100,10 +113,12 @@
     const unique = [];
     const seen = new Set();
     for (const line of products) {
-      const key = line.toLowerCase();
-      if (seen.has(key)) continue;
+      const cleaned = cleanProductLine(line);
+      if (!cleaned) continue;
+      const key = productCompareKey(cleaned);
+      if (!key || seen.has(key)) continue;
       seen.add(key);
-      unique.push(line);
+      unique.push(cleaned);
     }
     return unique.slice(0, 8);
   }
