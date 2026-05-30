@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.9.5
+// @version      1.9.6
 // @description  Adds a Site Visit button beside Install Fees/Scan, opens editable card popup, then saves to Workflow planner.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -49,17 +49,25 @@
   }
 
   function cleanProductLine(value) {
-    let text = clean(value);
-    const skuStart = text.match(/\b[A-Z][A-Z0-9]{0,7}\d{3,}(?:-\d+)?\b/i);
+    let text = clean(value)
+      .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, ' ')
+      .replace(/\b[0-9a-f]{12,}\b/gi, ' ')
+      .replace(/\bnull\b/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const skuStart = text.match(/\b[A-Z]{2,5}\d{4,}(?:-\d+)?\b/);
     if (skuStart && typeof skuStart.index === 'number') {
       text = text.slice(skuStart.index);
     }
-    text = text
-      .replace(/^null\s+/i, '')
-      .replace(/\bnull\b/gi, ' ')
-      .replace(/^[A-Z]{1,8}\d{3,}(?:-\d+)?\s*:\s*/i, '')
-      .replace(/\s+/g, ' ')
-      .trim();
+
+    const descOnly = text.match(/\b[A-Z]{2,5}\d{4,}(?:-\d+)?\s*:\s*(.+?)(?=\s+\b[A-Z]{2,5}\d{4,}(?:-\d+)?\s*:|$)/);
+    if (descOnly && descOnly[1]) {
+      text = clean(descOnly[1]);
+    } else {
+      text = text.replace(/^[A-Z]{2,5}\d{4,}(?:-\d+)?\s*:\s*/i, '').trim();
+    }
+
     if (!text) return '';
     if (/^total:?$/i.test(text)) return '';
     if (/add more items|export|import|before tax|tax|discount|subtotal|total/i.test(text) && text.length < 48) return '';
@@ -97,11 +105,12 @@
         if (/^total:?$/i.test(rowText) || /^add more items/i.test(rowText)) continue;
         if (/additional charges and services/i.test(rowText)) continue;
 
-        const productLink = row.querySelector('a');
+        const productCell = row.querySelector('td:nth-child(2), th:nth-child(2)') || row.querySelector('td,th');
+        const productLink = productCell?.querySelector('a') || row.querySelector('a');
         const productText = cleanProductLine(
+          productLink?.textContent ||
           productLink?.getAttribute('title') ||
           productLink?.getAttribute('aria-label') ||
-          productLink?.textContent ||
           ''
         );
 
