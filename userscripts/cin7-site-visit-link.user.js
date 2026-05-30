@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.9.0
+// @version      1.9.1
 // @description  Adds a Site Visit button beside Install Fees/Scan, opens editable card popup, then saves to Workflow planner.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -189,19 +189,20 @@
       keySet.has('product') ||
       keySet.has('productname') ||
       keySet.has('itemname') ||
-      keySet.has('name') ||
       keySet.has('description') ||
-      keySet.has('itemdescription');
+      keySet.has('itemdescription') ||
+      keySet.has('sku') ||
+      keySet.has('productsku');
 
     if (possibleLine) {
       const candidates = [
         node.ProductName,
         node.Product,
         node.ItemName,
-        node.Name,
         node.Description,
         node.ItemDescription,
-        node.Comment
+        node.Comment,
+        node.ProductDescription
       ];
       candidates.forEach((raw) => {
         const value = clean(raw);
@@ -371,6 +372,12 @@
     const titleOrderId = extractOrderId(document.title || '');
     const pageOrderId = extractOrderId(pageText);
     const referenceOrderId = extractOrderId(reference);
+    const customerName = readValueNearLabel('Customer');
+    let productText = extractProductLines();
+    if (productText && customerName && clean(productText).toLowerCase() === clean(customerName).toLowerCase()) {
+      productText = '';
+    }
+
     return {
       status: 'To be confirmed',
       bookedDate: localDateKey(),
@@ -378,11 +385,11 @@
       orderId: referenceOrderId || titleOrderId || pageOrderId || reference,
       placedBy: rep,
       visitBy: '',
-      customerName: readValueNearLabel('Customer'),
+      customerName,
       address: clean(`${address1} ${address2}`),
       phone: readValueNearLabel('Phone'),
       email: readValueNearLabel('Email'),
-      product: extractProductLines(),
+      product: productText,
       comments: '',
       area: deriveBranchFromRep(rep),
       sourceUrl: window.location.href
