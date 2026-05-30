@@ -1831,34 +1831,26 @@ async function getProductMetrics(itemInput) {
     throw new Error('At least one SKU is required');
   }
 
-  const fastProducts = await Promise.all(items.map(async item => {
-    const product = { ...(await getProductDetailsFast(item, { includeMetrics: true })) };
-    product.quantity = item.quantity;
-    return product;
-  }).map(promise => promise.catch(error => ({ error }))));
-
-  if (fastProducts.every(product => !product.error)) {
-    return fastProducts;
-  }
-
-  const session = await createBrowserSession();
-  try {
-    const products = [];
-    for (const [index, item] of items.entries()) {
-      if (!fastProducts[index]?.error) {
-        products.push(fastProducts[index]);
-        continue;
-      }
-
-      console.error(`Fast product metrics failed for ${item.sku || item.productUrl}:`, fastProducts[index].error.message);
-      const product = { ...(await getProductDetails(session.page, item, { includeMetrics: true })) };
+  return Promise.all(items.map(async item => {
+    try {
+      const product = { ...(await getProductDetailsFast(item, { includeMetrics: true })) };
       product.quantity = item.quantity;
-      products.push(product);
+      return product;
+    } catch (error) {
+      console.error(`Fast product metrics failed for ${item.sku || item.productUrl}:`, error.message);
+      return {
+        sku: item.sku || '',
+        productUrl: item.productUrl || '',
+        title: item.sku || item.productUrl || 'Product',
+        quantity: item.quantity,
+        weightKg: 0,
+        cbm: 0,
+        cartons: [],
+        metricsLoaded: false,
+        error: error.message
+      };
     }
-    return products;
-  } finally {
-    await session.close().catch(() => {});
-  }
+  }));
 }
 
 async function getProductSummaries(itemInput) {
