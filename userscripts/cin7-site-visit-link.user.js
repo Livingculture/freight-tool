@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.9.3
+// @version      1.9.4
 // @description  Adds a Site Visit button beside Install Fees/Scan, opens editable card popup, then saves to Workflow planner.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -50,12 +50,13 @@
 
   function cleanProductLine(value) {
     let text = clean(value);
-    const skuStart = text.match(/\b[A-Z]{1,8}\d{3,}(?:-\d+)?\b/i);
+    const skuStart = text.match(/\b[A-Z][A-Z0-9]{0,7}\d{3,}(?:-\d+)?\b/i);
     if (skuStart && typeof skuStart.index === 'number') {
       text = text.slice(skuStart.index);
     }
     text = text
       .replace(/^null\s+/i, '')
+      .replace(/\bnull\b/gi, ' ')
       .replace(/^[A-Z]{1,8}\d{3,}(?:-\d+)?\s*:\s*/i, '')
       .replace(/\s+/g, ' ')
       .trim();
@@ -475,9 +476,7 @@
       .lc-sv-panel{width:min(640px,94vw);max-height:92vh;background:#fff;border-radius:14px;overflow:auto;box-shadow:0 20px 50px rgba(0,0,0,.35);border:1px solid #c9d6d3}
       .lc-sv-head{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid #d9e3e1}
       .lc-sv-head h3{margin:0;font-size:28px;color:#20453f}
-      .lc-sv-tag{font-size:12px;background:#e8efed;padding:6px 10px;border-radius:999px;font-weight:700;color:#3b635d}
       .lc-sv-body{padding:14px 16px;display:grid;gap:10px}
-      .lc-sv-note{background:#dce6e4;border-left:5px solid #4e7a73;border-radius:8px;padding:10px;font-size:14px;color:#516764}
       .lc-sv-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
       .lc-sv-field{display:grid;gap:5px}
       .lc-sv-field label{font-size:12px;font-weight:800;color:#2f675f}
@@ -587,10 +586,8 @@
       <div class="lc-sv-panel">
         <div class="lc-sv-head">
           <h3>New site visit card</h3>
-          <span class="lc-sv-tag">From Cin7</span>
         </div>
         <form id="lcSvForm" class="lc-sv-body">
-          <div class="lc-sv-note">Pre-filled from visible Cin7 fields. Edit anything before saving.</div>
           <div class="lc-sv-grid">
             <div class="lc-sv-field"><label>Status</label><select id="lcSvStatus">${STATUSES.map((s) => `<option>${s}</option>`).join('')}</select></div>
             <div class="lc-sv-field"><label>LC Branch</label><input id="lcSvArea" placeholder="AKL / PEN / CHCH / HAM / WHG / NAP" /></div>
@@ -613,7 +610,7 @@
           <div class="lc-sv-field"><label>Product</label><textarea id="lcSvProduct"></textarea></div>
           <div class="lc-sv-field"><label>Comments</label><textarea id="lcSvComments"></textarea></div>
           <div class="lc-sv-actions">
-            <button type="submit" class="lc-sv-primary">Save Site Visit Card</button>
+            <button type="submit" class="lc-sv-primary">Export Site Visit Card to Planner</button>
             <button type="button" class="lc-sv-close" id="lcSvCloseBtn">Close</button>
           </div>
           <div id="lcSvMsg" class="lc-sv-msg"></div>
