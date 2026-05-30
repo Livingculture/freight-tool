@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.7.0
+// @version      1.8.0
 // @description  Adds a Site Visit button beside Install Fees/Scan, opens editable card popup, then saves to Workflow planner.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -48,6 +48,18 @@
     return code;
   }
 
+  function cleanProductLine(value) {
+    const text = clean(value)
+      .replace(/^[A-Z]{1,8}\d{3,}(?:-\d+)?\s*:\s*/i, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!text) return '';
+    if (/^total:?$/i.test(text)) return '';
+    if (/add more items|export|import|before tax|tax|discount|subtotal|total/i.test(text) && text.length < 48) return '';
+    if (/^\d[\d\s,.-]*$/.test(text)) return '';
+    return text;
+  }
+
   function openPlannerWithCard(payload) {
     const params = new URLSearchParams();
     params.set('planner', 'site-visit');
@@ -61,6 +73,16 @@
     if (apiProductCache.length) return apiProductCache.join(' | ');
 
     const products = [];
+
+    // Primary: quote line anchors that usually look like "SKU: Description".
+    const quoteAnchors = Array.from(document.querySelectorAll('table a'))
+      .filter(isVisible)
+      .map((anchor) => cleanProductLine(anchor.textContent || ''))
+      .filter(Boolean);
+
+    if (quoteAnchors.length) {
+      quoteAnchors.forEach((line) => products.push(line));
+    }
 
     const productHeaders = Array.from(document.querySelectorAll('th, td, div, span'))
       .filter(isVisible)
@@ -84,11 +106,8 @@
         const cell = cells[productColumnIndex];
 
         const anchor = cell.querySelector('a');
-        const raw = clean(anchor ? anchor.textContent : cell.textContent || '');
+        const raw = cleanProductLine(anchor ? anchor.textContent : cell.textContent || '');
         if (!raw) continue;
-        if (/^total:?$/i.test(raw)) continue;
-        if (/add more items|export|import/i.test(raw)) continue;
-        if (/^\d[\d\s,.-]*$/.test(raw)) continue;
 
         products.push(raw);
       }
@@ -101,10 +120,8 @@
       );
       inputs.forEach((node) => {
         if (!isVisible(node)) return;
-        const value = clean(node.value || '');
+        const value = cleanProductLine(node.value || '');
         if (!value) return;
-        if (/^total:?$/i.test(value)) return;
-        if (/^\d[\d\s,.-]*$/.test(value)) return;
         products.push(value);
       });
     }
@@ -170,7 +187,9 @@
     collectProductCandidatesFromObject(payload, candidates);
     const unique = [];
     const seen = new Set();
-    for (const line of candidates) {
+    for (const rawLine of candidates) {
+      const line = cleanProductLine(rawLine);
+      if (!line) continue;
       const key = line.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
@@ -315,12 +334,15 @@
     const parsedDate = /^\d{2}\/\d{2}\/\d{4}$/.test(dateRaw)
       ? `${dateRaw.slice(6, 10)}-${dateRaw.slice(3, 5)}-${dateRaw.slice(0, 2)}`
       : localDateKey();
-    const pageOrderId = extractOrderId(document.body ? document.body.innerText : '');
+    const pageText = document.body ? document.body.innerText : '';
+    const titleOrderId = extractOrderId(document.title || '');
+    const pageOrderId = extractOrderId(pageText);
+    const referenceOrderId = extractOrderId(reference);
     return {
       status: 'To be confirmed',
       bookedDate: parsedDate,
       time: '',
-      orderId: extractOrderId(reference) || pageOrderId || reference,
+      orderId: referenceOrderId || titleOrderId || pageOrderId || reference,
       placedBy: rep,
       visitBy: '',
       customerName: readValueNearLabel('Customer'),
