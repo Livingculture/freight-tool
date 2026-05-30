@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.9.8
+// @version      1.9.9
 // @description  Adds a Site Visit button beside Install Fees/Scan, opens editable card popup, then saves to Workflow planner.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -26,12 +26,12 @@
   let apiProductCache = [];
   const TIME_OPTIONS = (() => {
     const options = [''];
-    for (let hour = 6; hour <= 20; hour += 1) {
-      for (let minute = 0; minute < 60; minute += 15) {
+    for (let hour = 8; hour <= 20; hour += 1) {
+      for (let minute = 0; minute < 60; minute += 30) {
         const isPm = hour >= 12;
         const displayHour = hour % 12 === 0 ? 12 : hour % 12;
         const displayMinute = String(minute).padStart(2, '0');
-        options.push(`${displayHour}:${displayMinute} ${isPm ? 'pm' : 'am'}`);
+        options.push(`${displayHour}:${displayMinute}${isPm ? 'pm' : 'am'}`);
       }
     }
     return options;
