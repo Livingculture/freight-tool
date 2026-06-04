@@ -2336,9 +2336,14 @@ function buildFastCartShippingResult(result, products, addressText) {
   };
 }
 
-async function getDirectFastCartShippingQuote(itemInput, addressText, timing = createTiming('direct freight')) {
+async function getDirectFastCartShippingQuote(
+  itemInput,
+  addressText,
+  timing = createTiming('direct freight'),
+  { checkAvailability = false } = {}
+) {
   const { fields, products, cartItems } = await prepareFastCartShipping(itemInput, addressText, timing, {
-    checkAvailability: false
+    checkAvailability
   });
   const result = await timing.step('read direct cart shipping rates', () =>
     getDirectCartShippingQuote(cartItems, fields)
@@ -3230,6 +3235,8 @@ app.post('/get-freight', async (req, res) => {
   const { sku, productUrl, address, selectedAddress, quantity } = req.body;
   const requestedAddress = selectedAddress || address;
   const freightAddress = getManualAddressFallback(requestedAddress)[0] || requestedAddress;
+  const quoteAvailableQuantityOnly = req.body.quoteAvailableQuantityOnly === true;
+  const skipBrowserFallback = req.body.skipBrowserFallback === true;
 
   const items = Array.isArray(req.body.items) && req.body.items.length
     ? req.body.items.map(item => {
@@ -3258,11 +3265,22 @@ app.post('/get-freight', async (req, res) => {
 
   try {
     try {
-      const directResult = await getDirectFastCartShippingQuote({ items }, freightAddress, createTiming('get freight direct'));
+      const directResult = await getDirectFastCartShippingQuote(
+        { items },
+        freightAddress,
+        createTiming('get freight direct'),
+        { checkAvailability: quoteAvailableQuantityOnly }
+      );
       const directPayload = await buildFreightResponsePayload(directResult, sku);
       cacheFreightQuote(cacheKey, directPayload);
       return res.json(directPayload);
     } catch (directError) {
+      if (skipBrowserFallback) {
+        console.error('Direct Cin7 freight failed and browser fallback was skipped:', directError.message);
+        return res.status(422).json({
+          error: directError.message || 'Fast freight quote could not be loaded'
+        });
+      }
       console.error('Direct Cin7 freight failed, using browser fallback:', directError.message);
     }
 

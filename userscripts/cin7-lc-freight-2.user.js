@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight 2
 // @namespace    livingculture
-// @version      1.0
+// @version      1.1
 // @description  Living Culture freight panel test version 2 for Cin7 using the hosted freight service.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -777,6 +777,8 @@
               quantity: item.quantity || 1
             };
           }),
+          quoteAvailableQuantityOnly: true,
+          skipBrowserFallback: true,
           address,
           selectedAddress: address
         })
