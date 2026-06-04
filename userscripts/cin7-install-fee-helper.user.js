@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Installation Fee Helper
 // @namespace    livingculture-cin7
-// @version      3.2
+// @version      3.3
 // @description  Shows Living Culture installation fee SKUs and prices inside Cin7 for quick add. Loads Google Sheet pricing with built-in fallback.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
@@ -554,7 +554,6 @@ AS10139	Assembly Roosevelt Motorised Sliding Gate & Post with Post with Bury int
         new MouseEvent(type, {
           bubbles: true,
           cancelable: true,
-          view: window,
           clientX: x,
           clientY: y
         })
