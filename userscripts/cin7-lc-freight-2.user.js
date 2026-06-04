@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight 2
 // @namespace    livingculture
-// @version      1.5
-// @description  Living Culture freight panel test version 2 for Cin7 using the hosted Vercel freight service.
+// @version      1.6
+// @description  Living Culture freight panel test version 2 Lite for Cin7. Hosted Vercel freight price only.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
 // @match        *://*.cin7.co/*
@@ -37,7 +37,7 @@
     lookupSeq: 0
   };
   const IGNORED_SKU_PREFIXES = new Set(['AS']);
-  const FREIGHT_TIMEOUT_MS = 140000;
+  const FREIGHT_TIMEOUT_MS = 45000;
 
   async function postJson(path, payload, options = {}) {
     const timeoutMs = options.timeoutMs || FREIGHT_TIMEOUT_MS;
@@ -396,7 +396,7 @@
     const preSaleBlock = document.getElementById('lc2-presale-freight-estimate');
 
     if (result) {
-      result.textContent = price ? `Freight now: ${price}` : 'Freight: -';
+      result.textContent = price ? `Freight: ${price}` : 'Freight: -';
     }
 
     if (methodBlock) {
@@ -404,15 +404,7 @@
     }
 
     if (preSaleBlock) {
-      if (preSaleFreightEstimate?.price) {
-        preSaleBlock.innerHTML = `
-          <div><strong>Estimated pre-sale freight later: ${escapeHtml(preSaleFreightEstimate.price)}</strong></div>
-          ${preSaleFreightEstimate.total ? `<div>Estimated total freight: ${escapeHtml(preSaleFreightEstimate.total)}</div>` : ''}
-          ${preSaleFreightEstimate.note ? `<div class="lc-freight2-note">${escapeHtml(preSaleFreightEstimate.note)}</div>` : ''}
-        `;
-      } else {
-        preSaleBlock.innerHTML = '';
-      }
+      preSaleBlock.innerHTML = '';
     }
   }
 
@@ -790,6 +782,8 @@
       }),
       freightPriceOnly: true,
       quoteAvailableQuantityOnly: false,
+      skipBrowserFallback: true,
+      lite: true,
       address,
       selectedAddress: address
     });
@@ -990,7 +984,7 @@
       }
 
       setResultLoading();
-      renderProductDetails(requestedItems, state.method);
+      renderProductDetails([], '');
 
       const data = await requestFreight({
         sku,
@@ -1000,41 +994,16 @@
 
       if (!isCurrentLookup()) return false;
 
-      const adjustments = Array.isArray(data.quantityAdjustments) ? data.quantityAdjustments : [];
-      const adjustmentBySku = new Map(adjustments.map(adjustment => [
-        clean(adjustment.sku).toLowerCase(),
-        adjustment
-      ]));
-      const quotedItems = requestedItems.map(item => {
-        const adjustment = adjustmentBySku.get(clean(item.sku).toLowerCase());
-        if (!adjustment) return item;
-
-        return {
-          ...item,
-          quantity: normaliseQuantity(adjustment.availableQuantity),
-          requestedQuantity: normaliseQuantity(adjustment.requestedQuantity),
-          preSaleQuantity: normaliseQuantityAllowZero(
-            adjustment.preSaleQuantity ??
-            (Number(adjustment.requestedQuantity) - Number(adjustment.availableQuantity))
-          )
-        };
-      });
-
-      setResult(data.price, data.method, data.preSaleFreightEstimate);
-      if (adjustments.length) {
-        setStatus('');
-      } else {
-        setStatus(data.fromCache ? 'Freight loaded from recent lookup.' : 'Freight loaded.');
-      }
-
-      renderProductDetails(mergeProductDetails(quotedItems, data.products || []), data.method);
+      setResult(data.price, data.method);
+      setStatus(data.fromCache ? 'Freight loaded from recent lookup.' : 'Freight loaded.');
+      renderProductDetails([], '');
 
       return true;
     } catch (error) {
       if (!isCurrentLookup()) return false;
 
       console.error(error);
-      renderProductDetails(requestedItems, state.method);
+      renderProductDetails([], '');
 
       setResult('', '');
       setStatus(error.message || 'Error getting freight.', true);
@@ -1257,7 +1226,7 @@
           <img src="https://livingculture.co.nz/cdn/shop/files/logo_ec2b0c5e-42ca-4695-8c7e-43b344144c58.png?v=1675047511&width=220" alt="Living Culture" />
           <strong>Freight Costing</strong>
         </div>
-        <p>Use Cin7 products and delivery details.</p>
+        <p>Fast freight price only.</p>
         <button type="button" id="lc2-panel-close">×</button>
       </div>
 

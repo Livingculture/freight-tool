@@ -59,7 +59,7 @@ const productSummaryCache = new Map();
 const skuUrlCache = new Map();
 const addressSuggestionCache = new Map();
 const freightQuoteCache = new Map();
-const FREIGHT_QUOTE_CACHE_MS = 10 * 60 * 1000;
+const FREIGHT_QUOTE_CACHE_MS = 30 * 60 * 1000;
 const cin7AvailabilityCache = new Map();
 const CIN7_AVAILABILITY_CACHE_MS = 2 * 60 * 1000;
 let activeCheckout = null;
@@ -3367,7 +3367,8 @@ app.post('/get-freight', async (req, res) => {
     return res.status(400).json({ error: 'SKU or product URL and address are required' });
   }
 
-  const cacheKey = makeFreightQuoteKey('get-freight', { items }, freightAddress);
+  const cacheRoute = freightPriceOnly && skipBrowserFallback ? 'get-freight-lite' : 'get-freight';
+  const cacheKey = makeFreightQuoteKey(cacheRoute, { items }, freightAddress);
   const cachedPayload = getCachedFreightQuote(cacheKey);
   if (cachedPayload) {
     return res.json({ ...cachedPayload, fromCache: true });
@@ -3390,18 +3391,14 @@ app.post('/get-freight', async (req, res) => {
       const directMessage = directError.message || '';
       const shouldRetryWithBrowserFallback = /429|rate limit/i.test(directMessage);
 
-      if (skipBrowserFallback && !shouldRetryWithBrowserFallback) {
+      if (skipBrowserFallback) {
         console.error('Direct Cin7 freight failed and browser fallback was skipped:', directError.message);
-        return res.status(422).json({
+        return res.status(shouldRetryWithBrowserFallback ? 429 : 422).json({
           error: directError.message || 'Fast freight quote could not be loaded'
         });
       }
 
-      if (skipBrowserFallback && shouldRetryWithBrowserFallback) {
-        console.error('Direct Cin7 freight was rate limited, using browser fallback despite skip request:', directError.message);
-      } else {
-        console.error('Direct Cin7 freight failed, using browser fallback:', directError.message);
-      }
+      console.error('Direct Cin7 freight failed, using browser fallback:', directError.message);
     }
 
     const payload = await withAutomationPage('get freight', async page => {
