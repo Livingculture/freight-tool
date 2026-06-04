@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight 2
 // @namespace    livingculture
-// @version      1.1
+// @version      1.2
 // @description  Living Culture freight panel test version 2 for Cin7 using the hosted freight service.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -37,7 +37,7 @@
     lookupSeq: 0
   };
   const IGNORED_SKU_PREFIXES = new Set(['AS']);
-  const FREIGHT_TIMEOUT_MS = 85000;
+  const FREIGHT_TIMEOUT_MS = 140000;
 
   function clean(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
@@ -778,7 +778,6 @@
             };
           }),
           quoteAvailableQuantityOnly: true,
-          skipBrowserFallback: true,
           address,
           selectedAddress: address
         })

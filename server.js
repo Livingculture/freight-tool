@@ -1996,7 +1996,7 @@ async function applyCartAddAvailability(products = []) {
 
       if (response.ok) {
         product.availableQuantity = requestedQuantity;
-        await wait(250);
+        await wait(500);
         continue;
       }
 
@@ -2004,7 +2004,7 @@ async function applyCartAddAvailability(products = []) {
       const partialMatch = message.match(/only\s+(\d+)\s+items?\s+were\s+added/i);
       if (partialMatch) {
         product.availableQuantity = Math.max(0, Math.min(requestedQuantity, Number(partialMatch[1]) || 0));
-        await wait(250);
+        await wait(500);
         continue;
       }
 
@@ -2139,7 +2139,7 @@ function getStorefrontHeaders(cookieHeader = '', hasBody = false) {
   };
 }
 
-const SHOPIFY_CART_RETRY_DELAYS_MS = [700, 1600, 3200];
+const SHOPIFY_CART_RETRY_DELAYS_MS = [1500, 3500, 7000, 12000, 20000];
 
 function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -2151,7 +2151,7 @@ async function waitForShopifyCartRetry(response, attempt) {
   await wait(Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : fallbackDelay);
 }
 
-async function fetchShopifyCartWithRetry(url, options = {}, { label = 'Shopify cart request', retries = 3, timeoutMs = 25000 } = {}) {
+async function fetchShopifyCartWithRetry(url, options = {}, { label = 'Shopify cart request', retries = 5, timeoutMs = 25000 } = {}) {
   const { signal: _signal, timeoutMs: optionTimeoutMs, ...fetchOptions } = options;
   const requestTimeoutMs = optionTimeoutMs || timeoutMs;
   let response;
@@ -2197,7 +2197,7 @@ async function requestShopifyCartJson(path, options = {}, cookieHeader = '') {
   return { data, cookieHeader: nextCookieHeader };
 }
 
-async function requestShopifyCartAdd(items, cookieHeader = '', { label = 'Shopify cart add', timeoutMs = 25000 } = {}) {
+async function requestShopifyCartAdd(items, cookieHeader = '', { label = 'Shopify cart add', timeoutMs = 25000, retries = 5 } = {}) {
   const response = await fetchShopifyCartWithRetry('https://livingculture.co.nz/cart/add.js', {
     method: 'POST',
     timeoutMs,
@@ -2205,6 +2205,7 @@ async function requestShopifyCartAdd(items, cookieHeader = '', { label = 'Shopif
     body: JSON.stringify({ items })
   }, {
     label,
+    retries,
     timeoutMs
   });
 
@@ -2226,7 +2227,7 @@ async function requestShopifyAvailabilityAdd(product, quantity) {
     })
   }, {
     label: `Shopify availability check ${product.sku || product.variantId}`,
-    retries: 2,
+    retries: 3,
     timeoutMs: 15000
   });
 
@@ -2453,17 +2454,34 @@ async function getFastCartShippingQuote(page, itemInput, addressText, timing = c
         const number = Number(value);
         return Number.isFinite(number) ? `$${number.toFixed(2)}` : '';
       };
+      const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+      const retryDelays = [1500, 3500, 7000, 12000, 20000];
+      const fetchWithRetry = async (url, options, label) => {
+        let response;
 
-      const clearResponse = await fetch('/cart/clear.js', {
+        for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
+          response = await fetch(url, options);
+          if (response.status !== 429 || attempt >= retryDelays.length) {
+            return response;
+          }
+
+          await response.text().catch(() => {});
+          await wait(retryDelays[Math.min(attempt, retryDelays.length - 1)]);
+        }
+
+        return response;
+      };
+
+      const clearResponse = await fetchWithRetry('/cart/clear.js', {
         method: 'POST',
         credentials: 'same-origin',
         headers: { Accept: 'application/json' }
-      });
+      }, 'Cart clear');
       if (!clearResponse.ok) {
         throw new Error(`Cart clear failed (${clearResponse.status})`);
       }
 
-      const addResponse = await fetch('/cart/add.js', {
+      const addResponse = await fetchWithRetry('/cart/add.js', {
         method: 'POST',
         credentials: 'same-origin',
         headers: {
@@ -2471,7 +2489,7 @@ async function getFastCartShippingQuote(page, itemInput, addressText, timing = c
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ items: pageCartItems })
-      });
+      }, 'Cart add');
       const addData = await addResponse.json().catch(() => ({}));
       if (!addResponse.ok) {
         throw new Error(addData.description || addData.message || `Cart add failed (${addResponse.status})`);
@@ -2485,10 +2503,10 @@ async function getFastCartShippingQuote(page, itemInput, addressText, timing = c
       params.set('shipping_address[province]', pageFields.region || '');
       params.set('shipping_address[country]', 'New Zealand');
 
-      const ratesResponse = await fetch(`/cart/shipping_rates.json?${params.toString()}`, {
+      const ratesResponse = await fetchWithRetry(`/cart/shipping_rates.json?${params.toString()}`, {
         credentials: 'same-origin',
         headers: { Accept: 'application/json' }
-      });
+      }, 'Shipping rates');
       const ratesData = await ratesResponse.json().catch(() => ({}));
       if (!ratesResponse.ok) {
         throw new Error(ratesData.description || ratesData.message || `Shipping rates failed (${ratesResponse.status})`);
@@ -3341,13 +3359,21 @@ app.post('/get-freight', async (req, res) => {
       cacheFreightQuote(cacheKey, directPayload);
       return res.json(directPayload);
     } catch (directError) {
-      if (skipBrowserFallback) {
+      const directMessage = directError.message || '';
+      const shouldRetryWithBrowserFallback = /429|rate limit/i.test(directMessage);
+
+      if (skipBrowserFallback && !shouldRetryWithBrowserFallback) {
         console.error('Direct Cin7 freight failed and browser fallback was skipped:', directError.message);
         return res.status(422).json({
           error: directError.message || 'Fast freight quote could not be loaded'
         });
       }
-      console.error('Direct Cin7 freight failed, using browser fallback:', directError.message);
+
+      if (skipBrowserFallback && shouldRetryWithBrowserFallback) {
+        console.error('Direct Cin7 freight was rate limited, using browser fallback despite skip request:', directError.message);
+      } else {
+        console.error('Direct Cin7 freight failed, using browser fallback:', directError.message);
+      }
     }
 
     const payload = await withAutomationPage('get freight', async page => {
