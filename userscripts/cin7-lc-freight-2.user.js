@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight 2
 // @namespace    livingculture
-// @version      1.4
-// @description  Living Culture freight panel test version 2 for Cin7 using the local standalone freight service first.
+// @version      1.5
+// @description  Living Culture freight panel test version 2 for Cin7 using the hosted Vercel freight service.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
 // @match        *://*.cin7.co/*
@@ -19,9 +19,8 @@
 (function () {
   'use strict';
 
-  const LOCAL_API_BASE = 'http://localhost:3001';
   const HOSTED_API_BASE = 'https://living-culture-freight.vercel.app';
-  const API_BASES = [LOCAL_API_BASE, HOSTED_API_BASE];
+  const API_BASES = [HOSTED_API_BASE];
 
   const state = {
     price: '',
