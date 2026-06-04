@@ -2565,6 +2565,31 @@ async function buildFreightResponsePayload(result, fallbackSku = '') {
   };
 }
 
+function buildFreightPriceOnlyPayload(result, fallbackSku = '') {
+  const products = Array.isArray(result.products) ? result.products : [];
+  const cartItems = Array.isArray(result.cartItems) ? result.cartItems : [];
+
+  return {
+    sku: products?.[0]?.sku || fallbackSku || '',
+    skus: products.map(product => product.sku).filter(Boolean),
+    selectedAddress: result.selectedAddress || '',
+    price: result.price,
+    priceNumber: parseMoneyToCents(result.price) / 100,
+    method: result.method || '',
+    cartItems,
+    products: products.map(product => ({
+      sku: product.sku || '',
+      title: product.title || product.name || product.sku || '',
+      quantity: normaliseQuantity(product.quantity || product.requestedQuantity || 1),
+      requestedQuantity: normaliseQuantity(product.requestedQuantity || product.quantity || 1),
+      productUrl: product.productUrl || product.url || '',
+      url: product.url || product.productUrl || '',
+      image: product.image || ''
+    })),
+    quantityAdjustments: []
+  };
+}
+
 async function continuePastStockProblems(page, products) {
   if (!/\/stock-problems/.test(page.url())) return false;
 
@@ -3319,7 +3344,8 @@ app.post('/get-freight', async (req, res) => {
   const { sku, productUrl, address, selectedAddress, quantity } = req.body;
   const requestedAddress = selectedAddress || address;
   const freightAddress = getManualAddressFallback(requestedAddress)[0] || requestedAddress;
-  const quoteAvailableQuantityOnly = req.body.quoteAvailableQuantityOnly === true;
+  const freightPriceOnly = req.body.freightPriceOnly === true;
+  const quoteAvailableQuantityOnly = freightPriceOnly ? false : req.body.quoteAvailableQuantityOnly === true;
   const skipBrowserFallback = req.body.skipBrowserFallback === true;
 
   const items = Array.isArray(req.body.items) && req.body.items.length
@@ -3355,7 +3381,9 @@ app.post('/get-freight', async (req, res) => {
         createTiming('get freight direct'),
         { checkAvailability: quoteAvailableQuantityOnly }
       );
-      const directPayload = await buildFreightResponsePayload(directResult, sku);
+      const directPayload = freightPriceOnly
+        ? buildFreightPriceOnlyPayload(directResult, sku)
+        : await buildFreightResponsePayload(directResult, sku);
       cacheFreightQuote(cacheKey, directPayload);
       return res.json(directPayload);
     } catch (directError) {
@@ -3403,10 +3431,14 @@ app.post('/get-freight', async (req, res) => {
         scheduleCheckoutCleanup();
       }
 
-      return buildFreightResponsePayload({
+      const freightResult = {
         ...result,
         products: result.products || checkout?.products || []
-      }, sku);
+      };
+
+      return freightPriceOnly
+        ? buildFreightPriceOnlyPayload(freightResult, sku)
+        : buildFreightResponsePayload(freightResult, sku);
     }, 55000);
 
     cacheFreightQuote(cacheKey, payload);

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight 2
 // @namespace    livingculture
-// @version      1.2
+// @version      1.3
 // @description  Living Culture freight panel test version 2 for Cin7 using the hosted freight service.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -777,7 +777,8 @@
               quantity: item.quantity || 1
             };
           }),
-          quoteAvailableQuantityOnly: true,
+          freightPriceOnly: true,
+          quoteAvailableQuantityOnly: false,
           address,
           selectedAddress: address
         })
@@ -973,7 +974,6 @@
 
   async function getAndApplyFreight({ sku, items, address, fill }) {
     let requestedItems = [];
-    let pendingProductDetails = Promise.resolve({ data: { products: [] } });
     const lookupSeq = state.lookupSeq + 1;
     state.lookupSeq = lookupSeq;
     const isCurrentLookup = () => lookupSeq === state.lookupSeq;
@@ -992,16 +992,6 @@
 
       setResultLoading();
       renderProductDetails(requestedItems, state.method);
-      let pendingDisplayProducts = requestedItems;
-      const applyPendingProducts = products => {
-        if (!isCurrentLookup() || !products?.length) return;
-        pendingDisplayProducts = mergeProductDetails(pendingDisplayProducts, products);
-        renderProductDetails(pendingDisplayProducts, state.method);
-      };
-      pendingProductDetails = requestProductDetailsWithRetry(requestedItems)
-        .then(data => ({ data }))
-        .catch(error => ({ error }));
-      pendingProductDetails.then(result => applyPendingProducts(result?.data?.products || []));
 
       const data = await requestFreight({
         sku,
@@ -1038,30 +1028,14 @@
         setStatus(data.fromCache ? 'Freight loaded from recent lookup.' : 'Freight loaded.');
       }
 
-      // Show quote and product summary now; enrich measurements in the background.
-      loadProductDetails(
-        quotedItems,
-        data.price,
-        data.method,
-        data.products || [],
-        pendingProductDetails,
-        isCurrentLookup
-      );
+      renderProductDetails(mergeProductDetails(quotedItems, data.products || []), data.method);
 
       return true;
     } catch (error) {
       if (!isCurrentLookup()) return false;
 
       console.error(error);
-      const detailsResult = await pendingProductDetails.catch(() => ({}));
-
-      if (!isCurrentLookup()) return false;
-
-      const fallbackProducts = mergeProductDetails(requestedItems, detailsResult?.data?.products || []);
-
-      if (fallbackProducts.length) {
-        renderProductDetails(fallbackProducts, state.method);
-      }
+      renderProductDetails(requestedItems, state.method);
 
       setResult('', '');
       setStatus(error.message || 'Error getting freight.', true);
