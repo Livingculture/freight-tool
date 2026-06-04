@@ -1987,38 +1987,25 @@ async function getProductAvailability(page, itemInput, timing = createTiming('av
 }
 
 async function applyCartAddAvailability(products = []) {
-  await Promise.all(products.map(async product => {
+  for (const product of products) {
     const requestedQuantity = normaliseQuantity(product.requestedQuantity || product.quantity);
-    if (!product.variantId || !requestedQuantity) return;
+    if (!product.variantId || !requestedQuantity) continue;
 
     try {
-      const response = await fetch('https://livingculture.co.nz/cart/add.js', {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          items: [{
-            id: product.variantId,
-            quantity: requestedQuantity
-          }]
-        }),
-        signal: AbortSignal.timeout(15000)
-      });
-      const text = await response.text();
-      const data = JSON.parse(text || '{}');
+      const { response, data } = await requestShopifyAvailabilityAdd(product, requestedQuantity);
 
       if (response.ok) {
         product.availableQuantity = requestedQuantity;
-        return;
+        await wait(250);
+        continue;
       }
 
       const message = `${data.message || ''} ${data.description || ''}`;
       const partialMatch = message.match(/only\s+(\d+)\s+items?\s+were\s+added/i);
       if (partialMatch) {
         product.availableQuantity = Math.max(0, Math.min(requestedQuantity, Number(partialMatch[1]) || 0));
-        return;
+        await wait(250);
+        continue;
       }
 
       if (/sold out|not enough|unavailable|cannot be added/i.test(message)) {
@@ -2027,7 +2014,9 @@ async function applyCartAddAvailability(products = []) {
     } catch (error) {
       console.error(`Cart add availability check failed for ${product.sku}:`, error.message);
     }
-  }));
+
+    await wait(250);
+  }
 }
 
 async function addCin7StockToProducts(products) {
@@ -2150,14 +2139,53 @@ function getStorefrontHeaders(cookieHeader = '', hasBody = false) {
   };
 }
 
+const SHOPIFY_CART_RETRY_DELAYS_MS = [700, 1600, 3200];
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function waitForShopifyCartRetry(response, attempt) {
+  const retryAfter = Number(response?.headers?.get?.('retry-after'));
+  const fallbackDelay = SHOPIFY_CART_RETRY_DELAYS_MS[Math.min(attempt, SHOPIFY_CART_RETRY_DELAYS_MS.length - 1)];
+  await wait(Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : fallbackDelay);
+}
+
+async function fetchShopifyCartWithRetry(url, options = {}, { label = 'Shopify cart request', retries = 3, timeoutMs = 25000 } = {}) {
+  const { signal: _signal, timeoutMs: optionTimeoutMs, ...fetchOptions } = options;
+  const requestTimeoutMs = optionTimeoutMs || timeoutMs;
+  let response;
+
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    response = await fetch(url, {
+      ...fetchOptions,
+      signal: AbortSignal.timeout(requestTimeoutMs)
+    });
+
+    if (response.status !== 429 || attempt >= retries) {
+      return response;
+    }
+
+    console.error(`${label} was rate limited; retrying ${attempt + 1}/${retries}`);
+    await response.text().catch(() => {});
+    await waitForShopifyCartRetry(response, attempt);
+  }
+
+  return response;
+}
+
 async function requestShopifyCartJson(path, options = {}, cookieHeader = '') {
-  const response = await fetch(`https://livingculture.co.nz${path}`, {
-    ...options,
-    signal: options.signal || AbortSignal.timeout(25000),
+  const { signal: _signal, timeoutMs = 25000, ...requestOptions } = options;
+  const response = await fetchShopifyCartWithRetry(`https://livingculture.co.nz${path}`, {
+    ...requestOptions,
+    timeoutMs,
     headers: {
       ...getStorefrontHeaders(cookieHeader, Boolean(options.body)),
       ...(options.headers || {})
     }
+  }, {
+    label: `Shopify ${path}`,
+    timeoutMs
   });
   const nextCookieHeader = updateCookieHeader(cookieHeader, response.headers);
   const data = await response.json().catch(() => ({}));
@@ -2167,6 +2195,50 @@ async function requestShopifyCartJson(path, options = {}, cookieHeader = '') {
   }
 
   return { data, cookieHeader: nextCookieHeader };
+}
+
+async function requestShopifyCartAdd(items, cookieHeader = '', { label = 'Shopify cart add', timeoutMs = 25000 } = {}) {
+  const response = await fetchShopifyCartWithRetry('https://livingculture.co.nz/cart/add.js', {
+    method: 'POST',
+    timeoutMs,
+    headers: getStorefrontHeaders(cookieHeader, true),
+    body: JSON.stringify({ items })
+  }, {
+    label,
+    timeoutMs
+  });
+
+  const nextCookieHeader = updateCookieHeader(cookieHeader, response.headers);
+  const data = await response.json().catch(() => ({}));
+  return { response, data, cookieHeader: nextCookieHeader };
+}
+
+async function requestShopifyAvailabilityAdd(product, quantity) {
+  const response = await fetchShopifyCartWithRetry('https://livingculture.co.nz/cart/add.js', {
+    method: 'POST',
+    timeoutMs: 15000,
+    headers: getStorefrontHeaders('', true),
+    body: JSON.stringify({
+      items: [{
+        id: product.variantId,
+        quantity
+      }]
+    })
+  }, {
+    label: `Shopify availability check ${product.sku || product.variantId}`,
+    retries: 2,
+    timeoutMs: 15000
+  });
+
+  const text = await response.text();
+  let data = {};
+  try {
+    data = JSON.parse(text || '{}');
+  } catch {
+    data = {};
+  }
+
+  return { response, data };
 }
 
 async function prepareFastCartShipping(itemInput, addressText, timing = createTiming('fast freight'), { checkAvailability = true } = {}) {
@@ -2228,15 +2300,9 @@ async function getDirectCartShippingQuote(cartItems, fields) {
   cookieHeader = cleared.cookieHeader;
 
   const addItemsToCart = async itemsToAdd => {
-    const response = await fetch('https://livingculture.co.nz/cart/add.js', {
-      method: 'POST',
-      signal: AbortSignal.timeout(25000),
-      headers: getStorefrontHeaders(cookieHeader, true),
-      body: JSON.stringify({ items: itemsToAdd })
-    });
-    cookieHeader = updateCookieHeader(cookieHeader, response.headers);
-    const data = await response.json().catch(() => ({}));
-    return { response, data };
+    const added = await requestShopifyCartAdd(itemsToAdd, cookieHeader);
+    cookieHeader = added.cookieHeader;
+    return added;
   };
 
   let added = await addItemsToCart(cartItems);
