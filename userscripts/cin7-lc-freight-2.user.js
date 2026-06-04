@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight 2
 // @namespace    livingculture
-// @version      1.3
-// @description  Living Culture freight panel test version 2 for Cin7 using the hosted freight service.
+// @version      1.4
+// @description  Living Culture freight panel test version 2 for Cin7 using the local standalone freight service first.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
 // @match        *://*.cin7.co/*
@@ -19,8 +19,9 @@
 (function () {
   'use strict';
 
+  const LOCAL_API_BASE = 'http://localhost:3001';
   const HOSTED_API_BASE = 'https://living-culture-freight.vercel.app';
-  const API_BASE = HOSTED_API_BASE || 'http://localhost:3001';
+  const API_BASES = [LOCAL_API_BASE, HOSTED_API_BASE];
 
   const state = {
     price: '',
@@ -38,6 +39,49 @@
   };
   const IGNORED_SKU_PREFIXES = new Set(['AS']);
   const FREIGHT_TIMEOUT_MS = 140000;
+
+  async function postJson(path, payload, options = {}) {
+    const timeoutMs = options.timeoutMs || FREIGHT_TIMEOUT_MS;
+    let lastError = null;
+
+    for (const base of API_BASES) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+      try {
+        const response = await fetch(`${base}${path}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify(payload)
+        });
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          const error = new Error(data.error || `Request failed (${response.status})`);
+          error.response = response;
+          error.data = data;
+          throw error;
+        }
+
+        return {
+          data,
+          response,
+          base
+        };
+      } catch (error) {
+        lastError = error;
+
+        if (error.name === 'AbortError') {
+          lastError = new Error('Freight lookup is taking too long. Quote manually or try again in a moment.');
+        }
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }
+
+    throw lastError || new Error('Could not connect to freight service');
+  }
 
   function clean(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
@@ -616,18 +660,7 @@
   }
 
   async function requestProductDetails(items, price = '') {
-    const response = await fetch(`${API_BASE}/api/product-metrics`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items, price })
-    });
-
-    const data = await response.json().catch(() => ({}));
-
-    if (!response.ok) {
-      throw new Error(data.error || 'Product details unavailable');
-    }
-
+    const { data } = await postJson('/api/product-metrics', { items, price });
     return data;
   }
 
@@ -666,18 +699,7 @@
   }
 
   async function requestProductAvailability(items) {
-    const response = await fetch(`${API_BASE}/api/availability`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items })
-    });
-
-    const data = await response.json().catch(() => ({}));
-
-    if (!response.ok) {
-      throw new Error(data.error || 'Product availability unavailable');
-    }
-
+    const { data } = await postJson('/api/availability', { items });
     return data;
   }
 
@@ -754,48 +776,26 @@
 
     const firstItem = freightItems[0] || {};
     const firstIsUrl = /^https?:\/\/.+\/products\//i.test(firstItem.sku || firstItem.productUrl || '');
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), FREIGHT_TIMEOUT_MS);
+    const { data } = await postJson('/get-freight', {
+      sku: firstIsUrl ? '' : firstItem.sku,
+      productUrl: firstItem.productUrl || (firstIsUrl ? firstItem.sku : ''),
+      quantity: firstItem.quantity || 1,
+      items: freightItems.map(item => {
+        const isUrl = /^https?:\/\/.+\/products\//i.test(item.sku || item.productUrl || '');
 
-    let response;
+        return {
+          sku: isUrl ? '' : item.sku,
+          productUrl: item.productUrl || (isUrl ? item.sku : ''),
+          quantity: item.quantity || 1
+        };
+      }),
+      freightPriceOnly: true,
+      quoteAvailableQuantityOnly: false,
+      address,
+      selectedAddress: address
+    });
 
-    try {
-      response = await fetch(`${API_BASE}/get-freight`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
-        body: JSON.stringify({
-          sku: firstIsUrl ? '' : firstItem.sku,
-          productUrl: firstItem.productUrl || (firstIsUrl ? firstItem.sku : ''),
-          quantity: firstItem.quantity || 1,
-          items: freightItems.map(item => {
-            const isUrl = /^https?:\/\/.+\/products\//i.test(item.sku || item.productUrl || '');
-
-            return {
-              sku: isUrl ? '' : item.sku,
-              productUrl: item.productUrl || (isUrl ? item.sku : ''),
-              quantity: item.quantity || 1
-            };
-          }),
-          freightPriceOnly: true,
-          quoteAvailableQuantityOnly: false,
-          address,
-          selectedAddress: address
-        })
-      });
-    } catch (error) {
-      if (error.name === 'AbortError') {
-        throw new Error('Freight lookup is taking too long. Quote manually or try again in a moment.');
-      }
-
-      throw error;
-    } finally {
-      clearTimeout(timeoutId);
-    }
-
-    const data = await response.json().catch(() => ({}));
-
-    if (!response.ok || !data.price) {
+    if (!data.price) {
       throw new Error(data.error || 'No freight returned');
     }
 
@@ -1058,17 +1058,11 @@
     try {
       setStatus('Getting address suggestions...');
 
-      const response = await fetch(`${API_BASE}/address-suggestions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sku: isUrl ? '' : firstItem.sku,
-          productUrl: isUrl ? firstItem.sku : '',
-          address
-        })
+      const { data } = await postJson('/address-suggestions', {
+        sku: isUrl ? '' : firstItem.sku,
+        productUrl: isUrl ? firstItem.sku : '',
+        address
       });
-
-      const data = await response.json().catch(() => ({}));
       const suggestions = data.suggestions || [];
 
       list.innerHTML = suggestions.map(suggestion =>
