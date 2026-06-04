@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight 2
 // @namespace    livingculture
-// @version      1.6
-// @description  Living Culture freight panel test version 2 Lite for Cin7. Hosted Vercel freight price only.
+// @version      1.7
+// @description  Living Culture freight panel test version 2 Lite for Cin7. Hosted Vercel manual freight price only.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
 // @match        *://*.cin7.co/*
@@ -21,6 +21,7 @@
 
   const HOSTED_API_BASE = 'https://living-culture-freight.vercel.app';
   const API_BASES = [HOSTED_API_BASE];
+  const AUTO_FREIGHT_LOOKUP_ENABLED = false;
 
   const state = {
     price: '',
@@ -844,6 +845,11 @@
   function scheduleAutoCin7Lookup(delay = 900) {
     clearTimeout(state.autoTimer);
 
+    if (!AUTO_FREIGHT_LOOKUP_ENABLED) {
+      renderDetectedDetails();
+      return;
+    }
+
     state.autoTimer = setTimeout(() => {
       const panel = document.getElementById('lc-freight2-panel');
 
@@ -1613,7 +1619,7 @@
       if (panel.classList.contains('is-open')) {
         state.lastAutoKey = '';
         renderDetectedDetails();
-        scheduleAutoCin7Lookup(350);
+        setStatus('Detected Cin7 details. Click refresh to get the freight price.');
       }
     });
 
@@ -1666,7 +1672,8 @@
       if (!event.target.classList.contains('lc-detected-qty')) return;
 
       state.lastAutoKey = '';
-      scheduleAutoCin7Lookup(900);
+      renderDetectedDetails();
+      setStatus('Quantity changed. Click refresh to get the freight price.');
     });
 
     panel.querySelector('#lc2-auto-sku').addEventListener('click', event => {
@@ -1681,7 +1688,7 @@
       state.excludedSkus.add(sku);
       state.lastAutoKey = '';
       renderDetectedDetails();
-      scheduleAutoCin7Lookup(500);
+      setStatus('Product removed. Click refresh to get the freight price.');
     });
 
     addManualProductRow();

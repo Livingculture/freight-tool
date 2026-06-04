@@ -59,6 +59,7 @@ const productSummaryCache = new Map();
 const skuUrlCache = new Map();
 const addressSuggestionCache = new Map();
 const freightQuoteCache = new Map();
+const freightQuoteInFlight = new Map();
 const FREIGHT_QUOTE_CACHE_MS = 30 * 60 * 1000;
 const cin7AvailabilityCache = new Map();
 const CIN7_AVAILABILITY_CACHE_MS = 2 * 60 * 1000;
@@ -520,6 +521,22 @@ function getCachedFreightQuote(key) {
 
 function cacheFreightQuote(key, payload) {
   freightQuoteCache.set(key, { createdAt: Date.now(), payload });
+}
+
+async function runFreightQuoteOnce(key, quoteFn) {
+  const existing = freightQuoteInFlight.get(key);
+  if (existing) return existing;
+
+  const promise = Promise.resolve().then(quoteFn);
+  freightQuoteInFlight.set(key, promise);
+
+  try {
+    return await promise;
+  } finally {
+    if (freightQuoteInFlight.get(key) === promise) {
+      freightQuoteInFlight.delete(key);
+    }
+  }
 }
 
 function scheduleCheckoutCleanup() {
@@ -2175,7 +2192,7 @@ async function fetchShopifyCartWithRetry(url, options = {}, { label = 'Shopify c
 }
 
 async function requestShopifyCartJson(path, options = {}, cookieHeader = '') {
-  const { signal: _signal, timeoutMs = 25000, ...requestOptions } = options;
+  const { signal: _signal, timeoutMs = 25000, retries = 5, ...requestOptions } = options;
   const response = await fetchShopifyCartWithRetry(`https://livingculture.co.nz${path}`, {
     ...requestOptions,
     timeoutMs,
@@ -2185,13 +2202,14 @@ async function requestShopifyCartJson(path, options = {}, cookieHeader = '') {
     }
   }, {
     label: `Shopify ${path}`,
+    retries,
     timeoutMs
   });
   const nextCookieHeader = updateCookieHeader(cookieHeader, response.headers);
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    throw new Error(data.description || data.message || `Shopify cart request failed (${response.status})`);
+    throw new Error(data.description || data.message || `Shopify ${path} failed (${response.status})`);
   }
 
   return { data, cookieHeader: nextCookieHeader };
@@ -2292,16 +2310,17 @@ async function prepareFastCartShipping(itemInput, addressText, timing = createTi
   return { fields, products, cartItems };
 }
 
-async function getDirectCartShippingQuote(cartItems, fields) {
+async function getDirectCartShippingQuote(cartItems, fields, { retries = 5 } = {}) {
   let cookieHeader = '';
 
   const cleared = await requestShopifyCartJson('/cart/clear.js', {
-    method: 'POST'
+    method: 'POST',
+    retries
   }, cookieHeader);
   cookieHeader = cleared.cookieHeader;
 
   const addItemsToCart = async itemsToAdd => {
-    const added = await requestShopifyCartAdd(itemsToAdd, cookieHeader);
+    const added = await requestShopifyCartAdd(itemsToAdd, cookieHeader, { retries });
     cookieHeader = added.cookieHeader;
     return added;
   };
@@ -2315,22 +2334,22 @@ async function getDirectCartShippingQuote(cartItems, fields) {
       : null;
 
     if (!partialMatch) {
-      throw new Error(added.data.description || added.data.message || `Cart add failed (${added.response.status})`);
+      throw new Error(added.data.description || added.data.message || `Shopify /cart/add.js failed (${added.response.status})`);
     }
 
     const partialQuantity = Math.max(0, Math.min(cartItems[0].quantity, Number(partialMatch[1]) || 0));
     if (!partialQuantity) {
-      throw new Error(added.data.description || added.data.message || `Cart add failed (${added.response.status})`);
+      throw new Error(added.data.description || added.data.message || `Shopify /cart/add.js failed (${added.response.status})`);
     }
 
-    await requestShopifyCartJson('/cart/clear.js', { method: 'POST' }, cookieHeader)
+    await requestShopifyCartJson('/cart/clear.js', { method: 'POST', retries }, cookieHeader)
       .then(result => {
         cookieHeader = result.cookieHeader;
       });
     added = await addItemsToCart([{ ...cartItems[0], quantity: partialQuantity }]);
 
     if (!added.response.ok) {
-      throw new Error(added.data.description || added.data.message || `Cart add failed (${added.response.status})`);
+      throw new Error(added.data.description || added.data.message || `Shopify /cart/add.js failed (${added.response.status})`);
     }
   }
 
@@ -2343,7 +2362,8 @@ async function getDirectCartShippingQuote(cartItems, fields) {
   params.set('shipping_address[country]', 'New Zealand');
 
   const rates = await requestShopifyCartJson(`/cart/shipping_rates.json?${params.toString()}`, {
-    method: 'GET'
+    method: 'GET',
+    retries
   }, cookieHeader);
 
   const shippingRates = Array.isArray(rates.data.shipping_rates) ? rates.data.shipping_rates : [];
@@ -2407,13 +2427,13 @@ async function getDirectFastCartShippingQuote(
   itemInput,
   addressText,
   timing = createTiming('direct freight'),
-  { checkAvailability = false } = {}
+  { checkAvailability = false, cartRetries = 5 } = {}
 ) {
   const { fields, products, cartItems } = await prepareFastCartShipping(itemInput, addressText, timing, {
     checkAvailability
   });
   const result = await timing.step('read direct cart shipping rates', () =>
-    getDirectCartShippingQuote(cartItems, fields)
+    getDirectCartShippingQuote(cartItems, fields, { retries: cartRetries })
   );
 
   if (!result.price) {
@@ -3376,15 +3396,21 @@ app.post('/get-freight', async (req, res) => {
 
   try {
     try {
-      const directResult = await getDirectFastCartShippingQuote(
-        { items },
-        freightAddress,
-        createTiming('get freight direct'),
-        { checkAvailability: quoteAvailableQuantityOnly }
-      );
-      const directPayload = freightPriceOnly
-        ? buildFreightPriceOnlyPayload(directResult, sku)
-        : await buildFreightResponsePayload(directResult, sku);
+      const directPayload = await runFreightQuoteOnce(cacheKey, async () => {
+        const directResult = await getDirectFastCartShippingQuote(
+          { items },
+          freightAddress,
+          createTiming('get freight direct'),
+          {
+            checkAvailability: quoteAvailableQuantityOnly,
+            cartRetries: freightPriceOnly && skipBrowserFallback ? 1 : 5
+          }
+        );
+        return freightPriceOnly
+          ? buildFreightPriceOnlyPayload(directResult, sku)
+          : await buildFreightResponsePayload(directResult, sku);
+      });
+
       cacheFreightQuote(cacheKey, directPayload);
       return res.json(directPayload);
     } catch (directError) {
