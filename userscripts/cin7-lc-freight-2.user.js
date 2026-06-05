@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight 2
 // @namespace    livingculture
-// @version      2.0
+// @version      2.1
 // @description  Living Culture freight panel test version 2 Lite for Cin7. Browser-side Shopify freight price first with mixed stock handling.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -521,7 +521,16 @@
     }
 
     if (preSaleBlock) {
-      preSaleBlock.innerHTML = '';
+      if (preSaleFreightEstimate?.total) {
+        preSaleBlock.innerHTML = `
+          <div><strong>Estimated freight including pre-sale quantity: ${escapeHtml(preSaleFreightEstimate.total)}</strong></div>
+          <div>Shopify rated the in-stock cart at ${escapeHtml(price)}. Estimated pre-sale freight adds ${escapeHtml(preSaleFreightEstimate.price)} by ${escapeHtml(preSaleFreightEstimate.basis || 'freight basis')}.</div>
+        `;
+      } else if (preSaleFreightEstimate?.note) {
+        preSaleBlock.innerHTML = `<div>${escapeHtml(preSaleFreightEstimate.note)}</div>`;
+      } else {
+        preSaleBlock.innerHTML = '';
+      }
     }
   }
 
@@ -882,6 +891,70 @@
     return Number.isFinite(number) ? `$${number.toFixed(2)}` : '';
   }
 
+  function moneyToCents(value) {
+    const match = String(value || '').replace(/,/g, '').match(/(\d+(?:\.\d{1,2})?)/);
+    if (!match) return 0;
+
+    return Math.round(Number(match[1]) * 100);
+  }
+
+  function formatMoneyFromCents(cents) {
+    const value = Math.max(0, Number(cents) || 0) / 100;
+    return `$${value.toFixed(2)}`;
+  }
+
+  function getFreightBasisValue(product, quantity, basis) {
+    return basis === 'CBM'
+      ? getLineCbm(product, quantity)
+      : getLineWeight(product, quantity);
+  }
+
+  function buildPreSaleFreightEstimate(products = [], priceText = '') {
+    const totalCents = moneyToCents(priceText);
+    const basis = products.some(product => Number(product.cbm) > 0) ? 'CBM' : 'weight';
+    const rows = products.map(product => {
+      const requestedQuantity = getProductRequestedQuantity(product);
+      const addToCartQuantity = getProductAddToCartQuantity(product);
+      const preSaleQuantity = getProductPreSaleQuantity(product);
+
+      return {
+        sku: product.sku || '',
+        title: product.title || product.name || product.sku || 'Product',
+        requestedQuantity,
+        addToCartQuantity,
+        preSaleQuantity,
+        shipNowBasis: getFreightBasisValue(product, addToCartQuantity, basis),
+        preSaleBasis: getFreightBasisValue(product, preSaleQuantity, basis)
+      };
+    }).filter(row => row.preSaleQuantity > 0);
+
+    if (!rows.length) return null;
+
+    const shipNowBasisTotal = products.reduce((total, product) =>
+      total + getFreightBasisValue(product, getProductAddToCartQuantity(product), basis), 0);
+    const preSaleBasisTotal = rows.reduce((total, row) => total + row.preSaleBasis, 0);
+
+    if (!totalCents || !shipNowBasisTotal || !preSaleBasisTotal) {
+      return {
+        basis,
+        price: null,
+        total: null,
+        note: 'Pre-sale freight could not be estimated from available freight.',
+        items: rows
+      };
+    }
+
+    const centsPerBasis = totalCents / shipNowBasisTotal;
+    const preSaleCents = Math.ceil(preSaleBasisTotal * centsPerBasis);
+
+    return {
+      basis,
+      price: formatMoneyFromCents(preSaleCents),
+      total: formatMoneyFromCents(totalCents + preSaleCents),
+      items: rows
+    };
+  }
+
   function getShopifyAvailabilityMessage(response) {
     const message = clean(response?.data?.description || response?.data?.message || response?.text);
 
@@ -890,15 +963,59 @@
       : '';
   }
 
-  async function getBrowserCartQuantity() {
+  async function getBrowserCart() {
     const cartResponse = await gmRequestJson(`${SHOPIFY_BASE}/cart.js`, {
       method: 'GET',
       timeoutMs: 15000
     });
 
-    if (!cartResponse.ok) return 0;
+    if (!cartResponse.ok) return { item_count: 0, items: [] };
 
-    return Number(cartResponse.data?.item_count || 0);
+    return cartResponse.data || { item_count: 0, items: [] };
+  }
+
+  async function getBrowserCartQuantity() {
+    const cart = await getBrowserCart();
+    return Number(cart.item_count || 0);
+  }
+
+  function getBrowserCartVariantQuantities(cart) {
+    const quantities = new Map();
+
+    for (const item of Array.isArray(cart?.items) ? cart.items : []) {
+      const variantId = clean(item.variant_id || item.id);
+      const quantity = normaliseQuantityAllowZero(item.quantity);
+      if (!variantId || !quantity) continue;
+
+      quantities.set(variantId, (quantities.get(variantId) || 0) + quantity);
+    }
+
+    return quantities;
+  }
+
+  function attachCartQuantities(products, freightItems, cart) {
+    const cartQuantities = getBrowserCartVariantQuantities(cart);
+
+    return products.map(product => {
+      const requestedQuantity = findRequestedQuantity(product, freightItems);
+      const variantId = clean(product.variantId);
+      const addToCartQuantity = Math.min(requestedQuantity, normaliseQuantityAllowZero(cartQuantities.get(variantId)));
+      const preSaleQuantity = Math.max(0, requestedQuantity - addToCartQuantity);
+
+      return {
+        ...product,
+        requestedQuantity,
+        quantity: addToCartQuantity || requestedQuantity,
+        addToCartQuantity,
+        preSaleQuantity,
+        saleState: preSaleQuantity
+          ? addToCartQuantity
+            ? 'Partial add to cart'
+            : 'Pre sale'
+          : product.saleState,
+        available: addToCartQuantity > 0 || product.available
+      };
+    });
   }
 
   async function addShopifyCartLine(item) {
@@ -974,7 +1091,8 @@
     }
 
     const availabilityWarning = lineResults.find(result => result.availabilityWarning)?.availabilityWarning || '';
-    const addedCount = await getBrowserCartQuantity();
+    const cart = await getBrowserCart();
+    const addedCount = Number(cart.item_count || 0);
 
     if (addedCount <= 0) {
       throw new Error(availabilityWarning || 'No Shopify products could be added to the cart for freight rating.');
@@ -1003,12 +1121,19 @@
       throw new Error('No Shopify shipping rates returned.');
     }
 
+    const productsWithCartQuantities = attachCartQuantities(products, freightItems, cart);
+    const hasPreSaleShortfall = productsWithCartQuantities.some(product => getProductPreSaleQuantity(product) > 0);
+    const price = formatShopifyMoney(rate.price);
+
     return {
-      price: formatShopifyMoney(rate.price),
+      price,
       method: clean(rate.name || rate.title || rate.code || 'Shipping'),
-      availabilityWarning,
+      availabilityWarning: availabilityWarning || (hasPreSaleShortfall
+        ? 'Check stock availability or available pre-sale. Shopify could not add the full requested quantity.'
+        : ''),
       browserCart: true,
-      products
+      products: productsWithCartQuantities,
+      preSaleFreightEstimate: buildPreSaleFreightEstimate(productsWithCartQuantities, price)
     };
   }
 
@@ -1282,13 +1407,15 @@
 
       if (!isCurrentLookup()) return false;
 
-      setResult(data.price, data.method);
+      setResult(data.price, data.method, data.preSaleFreightEstimate);
       if (data.availabilityWarning) {
-        setStatus(`${data.availabilityWarning} Freight shown is based on the available cart quantity.`, true);
+        setStatus(data.preSaleFreightEstimate?.total
+          ? `${data.availabilityWarning} Estimate shown includes the missing pre-sale quantity.`
+          : `${data.availabilityWarning} Freight shown is based on the available cart quantity.`, true);
       } else {
         setStatus(data.fromCache ? 'Freight loaded from recent lookup.' : 'Freight loaded.');
       }
-      renderProductDetails([], '');
+      renderProductDetails(data.products || [], data.method);
 
       return true;
     } catch (error) {
