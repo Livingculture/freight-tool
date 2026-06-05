@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight 2
 // @namespace    livingculture
-// @version      1.8
-// @description  Living Culture freight panel test version 2 Lite for Cin7. Browser-side Shopify freight price first.
+// @version      1.9
+// @description  Living Culture freight panel test version 2 Lite for Cin7. Browser-side Shopify freight price first with pre-sale stock warnings.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
 // @match        *://*.cin7.co/*
@@ -882,6 +882,14 @@
     return Number.isFinite(number) ? `$${number.toFixed(2)}` : '';
   }
 
+  function getShopifyAvailabilityMessage(response) {
+    const message = clean(response?.data?.description || response?.data?.message || response?.text);
+
+    return /only\s+\d+\s+item/i.test(message) || /due to availability/i.test(message)
+      ? 'Check stock availability or available pre-sale. Shopify could not add the full requested quantity.'
+      : '';
+  }
+
   async function requestBrowserShopifyFreight(freightItems, address) {
     const prepared = await postJson('/api/prepare', {
       items: freightItems.map(item => ({
@@ -916,9 +924,22 @@
       timeoutMs: 20000,
       body: { items: cartItems }
     });
+    const availabilityWarning = getShopifyAvailabilityMessage(addResponse);
 
-    if (!addResponse.ok) {
+    if (!addResponse.ok && !availabilityWarning) {
       throw new Error(addResponse.data.description || addResponse.data.message || `Browser Shopify /cart/add.js failed (${addResponse.status})`);
+    }
+
+    if (availabilityWarning) {
+      const cartResponse = await gmRequestJson(`${SHOPIFY_BASE}/cart.js`, {
+        method: 'GET',
+        timeoutMs: 15000
+      });
+      const cartQuantity = Number(cartResponse.data?.item_count || 0);
+
+      if (!cartResponse.ok || cartQuantity <= 0) {
+        throw new Error(availabilityWarning);
+      }
     }
 
     const fields = parseShopifyShippingAddress(address);
@@ -947,6 +968,7 @@
     return {
       price: formatShopifyMoney(rate.price),
       method: clean(rate.name || rate.title || rate.code || 'Shipping'),
+      availabilityWarning,
       browserCart: true,
       products
     };
@@ -1223,7 +1245,11 @@
       if (!isCurrentLookup()) return false;
 
       setResult(data.price, data.method);
-      setStatus(data.fromCache ? 'Freight loaded from recent lookup.' : 'Freight loaded.');
+      if (data.availabilityWarning) {
+        setStatus(`${data.availabilityWarning} Freight shown is based on the available cart quantity.`, true);
+      } else {
+        setStatus(data.fromCache ? 'Freight loaded from recent lookup.' : 'Freight loaded.');
+      }
       renderProductDetails([], '');
 
       return true;
