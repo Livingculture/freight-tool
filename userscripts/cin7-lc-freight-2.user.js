@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight 2
 // @namespace    livingculture
-// @version      1.7
-// @description  Living Culture freight panel test version 2 Lite for Cin7. Hosted Vercel manual freight price only.
+// @version      1.8
+// @description  Living Culture freight panel test version 2 Lite for Cin7. Browser-side Shopify freight price first.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
 // @match        *://*.cin7.co/*
@@ -13,13 +13,16 @@
 // @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-lc-freight-2.user.js
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
-// @grant        none
+// @grant        GM_xmlhttpRequest
+// @connect      livingculture.co.nz
+// @connect      living-culture-freight.vercel.app
 // ==/UserScript==
 
 (function () {
   'use strict';
 
   const HOSTED_API_BASE = 'https://living-culture-freight.vercel.app';
+  const SHOPIFY_BASE = 'https://livingculture.co.nz';
   const API_BASES = [HOSTED_API_BASE];
   const AUTO_FREIGHT_LOOKUP_ENABLED = false;
 
@@ -85,6 +88,119 @@
 
   function clean(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function gmRequestJson(url, options = {}) {
+    if (typeof GM_xmlhttpRequest !== 'function') {
+      return Promise.reject(new Error('Tampermonkey browser request permission is not available.'));
+    }
+
+    return new Promise((resolve, reject) => {
+      GM_xmlhttpRequest({
+        method: options.method || 'GET',
+        url,
+        headers: {
+          Accept: 'application/json',
+          ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+          ...(options.headers || {})
+        },
+        data: options.body ? JSON.stringify(options.body) : undefined,
+        timeout: options.timeoutMs || 25000,
+        anonymous: false,
+        onload(response) {
+          const text = response.responseText || '';
+          let data = {};
+
+          try {
+            data = text ? JSON.parse(text) : {};
+          } catch {
+            data = {};
+          }
+
+          resolve({
+            ok: response.status >= 200 && response.status < 300,
+            status: response.status,
+            data,
+            text
+          });
+        },
+        ontimeout() {
+          reject(new Error('Shopify cart request timed out.'));
+        },
+        onerror() {
+          reject(new Error('Shopify cart request failed.'));
+        }
+      });
+    });
+  }
+
+  function inferNewZealandRegion(city, postcode) {
+    const cityRegions = new Map([
+      ['auckland', 'Auckland'],
+      ['hamilton', 'Waikato'],
+      ['tauranga', 'Bay of Plenty'],
+      ['rotorua', 'Bay of Plenty'],
+      ['gisborne', 'Gisborne'],
+      ['napier', 'Hawke’s Bay'],
+      ['hastings', 'Hawke’s Bay'],
+      ['new plymouth', 'Taranaki'],
+      ['palmerston north', 'Manawatū-Whanganui'],
+      ['wellington', 'Wellington'],
+      ['nelson', 'Nelson'],
+      ['blenheim', 'Marlborough'],
+      ['christchurch', 'Canterbury'],
+      ['dunedin', 'Otago'],
+      ['invercargill', 'Southland']
+    ]);
+    const region = cityRegions.get(String(city || '').toLowerCase());
+    if (region) return region;
+
+    const postalNumber = Number.parseInt(postcode, 10);
+    if (postalNumber >= 600 && postalNumber <= 2699) return 'Auckland';
+    if (postalNumber >= 3000 && postalNumber <= 3199) return 'Bay of Plenty';
+    if (postalNumber >= 3200 && postalNumber <= 3999) return 'Waikato';
+    if (postalNumber >= 4000 && postalNumber <= 4099) return 'Gisborne';
+    if (postalNumber >= 4100 && postalNumber <= 4299) return 'Hawke’s Bay';
+    if (postalNumber >= 4300 && postalNumber <= 4399) return 'Taranaki';
+    if (postalNumber >= 4400 && postalNumber <= 4999) return 'Manawatū-Whanganui';
+    return '';
+  }
+
+  function parseShopifyShippingAddress(addressText) {
+    const address = clean(addressText);
+    const withoutCountry = address.replace(/,?\s*New Zealand$/i, '').trim();
+    const postcode = withoutCountry.match(/\b(\d{4})\b/)?.[1] || '';
+    const beforePostcode = postcode
+      ? withoutCountry.slice(0, withoutCountry.lastIndexOf(postcode)).trim()
+      : withoutCountry;
+    const commaParts = beforePostcode.split(',').map(clean).filter(Boolean);
+
+    if (commaParts.length >= 2) {
+      const cityPart = commaParts.pop();
+      const cityWords = cityPart.split(/\s+/);
+      const city = cityWords.slice(Math.max(0, cityWords.length - 2)).join(' ');
+
+      return {
+        address1: commaParts.shift() || '',
+        address2: commaParts.join(', '),
+        city: city || cityPart,
+        postcode,
+        region: inferNewZealandRegion(city || cityPart, postcode)
+      };
+    }
+
+    const tokens = beforePostcode.split(/\s+/).filter(Boolean);
+    const knownCities = ['Whangarei', 'Auckland', 'Hamilton', 'Tauranga', 'Rotorua', 'Napier', 'Hastings', 'Wellington', 'Christchurch', 'Dunedin', 'Invercargill'];
+    const cityIndex = tokens.findIndex(token => knownCities.some(city => city.toLowerCase() === token.toLowerCase()));
+    const city = cityIndex >= 0 ? tokens[cityIndex] : '';
+
+    return {
+      address1: cityIndex > 0 ? tokens.slice(0, cityIndex).join(' ') : beforePostcode,
+      address2: '',
+      city,
+      postcode,
+      region: inferNewZealandRegion(city, postcode)
+    };
   }
 
   function moneyToNumber(value) {
@@ -750,22 +866,93 @@
     });
   }
 
-  async function requestFreight({ sku, items, address, quantity = 1 }) {
-    const freightItems = normaliseFreightItems({ sku, items, quantity });
+  function findRequestedQuantity(product, freightItems) {
+    const productSku = clean(product?.sku).toLowerCase();
+    const bySku = freightItems.find(item => clean(item.sku).toLowerCase() === productSku);
+    return normaliseQuantity(bySku?.quantity || product?.quantity || 1);
+  }
 
-    if (!freightItems.length) {
-      throw new Error('No freight products selected');
+  function pickShippingRate(rates) {
+    const shippingRates = Array.isArray(rates) ? rates : [];
+    return shippingRates.find(rate => /ship|freight|delivery/i.test(clean(rate.name || rate.title || rate.code))) || shippingRates[0];
+  }
+
+  function formatShopifyMoney(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? `$${number.toFixed(2)}` : '';
+  }
+
+  async function requestBrowserShopifyFreight(freightItems, address) {
+    const prepared = await postJson('/api/prepare', {
+      items: freightItems.map(item => ({
+        sku: item.productUrl ? '' : item.sku,
+        productUrl: item.productUrl || '',
+        quantity: item.quantity || 1
+      }))
+    }, { timeoutMs: 30000 });
+    const products = Array.isArray(prepared.data.products) ? prepared.data.products : [];
+    const cartItems = products
+      .map(product => ({
+        id: product.variantId,
+        quantity: findRequestedQuantity(product, freightItems)
+      }))
+      .filter(item => item.id && item.quantity > 0);
+
+    if (!cartItems.length) {
+      throw new Error('No Shopify variants found for freight products.');
     }
 
-    const cacheKey = makeFreightCacheKey(freightItems, address);
+    const clearResponse = await gmRequestJson(`${SHOPIFY_BASE}/cart/clear.js`, {
+      method: 'POST',
+      timeoutMs: 15000
+    });
 
-    if (state.freightCache.has(cacheKey)) {
-      return {
-        ...state.freightCache.get(cacheKey),
-        fromCache: true
-      };
+    if (!clearResponse.ok) {
+      throw new Error(clearResponse.data.description || clearResponse.data.message || `Browser Shopify /cart/clear.js failed (${clearResponse.status})`);
     }
 
+    const addResponse = await gmRequestJson(`${SHOPIFY_BASE}/cart/add.js`, {
+      method: 'POST',
+      timeoutMs: 20000,
+      body: { items: cartItems }
+    });
+
+    if (!addResponse.ok) {
+      throw new Error(addResponse.data.description || addResponse.data.message || `Browser Shopify /cart/add.js failed (${addResponse.status})`);
+    }
+
+    const fields = parseShopifyShippingAddress(address);
+    const params = new URLSearchParams();
+    params.set('shipping_address[address1]', fields.address1 || '');
+    params.set('shipping_address[address2]', fields.address2 || '');
+    params.set('shipping_address[city]', fields.city || '');
+    params.set('shipping_address[zip]', fields.postcode || '');
+    params.set('shipping_address[province]', fields.region || '');
+    params.set('shipping_address[country]', 'New Zealand');
+
+    const ratesResponse = await gmRequestJson(`${SHOPIFY_BASE}/cart/shipping_rates.json?${params.toString()}`, {
+      method: 'GET',
+      timeoutMs: 20000
+    });
+
+    if (!ratesResponse.ok) {
+      throw new Error(ratesResponse.data.description || ratesResponse.data.message || `Browser Shopify /cart/shipping_rates.json failed (${ratesResponse.status})`);
+    }
+
+    const rate = pickShippingRate(ratesResponse.data.shipping_rates);
+    if (!rate) {
+      throw new Error('No Shopify shipping rates returned.');
+    }
+
+    return {
+      price: formatShopifyMoney(rate.price),
+      method: clean(rate.name || rate.title || rate.code || 'Shipping'),
+      browserCart: true,
+      products
+    };
+  }
+
+  async function requestHostedFreight(freightItems, address) {
     const firstItem = freightItems[0] || {};
     const firstIsUrl = /^https?:\/\/.+\/products\//i.test(firstItem.sku || firstItem.productUrl || '');
     const { data } = await postJson('/get-freight', {
@@ -788,6 +975,41 @@
       address,
       selectedAddress: address
     });
+
+    return data;
+  }
+
+  async function requestFreight({ sku, items, address, quantity = 1 }) {
+    const freightItems = normaliseFreightItems({ sku, items, quantity });
+
+    if (!freightItems.length) {
+      throw new Error('No freight products selected');
+    }
+
+    const cacheKey = makeFreightCacheKey(freightItems, address);
+
+    if (state.freightCache.has(cacheKey)) {
+      return {
+        ...state.freightCache.get(cacheKey),
+        fromCache: true
+      };
+    }
+
+    let data;
+    let browserError = null;
+
+    try {
+      data = await requestBrowserShopifyFreight(freightItems, address);
+    } catch (error) {
+      browserError = error;
+      console.error('Browser Shopify freight failed:', error);
+      data = await requestHostedFreight(freightItems, address).catch(hostedError => {
+        hostedError.message = browserError?.message
+          ? `${browserError.message}; hosted fallback: ${hostedError.message}`
+          : hostedError.message;
+        throw hostedError;
+      });
+    }
 
     if (!data.price) {
       throw new Error(data.error || 'No freight returned');
