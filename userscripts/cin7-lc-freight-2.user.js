@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight 2
 // @namespace    livingculture
-// @version      2.1
+// @version      2.2
 // @description  Living Culture freight panel test version 2 Lite for Cin7. Browser-side Shopify freight price first with mixed stock handling.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -521,16 +521,9 @@
     }
 
     if (preSaleBlock) {
-      if (preSaleFreightEstimate?.total) {
-        preSaleBlock.innerHTML = `
-          <div><strong>Estimated freight including pre-sale quantity: ${escapeHtml(preSaleFreightEstimate.total)}</strong></div>
-          <div>Shopify rated the in-stock cart at ${escapeHtml(price)}. Estimated pre-sale freight adds ${escapeHtml(preSaleFreightEstimate.price)} by ${escapeHtml(preSaleFreightEstimate.basis || 'freight basis')}.</div>
-        `;
-      } else if (preSaleFreightEstimate?.note) {
-        preSaleBlock.innerHTML = `<div>${escapeHtml(preSaleFreightEstimate.note)}</div>`;
-      } else {
-        preSaleBlock.innerHTML = '';
-      }
+      preSaleBlock.innerHTML = preSaleFreightEstimate?.total
+        ? `<div><strong>Estimated freight including pre-sale quantity: ${escapeHtml(preSaleFreightEstimate.total)}</strong></div>`
+        : '';
     }
   }
 
@@ -651,56 +644,19 @@
     }
 
     const totalWeightKg = activeProducts.reduce((total, product) =>
-      total + getLineWeight(product, getProductQuoteQuantity(product)), 0);
+      total + getLineWeight(product, getProductRequestedQuantity(product)), 0);
     const totalCbm = activeProducts.reduce((total, product) =>
-      total + getLineCbm(product, getProductQuoteQuantity(product)), 0);
+      total + getLineCbm(product, getProductRequestedQuantity(product)), 0);
     const totalCartons = activeProducts.reduce((total, product) =>
-      total + getLineCartonCount(product, getProductQuoteQuantity(product)), 0);
-    const totalPreSaleWeightKg = activeProducts.reduce((total, product) =>
-      total + getLineWeight(product, getProductPreSaleQuantity(product)), 0);
-    const totalPreSaleCbm = activeProducts.reduce((total, product) =>
-      total + getLineCbm(product, getProductPreSaleQuantity(product)), 0);
-    const totalPreSaleCartons = activeProducts.reduce((total, product) =>
-      total + getLineCartonCount(product, getProductPreSaleQuantity(product)), 0);
-    const shippingLocation = getShippingLocation(method);
+      total + getLineCartonCount(product, getProductRequestedQuantity(product)), 0);
 
     block.classList.add('is-visible');
+
+    const hasShippingTotals = totalWeightKg > 0 || totalCbm > 0 || totalCartons > 0;
 
     block.innerHTML = `
       ${activeProducts.map(product => {
         const requestedQuantity = getProductRequestedQuantity(product);
-        const preSaleQuantity = getProductPreSaleQuantity(product);
-        const quantity = getProductQuoteQuantity(product);
-        const lineWeight = getLineWeight(product, quantity);
-        const lineCbm = getLineCbm(product, quantity);
-        const cartonCount = getLineCartonCount(product, quantity);
-        const preSaleWeight = getLineWeight(product, preSaleQuantity);
-        const preSaleCbm = getLineCbm(product, preSaleQuantity);
-        const preSaleCartons = getLineCartonCount(product, preSaleQuantity);
-        const saleState = product.saleState || (product.available ? 'Add to cart' : 'Unavailable');
-        const stock = product.available ? `Stock: ${shippingLocation || 'Available'}` : 'Stock: Unavailable';
-
-        const detailsLine = product.metricsLoaded
-          ? lineWeight && lineCbm && cartonCount ? '' : 'Some product metrics were not found'
-          : 'Weight, CBM and carton details loading...';
-
-        const detailsHtml = detailsLine
-          ? product.metricsLoaded
-            ? `<div>${escapeHtml(detailsLine)}</div>`
-            : `<div class="lc-loading-line"><span class="lc-spinner" aria-hidden="true"></span>${escapeHtml(detailsLine)}</div>`
-          : '';
-
-        const quantityLine = preSaleQuantity
-          ? `
-            <div>Qty ${requestedQuantity}</div>
-            <div>Ship now: ${lineWeight.toFixed(2)} kg · ${lineCbm.toFixed(3)} CBM · ${cartonCount} ctns</div>
-            <div>Pre-sale later: ${preSaleWeight.toFixed(2)} kg · ${preSaleCbm.toFixed(3)} CBM · ${preSaleCartons} ctns</div>
-          `
-          : `<div>Qty ${requestedQuantity} · ${lineWeight.toFixed(2)} kg · ${lineCbm.toFixed(3)} CBM · ${cartonCount} ctns</div>`;
-        const statusLine = preSaleQuantity
-          ? `<div>Status: ${quantity} add to cart and <strong class="lc-presale-pulse">${preSaleQuantity} PRE-SALE</strong></div>`
-          : `<div>${escapeHtml(`Status: ${saleState}`)}</div>`;
-
         const image = product.image
           ? `<img src="${escapeHtml(product.image)}" alt="">`
           : '<div class="lc-product-image-placeholder"></div>';
@@ -717,27 +673,18 @@
             ${image}
             <div>
               <strong>${escapeHtml(title)}</strong>
-              ${statusLine}
-              ${quantityLine}
-              ${detailsHtml}
-              <div>${escapeHtml(stock)}</div>
+              <div>Qty ${requestedQuantity}</div>
               ${websiteLine}
             </div>
           </div>
         `;
       }).join('')}
 
-      ${activeProducts.length > 1 ? `
+      ${activeProducts.length > 1 && hasShippingTotals ? `
         <div class="lc-product-totals">
-          Ship now total: ${totalWeightKg ? totalWeightKg.toFixed(2) : '0.00'} kg ·
-          Est CBM: ${totalCbm ? totalCbm.toFixed(3) : '0.000'} ·
-          Ctns: ${totalCartons || 0}
-          ${totalPreSaleCartons ? `
-            <br>
-            Pre-sale later total: ${totalPreSaleWeightKg.toFixed(2)} kg ·
-            Est CBM: ${totalPreSaleCbm.toFixed(3)} ·
-            Ctns: ${totalPreSaleCartons}
-          ` : ''}
+          Ship total: ${totalWeightKg.toFixed(2)} kg ·
+          Est CBM: ${totalCbm.toFixed(3)} ·
+          Ctns: ${totalCartons}
         </div>
       ` : ''}
     `;
