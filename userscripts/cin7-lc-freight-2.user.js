@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight 2
 // @namespace    livingculture
-// @version      1.9
-// @description  Living Culture freight panel test version 2 Lite for Cin7. Browser-side Shopify freight price first with pre-sale stock warnings.
+// @version      2.0
+// @description  Living Culture freight panel test version 2 Lite for Cin7. Browser-side Shopify freight price first with mixed stock handling.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
 // @match        *://*.cin7.co/*
@@ -890,6 +890,54 @@
       : '';
   }
 
+  async function getBrowserCartQuantity() {
+    const cartResponse = await gmRequestJson(`${SHOPIFY_BASE}/cart.js`, {
+      method: 'GET',
+      timeoutMs: 15000
+    });
+
+    if (!cartResponse.ok) return 0;
+
+    return Number(cartResponse.data?.item_count || 0);
+  }
+
+  async function addShopifyCartLine(item) {
+    const beforeQuantity = await getBrowserCartQuantity();
+    const addResponse = await gmRequestJson(`${SHOPIFY_BASE}/cart/add.js`, {
+      method: 'POST',
+      timeoutMs: 20000,
+      body: {
+        items: [item]
+      }
+    });
+    const availabilityWarning = getShopifyAvailabilityMessage(addResponse);
+
+    if (addResponse.ok) {
+      return {
+        added: true,
+        availabilityWarning: ''
+      };
+    }
+
+    const afterQuantity = await getBrowserCartQuantity();
+
+    if (availabilityWarning && afterQuantity > beforeQuantity) {
+      return {
+        added: true,
+        availabilityWarning
+      };
+    }
+
+    if (availabilityWarning) {
+      return {
+        added: false,
+        availabilityWarning
+      };
+    }
+
+    throw new Error(addResponse.data.description || addResponse.data.message || `Browser Shopify /cart/add.js failed (${addResponse.status})`);
+  }
+
   async function requestBrowserShopifyFreight(freightItems, address) {
     const prepared = await postJson('/api/prepare', {
       items: freightItems.map(item => ({
@@ -919,27 +967,17 @@
       throw new Error(clearResponse.data.description || clearResponse.data.message || `Browser Shopify /cart/clear.js failed (${clearResponse.status})`);
     }
 
-    const addResponse = await gmRequestJson(`${SHOPIFY_BASE}/cart/add.js`, {
-      method: 'POST',
-      timeoutMs: 20000,
-      body: { items: cartItems }
-    });
-    const availabilityWarning = getShopifyAvailabilityMessage(addResponse);
+    const lineResults = [];
 
-    if (!addResponse.ok && !availabilityWarning) {
-      throw new Error(addResponse.data.description || addResponse.data.message || `Browser Shopify /cart/add.js failed (${addResponse.status})`);
+    for (const item of cartItems) {
+      lineResults.push(await addShopifyCartLine(item));
     }
 
-    if (availabilityWarning) {
-      const cartResponse = await gmRequestJson(`${SHOPIFY_BASE}/cart.js`, {
-        method: 'GET',
-        timeoutMs: 15000
-      });
-      const cartQuantity = Number(cartResponse.data?.item_count || 0);
+    const availabilityWarning = lineResults.find(result => result.availabilityWarning)?.availabilityWarning || '';
+    const addedCount = await getBrowserCartQuantity();
 
-      if (!cartResponse.ok || cartQuantity <= 0) {
-        throw new Error(availabilityWarning);
-      }
+    if (addedCount <= 0) {
+      throw new Error(availabilityWarning || 'No Shopify products could be added to the cart for freight rating.');
     }
 
     const fields = parseShopifyShippingAddress(address);
