@@ -718,8 +718,16 @@ async function getProductDetails(page, { productUrl, sku }, { includeMetrics = f
       .map(element => (element.innerText || element.value || element.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim())
       .filter(Boolean)
       .join(' | ');
-    const saleState = /pre[\s-]?sale|pre[\s-]?order/i.test(actionText)
-      ? 'Pre sale'
+    const pageStatusText = [
+      actionText,
+      document.body?.innerText || '',
+      document.querySelector('meta[property="og:description"]')?.content || '',
+      document.querySelector('meta[name="description"]')?.content || ''
+    ].join(' ');
+    const saleState = /pre[\s-]?order/i.test(pageStatusText)
+      ? 'Pre order'
+      : /pre[\s-]?sale/i.test(pageStatusText)
+        ? 'Pre sale'
       : /add\s+to\s+cart/i.test(actionText)
         ? 'Add to cart'
         : variant?.available
@@ -1723,6 +1731,18 @@ async function fetchProductJsonByHandle(handle) {
   return response.json();
 }
 
+function productTextIndicatesPreOrder(...values) {
+  const text = values
+    .flatMap(value => Array.isArray(value) ? value : [value])
+    .filter(value => value !== null && value !== undefined)
+    .map(value => String(value).replace(/<[^>]*>/g, ' '))
+    .join(' ');
+
+  if (/pre[\s-]?order/i.test(text)) return 'Pre order';
+  if (/pre[\s-]?sale/i.test(text)) return 'Pre sale';
+  return '';
+}
+
 function buildProductFromStorefrontData(productData, resolvedUrl, requestedSku = '', includeMetrics = false) {
   const requestedSkuLower = requestedSku ? requestedSku.toLowerCase() : '';
   const variantIdFromUrl = getVariantIdFromUrl(resolvedUrl);
@@ -1740,6 +1760,14 @@ function buildProductFromStorefrontData(productData, resolvedUrl, requestedSku =
   }
 
   const image = normaliseProductImage(variant.featured_image?.src || productData.featured_image || productData.images?.[0] || '');
+  const preorderSaleState = productTextIndicatesPreOrder(
+    productData.title,
+    productData.description,
+    productData.body_html,
+    productData.tags,
+    variant.title,
+    variant.public_title
+  );
   const details = {
     title: productData.title,
     image,
@@ -1747,7 +1775,7 @@ function buildProductFromStorefrontData(productData, resolvedUrl, requestedSku =
     sku: variant.sku || '',
     variantTitle: variant.public_title || variant.title || '',
     available: Boolean(variant.available),
-    saleState: variant.available ? 'Add to cart' : 'Unavailable',
+    saleState: preorderSaleState || (variant.available ? 'Add to cart' : 'Unavailable'),
     priceCents: Number(variant.price || 0),
     weightGrams: Number(variant.weight || 0),
     descriptionHtml: includeMetrics ? productData.description || '' : '',
