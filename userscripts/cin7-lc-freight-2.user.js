@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight 2
 // @namespace    livingculture
-// @version      3.0
+// @version      3.1
 // @description  Living Culture freight panel test version 2 Lite for Cin7. Browser-side Shopify freight price first with mixed stock handling.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -641,7 +641,10 @@
     const cartQuantity = getProductAddToCartQuantity(product);
     const preSaleQuantity = getProductPreSaleQuantity(product);
     if (preSaleQuantity > 0) {
-      return `<div class="lc-product-cart-qty"><strong>Only ${cartQuantity} available</strong></div>`;
+      return `
+        <div class="lc-product-cart-qty"><strong>Only ${cartQuantity} available</strong></div>
+        <div class="lc-product-presale-qty"><strong>Pre order: ${preSaleQuantity}</strong></div>
+      `;
     }
 
     const suffix = cartQuantity !== requestedQuantity ? ` of ${requestedQuantity}` : '';
@@ -1438,9 +1441,7 @@
 
       setResult(data.price, data.method, data.preSaleFreightEstimate);
       if (data.availabilityWarning) {
-        setStatus(data.preSaleFreightEstimate?.total
-          ? `Estimate shown includes the missing pre-sale quantity. ${data.availabilityWarning}.`
-          : `Freight shown is based on the available cart quantity. ${data.availabilityWarning}.`, true);
+        setStatus('Freight shown is based on the availability.', true);
       } else {
         setStatus(data.fromCache ? 'Freight loaded from recent lookup.' : 'Freight loaded.');
       }
