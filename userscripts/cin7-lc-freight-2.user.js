@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight 2
 // @namespace    livingculture
-// @version      2.8
+// @version      2.9
 // @description  Living Culture freight panel test version 2 Lite for Cin7. Browser-side Shopify freight price first with mixed stock handling.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -987,7 +987,7 @@
     const message = clean(response?.data?.description || response?.data?.message || response?.text);
 
     return /only\s+\d+\s+item/i.test(message) || /due to availability/i.test(message)
-      ? 'Check stock availability or available pre-sale. Shopify could not add the full requested quantity.'
+      ? 'Check stock availability or available pre-sale'
       : '';
   }
 
@@ -1157,7 +1157,7 @@
       price,
       method: clean(rate.name || rate.title || rate.code || 'Shipping'),
       availabilityWarning: availabilityWarning || (hasPreSaleShortfall
-        ? 'Check stock availability or available pre-sale. Shopify could not add the full requested quantity.'
+        ? 'Check stock availability or available pre-sale'
         : ''),
       browserCart: true,
       products: productsWithCartQuantities,
@@ -1438,8 +1438,8 @@
       setResult(data.price, data.method, data.preSaleFreightEstimate);
       if (data.availabilityWarning) {
         setStatus(data.preSaleFreightEstimate?.total
-          ? `${data.availabilityWarning} Estimate shown includes the missing pre-sale quantity.`
-          : `${data.availabilityWarning} Freight shown is based on the available cart quantity.`, true);
+          ? `Estimate shown includes the missing pre-sale quantity. ${data.availabilityWarning}.`
+          : `Freight shown is based on the available cart quantity. ${data.availabilityWarning}.`, true);
       } else {
         setStatus(data.fromCache ? 'Freight loaded from recent lookup.' : 'Freight loaded.');
       }
