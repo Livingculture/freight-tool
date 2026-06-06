@@ -618,11 +618,25 @@ function buildProductFromDetails(details, resolvedUrl, includeMetrics) {
   const pageTextSource = `${details.specTableText || ''}\n${details.pageText || ''}`;
   const combinedSource = `${descriptionSource}\n${pageTextSource}`;
   const variantPackageTable = parseVariantPackageTable(descriptionSource, details.variantTitle);
-  const tableCartons = parseSpecCellCartons(details.specTableRows, combinedSource);
-  const cartons = variantPackageTable.cartons.length ? variantPackageTable.cartons : tableCartons.length ? tableCartons : parseCartonDimensions(pageTextSource);
+  const variantSizeTokens = extractSizeTokens(details.variantTitle || '');
+  const hasSpecificVariantSize = variantSizeTokens.length > 0;
+  const variantSpecTableRows = hasSpecificVariantSize ? filterSpecTableRowsBySizeTokens(details.specTableRows, variantSizeTokens) : [];
+  const metricSpecTableRows = variantSpecTableRows.length ? variantSpecTableRows : !hasSpecificVariantSize ? details.specTableRows : [];
+  const canUseWholePageMetrics = !hasSpecificVariantSize || variantPackageTable.cartons.length > 0;
+  const tableCartons = metricSpecTableRows.length ? parseSpecCellCartons(metricSpecTableRows, combinedSource) : [];
+  const pageCartons = canUseWholePageMetrics ? parseCartonDimensions(pageTextSource) : [];
+  const cartons = variantPackageTable.cartons.length ? variantPackageTable.cartons : tableCartons.length ? tableCartons : pageCartons;
+  const tableWeightKg = metricSpecTableRows.length ? parseSpecCellWeight(metricSpecTableRows, combinedSource) : null;
+  const wholePageWeightKg = canUseWholePageMetrics
+    ? parseSpecCellWeight(details.specTableRows, combinedSource) ||
+      parseGrossWeightKg(descriptionSource) ||
+      parseSpecificationTableWeight(pageTextSource) ||
+      parseListedWeightKg(combinedSource) ||
+      parseGrossWeightKg(pageTextSource)
+    : null;
 
-  product.weightKg = variantPackageTable.weightKg || parseSpecCellWeight(details.specTableRows, combinedSource) || parseGrossWeightKg(descriptionSource) || parseSpecificationTableWeight(pageTextSource) || parseListedWeightKg(combinedSource) || parseGrossWeightKg(pageTextSource) || (details.weightGrams ? roundNumber(details.weightGrams / 1000, 2) : null);
-  product.cartons = cartons.length ? cartons : parseCartonDimensions(descriptionSource);
+  product.weightKg = variantPackageTable.weightKg || tableWeightKg || wholePageWeightKg || (details.weightGrams ? roundNumber(details.weightGrams / 1000, 2) : null);
+  product.cartons = cartons.length ? cartons : canUseWholePageMetrics ? parseCartonDimensions(descriptionSource) : [];
   product.unitsPerCarton = parseUnitsPerCarton(combinedSource);
   product.cbm = variantPackageTable.cbm || roundNumber(product.cartons.reduce((total, carton) => total + carton.cbm, 0), 3);
   product.metricsLoaded = true;
@@ -1125,12 +1139,41 @@ function descriptionToText(descriptionHtml) {
 function normalisePackageLabel(label) {
   return String(label || '')
     .toLowerCase()
+    .replace(/×/g, 'x')
     .replace(/\([^)]*\)/g, ' ')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
     .split(/\s+/)
     .map(word => word.endsWith('s') ? word.slice(0, -1) : word)
     .join(' ');
+}
+
+function normaliseSizeToken(value) {
+  const source = String(value || '')
+    .toLowerCase()
+    .replace(/×/g, 'x')
+    .replace(/\bmetres?\b/g, 'm')
+    .replace(/\s+/g, '');
+  const match = source.match(/(\d+(?:\.\d+)?)(?:m)?x(\d+(?:\.\d+)?)(?:m)?/i);
+  if (!match) return '';
+  return `${Number(match[1])}x${Number(match[2])}m`;
+}
+
+function extractSizeTokens(value) {
+  const source = String(value || '')
+    .toLowerCase()
+    .replace(/×/g, 'x')
+    .replace(/\bmetres?\b/g, 'm');
+  const tokens = new Set();
+  for (const match of source.matchAll(/(\d+(?:\.\d+)?)\s*(?:m)?\s*x\s*(\d+(?:\.\d+)?)\s*(?:m)?/gi)) {
+    tokens.add(`${Number(match[1])}x${Number(match[2])}m`);
+  }
+  return Array.from(tokens);
+}
+
+function textMatchesSizeToken(value, sizeToken) {
+  if (!sizeToken) return false;
+  return normaliseSizeToken(value) === sizeToken || extractSizeTokens(value).includes(sizeToken);
 }
 
 function getPackageQuantity(packageQuantities, label) {
@@ -1314,14 +1357,25 @@ function scoreColourCell(cell, selectedColour) {
 function findVariantTableColumn(rows, variantTitle) {
   const { size, colour } = parseVariantParts(variantTitle);
   const normalisedSize = normalisePackageLabel(size);
-  if (!normalisedSize) return -1;
+  const sizeToken = normaliseSizeToken(size) || extractSizeTokens(variantTitle)[0] || '';
+  if (!normalisedSize && !sizeToken) return -1;
 
-  const sizeRow = rows.find(row => /^size$/i.test(row[0] || '') && row.some(cell => normalisePackageLabel(cell) === normalisedSize));
+  const sizeRow = rows.find(row => {
+    if (!/^size$/i.test(row[0] || '')) return false;
+    return row.some(cell => {
+      const cellLabel = normalisePackageLabel(cell);
+      return (normalisedSize && cellLabel === normalisedSize) || textMatchesSizeToken(cell, sizeToken);
+    });
+  });
   if (!sizeRow) return -1;
 
   const candidates = sizeRow
     .map((cell, index) => ({ index, cell }))
-    .filter(item => item.index > 0 && normalisePackageLabel(item.cell) === normalisedSize)
+    .filter(item => {
+      if (item.index === 0) return false;
+      const cellLabel = normalisePackageLabel(item.cell);
+      return (normalisedSize && cellLabel === normalisedSize) || textMatchesSizeToken(item.cell, sizeToken);
+    })
     .map(item => item.index);
 
   if (!candidates.length) return -1;
@@ -1532,6 +1586,16 @@ function parseSpecCellRows(specTableRows = []) {
       };
     })
     .filter(row => row && row.label && row.packageDimensionsCm);
+}
+
+function filterSpecTableRowsBySizeTokens(specTableRows = [], sizeTokens = []) {
+  const tokens = Array.from(new Set(sizeTokens.filter(Boolean)));
+  if (!tokens.length) return [];
+
+  return specTableRows.filter(cells => {
+    const rowText = cells.join(' ');
+    return tokens.some(token => textMatchesSizeToken(rowText, token));
+  });
 }
 
 function parseSpecCellCartons(specTableRows, descriptionHtml) {
