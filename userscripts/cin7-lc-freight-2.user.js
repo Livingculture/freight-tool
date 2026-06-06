@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight 2
 // @namespace    livingculture
-// @version      2.6
+// @version      2.7
 // @description  Living Culture freight panel test version 2 Lite for Cin7. Browser-side Shopify freight price first with mixed stock handling.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -634,25 +634,28 @@
       total + normaliseQuantityAllowZero(location.available), 0);
   }
 
-  function renderWebsiteStatusLine(product) {
-    const status = clean(product?.saleState || (product?.available ? 'Add to cart' : ''));
-    if (!status) return '';
+  function renderCartQuantityLine(product) {
+    if (product?.addToCartQuantity == null && product?.preSaleQuantity == null) return '';
 
-    return `<div class="lc-product-stock">Website status: ${escapeHtml(status)}</div>`;
+    const requestedQuantity = getProductRequestedQuantity(product);
+    const cartQuantity = getProductAddToCartQuantity(product);
+    const suffix = cartQuantity !== requestedQuantity ? ` of ${requestedQuantity}` : '';
+
+    return `<div class="lc-product-stock">Cart qty: ${cartQuantity}${suffix}</div>`;
   }
 
   function renderCin7StockLine(stock, product) {
-    const websiteStatusLine = renderWebsiteStatusLine(product);
+    const cartQuantityLine = renderCartQuantityLine(product);
 
-    if (!stock) return websiteStatusLine;
+    if (!stock) return cartQuantityLine;
     if (stock.connected === false) {
-      return websiteStatusLine || '<div class="lc-product-stock">Cin7 stock: not connected</div>';
+      return cartQuantityLine;
     }
     if (stock.error) {
-      return websiteStatusLine || `<div class="lc-product-stock">Cin7 stock unavailable: ${escapeHtml(String(stock.error).slice(0, 100))}</div>`;
+      return cartQuantityLine;
     }
     if (!Array.isArray(stock.locations)) {
-      return websiteStatusLine || '<div class="lc-product-stock">Cin7 stock unavailable</div>';
+      return cartQuantityLine;
     }
 
     const availableQuantity = getCin7AvailableQuantity(stock);
