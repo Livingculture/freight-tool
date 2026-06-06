@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight 2
 // @namespace    livingculture
-// @version      2.5
+// @version      2.6
 // @description  Living Culture freight panel test version 2 Lite for Cin7. Browser-side Shopify freight price first with mixed stock handling.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -634,16 +634,25 @@
       total + normaliseQuantityAllowZero(location.available), 0);
   }
 
-  function renderCin7StockLine(stock) {
-    if (!stock) return '';
+  function renderWebsiteStatusLine(product) {
+    const status = clean(product?.saleState || (product?.available ? 'Add to cart' : ''));
+    if (!status) return '';
+
+    return `<div class="lc-product-stock">Website status: ${escapeHtml(status)}</div>`;
+  }
+
+  function renderCin7StockLine(stock, product) {
+    const websiteStatusLine = renderWebsiteStatusLine(product);
+
+    if (!stock) return websiteStatusLine;
     if (stock.connected === false) {
-      return '<div class="lc-product-stock">Cin7 stock: not connected</div>';
+      return websiteStatusLine || '<div class="lc-product-stock">Cin7 stock: not connected</div>';
     }
     if (stock.error) {
-      return `<div class="lc-product-stock">Cin7 stock unavailable: ${escapeHtml(String(stock.error).slice(0, 100))}</div>`;
+      return websiteStatusLine || `<div class="lc-product-stock">Cin7 stock unavailable: ${escapeHtml(String(stock.error).slice(0, 100))}</div>`;
     }
     if (!Array.isArray(stock.locations)) {
-      return '<div class="lc-product-stock">Cin7 stock unavailable</div>';
+      return websiteStatusLine || '<div class="lc-product-stock">Cin7 stock unavailable</div>';
     }
 
     const availableQuantity = getCin7AvailableQuantity(stock);
@@ -714,7 +723,7 @@
         const metricsLine = metricParts.length
           ? `<div class="lc-product-metrics">Qty ${requestedQuantity} · ${metricParts.join(' · ')}</div>`
           : `<div>Qty ${requestedQuantity}</div>`;
-        const stockLine = renderCin7StockLine(product.cin7Stock);
+        const stockLine = renderCin7StockLine(product.cin7Stock, product);
 
         return `
           <div class="lc-product-row">
