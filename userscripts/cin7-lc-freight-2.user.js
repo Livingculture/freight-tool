@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight 2
 // @namespace    livingculture
-// @version      2.7
+// @version      2.8
 // @description  Living Culture freight panel test version 2 Lite for Cin7. Browser-side Shopify freight price first with mixed stock handling.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -639,23 +639,25 @@
 
     const requestedQuantity = getProductRequestedQuantity(product);
     const cartQuantity = getProductAddToCartQuantity(product);
+    const preSaleQuantity = getProductPreSaleQuantity(product);
     const suffix = cartQuantity !== requestedQuantity ? ` of ${requestedQuantity}` : '';
+    const preSaleLine = preSaleQuantity > 0
+      ? `<div class="lc-product-presale-qty"><strong>Pre-sale: ${preSaleQuantity}</strong></div>`
+      : '';
 
-    return `<div class="lc-product-stock">Cart qty: ${cartQuantity}${suffix}</div>`;
+    return `<div class="lc-product-cart-qty"><strong>Cart qty: ${cartQuantity}${suffix}</strong></div>${preSaleLine}`;
   }
 
-  function renderCin7StockLine(stock, product) {
-    const cartQuantityLine = renderCartQuantityLine(product);
-
-    if (!stock) return cartQuantityLine;
+  function renderCin7StockLine(stock) {
+    if (!stock) return '';
     if (stock.connected === false) {
-      return cartQuantityLine;
+      return '';
     }
     if (stock.error) {
-      return cartQuantityLine;
+      return '';
     }
     if (!Array.isArray(stock.locations)) {
-      return cartQuantityLine;
+      return '';
     }
 
     const availableQuantity = getCin7AvailableQuantity(stock);
@@ -726,7 +728,8 @@
         const metricsLine = metricParts.length
           ? `<div class="lc-product-metrics">Qty ${requestedQuantity} · ${metricParts.join(' · ')}</div>`
           : `<div>Qty ${requestedQuantity}</div>`;
-        const stockLine = renderCin7StockLine(product.cin7Stock, product);
+        const cartQuantityLine = renderCartQuantityLine(product);
+        const stockLine = renderCin7StockLine(product.cin7Stock);
 
         return `
           <div class="lc-product-row">
@@ -734,6 +737,7 @@
             <div>
               <strong>${escapeHtml(title)}</strong>
               ${metricsLine}
+              ${cartQuantityLine}
               ${stockLine}
               ${websiteLine}
             </div>
@@ -2033,6 +2037,12 @@
       .lc-product-row div div {
         color: #637061;
         font-size: 12px;
+      }
+
+      .lc-product-row div .lc-product-cart-qty,
+      .lc-product-row div .lc-product-presale-qty {
+        color: #b42318;
+        font-weight: 800;
       }
 
       .lc-product-website {
