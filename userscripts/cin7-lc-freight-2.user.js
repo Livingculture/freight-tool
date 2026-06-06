@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight 2
 // @namespace    livingculture
-// @version      3.2
+// @version      3.3
 // @description  Living Culture freight panel test version 2 Lite for Cin7. Browser-side Shopify freight price first with mixed stock handling.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -642,7 +642,7 @@
       product?.buttonText,
       product?.statusText,
       product?.websiteStatusText
-    ].map(cleanText).filter(Boolean).join(' ');
+    ].map(clean).filter(Boolean).join(' ');
 
     return /pre[\s-]?(?:order|sale)/i.test(text);
   }
