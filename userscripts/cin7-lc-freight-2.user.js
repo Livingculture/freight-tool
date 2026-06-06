@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight 2
 // @namespace    livingculture
-// @version      2.4
+// @version      2.5
 // @description  Living Culture freight panel test version 2 Lite for Cin7. Browser-side Shopify freight price first with mixed stock handling.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -635,6 +635,17 @@
   }
 
   function renderCin7StockLine(stock) {
+    if (!stock) return '';
+    if (stock.connected === false) {
+      return '<div class="lc-product-stock">Cin7 stock: not connected</div>';
+    }
+    if (stock.error) {
+      return `<div class="lc-product-stock">Cin7 stock unavailable: ${escapeHtml(String(stock.error).slice(0, 100))}</div>`;
+    }
+    if (!Array.isArray(stock.locations)) {
+      return '<div class="lc-product-stock">Cin7 stock unavailable</div>';
+    }
+
     const availableQuantity = getCin7AvailableQuantity(stock);
     if (availableQuantity == null) return '';
 
@@ -826,7 +837,17 @@
     try {
       const stockPromise = requestProductAvailability(itemsWithUrls).catch(error => {
         console.warn('Cin7 stock lookup failed:', error);
-        return null;
+        return {
+          products: itemsWithUrls.map(item => ({
+            sku: item.sku,
+            productUrl: item.productUrl || item.url || '',
+            cin7Stock: {
+              connected: true,
+              locations: [],
+              error: error?.message || 'Stock lookup failed'
+            }
+          }))
+        };
       });
       const pendingResult = pendingProductDetails ? await pendingProductDetails : null;
       if (!shouldRender()) return;

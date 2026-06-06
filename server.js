@@ -3221,11 +3221,23 @@ app.post('/api/cin7-stock', async (req, res) => {
   try {
     const products = await Promise.all(requestedItems.map(async item => {
       const itemSku = String(item.sku || '').trim();
+      let cin7Stock;
+
+      try {
+        cin7Stock = await getCin7ProductAvailability(itemSku);
+      } catch (error) {
+        cin7Stock = {
+          connected: isCin7Configured(),
+          locations: [],
+          error: error.message
+        };
+      }
+
       return {
         sku: itemSku,
         productUrl: item.productUrl || item.url || '',
         quantity: normaliseQuantity(item.quantity),
-        cin7Stock: await getCin7ProductAvailability(itemSku)
+        cin7Stock
       };
     }));
 
