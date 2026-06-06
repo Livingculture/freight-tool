@@ -3211,6 +3211,31 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+app.post('/api/cin7-stock', async (req, res) => {
+  const { productUrl, sku, skus, items } = req.body;
+  const requestedItems = normaliseItems({ productUrl, sku, skus, items });
+  if (!requestedItems.length) {
+    return res.status(400).json({ error: 'At least one SKU is required' });
+  }
+
+  try {
+    const products = await Promise.all(requestedItems.map(async item => {
+      const itemSku = String(item.sku || '').trim();
+      return {
+        sku: itemSku,
+        productUrl: item.productUrl || item.url || '',
+        quantity: normaliseQuantity(item.quantity),
+        cin7Stock: await getCin7ProductAvailability(itemSku)
+      };
+    }));
+
+    return res.json({ products });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 app.post('/api/prepare', async (req, res) => {
   const { productUrl, sku, skus, items } = req.body;
   if (!normaliseItems({ productUrl, sku, skus, items }).length) {

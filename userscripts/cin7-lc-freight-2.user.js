@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight 2
 // @namespace    livingculture
-// @version      2.3
+// @version      2.4
 // @description  Living Culture freight panel test version 2 Lite for Cin7. Browser-side Shopify freight price first with mixed stock handling.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -628,6 +628,26 @@
       .filter(Boolean))).join(' + ');
   }
 
+  function getCin7AvailableQuantity(stock) {
+    if (!stock?.connected || stock.error || !Array.isArray(stock.locations)) return null;
+    return stock.locations.reduce((total, location) =>
+      total + normaliseQuantityAllowZero(location.available), 0);
+  }
+
+  function renderCin7StockLine(stock) {
+    const availableQuantity = getCin7AvailableQuantity(stock);
+    if (availableQuantity == null) return '';
+
+    const locationSummary = (stock.locations || [])
+      .filter(location => normaliseQuantityAllowZero(location.available) > 0)
+      .slice(0, 3)
+      .map(location => `${clean(location.location)} ${normaliseQuantityAllowZero(location.available)}`)
+      .filter(Boolean)
+      .join(' · ');
+
+    return `<div class="lc-product-stock">Cin7 stock: ${availableQuantity} available${locationSummary ? ` (${escapeHtml(locationSummary)})` : ''}</div>`;
+  }
+
   function renderProductDetails(products = [], method = state.method) {
     const block = document.getElementById('lc2-product-details');
     if (!block) return;
@@ -683,6 +703,7 @@
         const metricsLine = metricParts.length
           ? `<div class="lc-product-metrics">Qty ${requestedQuantity} · ${metricParts.join(' · ')}</div>`
           : `<div>Qty ${requestedQuantity}</div>`;
+        const stockLine = renderCin7StockLine(product.cin7Stock);
 
         return `
           <div class="lc-product-row">
@@ -690,6 +711,7 @@
             <div>
               <strong>${escapeHtml(title)}</strong>
               ${metricsLine}
+              ${stockLine}
               ${websiteLine}
             </div>
           </div>
@@ -779,7 +801,7 @@
   }
 
   async function requestProductAvailability(items) {
-    const { data } = await postJson('/api/availability', { items });
+    const { data } = await postJson('/api/cin7-stock', { items });
     return data;
   }
 
@@ -802,13 +824,22 @@
     if (!requestedItems.length) return;
 
     try {
+      const stockPromise = requestProductAvailability(itemsWithUrls).catch(error => {
+        console.warn('Cin7 stock lookup failed:', error);
+        return null;
+      });
       const pendingResult = pendingProductDetails ? await pendingProductDetails : null;
       if (!shouldRender()) return;
       if (pendingResult?.error) throw pendingResult.error;
       const data = pendingResult?.data || await requestProductDetails(itemsWithUrls, price);
 
       if (!shouldRender()) return;
-      renderProductDetails(mergeProductDetails(itemsWithUrls, data.products || fallbackProducts), method);
+      const withDetails = mergeProductDetails(itemsWithUrls, data.products || fallbackProducts);
+      renderProductDetails(withDetails, method);
+
+      const stockData = await stockPromise;
+      if (!shouldRender() || !stockData?.products?.length) return;
+      renderProductDetails(mergeProductDetails(withDetails, stockData.products), method);
     } catch (error) {
       if (!shouldRender()) return;
       console.error(error);
