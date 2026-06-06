@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight 2
 // @namespace    livingculture
-// @version      2.2
+// @version      2.3
 // @description  Living Culture freight panel test version 2 Lite for Cin7. Browser-side Shopify freight price first with mixed stock handling.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -583,6 +583,11 @@
     return normaliseQuantity(product.requestedQuantity || product.quantity);
   }
 
+  function formatMetricNumber(value, decimals) {
+    const number = Number(value) || 0;
+    return number.toFixed(decimals).replace(/\.?0+$/, '');
+  }
+
   function getProductAddToCartQuantity(product) {
     const requestedQuantity = getProductRequestedQuantity(product);
     const preSaleQuantity = normaliseQuantityAllowZero(
@@ -667,23 +672,34 @@
         const websiteLine = websiteUrl
           ? `<div class="lc-product-website"><a href="${escapeHtml(websiteUrl)}" target="_blank" rel="noopener noreferrer">To website</a></div>`
           : '';
+        const lineWeightKg = getLineWeight(product, requestedQuantity);
+        const lineCbm = getLineCbm(product, requestedQuantity);
+        const lineCartons = getLineCartonCount(product, requestedQuantity);
+        const metricParts = [
+          lineWeightKg > 0 ? `${formatMetricNumber(lineWeightKg, 2)} kg` : '',
+          lineCbm > 0 ? `${formatMetricNumber(lineCbm, 3)} CBM` : '',
+          lineCartons > 0 ? `${lineCartons} ctns` : ''
+        ].filter(Boolean);
+        const metricsLine = metricParts.length
+          ? `<div class="lc-product-metrics">Qty ${requestedQuantity} · ${metricParts.join(' · ')}</div>`
+          : `<div>Qty ${requestedQuantity}</div>`;
 
         return `
           <div class="lc-product-row">
             ${image}
             <div>
               <strong>${escapeHtml(title)}</strong>
-              <div>Qty ${requestedQuantity}</div>
+              ${metricsLine}
               ${websiteLine}
             </div>
           </div>
         `;
       }).join('')}
 
-      ${activeProducts.length > 1 && hasShippingTotals ? `
+      ${hasShippingTotals ? `
         <div class="lc-product-totals">
-          Ship total: ${totalWeightKg.toFixed(2)} kg ·
-          Est CBM: ${totalCbm.toFixed(3)} ·
+          Ship total: ${formatMetricNumber(totalWeightKg, 2)} kg ·
+          Est CBM: ${formatMetricNumber(totalCbm, 3)} ·
           Ctns: ${totalCartons}
         </div>
       ` : ''}
@@ -782,9 +798,6 @@
         ...item,
         productUrl: item.productUrl || item.url || ''
       }));
-
-    if (!shouldRender()) return;
-    renderProductDetails(itemsWithUrls, method);
 
     if (!requestedItems.length) return;
 
@@ -1363,6 +1376,14 @@
         setStatus(data.fromCache ? 'Freight loaded from recent lookup.' : 'Freight loaded.');
       }
       renderProductDetails(data.products || [], data.method);
+      loadProductDetails(
+        requestedItems,
+        data.price,
+        data.method,
+        data.products || [],
+        null,
+        isCurrentLookup
+      );
 
       return true;
     } catch (error) {
