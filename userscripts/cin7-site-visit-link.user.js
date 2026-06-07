@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.10.2
+// @version      1.10.3
 // @description  Adds a Site Visit button beside Install Fees/Scan, opens editable card popup, then saves to Workflow planner.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -469,17 +469,20 @@
     return sameVisitor(booking?.visitBy, selectedVisitBy);
   }
 
-  function hasBookingConflict(optionTime, bookings, selectedVisitBy) {
+  function conflictBookingForTime(optionTime, bookings) {
     const optionStart = parseSiteVisitTime(optionTime);
-    if (optionStart === null) return false;
+    if (optionStart === null) return null;
     const optionEnd = optionStart + 120;
-    return (bookings || []).some((booking) => {
-      if (!bookingBlocksSelectedVisitor(booking, selectedVisitBy)) return false;
+    return (bookings || []).find((booking) => {
       const bookedStart = parseSiteVisitTime(booking.time);
       if (bookedStart === null) return false;
       const bookedEnd = bookedStart + 120;
       return optionStart < bookedEnd && optionEnd > bookedStart;
-    });
+    }) || null;
+  }
+
+  function hasBookingConflict(optionTime, bookings) {
+    return Boolean(conflictBookingForTime(optionTime, bookings));
   }
 
   function bookingsCacheKey(date, branch, visitBy) {
@@ -636,6 +639,7 @@
       .lc-sv-field{display:grid;gap:5px}
       .lc-sv-field label{font-size:12px;font-weight:800;color:#2f675f}
       .lc-sv-field input,.lc-sv-field textarea,.lc-sv-field select{border:1px solid #b9c8c5;border-radius:8px;padding:9px 10px;font-size:14px;color:#2e2e2e}
+      .lc-sv-field select option:disabled{color:#9b2d25;background:#fff0ee;font-weight:700}
       .lc-sv-field textarea{min-height:72px;resize:vertical}
       .lc-sv-actions{display:flex;gap:10px;padding-top:4px}
       .lc-sv-actions button{border:1px solid #b6c8c5;border-radius:10px;padding:10px 12px;font-weight:800;cursor:pointer}
@@ -700,16 +704,20 @@
     const timeSelect = field('lcSvTime');
     if (!timeSelect) return;
     const selectedTime = clean(timeSelect.value);
-    const selectedVisitBy = clean(field('lcSvVisitBy')?.value || '');
     Array.from(timeSelect.options).forEach((option) => {
       const value = clean(option.value);
-      const disabled = Boolean(value && hasBookingConflict(value, bookings, selectedVisitBy));
+      const conflict = value ? conflictBookingForTime(value, bookings) : null;
+      const disabled = Boolean(conflict);
+      const reason = conflict?.visitBy ? `${conflict.visitBy} booked` : 'blocked';
       option.disabled = disabled;
-      option.textContent = disabled ? `${value} (booked)` : (value || '—');
-      option.title = disabled ? 'That visitor is already booked in this 2 hour site visit window.' : '';
+      option.textContent = disabled ? `${value} - unavailable (${reason})` : (value || '—');
+      option.label = option.textContent;
+      option.title = disabled ? 'Unavailable for the selected visitor in this 2 hour site visit window.' : '';
     });
-    if (selectedTime && hasBookingConflict(selectedTime, bookings, selectedVisitBy)) {
-      setMessage('That visitor is already booked in this 2 hour site visit window. Choose another time.', true);
+    if (selectedTime && hasBookingConflict(selectedTime, bookings)) {
+      timeSelect.value = '';
+      updateSubmitButtonLabel();
+      setMessage('That time is unavailable for the selected visitor. Blocked times are marked in the Time dropdown.', true);
     }
   }
 
@@ -774,8 +782,8 @@
       setMessage('Add customer, order ID, or address before save.', true);
       return;
     }
-    if (payload.time && hasBookingConflict(payload.time, siteVisitBookingsCache.bookings, payload.visitBy)) {
-      setMessage('That visitor is already booked in this 2 hour site visit window. Choose another time.', true);
+    if (payload.time && hasBookingConflict(payload.time, siteVisitBookingsCache.bookings)) {
+      setMessage('That time is unavailable for the selected visitor. Choose another time from the Time dropdown.', true);
       return;
     }
     setMessage('Saving site visit card...', false);
