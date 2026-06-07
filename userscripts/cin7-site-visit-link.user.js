@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.11.0
+// @version      1.11.1
 // @description  Adds a Site Visit button beside Install Fees/Scan, opens editable card popup, then saves to Workflow planner.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -1132,7 +1132,7 @@
     button.id = HUBSPOT_BUTTON_ID;
     button.type = 'button';
     button.textContent = 'HubSpot Deal';
-    styleInlineButton(button, '#2d5dcc');
+    styleInlineButton(button, '#ff5c35');
     button.style.height = `${Math.max(34, rect.height || 34)}px`;
     button.addEventListener('click', () => submitHubSpotDeal(button));
 
