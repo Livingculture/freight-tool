@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.10.3
+// @version      1.10.4
 // @description  Adds a Site Visit button beside Install Fees/Scan, opens editable card popup, then saves to Workflow planner.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -50,6 +50,15 @@
 
   function clean(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function escapeHtml(value) {
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
   }
 
   function normalizeLabel(value) {
@@ -641,6 +650,14 @@
       .lc-sv-field input,.lc-sv-field textarea,.lc-sv-field select{border:1px solid #b9c8c5;border-radius:8px;padding:9px 10px;font-size:14px;color:#2e2e2e}
       .lc-sv-field select option:disabled{color:#9b2d25;background:#fff0ee;font-weight:700}
       .lc-sv-field textarea{min-height:72px;resize:vertical}
+      .lc-sv-time-wrap{position:relative}
+      .lc-sv-time-button{width:100%;border:1px solid #b9c8c5;border-radius:8px;padding:9px 10px;background:#fff;color:#2e2e2e;font-size:14px;text-align:left;cursor:pointer}
+      .lc-sv-time-menu{display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:2147483647;max-height:310px;overflow:auto;background:#fff;border:1px solid #b9c8c5;border-radius:10px;box-shadow:0 14px 34px rgba(0,0,0,.22);padding:4px}
+      .lc-sv-time-menu.open{display:grid;gap:2px}
+      .lc-sv-time-option{border:0;border-radius:6px;background:#fff;color:#243c38;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;font-size:14px;text-align:left;cursor:pointer}
+      .lc-sv-time-option:hover,.lc-sv-time-option.selected{background:#edf5f3}
+      .lc-sv-time-option.unavailable{background:#fff0ee;color:#9b2d25;cursor:not-allowed;opacity:1;text-decoration:line-through}
+      .lc-sv-time-option small{font-size:11px;font-weight:800;text-decoration:none}
       .lc-sv-actions{display:flex;gap:10px;padding-top:4px}
       .lc-sv-actions button{border:1px solid #b6c8c5;border-radius:10px;padding:10px 12px;font-weight:800;cursor:pointer}
       .lc-sv-primary{background:#f3c42f;border-color:#f3c42f;color:#193d37;flex:1}
@@ -700,22 +717,68 @@
     button.textContent = suffix ? `Book Site Visit (${suffix})` : 'Book Site Visit';
   }
 
-  function updateTimeOptionAvailability(bookings) {
-    const timeSelect = field('lcSvTime');
-    if (!timeSelect) return;
-    const selectedTime = clean(timeSelect.value);
-    Array.from(timeSelect.options).forEach((option) => {
-      const value = clean(option.value);
+  function timeConflictLabel(conflict) {
+    if (!conflict) return '';
+    const visitor = clean(conflict.visitBy);
+    const order = clean(conflict.orderId);
+    const customer = clean(conflict.customerName);
+    if (visitor) return `${visitor} booked`;
+    if (order) return `${order} booked`;
+    if (customer) return `${customer} booked`;
+    return 'booked';
+  }
+
+  function closeTimeMenu() {
+    const menu = field('lcSvTimeMenu');
+    const button = field('lcSvTimeButton');
+    if (menu) menu.classList.remove('open');
+    if (button) button.setAttribute('aria-expanded', 'false');
+  }
+
+  function renderTimeOptions(bookings) {
+    const timeInput = field('lcSvTime');
+    const timeButton = field('lcSvTimeButton');
+    const timeMenu = field('lcSvTimeMenu');
+    if (!timeInput || !timeButton || !timeMenu) return;
+
+    const selectedTime = clean(timeInput.value);
+    timeButton.textContent = selectedTime || 'Time';
+    timeMenu.innerHTML = TIME_OPTIONS.map((value) => {
+      const display = value || 'Time TBC';
       const conflict = value ? conflictBookingForTime(value, bookings) : null;
       const disabled = Boolean(conflict);
-      const reason = conflict?.visitBy ? `${conflict.visitBy} booked` : 'blocked';
-      option.disabled = disabled;
-      option.textContent = disabled ? `${value} - unavailable (${reason})` : (value || '—');
-      option.label = option.textContent;
-      option.title = disabled ? 'Unavailable for the selected visitor in this 2 hour site visit window.' : '';
+      const reason = timeConflictLabel(conflict);
+      const optionLabel = disabled ? `${display} unavailable` : display;
+      return `
+        <button
+          type="button"
+          class="lc-sv-time-option ${value === selectedTime ? 'selected' : ''} ${disabled ? 'unavailable' : ''}"
+          data-lc-sv-time="${escapeHtml(value)}"
+          ${disabled ? 'disabled' : ''}
+          title="${disabled ? 'Unavailable for the selected visitor in this 2 hour site visit window.' : ''}">
+          <span>${escapeHtml(optionLabel)}</span>
+          ${disabled ? `<small>${escapeHtml(reason)}</small>` : ''}
+        </button>
+      `;
+    }).join('');
+
+    timeMenu.querySelectorAll('[data-lc-sv-time]').forEach((option) => {
+      option.addEventListener('click', () => {
+        timeInput.value = clean(option.dataset.lcSvTime || '');
+        closeTimeMenu();
+        updateSubmitButtonLabel();
+      });
     });
+  }
+
+  function updateTimeOptionAvailability(bookings) {
+    const timeInput = field('lcSvTime');
+    if (!timeInput) return;
+    const selectedTime = clean(timeInput.value);
+    renderTimeOptions(bookings);
     if (selectedTime && hasBookingConflict(selectedTime, bookings)) {
-      timeSelect.value = '';
+      timeInput.value = '';
+      renderTimeOptions(bookings);
       updateSubmitButtonLabel();
       setMessage('That time is unavailable for the selected visitor. Blocked times are marked in the Time dropdown.', true);
     }
@@ -827,7 +890,14 @@
           </div>
           <div class="lc-sv-grid">
             <div class="lc-sv-field"><label>Booked Date</label><input id="lcSvDate" type="date" /></div>
-            <div class="lc-sv-field"><label>Time</label><select id="lcSvTime">${TIME_OPTIONS.map((t) => `<option value="${t}">${t || '—'}</option>`).join('')}</select></div>
+            <div class="lc-sv-field">
+              <label>Time</label>
+              <div class="lc-sv-time-wrap">
+                <input id="lcSvTime" type="hidden" />
+                <button type="button" class="lc-sv-time-button" id="lcSvTimeButton" aria-expanded="false">Time</button>
+                <div class="lc-sv-time-menu" id="lcSvTimeMenu"></div>
+              </div>
+            </div>
           </div>
           <div class="lc-sv-grid">
             <div class="lc-sv-field"><label>Order ID</label><input id="lcSvOrder" /></div>
@@ -859,13 +929,20 @@
     });
     field('lcSvArea').addEventListener('change', refreshSiteVisitBookings);
     field('lcSvVisitBy').addEventListener('change', refreshSiteVisitBookings);
-    field('lcSvTime').addEventListener('change', () => {
-      updateSubmitButtonLabel();
-      updateTimeOptionAvailability(siteVisitBookingsCache.bookings);
+    field('lcSvTimeButton').addEventListener('click', () => {
+      const menu = field('lcSvTimeMenu');
+      const button = field('lcSvTimeButton');
+      const open = !menu.classList.contains('open');
+      renderTimeOptions(siteVisitBookingsCache.bookings);
+      menu.classList.toggle('open', open);
+      button.setAttribute('aria-expanded', open ? 'true' : 'false');
     });
     overlay.addEventListener('click', (event) => {
+      if (field('lcSvTimeMenu')?.contains(event.target) || field('lcSvTimeButton') === event.target) return;
+      closeTimeMenu();
       if (event.target === overlay) closePanel();
     });
+    renderTimeOptions([]);
     updateSubmitButtonLabel();
   }
 
