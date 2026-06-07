@@ -57,6 +57,7 @@ const PARTIAL_ADDRESS_SUFFIXES = [
 const productCache = new Map();
 const productSummaryCache = new Map();
 const skuUrlCache = new Map();
+const productPageSaleStateCache = new Map();
 const addressSuggestionCache = new Map();
 const freightQuoteCache = new Map();
 const freightQuoteInFlight = new Map();
@@ -1758,6 +1759,95 @@ function productTagsIndicatePreOrder(tags) {
   return '';
 }
 
+function isPreOrderSaleState(value) {
+  return /\bpre[\s-]?(?:order|sale)\b/i.test(String(value || ''));
+}
+
+function decodeBasicHtmlEntities(value) {
+  return String(value || '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&#(\d+);/g, (match, code) => {
+      const number = Number(code);
+      return Number.isFinite(number) ? String.fromCharCode(number) : match;
+    });
+}
+
+function htmlToPlainText(value) {
+  return decodeBasicHtmlEntities(
+    String(value || '')
+      .replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style\b[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+  ).replace(/\s+/g, ' ').trim();
+}
+
+function getProductPreOrderSnippetsFromHtml(html) {
+  const source = String(html || '');
+  const snippets = [];
+  const seen = new Set();
+
+  function push(value) {
+    const text = htmlToPlainText(value);
+    if (!text) return;
+
+    for (const match of text.matchAll(/\bpre[\s-]?(?:order|sale)\b/gi)) {
+      const start = Math.max(0, match.index - 60);
+      const end = Math.min(text.length, match.index + 120);
+      const snippet = text.slice(start, end).trim();
+
+      if (snippet && !seen.has(snippet)) {
+        seen.add(snippet);
+        snippets.push(snippet);
+      }
+    }
+  }
+
+  const blockPatterns = [
+    /<form\b[^>]*(?:action=["'][^"']*\/cart\/add[^"']*["']|class=["'][^"']*(?:product-form|shopify-product-form)[^"']*["'])[^>]*>[\s\S]*?<\/form>/gi,
+    /<[^>]+class=["'][^"']*(?:product-form|product__info|product-info|product-single__meta|product__inventory|inventory|availability|badge|preorder|pre-order)[^"']*["'][^>]*>[\s\S]{0,2500}?<\/[^>]+>/gi,
+    /<button\b[^>]*[\s\S]{0,900}?<\/button>/gi
+  ];
+
+  for (const pattern of blockPatterns) {
+    for (const match of source.matchAll(pattern)) {
+      push(match[0]);
+    }
+  }
+
+  const preorderIndex = source.search(/\bpre[\s-]?(?:order|sale)\b/i);
+  if (preorderIndex >= 0) {
+    push(source.slice(Math.max(0, preorderIndex - 500), preorderIndex + 700));
+  }
+
+  return snippets;
+}
+
+async function fetchProductPageSaleState(productUrl) {
+  const resolvedUrl = normaliseStorefrontUrl(productUrl);
+  const cacheKey = resolvedUrl.split('#')[0];
+  if (!cacheKey) return '';
+  if (productPageSaleStateCache.has(cacheKey)) return productPageSaleStateCache.get(cacheKey);
+
+  let saleState = '';
+  try {
+    const response = await fetch(cacheKey, { headers: { Accept: 'text/html' } });
+    if (response.ok) {
+      const html = await response.text();
+      saleState = productTextIndicatesPreOrder(...getProductPreOrderSnippetsFromHtml(html));
+    }
+  } catch (error) {
+    // Product JSON and cart state are still usable if product page HTML cannot be read.
+  }
+
+  productPageSaleStateCache.set(cacheKey, saleState);
+  return saleState;
+}
+
 function buildProductFromStorefrontData(productData, resolvedUrl, requestedSku = '', includeMetrics = false) {
   const requestedSkuLower = requestedSku ? requestedSku.toLowerCase() : '';
   const variantIdFromUrl = getVariantIdFromUrl(resolvedUrl);
@@ -1846,6 +1936,13 @@ async function getProductDetailsFast({ productUrl, sku }, { includeMetrics = fal
   }
 
   const product = buildProductFromStorefrontData(productData, resolvedUrl, sku, includeMetrics);
+  if (!isPreOrderSaleState(product.saleState)) {
+    const pageSaleState = await fetchProductPageSaleState(resolvedUrl);
+    if (pageSaleState) {
+      product.saleState = pageSaleState;
+    }
+  }
+
   cache.set(cacheKey, product);
   if (includeMetrics) {
     productSummaryCache.set(cacheKey, {
@@ -2015,6 +2112,11 @@ async function hydrateProductsWithMetrics(products = []) {
         productUrl: product.url || product.productUrl,
         sku: product.sku
       }, { includeMetrics: true });
+      const loadedSaleState = loaded.saleState || '';
+      const productSaleState = product.saleState || '';
+      const saleState = isPreOrderSaleState(loadedSaleState)
+        ? loadedSaleState
+        : productSaleState || loadedSaleState;
 
       return {
         ...product,
@@ -2024,7 +2126,7 @@ async function hydrateProductsWithMetrics(products = []) {
         availableQuantity: product.availableQuantity,
         addToCartQuantity: product.addToCartQuantity,
         preSaleQuantity: product.preSaleQuantity,
-        saleState: product.saleState || loaded.saleState,
+        saleState,
         available: product.available ?? loaded.available
       };
     } catch (error) {
