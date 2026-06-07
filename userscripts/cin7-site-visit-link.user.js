@@ -24,6 +24,7 @@
   const POPUP_STATUSES = ['To be confirmed', 'Site Visit Confirmed'];
   const VISIT_BY = ['', 'Ian', 'Steve', 'Jaine', 'Vitalii', 'Pakjira', 'Blair', 'James', 'Ian/Steve', 'Ian/Jaine', 'Ian/Vitalii', 'Ian/Pakjira', 'Vitalii/James', 'Blair/James'];
   let apiProductCache = [];
+  let siteVisitBookingsCache = { key: '', bookings: [] };
   const TIME_OPTIONS = (() => {
     const options = [''];
     for (let hour = 8; hour <= 20; hour += 1) {
@@ -391,6 +392,75 @@
     return `${y}-${m}-${d}`;
   }
 
+  function siteVisitBranchCode(value) {
+    const raw = clean(value).toUpperCase();
+    if (!raw) return '';
+    return raw.split(/[\s/-]+/)[0] || '';
+  }
+
+  function parseSiteVisitTime(value) {
+    const raw = clean(value).toLowerCase();
+    const match = raw.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/);
+    if (!match) return null;
+    let hour = Number(match[1]);
+    const minute = Number(match[2] || 0);
+    const meridiem = match[3] || '';
+    if (!Number.isFinite(hour) || !Number.isFinite(minute) || minute < 0 || minute >= 60) return null;
+    if (meridiem === 'pm' && hour < 12) hour += 12;
+    if (meridiem === 'am' && hour === 12) hour = 0;
+    if (hour < 0 || hour > 23) return null;
+    return (hour * 60) + minute;
+  }
+
+  function hasBookingConflict(optionTime, bookings) {
+    const optionStart = parseSiteVisitTime(optionTime);
+    if (optionStart === null) return false;
+    const optionEnd = optionStart + 120;
+    return (bookings || []).some((booking) => {
+      const bookedStart = parseSiteVisitTime(booking.time);
+      if (bookedStart === null) return false;
+      const bookedEnd = bookedStart + 120;
+      return optionStart < bookedEnd && optionEnd > bookedStart;
+    });
+  }
+
+  function bookingsCacheKey(date, branch) {
+    return `${clean(date)}|${siteVisitBranchCode(branch)}`;
+  }
+
+  function fetchSiteVisitBookings(date, branch) {
+    const bookedDate = clean(date);
+    const branchCode = siteVisitBranchCode(branch);
+    if (!bookedDate) return Promise.resolve([]);
+    const url = new URL(WORKFLOW_API_URL);
+    url.searchParams.set('date', bookedDate);
+    if (branchCode) url.searchParams.set('branch', branchCode);
+
+    const headers = {};
+    if (API_KEY) headers.Authorization = `Bearer ${API_KEY}`;
+
+    return new Promise((resolve, reject) => {
+      GM_xmlhttpRequest({
+        method: 'GET',
+        url: url.toString(),
+        headers,
+        onload: (response) => {
+          try {
+            const data = JSON.parse(response.responseText || '{}');
+            if (response.status >= 200 && response.status < 300 && data.ok) {
+              resolve(Array.isArray(data.bookings) ? data.bookings : []);
+            } else {
+              reject(new Error(data.error || `Booking lookup failed (${response.status}).`));
+            }
+          } catch (error) {
+            reject(error);
+          }
+        },
+        onerror: () => reject(new Error('Could not connect to workflow API.'))
+      });
+    });
+  }
+
   function isVisible(element) {
     if (!element) return false;
     const style = window.getComputedStyle(element);
@@ -545,6 +615,7 @@
     field('lcSvComments').value = data.comments || '';
     field('lcSvArea').value = data.area || '';
     updateSubmitButtonLabel();
+    refreshSiteVisitBookings();
   }
 
   function formatDateForLabel(value) {
@@ -563,6 +634,50 @@
     const dateText = formatDateForLabel(dateValue);
     const suffix = [dateText, timeValue].filter(Boolean).join(' · ');
     button.textContent = suffix ? `Book Site Visit (${suffix})` : 'Book Site Visit';
+  }
+
+  function updateTimeOptionAvailability(bookings) {
+    const timeSelect = field('lcSvTime');
+    if (!timeSelect) return;
+    const selectedTime = clean(timeSelect.value);
+    Array.from(timeSelect.options).forEach((option) => {
+      const value = clean(option.value);
+      const disabled = Boolean(value && hasBookingConflict(value, bookings));
+      option.disabled = disabled;
+      option.textContent = disabled ? `${value} (booked)` : (value || '—');
+      option.title = disabled ? 'Overlaps an existing 2 hour site visit booking.' : '';
+    });
+    if (selectedTime && hasBookingConflict(selectedTime, bookings)) {
+      setMessage('That time overlaps an existing 2 hour site visit booking. Choose another time.', true);
+    }
+  }
+
+  function refreshSiteVisitBookings() {
+    const dateValue = field('lcSvDate')?.value || localDateKey();
+    const branchValue = field('lcSvArea')?.value || '';
+    const key = bookingsCacheKey(dateValue, branchValue);
+    if (siteVisitBookingsCache.key === key) {
+      updateTimeOptionAvailability(siteVisitBookingsCache.bookings);
+      return;
+    }
+    siteVisitBookingsCache = { key, bookings: [] };
+    updateTimeOptionAvailability([]);
+    setMessage('Checking booked site visit times...', false);
+    fetchSiteVisitBookings(dateValue, branchValue)
+      .then((bookings) => {
+        if (siteVisitBookingsCache.key !== key) return;
+        siteVisitBookingsCache = { key, bookings };
+        updateTimeOptionAvailability(bookings);
+        if (bookings.length) {
+          setMessage(`${bookings.length} booked site visit time${bookings.length === 1 ? '' : 's'} found for this date.`, false);
+        } else {
+          setMessage('', false);
+        }
+      })
+      .catch((error) => {
+        if (siteVisitBookingsCache.key !== key) return;
+        setMessage(error.message || 'Could not check existing site visit bookings.', true);
+      });
   }
 
   function readForm() {
@@ -595,6 +710,10 @@
     const payload = readForm();
     if (!payload.customerName && !payload.orderId && !payload.address) {
       setMessage('Add customer, order ID, or address before save.', true);
+      return;
+    }
+    if (payload.time && hasBookingConflict(payload.time, siteVisitBookingsCache.bookings)) {
+      setMessage('That time overlaps an existing 2 hour site visit booking. Choose another time.', true);
       return;
     }
     setMessage('Saving site visit card...', false);
@@ -664,8 +783,16 @@
     document.body.appendChild(overlay);
     field('lcSvCloseBtn').addEventListener('click', closePanel);
     field('lcSvForm').addEventListener('submit', submitSiteVisit);
-    field('lcSvDate').addEventListener('change', updateSubmitButtonLabel);
-    field('lcSvTime').addEventListener('change', updateSubmitButtonLabel);
+    field('lcSvDate').addEventListener('change', () => {
+      updateSubmitButtonLabel();
+      refreshSiteVisitBookings();
+    });
+    field('lcSvArea').addEventListener('change', refreshSiteVisitBookings);
+    field('lcSvArea').addEventListener('input', refreshSiteVisitBookings);
+    field('lcSvTime').addEventListener('change', () => {
+      updateSubmitButtonLabel();
+      updateTimeOptionAvailability(siteVisitBookingsCache.bookings);
+    });
     overlay.addEventListener('click', (event) => {
       if (event.target === overlay) closePanel();
     });
