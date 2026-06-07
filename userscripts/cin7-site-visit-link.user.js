@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.10.5
+// @version      1.10.6
 // @description  Adds a Site Visit button beside Install Fees/Scan, opens editable card popup, then saves to Workflow planner.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -505,7 +505,7 @@
     if (!bookedDate) return Promise.resolve([]);
     const url = new URL(WORKFLOW_API_URL);
     url.searchParams.set('date', bookedDate);
-    if (branchCode) url.searchParams.set('branch', branchCode);
+    if (branchCode && !selectedVisitBy) url.searchParams.set('branch', branchCode);
     if (selectedVisitBy) url.searchParams.set('visitBy', selectedVisitBy);
 
     const headers = {};
