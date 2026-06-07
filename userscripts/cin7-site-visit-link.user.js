@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.10.1
+// @version      1.10.2
 // @description  Adds a Site Visit button beside Install Fees/Scan, opens editable card popup, then saves to Workflow planner.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -23,6 +23,16 @@
   const STATUSES = ['To be confirmed', 'Site Visit Confirmed', 'Completed', 'Hold'];
   const POPUP_STATUSES = ['To be confirmed', 'Site Visit Confirmed'];
   const VISIT_BY = ['', 'Ian', 'Steve', 'Jaine', 'Vitalii', 'Pakjira', 'Blair', 'James', 'Ian/Steve', 'Ian/Jaine', 'Ian/Vitalii', 'Ian/Pakjira', 'Vitalii/James', 'Blair/James'];
+  const LC_BRANCHES = [
+    ['', 'LC Branch'],
+    ['AKL', 'AKL · Wairau'],
+    ['PEN', 'PEN · Penrose'],
+    ['CHCH', 'CHCH · Christchurch'],
+    ['HAM', 'HAM · Hamilton'],
+    ['TGA', 'TGA · Tauranga'],
+    ['WHG', 'WHG · Whangarei'],
+    ['NPE', 'NPE · Napier']
+  ];
   let apiProductCache = [];
   let siteVisitBookingsCache = { key: '', bookings: [] };
   const TIME_OPTIONS = (() => {
@@ -59,7 +69,8 @@
     const raw = clean(repName);
     const code = raw.split('-')[0].trim().toUpperCase();
     if (!code) return '';
-    return code;
+    if (code === 'NAP') return 'NPE';
+    return LC_BRANCHES.some(([branchCode]) => branchCode === code) ? code : '';
   }
 
   function cleanProductLine(value) {
@@ -804,7 +815,7 @@
         <form id="lcSvForm" class="lc-sv-body">
           <div class="lc-sv-grid">
             <div class="lc-sv-field"><label>Status</label><select id="lcSvStatus">${POPUP_STATUSES.map((s) => `<option>${s}</option>`).join('')}</select></div>
-            <div class="lc-sv-field"><label>LC Branch</label><input id="lcSvArea" placeholder="AKL / PEN / CHCH / HAM / WHG / NAP" /></div>
+            <div class="lc-sv-field"><label>LC Branch</label><select id="lcSvArea">${LC_BRANCHES.map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select></div>
           </div>
           <div class="lc-sv-grid">
             <div class="lc-sv-field"><label>Booked Date</label><input id="lcSvDate" type="date" /></div>
@@ -839,7 +850,6 @@
       refreshSiteVisitBookings();
     });
     field('lcSvArea').addEventListener('change', refreshSiteVisitBookings);
-    field('lcSvArea').addEventListener('input', refreshSiteVisitBookings);
     field('lcSvVisitBy').addEventListener('change', refreshSiteVisitBookings);
     field('lcSvTime').addEventListener('change', () => {
       updateSubmitButtonLabel();
