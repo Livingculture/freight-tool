@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight 2
 // @namespace    livingculture
-// @version      3.4
+// @version      3.5
 // @description  Living Culture freight panel test version 2 Lite for Cin7. Browser-side Shopify freight price first with mixed stock handling.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -635,16 +635,16 @@
   }
 
   function productWebsiteSaysPreOrder(product) {
-    const text = [
+    const values = [
       product?.saleState,
       product?.websiteStatus,
       product?.availabilityText,
-      product?.buttonText,
-      product?.statusText,
-      product?.websiteStatusText
-    ].map(clean).filter(Boolean).join(' ');
+      product?.buttonText
+    ].map(clean).filter(Boolean);
 
-    return /pre[\s-]?(?:order|sale)/i.test(text);
+    return values.some(value =>
+      value.length <= 80 && /\bpre[\s-]?(?:order|sale)\b/i.test(value)
+    );
   }
 
   function renderCartQuantityLine(product) {
@@ -1693,7 +1693,7 @@
           <img src="https://livingculture.co.nz/cdn/shop/files/logo_ec2b0c5e-42ca-4695-8c7e-43b344144c58.png?v=1675047511&width=220" alt="Living Culture" />
           <strong>Freight Costing</strong>
         </div>
-        <p>Fast freight price only.</p>
+        <p>Outside of main centres.</p>
         <button type="button" id="lc2-panel-close">×</button>
       </div>
 

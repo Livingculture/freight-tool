@@ -718,18 +718,18 @@ async function getProductDetails(page, { productUrl, sku }, { includeMetrics = f
       .map(element => (element.innerText || element.value || element.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim())
       .filter(Boolean)
       .join(' | ');
-    const pageStatusText = [
-      actionText,
-      document.body?.innerText || '',
-      document.querySelector('meta[property="og:description"]')?.content || '',
-      document.querySelector('meta[name="description"]')?.content || ''
-    ].join(' ');
-    const saleState = /pre[\s-]?order/i.test(pageStatusText)
+    const productFormText = Array.from(document.querySelectorAll('form[action*="/cart/add"], form[action*="/cart/add.js"], [data-product-form], product-form, .product-form'))
+      .filter(isVisible)
+      .map(element => (element.innerText || element.textContent || '').replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .join(' | ');
+    const statusText = [actionText, productFormText].filter(Boolean).join(' | ');
+    const saleState = /\bpre[\s-]?order\b/i.test(statusText)
       ? 'Pre order'
-      : /pre[\s-]?sale/i.test(pageStatusText)
+      : /\bpre[\s-]?sale\b/i.test(statusText)
         ? 'Pre sale'
-      : /add\s+to\s+cart/i.test(actionText)
-        ? 'Add to cart'
+        : /add\s+to\s+cart/i.test(actionText)
+          ? 'Add to cart'
         : variant?.available
           ? 'Available'
           : 'Unavailable';
@@ -1731,15 +1731,30 @@ async function fetchProductJsonByHandle(handle) {
   return response.json();
 }
 
-function productTextIndicatesPreOrder(...values) {
-  const text = values
+function cleanProductTextValues(...values) {
+  return values
     .flatMap(value => Array.isArray(value) ? value : [value])
     .filter(value => value !== null && value !== undefined)
     .map(value => String(value).replace(/<[^>]*>/g, ' '))
-    .join(' ');
+    .map(value => value.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+}
 
-  if (/pre[\s-]?order/i.test(text)) return 'Pre order';
-  if (/pre[\s-]?sale/i.test(text)) return 'Pre sale';
+function productTextIndicatesPreOrder(...values) {
+  const textValues = cleanProductTextValues(...values);
+
+  if (textValues.some(value => value.length <= 80 && /\bpre[\s-]?order\b/i.test(value))) return 'Pre order';
+  if (textValues.some(value => value.length <= 80 && /\bpre[\s-]?sale\b/i.test(value))) return 'Pre sale';
+  return '';
+}
+
+function productTagsIndicatePreOrder(tags) {
+  const tagValues = cleanProductTextValues(tags)
+    .flatMap(value => value.split(',').map(tag => tag.trim()))
+    .filter(Boolean);
+
+  if (tagValues.some(tag => /^(?:pre[\s-]?order|preorder)$/i.test(tag))) return 'Pre order';
+  if (tagValues.some(tag => /^(?:pre[\s-]?sale|presale)$/i.test(tag))) return 'Pre sale';
   return '';
 }
 
@@ -1760,14 +1775,9 @@ function buildProductFromStorefrontData(productData, resolvedUrl, requestedSku =
   }
 
   const image = normaliseProductImage(variant.featured_image?.src || productData.featured_image || productData.images?.[0] || '');
-  const preorderSaleState = productTextIndicatesPreOrder(
-    productData.title,
-    productData.description,
-    productData.body_html,
-    productData.tags,
-    variant.title,
-    variant.public_title
-  );
+  const preorderSaleState =
+    productTagsIndicatePreOrder(productData.tags) ||
+    productTextIndicatesPreOrder(productData.title, variant.title, variant.public_title);
   const details = {
     title: productData.title,
     image,
