@@ -111,6 +111,28 @@ The hosted service uses the existing Express freight endpoints on Vercel. When d
 
 The hosted API only enables browser access from Cin7, Cin7 Core, Dear Systems and local development pages. Do not expose the hosted domain broadly; browser automation has Vercel compute cost.
 
+### HubSpot Deal Creation
+
+The Cin7 site-visit userscript also adds a `HubSpot Deal` button on Simple Sale pages. The button sends the visible Cin7 customer and sale details to the hosted backend, and the backend creates or reuses a HubSpot contact before creating the deal.
+
+Set these environment variables on the hosted server:
+
+```text
+HUBSPOT_ACCESS_TOKEN=pat-...
+HUBSPOT_DEAL_STAGE=appointmentscheduled
+HUBSPOT_DEAL_PIPELINE=default
+HUBSPOT_PORTAL_ID=12345678
+```
+
+Optional:
+
+```text
+HUBSPOT_CIN7_SALE_PROPERTY=cin7_sale_number
+HUBSPOT_DEAL_TO_CONTACT_ASSOCIATION_TYPE_ID=3
+```
+
+`HUBSPOT_DEAL_STAGE` and `HUBSPOT_DEAL_PIPELINE` must match the internal IDs from your HubSpot pipeline settings. If you create a custom deal property for the Cin7 sale number, set `HUBSPOT_CIN7_SALE_PROPERTY`; otherwise duplicate checks fall back to the generated deal name.
+
 ## Build Apps
 
 Build a Mac app:

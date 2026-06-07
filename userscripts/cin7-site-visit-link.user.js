@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.10.6
+// @version      1.11.0
 // @description  Adds a Site Visit button beside Install Fees/Scan, opens editable card popup, then saves to Workflow planner.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
 // @grant        GM_xmlhttpRequest
 // @connect      living-culture-workflow.vercel.app
+// @connect      living-culture-freight.vercel.app
 // @run-at       document-idle
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js
 // @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js
@@ -16,9 +17,11 @@
   'use strict';
 
   const BUTTON_ID = 'lc-site-visit-inline-button-v2';
+  const HUBSPOT_BUTTON_ID = 'lc-hubspot-deal-inline-button-v1';
   const OVERLAY_ID = 'lc-site-visit-overlay-v2';
   const WORKFLOW_API_URL = 'https://living-culture-workflow.vercel.app/api/site-visits';
   const WORKFLOW_PLANNER_URL = 'https://living-culture-workflow.vercel.app/';
+  const HUBSPOT_API_URL = 'https://living-culture-freight.vercel.app/api/hubspot/create-deal';
   const API_KEY = '';
   const STATUSES = ['To be confirmed', 'Site Visit Confirmed', 'Completed', 'Hold'];
   const POPUP_STATUSES = ['To be confirmed', 'Site Visit Confirmed'];
@@ -600,6 +603,14 @@
     return '';
   }
 
+  function readMoneyNearLabels(labels) {
+    for (const label of labels) {
+      const value = readValueNearLabel(label);
+      if (/\d/.test(value || '')) return value;
+    }
+    return '';
+  }
+
   function cin7Draft() {
     const address1 = readValueNearLabel('Shipping address line 1') || readValueNearLabel('Billing address line 1');
     const address2 = readValueNearLabel('Shipping address line 2') || readValueNearLabel('Billing address line 2');
@@ -631,6 +642,96 @@
       area: deriveBranchFromRep(rep),
       sourceUrl: window.location.href
     };
+  }
+
+  function hubspotDraft() {
+    const draft = cin7Draft();
+    const amount = readMoneyNearLabels([
+      'Total',
+      'Grand total',
+      'Order total',
+      'Sale total',
+      'Total after tax',
+      'Total before tax'
+    ]);
+
+    return {
+      orderId: draft.orderId,
+      saleNumber: draft.orderId,
+      reference: readValueNearLabel('Reference') || draft.orderId,
+      customerName: draft.customerName,
+      email: draft.email,
+      phone: draft.phone,
+      address: draft.address,
+      amount,
+      total: amount,
+      salesRep: draft.placedBy,
+      product: draft.product,
+      sourceUrl: draft.sourceUrl
+    };
+  }
+
+  function submitHubSpotDeal(button) {
+    const payload = hubspotDraft();
+    const summary = [
+      payload.orderId ? `Sale: ${payload.orderId}` : '',
+      payload.customerName ? `Customer: ${payload.customerName}` : '',
+      payload.amount ? `Amount: ${payload.amount}` : ''
+    ].filter(Boolean).join('\n');
+
+    if (!payload.customerName && !payload.email && !payload.phone) {
+      window.alert('Customer name, email, or phone is required before creating a HubSpot deal.');
+      return;
+    }
+
+    if (!window.confirm(`Create HubSpot deal?\n\n${summary || 'Cin7 sale details will be sent to HubSpot.'}`)) {
+      return;
+    }
+
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Sending...';
+
+    GM_xmlhttpRequest({
+      method: 'POST',
+      url: HUBSPOT_API_URL,
+      headers: { 'Content-Type': 'application/json' },
+      data: JSON.stringify(payload),
+      onload: (response) => {
+        let data = {};
+        try {
+          data = JSON.parse(response.responseText || '{}');
+        } catch (error) {
+          data = {};
+        }
+
+        if (response.status >= 200 && response.status < 300 && data.ok) {
+          button.textContent = data.duplicate ? 'Already in HubSpot' : 'HubSpot Created';
+          const message = data.duplicate
+            ? `HubSpot deal already exists:\n${data.dealName || data.dealId}`
+            : `HubSpot deal created:\n${data.dealName || data.dealId}`;
+          if (data.hubspotUrl) {
+            window.open(data.hubspotUrl, '_blank', 'noopener,noreferrer');
+          } else {
+            window.alert(message);
+          }
+          window.setTimeout(() => {
+            button.disabled = false;
+            button.textContent = originalText;
+          }, 2500);
+          return;
+        }
+
+        button.disabled = false;
+        button.textContent = originalText;
+        window.alert(data.error || `HubSpot deal failed (${response.status}).`);
+      },
+      onerror: () => {
+        button.disabled = false;
+        button.textContent = originalText;
+        window.alert('Could not connect to the HubSpot workflow API.');
+      }
+    });
   }
 
   function ensureStyles() {
@@ -994,11 +1095,69 @@
     }
   }
 
+  function styleInlineButton(button, background = '#05cbbf') {
+    button.style.background = background;
+    button.style.color = '#fff';
+    button.style.border = `1px solid ${background}`;
+    button.style.borderRadius = '4px';
+    button.style.padding = '0 14px';
+    button.style.font = '700 14px Arial, sans-serif';
+    button.style.cursor = 'pointer';
+    button.style.height = '34px';
+    button.style.lineHeight = '1';
+    button.style.marginLeft = '8px';
+    button.style.marginBottom = '0';
+    button.style.whiteSpace = 'nowrap';
+    button.style.verticalAlign = 'middle';
+    button.addEventListener('mouseenter', () => {
+      if (button.disabled) return;
+      button.style.filter = 'brightness(.92)';
+    });
+    button.addEventListener('mouseleave', () => {
+      button.style.filter = 'none';
+    });
+  }
+
+  function addHubSpotButton() {
+    if (document.getElementById(HUBSPOT_BUTTON_ID)) return;
+
+    const siteVisitButton = document.getElementById(BUTTON_ID);
+    const installAnchor = findButtonByLabel('Install Fees') || findButtonByLabel('Scan');
+    const commentsAnchor = findCommentsAnchor();
+    const anchor = siteVisitButton || installAnchor || commentsAnchor;
+    if (!anchor) return;
+
+    const rect = anchor.getBoundingClientRect();
+    const button = document.createElement('button');
+    button.id = HUBSPOT_BUTTON_ID;
+    button.type = 'button';
+    button.textContent = 'HubSpot Deal';
+    styleInlineButton(button, '#2d5dcc');
+    button.style.height = `${Math.max(34, rect.height || 34)}px`;
+    button.addEventListener('click', () => submitHubSpotDeal(button));
+
+    if (commentsAnchor && anchor === commentsAnchor) {
+      commentsAnchor.insertAdjacentElement('beforebegin', button);
+    } else {
+      anchor.insertAdjacentElement('afterend', button);
+    }
+  }
+
   function boot() {
     addButton();
-    setTimeout(addButton, 500);
-    setTimeout(addButton, 1500);
-    setTimeout(addButton, 3000);
+    addHubSpotButton();
+    setTimeout(() => {
+      addButton();
+      addHubSpotButton();
+    }, 500);
+    setTimeout(() => {
+      addButton();
+      addHubSpotButton();
+    }, 1500);
+    setTimeout(() => {
+      addButton();
+      addHubSpotButton();
+    }, 3000);
   }
 
   if (document.readyState === 'loading') {
@@ -1009,6 +1168,9 @@
 
   hookNetworkForProductLines();
 
-  const observer = new MutationObserver(() => addButton());
+  const observer = new MutationObserver(() => {
+    addButton();
+    addHubSpotButton();
+  });
   observer.observe(document.documentElement, { childList: true, subtree: true });
 })();

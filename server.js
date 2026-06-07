@@ -32,6 +32,17 @@ const AUTOMATION_TIMEOUT_MS = process.env.VERCEL ? 270000 : 120000;
 const CIN7_CORE_BASE_URL = process.env.CIN7_CORE_API_BASE_URL || 'https://inventory.dearsystems.com/ExternalApi/v2';
 const CIN7_CORE_ACCOUNT_ID = process.env.CIN7_CORE_ACCOUNT_ID;
 const CIN7_CORE_APPLICATION_KEY = process.env.CIN7_CORE_APPLICATION_KEY;
+const HUBSPOT_API_BASE_URL = process.env.HUBSPOT_API_BASE_URL || 'https://api.hubapi.com';
+const HUBSPOT_ACCESS_TOKEN = process.env.HUBSPOT_ACCESS_TOKEN ||
+  process.env.HUBSPOT_PRIVATE_APP_TOKEN ||
+  process.env.HUBSPOT_API_KEY;
+const HUBSPOT_DEAL_PIPELINE = process.env.HUBSPOT_DEAL_PIPELINE || process.env.HUBSPOT_PIPELINE || '';
+const HUBSPOT_DEAL_STAGE = process.env.HUBSPOT_DEAL_STAGE || process.env.HUBSPOT_DEALSTAGE || '';
+const HUBSPOT_CIN7_SALE_PROPERTY = process.env.HUBSPOT_CIN7_SALE_PROPERTY || '';
+const HUBSPOT_PORTAL_ID = process.env.HUBSPOT_PORTAL_ID || process.env.HUBSPOT_ACCOUNT_ID || '';
+const HUBSPOT_DEAL_TO_CONTACT_ASSOCIATION_TYPE_ID = Number(
+  process.env.HUBSPOT_DEAL_TO_CONTACT_ASSOCIATION_TYPE_ID || 3
+);
 const BLOCKED_RESOURCE_TYPES = new Set(['image', 'font', 'media']);
 const BLOCKED_AUTOMATION_URLS = [
   /cdn\.shopify\.com\/extensions\//i,
@@ -121,9 +132,174 @@ function isCin7Configured() {
   return Boolean(CIN7_CORE_ACCOUNT_ID && CIN7_CORE_APPLICATION_KEY);
 }
 
+function isHubSpotConfigured() {
+  return Boolean(HUBSPOT_ACCESS_TOKEN && HUBSPOT_DEAL_STAGE);
+}
+
 function numberValue(value) {
   const number = Number(value);
   return Number.isFinite(number) ? number : 0;
+}
+
+function cleanTextValue(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function parseMoneyValue(value) {
+  const match = cleanTextValue(value).replace(/,/g, '').match(/-?\d+(?:\.\d{1,2})?/);
+  if (!match) return '';
+  const amount = Number(match[0]);
+  return Number.isFinite(amount) ? amount.toFixed(2) : '';
+}
+
+function splitContactName(customerName) {
+  const parts = cleanTextValue(customerName).split(' ').filter(Boolean);
+  if (!parts.length) return { firstname: '', lastname: '' };
+  if (parts.length === 1) return { firstname: parts[0], lastname: '' };
+  return {
+    firstname: parts.slice(0, -1).join(' '),
+    lastname: parts.at(-1)
+  };
+}
+
+function cleanHubSpotProperties(properties) {
+  return Object.fromEntries(
+    Object.entries(properties)
+      .map(([key, value]) => [key, cleanTextValue(value)])
+      .filter(([, value]) => value)
+  );
+}
+
+function hubspotDealUrl(dealId) {
+  const id = cleanTextValue(dealId);
+  if (!id || !HUBSPOT_PORTAL_ID) return '';
+  return `https://app.hubspot.com/contacts/${HUBSPOT_PORTAL_ID}/deal/${id}`;
+}
+
+async function hubspotRequest(pathname, options = {}) {
+  if (!HUBSPOT_ACCESS_TOKEN) {
+    throw new Error('HubSpot access token is not configured.');
+  }
+
+  const response = await fetch(`${HUBSPOT_API_BASE_URL.replace(/\/$/, '')}${pathname}`, {
+    method: options.method || 'GET',
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${HUBSPOT_ACCESS_TOKEN}`,
+      ...(options.body ? { 'Content-Type': 'application/json' } : {})
+    },
+    body: options.body ? JSON.stringify(options.body) : undefined,
+    signal: AbortSignal.timeout(options.timeout || 20000)
+  });
+
+  const raw = await response.text().catch(() => '');
+  let payload = {};
+  if (raw) {
+    try {
+      payload = JSON.parse(raw);
+    } catch (error) {
+      payload = { message: raw };
+    }
+  }
+
+  if (!response.ok) {
+    const message = payload.message || payload.error || raw || response.statusText;
+    throw new Error(`HubSpot request failed (${response.status}): ${message}`);
+  }
+
+  return payload;
+}
+
+async function searchHubSpotObject(objectType, filters, properties = []) {
+  const payload = await hubspotRequest(`/crm/v3/objects/${objectType}/search`, {
+    method: 'POST',
+    body: {
+      filterGroups: [{ filters }],
+      properties,
+      limit: 1
+    }
+  });
+  return Array.isArray(payload.results) && payload.results.length ? payload.results[0] : null;
+}
+
+async function findOrCreateHubSpotContact(sale) {
+  const email = cleanTextValue(sale.email).toLowerCase();
+  if (email) {
+    const existing = await searchHubSpotObject('contacts', [
+      { propertyName: 'email', operator: 'EQ', value: email }
+    ], ['email', 'firstname', 'lastname', 'phone']);
+    if (existing?.id) return { contact: existing, created: false };
+  }
+
+  const name = splitContactName(sale.customerName);
+  const properties = cleanHubSpotProperties({
+    email,
+    firstname: name.firstname,
+    lastname: name.lastname,
+    phone: sale.phone,
+    address: sale.address
+  });
+
+  if (!properties.email && !properties.firstname && !properties.lastname && !properties.phone) {
+    return { contact: null, created: false };
+  }
+
+  const contact = await hubspotRequest('/crm/v3/objects/contacts', {
+    method: 'POST',
+    body: { properties }
+  });
+  return { contact, created: true };
+}
+
+async function findExistingHubSpotDeal(dealName, saleNumber) {
+  const saleId = cleanTextValue(saleNumber);
+  if (HUBSPOT_CIN7_SALE_PROPERTY && saleId) {
+    const existingBySaleId = await searchHubSpotObject('deals', [
+      { propertyName: HUBSPOT_CIN7_SALE_PROPERTY, operator: 'EQ', value: saleId }
+    ], ['dealname', 'amount', HUBSPOT_CIN7_SALE_PROPERTY]);
+    if (existingBySaleId?.id) return existingBySaleId;
+  }
+
+  return searchHubSpotObject('deals', [
+    { propertyName: 'dealname', operator: 'EQ', value: dealName }
+  ], ['dealname', 'amount']);
+}
+
+async function createHubSpotDeal(sale, contactId) {
+  const saleNumber = cleanTextValue(sale.orderId || sale.saleNumber || sale.reference);
+  const customerName = cleanTextValue(sale.customerName) || 'Cin7 customer';
+  const dealName = cleanTextValue(sale.dealName) ||
+    `Cin7 Sale ${saleNumber || new Date().toISOString().slice(0, 10)} - ${customerName}`;
+  const amount = parseMoneyValue(sale.amount || sale.total);
+
+  const properties = cleanHubSpotProperties({
+    dealname: dealName,
+    dealstage: HUBSPOT_DEAL_STAGE,
+    pipeline: HUBSPOT_DEAL_PIPELINE,
+    amount
+  });
+
+  if (HUBSPOT_CIN7_SALE_PROPERTY && saleNumber) {
+    properties[HUBSPOT_CIN7_SALE_PROPERTY] = saleNumber;
+  }
+
+  const associations = contactId ? [{
+    to: { id: String(contactId) },
+    types: [{
+      associationCategory: 'HUBSPOT_DEFINED',
+      associationTypeId: HUBSPOT_DEAL_TO_CONTACT_ASSOCIATION_TYPE_ID
+    }]
+  }] : [];
+
+  const deal = await hubspotRequest('/crm/v3/objects/deals', {
+    method: 'POST',
+    body: {
+      properties,
+      ...(associations.length ? { associations } : {})
+    }
+  });
+
+  return { deal, dealName, saleNumber };
 }
 
 function getCachedCin7Availability(sku) {
@@ -3411,8 +3587,61 @@ app.get('/api/health', (req, res) => {
   res.json({
     ok: true,
     service: 'living-culture-freight',
-    runtime: process.env.VERCEL ? 'vercel' : 'local'
+    runtime: process.env.VERCEL ? 'vercel' : 'local',
+    hubspotConfigured: isHubSpotConfigured()
   });
+});
+
+app.post('/api/hubspot/create-deal', async (req, res) => {
+  if (!isHubSpotConfigured()) {
+    return res.status(503).json({
+      error: 'HubSpot is not configured. Set HUBSPOT_ACCESS_TOKEN and HUBSPOT_DEAL_STAGE on the server.'
+    });
+  }
+
+  const sale = req.body || {};
+  const customerName = cleanTextValue(sale.customerName);
+  const email = cleanTextValue(sale.email);
+  const phone = cleanTextValue(sale.phone);
+  const saleNumber = cleanTextValue(sale.orderId || sale.saleNumber || sale.reference);
+
+  if (!customerName && !email && !phone) {
+    return res.status(400).json({ error: 'Customer name, email, or phone is required.' });
+  }
+
+  try {
+    const { contact, created: contactCreated } = await findOrCreateHubSpotContact(sale);
+    const customerLabel = customerName || email || phone || 'Cin7 customer';
+    const dealName = cleanTextValue(sale.dealName) ||
+      `Cin7 Sale ${saleNumber || new Date().toISOString().slice(0, 10)} - ${customerLabel}`;
+    const existingDeal = await findExistingHubSpotDeal(dealName, saleNumber);
+
+    if (existingDeal?.id) {
+      return res.json({
+        ok: true,
+        duplicate: true,
+        contactCreated,
+        contactId: contact?.id || '',
+        dealId: existingDeal.id,
+        dealName: existingDeal.properties?.dealname || dealName,
+        hubspotUrl: hubspotDealUrl(existingDeal.id)
+      });
+    }
+
+    const { deal } = await createHubSpotDeal(sale, contact?.id);
+    return res.status(201).json({
+      ok: true,
+      duplicate: false,
+      contactCreated,
+      contactId: contact?.id || '',
+      dealId: deal.id,
+      dealName: deal.properties?.dealname || dealName,
+      hubspotUrl: hubspotDealUrl(deal.id)
+    });
+  } catch (error) {
+    console.error('HubSpot deal creation failed:', error);
+    return res.status(502).json({ error: error.message || 'HubSpot deal creation failed.' });
+  }
 });
 
 app.post('/api/cin7-stock', async (req, res) => {
