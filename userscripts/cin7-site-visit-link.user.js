@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.10.4
+// @version      1.10.5
 // @description  Adds a Site Visit button beside Install Fees/Scan, opens editable card popup, then saves to Workflow planner.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -884,6 +884,7 @@
           <h3>New site visit card</h3>
         </div>
         <form id="lcSvForm" class="lc-sv-body">
+          <div class="lc-sv-field"><label>Visit By</label><select id="lcSvVisitBy">${VISIT_BY.map((s) => `<option value="${s}">${s || '—'}</option>`).join('')}</select></div>
           <div class="lc-sv-grid">
             <div class="lc-sv-field"><label>Status</label><select id="lcSvStatus">${POPUP_STATUSES.map((s) => `<option>${s}</option>`).join('')}</select></div>
             <div class="lc-sv-field"><label>LC Branch</label><select id="lcSvArea">${LC_BRANCHES.map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select></div>
@@ -903,7 +904,6 @@
             <div class="lc-sv-field"><label>Order ID</label><input id="lcSvOrder" /></div>
             <div class="lc-sv-field"><label>Placed By</label><input id="lcSvPlacedBy" /></div>
           </div>
-          <div class="lc-sv-field"><label>Visit By</label><select id="lcSvVisitBy">${VISIT_BY.map((s) => `<option value="${s}">${s || '—'}</option>`).join('')}</select></div>
           <div class="lc-sv-field"><label>Customer Name</label><input id="lcSvCustomer" /></div>
           <div class="lc-sv-field"><label>Address</label><textarea id="lcSvAddress"></textarea></div>
           <div class="lc-sv-grid">
