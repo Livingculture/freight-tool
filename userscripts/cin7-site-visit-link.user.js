@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.12.4
+// @version      1.12.6
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.6
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.6
 // ==/UserScript==
 
 (function () {
@@ -1249,15 +1249,15 @@
     if (button.parentElement !== document.body) {
       document.body.appendChild(button);
     }
-    button.style.position = 'fixed';
+    button.style.position = 'absolute';
     button.style.zIndex = '2147483644';
     button.style.marginLeft = '0';
     button.style.marginBottom = '0';
     button.style.height = `${Math.max(34, siteRect.height || hubspotRect.height || 34)}px`;
     const width = Math.max(button.offsetWidth || 0, 112);
     const center = siteRect.right + ((hubspotRect.left - siteRect.right) / 2);
-    button.style.left = `${Math.max(8, center - (width / 2))}px`;
-    button.style.top = `${Math.max(8, siteRect.top)}px`;
+    button.style.left = `${Math.max(8, window.scrollX + center - (width / 2))}px`;
+    button.style.top = `${Math.max(8, window.scrollY + siteRect.top)}px`;
     return true;
   }
 
