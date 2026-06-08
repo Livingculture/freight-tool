@@ -42,6 +42,8 @@ const HUBSPOT_CIN7_SALE_PROPERTY = process.env.HUBSPOT_CIN7_SALE_PROPERTY || '';
 const HUBSPOT_CIN7_ORDER_NAME_PROPERTY = process.env.HUBSPOT_CIN7_ORDER_NAME_PROPERTY || '';
 const HUBSPOT_CIN7_ORDER_AMOUNT_PROPERTY = process.env.HUBSPOT_CIN7_ORDER_AMOUNT_PROPERTY || '';
 const HUBSPOT_CIN7_SALE_URL_PROPERTY = process.env.HUBSPOT_CIN7_SALE_URL_PROPERTY || '';
+const HUBSPOT_OWNER_BY_REP_JSON = process.env.HUBSPOT_OWNER_BY_REP_JSON || '';
+const HUBSPOT_DEFAULT_OWNER_ID = process.env.HUBSPOT_DEFAULT_OWNER_ID || '';
 const HUBSPOT_PORTAL_ID = process.env.HUBSPOT_PORTAL_ID || process.env.HUBSPOT_ACCOUNT_ID || '';
 const HUBSPOT_DEAL_TO_CONTACT_ASSOCIATION_TYPE_ID = Number(
   process.env.HUBSPOT_DEAL_TO_CONTACT_ASSOCIATION_TYPE_ID || 3
@@ -179,19 +181,57 @@ function hubspotDealUrl(dealId) {
   return `https://app.hubspot.com/contacts/${HUBSPOT_PORTAL_ID}/deal/${id}`;
 }
 
+function normaliseOwnerMapKey(value) {
+  return cleanTextValue(value).toLowerCase();
+}
+
+function getHubSpotOwnerByRepMap() {
+  if (!HUBSPOT_OWNER_BY_REP_JSON) return {};
+  try {
+    const rawMap = JSON.parse(HUBSPOT_OWNER_BY_REP_JSON);
+    return Object.fromEntries(
+      Object.entries(rawMap || {}).map(([key, value]) => [normaliseOwnerMapKey(key), cleanTextValue(value)])
+    );
+  } catch (error) {
+    console.error('Invalid HUBSPOT_OWNER_BY_REP_JSON:', error.message);
+    return {};
+  }
+}
+
+function getHubSpotOwnerIdForSale(sale) {
+  const explicitOwnerId = cleanTextValue(sale.hubspotOwnerId || sale.ownerId);
+  if (explicitOwnerId) return explicitOwnerId;
+
+  const ownerByRep = getHubSpotOwnerByRepMap();
+  const repCandidates = [
+    sale.salesRep,
+    sale.placedBy,
+    sale.rep
+  ].map(normaliseOwnerMapKey).filter(Boolean);
+
+  for (const rep of repCandidates) {
+    const ownerId = cleanTextValue(ownerByRep[rep]);
+    if (ownerId) return ownerId;
+  }
+
+  return cleanTextValue(HUBSPOT_DEFAULT_OWNER_ID);
+}
+
 function buildHubSpotDealNames(sale) {
   const saleNumber = cleanTextValue(sale.orderId || sale.saleNumber || sale.reference);
   const customerName = cleanTextValue(sale.customerName);
   const dateFallback = new Date().toISOString().slice(0, 10);
-  const baseName = [saleNumber || dateFallback, customerName].filter(Boolean).join(' - ');
+  const baseName = customerName || saleNumber || dateFallback;
   const dealName = cleanTextValue(sale.dealName) || baseName || 'Cin7 Sale';
   const legacyName = saleNumber || customerName
     ? `Cin7 Sale ${saleNumber || dateFallback} - ${customerName || 'Cin7 customer'}`
     : dealName;
+  const recentName = [saleNumber || dateFallback, customerName].filter(Boolean).join(' - ');
 
   return {
     dealName,
     legacyName,
+    recentName,
     saleNumber,
     customerName
   };
@@ -294,12 +334,14 @@ async function findExistingHubSpotDeal(dealNames, saleNumber) {
 async function createHubSpotDeal(sale, contactId) {
   const { saleNumber, dealName } = buildHubSpotDealNames(sale);
   const amount = parseMoneyValue(sale.amount || sale.total);
+  const ownerId = getHubSpotOwnerIdForSale(sale);
 
   const properties = cleanHubSpotProperties({
     dealname: dealName,
     dealstage: HUBSPOT_DEAL_STAGE,
     pipeline: HUBSPOT_DEAL_PIPELINE,
-    amount
+    amount,
+    hubspot_owner_id: ownerId
   });
 
   if (HUBSPOT_CIN7_SALE_PROPERTY && saleNumber) {
@@ -3643,11 +3685,11 @@ app.post('/api/hubspot/create-deal', async (req, res) => {
 
   try {
     const { contact, created: contactCreated } = await findOrCreateHubSpotContact(sale);
-    const { dealName, legacyName } = buildHubSpotDealNames({
+    const { dealName, legacyName, recentName } = buildHubSpotDealNames({
       ...sale,
       customerName: customerName || email || phone || 'Cin7 customer'
     });
-    const existingDeal = await findExistingHubSpotDeal([dealName, legacyName], saleNumber);
+    const existingDeal = await findExistingHubSpotDeal([dealName, recentName, legacyName], saleNumber);
 
     if (existingDeal?.id) {
       return res.json({
