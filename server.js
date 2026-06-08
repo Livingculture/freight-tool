@@ -415,10 +415,15 @@ async function findOrCreateHubSpotContact(sale) {
 async function findExistingHubSpotDeal(dealNames, saleNumber) {
   const saleId = cleanTextValue(saleNumber);
   if (HUBSPOT_CIN7_SALE_PROPERTY && saleId) {
-    const existingBySaleId = await searchHubSpotObject('deals', [
-      { propertyName: HUBSPOT_CIN7_SALE_PROPERTY, operator: 'EQ', value: saleId }
-    ], ['dealname', 'amount', HUBSPOT_CIN7_SALE_PROPERTY]);
-    if (existingBySaleId?.id) return existingBySaleId;
+    const saleSearchValues = Array.from(new Set([saleId, `${saleId} (DEAR)`].map(cleanTextValue)));
+    for (const value of saleSearchValues) {
+      const existingBySaleId = await searchHubSpotObject('deals', [
+        { propertyName: HUBSPOT_CIN7_SALE_PROPERTY, operator: 'EQ', value }
+      ], ['dealname', 'amount', HUBSPOT_CIN7_SALE_PROPERTY]);
+      if (existingBySaleId?.id) return existingBySaleId;
+    }
+
+    return null;
   }
 
   for (const dealName of Array.from(new Set(dealNames.map(cleanTextValue).filter(Boolean)))) {
@@ -445,7 +450,9 @@ async function createHubSpotDeal(sale, contactId) {
   });
 
   if (HUBSPOT_CIN7_SALE_PROPERTY && saleNumber) {
-    properties[HUBSPOT_CIN7_SALE_PROPERTY] = saleNumber;
+    properties[HUBSPOT_CIN7_SALE_PROPERTY] = HUBSPOT_CIN7_SALE_PROPERTY === HUBSPOT_CIN7_ORDER_NAME_PROPERTY
+      ? `${saleNumber} (DEAR)`
+      : saleNumber;
   }
   if (HUBSPOT_CIN7_ORDER_NAME_PROPERTY && saleNumber) {
     properties[HUBSPOT_CIN7_ORDER_NAME_PROPERTY] = `${saleNumber} (DEAR)`;
