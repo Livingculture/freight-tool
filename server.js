@@ -42,6 +42,7 @@ const HUBSPOT_CIN7_SALE_PROPERTY = process.env.HUBSPOT_CIN7_SALE_PROPERTY || '';
 const HUBSPOT_CIN7_ORDER_NAME_PROPERTY = process.env.HUBSPOT_CIN7_ORDER_NAME_PROPERTY || '';
 const HUBSPOT_CIN7_ORDER_AMOUNT_PROPERTY = process.env.HUBSPOT_CIN7_ORDER_AMOUNT_PROPERTY || '';
 const HUBSPOT_CIN7_SALE_URL_PROPERTY = process.env.HUBSPOT_CIN7_SALE_URL_PROPERTY || '';
+const HUBSPOT_ASSOCIATE_CIN7_ORDER_DEAL = process.env.HUBSPOT_ASSOCIATE_CIN7_ORDER_DEAL !== 'false';
 const HUBSPOT_OWNER_BY_REP_JSON = process.env.HUBSPOT_OWNER_BY_REP_JSON || '';
 const HUBSPOT_DEFAULT_OWNER_ID = process.env.HUBSPOT_DEFAULT_OWNER_ID || '';
 const HUBSPOT_DEFAULT_OWNER_EMAIL = process.env.HUBSPOT_DEFAULT_OWNER_EMAIL || '';
@@ -503,6 +504,20 @@ async function findExistingHubSpotDeal(dealNames, saleNumber) {
   return null;
 }
 
+async function findHubSpotDealByName(dealName, properties = []) {
+  const name = cleanTextValue(dealName);
+  if (!name) return null;
+
+  return searchHubSpotObject('deals', [
+    { propertyName: 'dealname', operator: 'EQ', value: name }
+  ], ['dealname', 'amount', ...properties]);
+}
+
+function getCin7OrderDealName(saleNumber) {
+  const saleId = cleanTextValue(saleNumber);
+  return saleId ? `${saleId} (DEAR)` : '';
+}
+
 async function createHubSpotDeal(sale, contactId) {
   const { saleNumber, dealName } = buildHubSpotDealNames(sale);
   const amount = parseMoneyValue(sale.amount || sale.total);
@@ -575,6 +590,68 @@ async function associateHubSpotDealToContact(dealId, contactId) {
     method: 'PUT'
   });
   return true;
+}
+
+async function getAssociatedHubSpotDealIds(dealId) {
+  const id = cleanTextValue(dealId);
+  if (!id) return [];
+
+  const associatedDealIds = [];
+  let after = '';
+  do {
+    const query = new URLSearchParams({ limit: '100' });
+    if (after) query.set('after', after);
+    const payload = await hubspotRequest(`/crm/v4/objects/deals/${id}/associations/deals?${query.toString()}`);
+    for (const result of Array.isArray(payload.results) ? payload.results : []) {
+      const associatedId = cleanTextValue(result.toObjectId || result.id);
+      if (associatedId) associatedDealIds.push(associatedId);
+    }
+    after = cleanTextValue(payload.paging?.next?.after);
+  } while (after);
+
+  return Array.from(new Set(associatedDealIds));
+}
+
+async function associateHubSpotDealToDeal(fromDealId, toDealId) {
+  const fromId = cleanTextValue(fromDealId);
+  const toId = cleanTextValue(toDealId);
+  if (!fromId || !toId || fromId === toId) return false;
+
+  await hubspotRequest(`/crm/v4/objects/deals/${fromId}/associations/default/deals/${toId}`, {
+    method: 'PUT'
+  });
+  return true;
+}
+
+async function associateCin7OrderDealIfAvailable(customerDealId, saleNumber) {
+  if (!HUBSPOT_ASSOCIATE_CIN7_ORDER_DEAL) {
+    return { associated: false, skipped: true, reason: 'disabled' };
+  }
+
+  const dealId = cleanTextValue(customerDealId);
+  const orderDealName = getCin7OrderDealName(saleNumber);
+  if (!dealId || !orderDealName) {
+    return { associated: false, skipped: true, reason: 'missing_order_number' };
+  }
+
+  const orderDeal = await findHubSpotDealByName(orderDealName);
+  if (!orderDeal?.id) {
+    return { associated: false, skipped: true, reason: 'order_deal_not_found', orderDealName };
+  }
+  if (String(orderDeal.id) === String(dealId)) {
+    return { associated: false, skipped: true, reason: 'same_deal', orderDealId: orderDeal.id, orderDealName };
+  }
+
+  const associatedDealIds = await getAssociatedHubSpotDealIds(dealId);
+  if (associatedDealIds.includes(String(orderDeal.id))) {
+    return { associated: false, skipped: true, reason: 'already_associated', orderDealId: orderDeal.id, orderDealName };
+  }
+  if (associatedDealIds.length) {
+    return { associated: false, skipped: true, reason: 'association_limit_reached', orderDealId: orderDeal.id, orderDealName };
+  }
+
+  await associateHubSpotDealToDeal(dealId, orderDeal.id);
+  return { associated: true, skipped: false, orderDealId: orderDeal.id, orderDealName };
 }
 
 function getCachedCin7Availability(sku) {
@@ -3906,12 +3983,18 @@ app.post('/api/hubspot/create-deal', async (req, res) => {
           return false;
         })
         : false;
+      const orderDealAssociation = await associateCin7OrderDealIfAvailable(existingDeal.id, saleNumber).catch(error => {
+        console.error('HubSpot existing Cin7 order deal association failed:', error.message);
+        return { associated: false, skipped: false, reason: 'error', error: error.message };
+      });
 
       return res.json({
         ok: true,
         duplicate: true,
         ownerUpdated: Boolean(patchedDeal),
         contactAssociated,
+        orderDealAssociated: Boolean(orderDealAssociation.associated),
+        orderDealAssociation,
         contactCreated,
         contactId: contact?.id || '',
         dealId: existingDeal.id,
@@ -3927,10 +4010,16 @@ app.post('/api/hubspot/create-deal', async (req, res) => {
         return false;
       })
       : false;
+    const orderDealAssociation = await associateCin7OrderDealIfAvailable(deal.id, saleNumber).catch(error => {
+      console.error('HubSpot new Cin7 order deal association failed:', error.message);
+      return { associated: false, skipped: false, reason: 'error', error: error.message };
+    });
     return res.status(201).json({
       ok: true,
       duplicate: false,
       contactAssociated,
+      orderDealAssociated: Boolean(orderDealAssociation.associated),
+      orderDealAssociation,
       contactCreated,
       contactId: contact?.id || '',
       dealId: deal.id,
