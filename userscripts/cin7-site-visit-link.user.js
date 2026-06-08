@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.11.6
+// @version      1.11.7
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -19,6 +19,7 @@
   const BUTTON_ID = 'lc-site-visit-inline-button-v2';
   const HUBSPOT_BUTTON_ID = 'lc-hubspot-deal-inline-button-v1';
   const QUOTE_REVIEW_BUTTON_ID = 'lc-quote-review-inline-button-v1';
+  const FLOATING_BAR_ID = 'lc-cin7-floating-actions-v1';
   const OVERLAY_ID = 'lc-site-visit-overlay-v2';
   const WORKFLOW_API_URL = 'https://living-culture-workflow.vercel.app/api/site-visits';
   const QUOTE_REVIEW_API_URL = 'https://living-culture-workflow.vercel.app/api/quote-reviews';
@@ -1232,21 +1233,43 @@
     const installAnchor = findButtonByLabel('Install Fees') || findButtonByLabel('Scan');
     const commentsAnchor = findCommentsAnchor();
     const anchor = hubspotButton || siteVisitButton || installAnchor || commentsAnchor;
-    if (!anchor) return;
 
-    const rect = anchor.getBoundingClientRect();
+    const rect = anchor ? anchor.getBoundingClientRect() : { height: 38 };
     const button = document.createElement('button');
     button.id = QUOTE_REVIEW_BUTTON_ID;
     button.type = 'button';
     button.textContent = 'Quote Review';
-    styleInlineButton(button, '#f5a623');
+    styleInlineButton(button, '#f7c948');
+    button.style.color = '#263238';
+    button.style.borderColor = '#f0b429';
     button.style.height = `${Math.max(34, rect.height || 34)}px`;
     button.addEventListener('click', () => submitQuoteReview(button));
 
     if (commentsAnchor && anchor === commentsAnchor) {
       commentsAnchor.insertAdjacentElement('beforebegin', button);
-    } else {
+    } else if (anchor) {
       anchor.insertAdjacentElement('afterend', button);
+    } else {
+      let bar = document.getElementById(FLOATING_BAR_ID);
+      if (!bar) {
+        bar = document.createElement('div');
+        bar.id = FLOATING_BAR_ID;
+        bar.style.position = 'fixed';
+        bar.style.right = '18px';
+        bar.style.bottom = '18px';
+        bar.style.zIndex = '2147483644';
+        bar.style.display = 'flex';
+        bar.style.gap = '8px';
+        bar.style.alignItems = 'center';
+        bar.style.padding = '8px';
+        bar.style.borderRadius = '10px';
+        bar.style.background = 'rgba(255,255,255,.94)';
+        bar.style.boxShadow = '0 10px 30px rgba(0,0,0,.22)';
+        document.body.appendChild(bar);
+      }
+      button.style.marginLeft = '0';
+      button.style.height = '38px';
+      bar.appendChild(button);
     }
   }
 
