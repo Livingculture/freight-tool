@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.11.7
+// @version      1.11.8
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -1203,10 +1203,11 @@
   function addHubSpotButton() {
     if (document.getElementById(HUBSPOT_BUTTON_ID)) return;
 
+    const quoteReviewButton = document.getElementById(QUOTE_REVIEW_BUTTON_ID);
     const siteVisitButton = document.getElementById(BUTTON_ID);
     const installAnchor = findButtonByLabel('Install Fees') || findButtonByLabel('Scan');
     const commentsAnchor = findCommentsAnchor();
-    const anchor = siteVisitButton || installAnchor || commentsAnchor;
+    const anchor = quoteReviewButton || siteVisitButton || installAnchor || commentsAnchor;
     if (!anchor) return;
 
     const rect = anchor.getBoundingClientRect();
@@ -1245,7 +1246,9 @@
     button.style.height = `${Math.max(34, rect.height || 34)}px`;
     button.addEventListener('click', () => submitQuoteReview(button));
 
-    if (commentsAnchor && anchor === commentsAnchor) {
+    if (hubspotButton) {
+      hubspotButton.insertAdjacentElement('beforebegin', button);
+    } else if (commentsAnchor && anchor === commentsAnchor) {
       commentsAnchor.insertAdjacentElement('beforebegin', button);
     } else if (anchor) {
       anchor.insertAdjacentElement('afterend', button);
@@ -1275,22 +1278,22 @@
 
   function boot() {
     addButton();
-    addHubSpotButton();
     addQuoteReviewButton();
+    addHubSpotButton();
     setTimeout(() => {
       addButton();
-      addHubSpotButton();
       addQuoteReviewButton();
+      addHubSpotButton();
     }, 500);
     setTimeout(() => {
       addButton();
-      addHubSpotButton();
       addQuoteReviewButton();
+      addHubSpotButton();
     }, 1500);
     setTimeout(() => {
       addButton();
-      addHubSpotButton();
       addQuoteReviewButton();
+      addHubSpotButton();
     }, 3000);
   }
 
@@ -1304,6 +1307,7 @@
 
   const observer = new MutationObserver(() => {
     addButton();
+    addQuoteReviewButton();
     addHubSpotButton();
   });
   observer.observe(document.documentElement, { childList: true, subtree: true });
