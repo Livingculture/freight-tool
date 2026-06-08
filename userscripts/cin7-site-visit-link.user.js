@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.11.8
+// @version      1.11.9
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -1203,11 +1203,10 @@
   function addHubSpotButton() {
     if (document.getElementById(HUBSPOT_BUTTON_ID)) return;
 
-    const quoteReviewButton = document.getElementById(QUOTE_REVIEW_BUTTON_ID);
     const siteVisitButton = document.getElementById(BUTTON_ID);
     const installAnchor = findButtonByLabel('Install Fees') || findButtonByLabel('Scan');
     const commentsAnchor = findCommentsAnchor();
-    const anchor = quoteReviewButton || siteVisitButton || installAnchor || commentsAnchor;
+    const anchor = siteVisitButton || installAnchor || commentsAnchor;
     if (!anchor) return;
 
     const rect = anchor.getBoundingClientRect();
@@ -1226,11 +1225,33 @@
     }
   }
 
-  function addQuoteReviewButton() {
-    if (document.getElementById(QUOTE_REVIEW_BUTTON_ID)) return;
+  function positionQuoteReviewBetweenButtons(button, siteVisitButton, hubspotButton) {
+    const siteRect = siteVisitButton.getBoundingClientRect();
+    const hubspotRect = hubspotButton.getBoundingClientRect();
+    if (!siteRect.width || !hubspotRect.width) return false;
 
+    document.body.appendChild(button);
+    button.style.position = 'fixed';
+    button.style.zIndex = '2147483644';
+    button.style.marginLeft = '0';
+    button.style.marginBottom = '0';
+    button.style.height = `${Math.max(34, siteRect.height || hubspotRect.height || 34)}px`;
+    const width = Math.max(button.offsetWidth || 0, 112);
+    const center = siteRect.right + ((hubspotRect.left - siteRect.right) / 2);
+    button.style.left = `${Math.max(8, center - (width / 2))}px`;
+    button.style.top = `${Math.max(8, siteRect.top)}px`;
+    return true;
+  }
+
+  function addQuoteReviewButton() {
+    const existingButton = document.getElementById(QUOTE_REVIEW_BUTTON_ID);
     const hubspotButton = document.getElementById(HUBSPOT_BUTTON_ID);
     const siteVisitButton = document.getElementById(BUTTON_ID);
+    if (existingButton) {
+      if (hubspotButton && siteVisitButton) positionQuoteReviewBetweenButtons(existingButton, siteVisitButton, hubspotButton);
+      return;
+    }
+
     const installAnchor = findButtonByLabel('Install Fees') || findButtonByLabel('Scan');
     const commentsAnchor = findCommentsAnchor();
     const anchor = hubspotButton || siteVisitButton || installAnchor || commentsAnchor;
@@ -1241,13 +1262,14 @@
     button.type = 'button';
     button.textContent = 'Quote Review';
     styleInlineButton(button, '#f7c948');
-    button.style.color = '#263238';
+    button.style.color = '#fff';
     button.style.borderColor = '#f0b429';
+    button.style.textShadow = '0 1px 1px rgba(0,0,0,.28)';
     button.style.height = `${Math.max(34, rect.height || 34)}px`;
     button.addEventListener('click', () => submitQuoteReview(button));
 
-    if (hubspotButton) {
-      hubspotButton.insertAdjacentElement('beforebegin', button);
+    if (hubspotButton && siteVisitButton && positionQuoteReviewBetweenButtons(button, siteVisitButton, hubspotButton)) {
+      return;
     } else if (commentsAnchor && anchor === commentsAnchor) {
       commentsAnchor.insertAdjacentElement('beforebegin', button);
     } else if (anchor) {
@@ -1278,22 +1300,22 @@
 
   function boot() {
     addButton();
-    addQuoteReviewButton();
     addHubSpotButton();
+    addQuoteReviewButton();
     setTimeout(() => {
       addButton();
-      addQuoteReviewButton();
       addHubSpotButton();
+      addQuoteReviewButton();
     }, 500);
     setTimeout(() => {
       addButton();
-      addQuoteReviewButton();
       addHubSpotButton();
+      addQuoteReviewButton();
     }, 1500);
     setTimeout(() => {
       addButton();
-      addQuoteReviewButton();
       addHubSpotButton();
+      addQuoteReviewButton();
     }, 3000);
   }
 
@@ -1307,8 +1329,11 @@
 
   const observer = new MutationObserver(() => {
     addButton();
-    addQuoteReviewButton();
     addHubSpotButton();
+    addQuoteReviewButton();
   });
   observer.observe(document.documentElement, { childList: true, subtree: true });
+
+  window.addEventListener('resize', addQuoteReviewButton);
+  window.addEventListener('scroll', addQuoteReviewButton, true);
 })();
