@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.11.5
-// @description  Adds a Site Visit button beside Install Fees/Scan, opens editable card popup, then saves to Workflow planner.
+// @version      1.11.6
+// @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
 // @grant        GM_xmlhttpRequest
@@ -18,8 +18,10 @@
 
   const BUTTON_ID = 'lc-site-visit-inline-button-v2';
   const HUBSPOT_BUTTON_ID = 'lc-hubspot-deal-inline-button-v1';
+  const QUOTE_REVIEW_BUTTON_ID = 'lc-quote-review-inline-button-v1';
   const OVERLAY_ID = 'lc-site-visit-overlay-v2';
   const WORKFLOW_API_URL = 'https://living-culture-workflow.vercel.app/api/site-visits';
+  const QUOTE_REVIEW_API_URL = 'https://living-culture-workflow.vercel.app/api/quote-reviews';
   const WORKFLOW_PLANNER_URL = 'https://living-culture-workflow.vercel.app/';
   const HUBSPOT_API_URL = 'https://living-culture-freight.vercel.app/api/hubspot/create-deal';
   const API_KEY = '';
@@ -750,6 +752,69 @@
     });
   }
 
+  function submitQuoteReview(button) {
+    const payload = {
+      ...hubspotDraft(),
+      notes: readValueNearLabel('Quote memo') || readValueNearLabel('Comments') || ''
+    };
+    const summary = [
+      payload.orderId ? `Quote: ${payload.orderId}` : '',
+      payload.customerName ? `Customer: ${payload.customerName}` : '',
+      payload.amount ? `Amount: ${payload.amount}` : '',
+      payload.salesRep ? `Rep: ${payload.salesRep}` : ''
+    ].filter(Boolean).join('\n');
+
+    if (!payload.orderId && !payload.customerName) {
+      window.alert('Quote number or customer name is required before sending a quote for review.');
+      return;
+    }
+
+    if (!window.confirm(`Send quote for review?\n\n${summary || 'Cin7 quote details will be sent to Workflow.'}`)) {
+      return;
+    }
+
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Sending...';
+
+    GM_xmlhttpRequest({
+      method: 'POST',
+      url: QUOTE_REVIEW_API_URL,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {})
+      },
+      data: JSON.stringify(payload),
+      onload: (response) => {
+        let data = {};
+        try {
+          data = JSON.parse(response.responseText || '{}');
+        } catch (error) {
+          data = {};
+        }
+
+        if (response.status >= 200 && response.status < 300 && data.ok) {
+          button.textContent = data.duplicate ? 'Review Updated' : 'Review Sent';
+          window.open(`${WORKFLOW_PLANNER_URL}?planner=quote-review`, '_blank', 'noopener,noreferrer');
+          window.setTimeout(() => {
+            button.disabled = false;
+            button.textContent = originalText;
+          }, 2500);
+          return;
+        }
+
+        button.disabled = false;
+        button.textContent = originalText;
+        window.alert(data.error || `Quote review failed (${response.status}).`);
+      },
+      onerror: () => {
+        button.disabled = false;
+        button.textContent = originalText;
+        window.alert('Could not connect to the Quote Review workflow API.');
+      }
+    });
+  }
+
   function ensureStyles() {
     if (document.getElementById('lc-site-visit-style')) return;
     const style = document.createElement('style');
@@ -1159,20 +1224,50 @@
     }
   }
 
+  function addQuoteReviewButton() {
+    if (document.getElementById(QUOTE_REVIEW_BUTTON_ID)) return;
+
+    const hubspotButton = document.getElementById(HUBSPOT_BUTTON_ID);
+    const siteVisitButton = document.getElementById(BUTTON_ID);
+    const installAnchor = findButtonByLabel('Install Fees') || findButtonByLabel('Scan');
+    const commentsAnchor = findCommentsAnchor();
+    const anchor = hubspotButton || siteVisitButton || installAnchor || commentsAnchor;
+    if (!anchor) return;
+
+    const rect = anchor.getBoundingClientRect();
+    const button = document.createElement('button');
+    button.id = QUOTE_REVIEW_BUTTON_ID;
+    button.type = 'button';
+    button.textContent = 'Quote Review';
+    styleInlineButton(button, '#f5a623');
+    button.style.height = `${Math.max(34, rect.height || 34)}px`;
+    button.addEventListener('click', () => submitQuoteReview(button));
+
+    if (commentsAnchor && anchor === commentsAnchor) {
+      commentsAnchor.insertAdjacentElement('beforebegin', button);
+    } else {
+      anchor.insertAdjacentElement('afterend', button);
+    }
+  }
+
   function boot() {
     addButton();
     addHubSpotButton();
+    addQuoteReviewButton();
     setTimeout(() => {
       addButton();
       addHubSpotButton();
+      addQuoteReviewButton();
     }, 500);
     setTimeout(() => {
       addButton();
       addHubSpotButton();
+      addQuoteReviewButton();
     }, 1500);
     setTimeout(() => {
       addButton();
       addHubSpotButton();
+      addQuoteReviewButton();
     }, 3000);
   }
 
