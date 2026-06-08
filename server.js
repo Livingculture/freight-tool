@@ -193,6 +193,23 @@ function normaliseOwnerMapKey(value) {
   return cleanTextValue(value).toLowerCase();
 }
 
+function getSalesRepMatchKeys(sale) {
+  const rawReps = [
+    sale.salesRep,
+    sale.placedBy,
+    sale.rep
+  ].map(cleanTextValue).filter(Boolean);
+
+  const keys = [];
+  for (const rep of rawReps) {
+    keys.push(rep);
+    const branchless = rep.split(/[-–—]/).slice(1).join('-').trim();
+    if (branchless) keys.push(branchless);
+  }
+
+  return Array.from(new Set(keys.map(normaliseOwnerMapKey).filter(Boolean)));
+}
+
 function looksLikeHubSpotOwnerId(value) {
   return /^\d+$/.test(cleanTextValue(value));
 }
@@ -215,11 +232,7 @@ function getMappedHubSpotOwnerIdForSale(sale) {
   if (looksLikeHubSpotOwnerId(explicitOwnerId)) return explicitOwnerId;
 
   const ownerByRep = getHubSpotOwnerByRepMap();
-  const repCandidates = [
-    sale.salesRep,
-    sale.placedBy,
-    sale.rep
-  ].map(normaliseOwnerMapKey).filter(Boolean);
+  const repCandidates = getSalesRepMatchKeys(sale);
 
   for (const rep of repCandidates) {
     const ownerId = cleanTextValue(ownerByRep[rep]);
@@ -232,11 +245,7 @@ function getMappedHubSpotOwnerIdForSale(sale) {
 
 function getMappedHubSpotOwnerMatchValuesForSale(sale) {
   const ownerByRep = getHubSpotOwnerByRepMap();
-  const repCandidates = [
-    sale.salesRep,
-    sale.placedBy,
-    sale.rep
-  ].map(normaliseOwnerMapKey).filter(Boolean);
+  const repCandidates = getSalesRepMatchKeys(sale);
 
   return repCandidates
     .map(rep => cleanTextValue(ownerByRep[rep]))
@@ -292,11 +301,7 @@ async function getHubSpotOwnerIdForSale(sale) {
   const mappedOwnerId = getMappedHubSpotOwnerIdForSale(sale);
   if (mappedOwnerId) return mappedOwnerId;
 
-  const repCandidates = [
-    sale.salesRep,
-    sale.placedBy,
-    sale.rep
-  ].map(normaliseOwnerMapKey).filter(Boolean);
+  const repCandidates = getSalesRepMatchKeys(sale);
   const mappedOwnerCandidates = getMappedHubSpotOwnerMatchValuesForSale(sale);
 
   const defaultCandidates = [
