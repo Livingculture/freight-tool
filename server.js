@@ -476,6 +476,24 @@ async function createHubSpotDeal(sale, contactId) {
   return { deal, dealName, saleNumber };
 }
 
+async function updateHubSpotDealProperties(dealId, properties) {
+  const cleanedProperties = cleanHubSpotProperties(properties);
+  if (!cleanTextValue(dealId) || !Object.keys(cleanedProperties).length) return null;
+
+  return hubspotRequest(`/crm/v3/objects/deals/${dealId}`, {
+    method: 'PATCH',
+    body: { properties: cleanedProperties }
+  });
+}
+
+async function associateHubSpotDealToContact(dealId, contactId) {
+  if (!cleanTextValue(dealId) || !cleanTextValue(contactId)) return false;
+  await hubspotRequest(`/crm/v3/objects/deals/${dealId}/associations/contacts/${contactId}/${HUBSPOT_DEAL_TO_CONTACT_ASSOCIATION_TYPE_ID}`, {
+    method: 'PUT'
+  });
+  return true;
+}
+
 function getCachedCin7Availability(sku) {
   const cached = cin7AvailabilityCache.get(sku);
   if (!cached) return null;
@@ -3792,13 +3810,29 @@ app.post('/api/hubspot/create-deal', async (req, res) => {
     const existingDeal = await findExistingHubSpotDeal([dealName, recentName, legacyName], saleNumber);
 
     if (existingDeal?.id) {
+      const ownerId = await getHubSpotOwnerIdForSale(sale);
+      const patchedDeal = ownerId
+        ? await updateHubSpotDealProperties(existingDeal.id, { hubspot_owner_id: ownerId }).catch(error => {
+          console.error('HubSpot existing deal owner update failed:', error.message);
+          return null;
+        })
+        : null;
+      const contactAssociated = contact?.id
+        ? await associateHubSpotDealToContact(existingDeal.id, contact.id).catch(error => {
+          console.error('HubSpot existing deal contact association failed:', error.message);
+          return false;
+        })
+        : false;
+
       return res.json({
         ok: true,
         duplicate: true,
+        ownerUpdated: Boolean(patchedDeal),
+        contactAssociated,
         contactCreated,
         contactId: contact?.id || '',
         dealId: existingDeal.id,
-        dealName: existingDeal.properties?.dealname || dealName,
+        dealName: patchedDeal?.properties?.dealname || existingDeal.properties?.dealname || dealName,
         hubspotUrl: hubspotDealUrl(existingDeal.id)
       });
     }
