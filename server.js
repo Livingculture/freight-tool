@@ -3971,12 +3971,14 @@ app.post('/api/hubspot/create-deal', async (req, res) => {
 
     if (existingDeal?.id) {
       const ownerId = await getHubSpotOwnerIdForSale(sale);
-      const patchedDeal = ownerId
-        ? await updateHubSpotDealProperties(existingDeal.id, { hubspot_owner_id: ownerId }).catch(error => {
-          console.error('HubSpot existing deal owner update failed:', error.message);
-          return null;
-        })
-        : null;
+      const patchedDeal = await updateHubSpotDealProperties(existingDeal.id, {
+        hubspot_owner_id: ownerId,
+        dealstage: HUBSPOT_DEAL_STAGE,
+        pipeline: HUBSPOT_DEAL_PIPELINE
+      }).catch(error => {
+        console.error('HubSpot existing deal update failed:', error.message);
+        return null;
+      });
       const contactAssociated = contact?.id
         ? await associateHubSpotDealToContact(existingDeal.id, contact.id).catch(error => {
           console.error('HubSpot existing deal contact association failed:', error.message);
@@ -3992,6 +3994,7 @@ app.post('/api/hubspot/create-deal', async (req, res) => {
         ok: true,
         duplicate: true,
         ownerUpdated: Boolean(patchedDeal),
+        stageUpdated: Boolean(patchedDeal),
         contactAssociated,
         orderDealAssociated: Boolean(orderDealAssociation.associated),
         orderDealAssociation,
