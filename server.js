@@ -170,6 +170,10 @@ function splitContactName(customerName) {
   };
 }
 
+function phoneDigits(value) {
+  return cleanTextValue(value).replace(/\D+/g, '');
+}
+
 function cleanHubSpotProperties(properties) {
   return Object.fromEntries(
     Object.entries(properties)
@@ -379,14 +383,77 @@ async function searchHubSpotObject(objectType, filters, properties = []) {
   return Array.isArray(payload.results) && payload.results.length ? payload.results[0] : null;
 }
 
-async function findOrCreateHubSpotContact(sale) {
+async function searchHubSpotObjectsByQuery(objectType, query, properties = []) {
+  const cleanQuery = cleanTextValue(query);
+  if (!cleanQuery) return [];
+
+  const payload = await hubspotRequest(`/crm/v3/objects/${objectType}/search`, {
+    method: 'POST',
+    body: {
+      query: cleanQuery,
+      properties,
+      limit: 10
+    }
+  });
+  return Array.isArray(payload.results) ? payload.results : [];
+}
+
+function scoreHubSpotContactMatch(contact, sale) {
+  const properties = contact?.properties || {};
+  const saleEmail = cleanTextValue(sale.email).toLowerCase();
+  const salePhone = phoneDigits(sale.phone);
+  const saleName = normaliseOwnerMapKey(sale.customerName);
+  const contactEmail = cleanTextValue(properties.email).toLowerCase();
+  const contactPhone = phoneDigits(properties.phone || properties.mobilephone);
+  const contactName = normaliseOwnerMapKey([properties.firstname, properties.lastname].filter(Boolean).join(' '));
+
+  let score = 0;
+  if (saleEmail && contactEmail && saleEmail === contactEmail) score += 100;
+  if (salePhone && contactPhone && (salePhone === contactPhone || contactPhone.endsWith(salePhone) || salePhone.endsWith(contactPhone))) score += 70;
+  if (saleName && contactName && (saleName === contactName || contactName.includes(saleName) || saleName.includes(contactName))) score += 40;
+  return score;
+}
+
+async function findExistingHubSpotContact(sale) {
+  const properties = ['email', 'firstname', 'lastname', 'phone', 'mobilephone'];
   const email = cleanTextValue(sale.email).toLowerCase();
   if (email) {
     const existing = await searchHubSpotObject('contacts', [
       { propertyName: 'email', operator: 'EQ', value: email }
-    ], ['email', 'firstname', 'lastname', 'phone']);
-    if (existing?.id) return { contact: existing, created: false };
+    ], properties);
+    if (existing?.id) return existing;
   }
+
+  const queries = [
+    sale.email,
+    sale.phone,
+    phoneDigits(sale.phone),
+    sale.customerName
+  ].map(cleanTextValue).filter(Boolean);
+
+  const candidates = [];
+  const seen = new Set();
+  for (const query of Array.from(new Set(queries))) {
+    const results = await searchHubSpotObjectsByQuery('contacts', query, properties).catch(error => {
+      console.error(`HubSpot contact query failed for "${query}":`, error.message);
+      return [];
+    });
+    for (const contact of results) {
+      if (!contact?.id || seen.has(contact.id)) continue;
+      seen.add(contact.id);
+      candidates.push(contact);
+    }
+  }
+
+  const bestMatch = candidates
+    .map(contact => ({ contact, score: scoreHubSpotContactMatch(contact, sale) }))
+    .sort((left, right) => right.score - left.score)[0];
+  return bestMatch?.score > 0 ? bestMatch.contact : null;
+}
+
+async function findOrCreateHubSpotContact(sale) {
+  const existing = await findExistingHubSpotContact(sale);
+  if (existing?.id) return { contact: existing, created: false };
 
   if (!HUBSPOT_CREATE_MISSING_CONTACTS) {
     return { contact: null, created: false };
@@ -495,6 +562,15 @@ async function updateHubSpotDealProperties(dealId, properties) {
 
 async function associateHubSpotDealToContact(dealId, contactId) {
   if (!cleanTextValue(dealId) || !cleanTextValue(contactId)) return false;
+  try {
+    await hubspotRequest(`/crm/v4/objects/contacts/${contactId}/associations/default/deals/${dealId}`, {
+      method: 'PUT'
+    });
+    return true;
+  } catch (error) {
+    console.error('HubSpot default contact-deal association failed; trying v3 association:', error.message);
+  }
+
   await hubspotRequest(`/crm/v3/objects/deals/${dealId}/associations/contacts/${contactId}/${HUBSPOT_DEAL_TO_CONTACT_ASSOCIATION_TYPE_ID}`, {
     method: 'PUT'
   });
@@ -3845,9 +3921,16 @@ app.post('/api/hubspot/create-deal', async (req, res) => {
     }
 
     const { deal } = await createHubSpotDeal(sale, contact?.id);
+    const contactAssociated = contact?.id
+      ? await associateHubSpotDealToContact(deal.id, contact.id).catch(error => {
+        console.error('HubSpot new deal contact association failed:', error.message);
+        return false;
+      })
+      : false;
     return res.status(201).json({
       ok: true,
       duplicate: false,
+      contactAssociated,
       contactCreated,
       contactId: contact?.id || '',
       dealId: deal.id,
