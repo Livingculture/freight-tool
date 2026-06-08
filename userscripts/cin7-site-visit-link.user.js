@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.12.2
+// @version      1.12.3
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -1246,7 +1246,9 @@
     const hubspotRect = hubspotButton.getBoundingClientRect();
     if (!siteRect.width || !hubspotRect.width) return false;
 
-    document.body.appendChild(button);
+    if (button.parentElement !== document.body) {
+      document.body.appendChild(button);
+    }
     button.style.position = 'fixed';
     button.style.zIndex = '2147483644';
     button.style.marginLeft = '0';
@@ -1294,30 +1296,27 @@
     positionQuoteReviewBetweenButtons(button, siteVisitButton, hubspotButton);
   }
 
-  function boot() {
+  let buttonPassScheduled = false;
+
+  function runButtonPass() {
+    buttonPassScheduled = false;
     addButton();
     addHubSpotButton();
     addQuoteReviewButton();
-    setTimeout(() => {
-      addButton();
-      addHubSpotButton();
-      addQuoteReviewButton();
-    }, 500);
-    setTimeout(() => {
-      addButton();
-      addHubSpotButton();
-      addQuoteReviewButton();
-    }, 1500);
-    setTimeout(() => {
-      addButton();
-      addHubSpotButton();
-      addQuoteReviewButton();
-    }, 3000);
-    setTimeout(() => {
-      addButton();
-      addHubSpotButton();
-      addQuoteReviewButton();
-    }, 6000);
+  }
+
+  function scheduleButtonPass() {
+    if (buttonPassScheduled) return;
+    buttonPassScheduled = true;
+    window.requestAnimationFrame(runButtonPass);
+  }
+
+  function boot() {
+    scheduleButtonPass();
+    setTimeout(scheduleButtonPass, 500);
+    setTimeout(scheduleButtonPass, 1500);
+    setTimeout(scheduleButtonPass, 3000);
+    setTimeout(scheduleButtonPass, 6000);
   }
 
   if (document.readyState === 'loading') {
@@ -1328,13 +1327,9 @@
 
   hookNetworkForProductLines();
 
-  const observer = new MutationObserver(() => {
-    addButton();
-    addHubSpotButton();
-    addQuoteReviewButton();
-  });
+  const observer = new MutationObserver(scheduleButtonPass);
   observer.observe(document.documentElement, { childList: true, subtree: true });
 
-  window.addEventListener('resize', addQuoteReviewButton);
-  window.addEventListener('scroll', addQuoteReviewButton, true);
+  window.addEventListener('resize', scheduleButtonPass);
+  window.addEventListener('scroll', scheduleButtonPass, true);
 })();
