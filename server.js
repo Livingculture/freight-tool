@@ -198,7 +198,7 @@ function getHubSpotOwnerByRepMap() {
   }
 }
 
-function getHubSpotOwnerIdForSale(sale) {
+function getMappedHubSpotOwnerIdForSale(sale) {
   const explicitOwnerId = cleanTextValue(sale.hubspotOwnerId || sale.ownerId);
   if (explicitOwnerId) return explicitOwnerId;
 
@@ -215,6 +215,61 @@ function getHubSpotOwnerIdForSale(sale) {
   }
 
   return cleanTextValue(HUBSPOT_DEFAULT_OWNER_ID);
+}
+
+function normaliseOwnerName(owner) {
+  return cleanTextValue([owner.firstName, owner.lastName].filter(Boolean).join(' ')).toLowerCase();
+}
+
+async function getHubSpotOwners() {
+  const owners = [];
+  let after = '';
+
+  do {
+    const query = new URLSearchParams({ limit: '100' });
+    if (after) query.set('after', after);
+    const payload = await hubspotRequest(`/crm/v3/owners/?${query.toString()}`);
+    owners.push(...(Array.isArray(payload.results) ? payload.results : []));
+    after = cleanTextValue(payload.paging?.next?.after);
+  } while (after);
+
+  return owners;
+}
+
+async function getHubSpotOwnerIdForSale(sale) {
+  const mappedOwnerId = getMappedHubSpotOwnerIdForSale(sale);
+  if (mappedOwnerId) return mappedOwnerId;
+
+  const repCandidates = [
+    sale.salesRep,
+    sale.placedBy,
+    sale.rep
+  ].map(normaliseOwnerMapKey).filter(Boolean);
+
+  if (!repCandidates.length) return '';
+
+  try {
+    const owners = await getHubSpotOwners();
+    for (const owner of owners) {
+      const ownerId = cleanTextValue(owner.id);
+      if (!ownerId || owner.archived) continue;
+
+      const ownerCandidates = [
+        owner.email,
+        normaliseOwnerName(owner)
+      ].map(normaliseOwnerMapKey).filter(Boolean);
+
+      if (repCandidates.some(rep => ownerCandidates.some(ownerValue =>
+        ownerValue === rep || ownerValue.includes(rep) || rep.includes(ownerValue)
+      ))) {
+        return ownerId;
+      }
+    }
+  } catch (error) {
+    console.error('HubSpot owner lookup failed:', error.message);
+  }
+
+  return '';
 }
 
 function buildHubSpotDealNames(sale) {
@@ -334,7 +389,7 @@ async function findExistingHubSpotDeal(dealNames, saleNumber) {
 async function createHubSpotDeal(sale, contactId) {
   const { saleNumber, dealName } = buildHubSpotDealNames(sale);
   const amount = parseMoneyValue(sale.amount || sale.total);
-  const ownerId = getHubSpotOwnerIdForSale(sale);
+  const ownerId = await getHubSpotOwnerIdForSale(sale);
 
   const properties = cleanHubSpotProperties({
     dealname: dealName,

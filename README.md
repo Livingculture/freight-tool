@@ -124,6 +124,16 @@ HUBSPOT_DEAL_PIPELINE=default
 HUBSPOT_PORTAL_ID=12345678
 ```
 
+Use a HubSpot service key or private app token with these scopes:
+
+```text
+crm.objects.contacts.read
+crm.objects.contacts.write
+crm.objects.deals.read
+crm.objects.deals.write
+crm.objects.owners.read
+```
+
 Optional:
 
 ```text
@@ -136,7 +146,7 @@ HUBSPOT_DEFAULT_OWNER_ID=123456
 HUBSPOT_DEAL_TO_CONTACT_ASSOCIATION_TYPE_ID=3
 ```
 
-`HUBSPOT_DEAL_STAGE` and `HUBSPOT_DEAL_PIPELINE` must match the internal IDs from your HubSpot pipeline settings. If you create a custom deal property for the Cin7 sale number, set `HUBSPOT_CIN7_SALE_PROPERTY`; otherwise duplicate checks fall back to the generated deal name. The optional order name, order amount, and sale URL properties populate matching HubSpot deal columns when those custom properties exist. `HUBSPOT_OWNER_BY_REP_JSON` maps the visible Cin7 sales rep value to HubSpot owner IDs so new deals land in the right rep's list.
+`HUBSPOT_DEAL_STAGE` and `HUBSPOT_DEAL_PIPELINE` must match the internal IDs from your HubSpot pipeline settings. If you create a custom deal property for the Cin7 sale number, set `HUBSPOT_CIN7_SALE_PROPERTY`; otherwise duplicate checks fall back to the generated deal name. The optional order name, order amount, and sale URL properties populate matching HubSpot deal columns when those custom properties exist. With `crm.objects.owners.read`, the integration can match the visible Cin7 sales rep to a HubSpot owner. `HUBSPOT_OWNER_BY_REP_JSON` can override that matching when needed.
 
 ## Build Apps
 
