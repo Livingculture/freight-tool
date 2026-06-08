@@ -44,6 +44,8 @@ const HUBSPOT_CIN7_ORDER_AMOUNT_PROPERTY = process.env.HUBSPOT_CIN7_ORDER_AMOUNT
 const HUBSPOT_CIN7_SALE_URL_PROPERTY = process.env.HUBSPOT_CIN7_SALE_URL_PROPERTY || '';
 const HUBSPOT_OWNER_BY_REP_JSON = process.env.HUBSPOT_OWNER_BY_REP_JSON || '';
 const HUBSPOT_DEFAULT_OWNER_ID = process.env.HUBSPOT_DEFAULT_OWNER_ID || '';
+const HUBSPOT_DEFAULT_OWNER_EMAIL = process.env.HUBSPOT_DEFAULT_OWNER_EMAIL || '';
+const HUBSPOT_DEFAULT_OWNER_NAME = process.env.HUBSPOT_DEFAULT_OWNER_NAME || '';
 const HUBSPOT_PORTAL_ID = process.env.HUBSPOT_PORTAL_ID || process.env.HUBSPOT_ACCOUNT_ID || '';
 const HUBSPOT_DEAL_TO_CONTACT_ASSOCIATION_TYPE_ID = Number(
   process.env.HUBSPOT_DEAL_TO_CONTACT_ASSOCIATION_TYPE_ID || 3
@@ -185,6 +187,10 @@ function normaliseOwnerMapKey(value) {
   return cleanTextValue(value).toLowerCase();
 }
 
+function looksLikeHubSpotOwnerId(value) {
+  return /^\d+$/.test(cleanTextValue(value));
+}
+
 function getHubSpotOwnerByRepMap() {
   if (!HUBSPOT_OWNER_BY_REP_JSON) return {};
   try {
@@ -200,7 +206,7 @@ function getHubSpotOwnerByRepMap() {
 
 function getMappedHubSpotOwnerIdForSale(sale) {
   const explicitOwnerId = cleanTextValue(sale.hubspotOwnerId || sale.ownerId);
-  if (explicitOwnerId) return explicitOwnerId;
+  if (looksLikeHubSpotOwnerId(explicitOwnerId)) return explicitOwnerId;
 
   const ownerByRep = getHubSpotOwnerByRepMap();
   const repCandidates = [
@@ -211,14 +217,41 @@ function getMappedHubSpotOwnerIdForSale(sale) {
 
   for (const rep of repCandidates) {
     const ownerId = cleanTextValue(ownerByRep[rep]);
-    if (ownerId) return ownerId;
+    if (looksLikeHubSpotOwnerId(ownerId)) return ownerId;
   }
 
-  return cleanTextValue(HUBSPOT_DEFAULT_OWNER_ID);
+  const defaultOwnerId = cleanTextValue(HUBSPOT_DEFAULT_OWNER_ID);
+  return looksLikeHubSpotOwnerId(defaultOwnerId) ? defaultOwnerId : '';
 }
 
 function normaliseOwnerName(owner) {
   return cleanTextValue([owner.firstName, owner.lastName].filter(Boolean).join(' ')).toLowerCase();
+}
+
+function getOwnerMatchValues(owner) {
+  return [
+    owner.email,
+    normaliseOwnerName(owner)
+  ].map(normaliseOwnerMapKey).filter(Boolean);
+}
+
+function findOwnerIdByValues(owners, candidates) {
+  const normalisedCandidates = candidates.map(normaliseOwnerMapKey).filter(Boolean);
+  if (!normalisedCandidates.length) return '';
+
+  for (const owner of owners) {
+    const ownerId = cleanTextValue(owner.id);
+    if (!ownerId || owner.archived) continue;
+
+    const ownerValues = getOwnerMatchValues(owner);
+    if (normalisedCandidates.some(candidate => ownerValues.some(ownerValue =>
+      ownerValue === candidate || ownerValue.includes(candidate) || candidate.includes(ownerValue)
+    ))) {
+      return ownerId;
+    }
+  }
+
+  return '';
 }
 
 async function getHubSpotOwners() {
@@ -246,25 +279,16 @@ async function getHubSpotOwnerIdForSale(sale) {
     sale.rep
   ].map(normaliseOwnerMapKey).filter(Boolean);
 
-  if (!repCandidates.length) return '';
+  const defaultCandidates = [
+    HUBSPOT_DEFAULT_OWNER_EMAIL,
+    HUBSPOT_DEFAULT_OWNER_NAME
+  ].map(normaliseOwnerMapKey).filter(Boolean);
+
+  if (!repCandidates.length && !defaultCandidates.length) return '';
 
   try {
     const owners = await getHubSpotOwners();
-    for (const owner of owners) {
-      const ownerId = cleanTextValue(owner.id);
-      if (!ownerId || owner.archived) continue;
-
-      const ownerCandidates = [
-        owner.email,
-        normaliseOwnerName(owner)
-      ].map(normaliseOwnerMapKey).filter(Boolean);
-
-      if (repCandidates.some(rep => ownerCandidates.some(ownerValue =>
-        ownerValue === rep || ownerValue.includes(rep) || rep.includes(ownerValue)
-      ))) {
-        return ownerId;
-      }
-    }
+    return findOwnerIdByValues(owners, repCandidates) || findOwnerIdByValues(owners, defaultCandidates);
   } catch (error) {
     console.error('HubSpot owner lookup failed:', error.message);
   }
