@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.11.3
+// @version      1.11.4
 // @description  Adds a Site Visit button beside Install Fees/Scan, opens editable card popup, then saves to Workflow planner.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://cdn.jsdelivr.net/gh/Livingculture/freight-tool@main/userscripts/cin7-site-visit-link.user.js?v=1.11.3
-// @updateURL    https://cdn.jsdelivr.net/gh/Livingculture/freight-tool@main/userscripts/cin7-site-visit-link.user.js?v=1.11.3
+// @downloadURL  https://cdn.jsdelivr.net/gh/Livingculture/freight-tool@main/userscripts/cin7-site-visit-link.user.js?v=1.11.4
+// @updateURL    https://cdn.jsdelivr.net/gh/Livingculture/freight-tool@main/userscripts/cin7-site-visit-link.user.js?v=1.11.4
 // ==/UserScript==
 
 (function () {
@@ -608,7 +608,21 @@
       const value = readValueNearLabel(label);
       if (/\d/.test(value || '')) return value;
     }
-    return '';
+
+    const moneyPattern = /(?:NZ)?\$\s*-?\d[\d,]*(?:\.\d{1,2})?|-?\d[\d,]*\.\d{2}/i;
+    const bodyText = document.body ? document.body.innerText : '';
+    const lines = bodyText.split('\n').map(clean).filter(Boolean);
+    const wantedLabels = labels.map(normalizeLabel);
+    for (let index = 0; index < lines.length; index += 1) {
+      const normalisedLine = normalizeLabel(lines[index]);
+      if (!wantedLabels.some(label => normalisedLine === label || normalisedLine.startsWith(label))) continue;
+      const nearby = lines.slice(index, index + 4).join(' ');
+      const match = nearby.match(moneyPattern);
+      if (match) return match[0];
+    }
+
+    const moneyMatches = bodyText.match(new RegExp(moneyPattern.source, 'gi')) || [];
+    return moneyMatches.length ? moneyMatches.at(-1) : '';
   }
 
   function cin7Draft() {

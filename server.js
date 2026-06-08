@@ -639,24 +639,25 @@ async function associateCin7OrderDealIfAvailable(customerDealId, saleNumber) {
     return { associated: false, skipped: true, reason: 'missing_order_number' };
   }
 
-  const orderDeal = await findHubSpotDealByName(orderDealName);
+  const orderDeal = await findHubSpotDealByName(orderDealName, ['amount']);
   if (!orderDeal?.id) {
     return { associated: false, skipped: true, reason: 'order_deal_not_found', orderDealName };
   }
+  const orderDealAmount = parseMoneyValue(orderDeal.properties?.amount);
   if (String(orderDeal.id) === String(dealId)) {
-    return { associated: false, skipped: true, reason: 'same_deal', orderDealId: orderDeal.id, orderDealName };
+    return { associated: false, skipped: true, reason: 'same_deal', orderDealId: orderDeal.id, orderDealName, orderDealAmount };
   }
 
   const associatedDealIds = await getAssociatedHubSpotDealIds(dealId);
   if (associatedDealIds.includes(String(orderDeal.id))) {
-    return { associated: false, skipped: true, reason: 'already_associated', orderDealId: orderDeal.id, orderDealName };
+    return { associated: false, skipped: true, reason: 'already_associated', orderDealId: orderDeal.id, orderDealName, orderDealAmount };
   }
   if (associatedDealIds.length) {
-    return { associated: false, skipped: true, reason: 'association_limit_reached', orderDealId: orderDeal.id, orderDealName };
+    return { associated: false, skipped: true, reason: 'association_limit_reached', orderDealId: orderDeal.id, orderDealName, orderDealAmount };
   }
 
   await associateHubSpotDealToDeal(dealId, orderDeal.id);
-  return { associated: true, skipped: false, orderDealId: orderDeal.id, orderDealName };
+  return { associated: true, skipped: false, orderDealId: orderDeal.id, orderDealName, orderDealAmount };
 }
 
 function getCachedCin7Availability(sku) {
@@ -3976,10 +3977,16 @@ app.post('/api/hubspot/create-deal', async (req, res) => {
 
     if (existingDeal?.id) {
       const ownerId = await getHubSpotOwnerIdForSale(sale);
+      const orderDealAssociation = await associateCin7OrderDealIfAvailable(existingDeal.id, saleNumber).catch(error => {
+        console.error('HubSpot existing Cin7 order deal association failed:', error.message);
+        return { associated: false, skipped: false, reason: 'error', error: error.message };
+      });
+      const amount = parseMoneyValue(sale.amount || sale.total) || orderDealAssociation.orderDealAmount;
       const patchedDeal = await updateHubSpotDealProperties(existingDeal.id, {
         hubspot_owner_id: ownerId,
         dealstage: HUBSPOT_DEAL_STAGE,
-        pipeline: HUBSPOT_DEAL_PIPELINE
+        pipeline: HUBSPOT_DEAL_PIPELINE,
+        amount
       }).catch(error => {
         console.error('HubSpot existing deal update failed:', error.message);
         return null;
@@ -3990,10 +3997,6 @@ app.post('/api/hubspot/create-deal', async (req, res) => {
           return false;
         })
         : false;
-      const orderDealAssociation = await associateCin7OrderDealIfAvailable(existingDeal.id, saleNumber).catch(error => {
-        console.error('HubSpot existing Cin7 order deal association failed:', error.message);
-        return { associated: false, skipped: false, reason: 'error', error: error.message };
-      });
 
       return res.json({
         ok: true,
@@ -4022,12 +4025,19 @@ app.post('/api/hubspot/create-deal', async (req, res) => {
       console.error('HubSpot new Cin7 order deal association failed:', error.message);
       return { associated: false, skipped: false, reason: 'error', error: error.message };
     });
+    const orderDealAmountUpdated = orderDealAssociation.orderDealAmount && !cleanTextValue(deal.properties?.amount)
+      ? await updateHubSpotDealProperties(deal.id, { amount: orderDealAssociation.orderDealAmount }).then(() => true).catch(error => {
+        console.error('HubSpot new deal order amount update failed:', error.message);
+        return false;
+      })
+      : false;
     return res.status(201).json({
       ok: true,
       duplicate: false,
       contactAssociated,
       orderDealAssociated: Boolean(orderDealAssociation.associated),
       orderDealAssociation,
+      amountUpdated: orderDealAmountUpdated,
       contactCreated,
       contactId: contact?.id || '',
       dealId: deal.id,
