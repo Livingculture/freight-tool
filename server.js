@@ -46,6 +46,7 @@ const HUBSPOT_OWNER_BY_REP_JSON = process.env.HUBSPOT_OWNER_BY_REP_JSON || '';
 const HUBSPOT_DEFAULT_OWNER_ID = process.env.HUBSPOT_DEFAULT_OWNER_ID || '';
 const HUBSPOT_DEFAULT_OWNER_EMAIL = process.env.HUBSPOT_DEFAULT_OWNER_EMAIL || '';
 const HUBSPOT_DEFAULT_OWNER_NAME = process.env.HUBSPOT_DEFAULT_OWNER_NAME || '';
+const HUBSPOT_CREATE_MISSING_CONTACTS = process.env.HUBSPOT_CREATE_MISSING_CONTACTS === 'true';
 const HUBSPOT_PORTAL_ID = process.env.HUBSPOT_PORTAL_ID || process.env.HUBSPOT_ACCOUNT_ID || '';
 const HUBSPOT_DEAL_TO_CONTACT_ASSOCIATION_TYPE_ID = Number(
   process.env.HUBSPOT_DEAL_TO_CONTACT_ASSOCIATION_TYPE_ID || 3
@@ -369,6 +370,10 @@ async function findOrCreateHubSpotContact(sale) {
       { propertyName: 'email', operator: 'EQ', value: email }
     ], ['email', 'firstname', 'lastname', 'phone']);
     if (existing?.id) return { contact: existing, created: false };
+  }
+
+  if (!HUBSPOT_CREATE_MISSING_CONTACTS) {
+    return { contact: null, created: false };
   }
 
   const name = splitContactName(sale.customerName);

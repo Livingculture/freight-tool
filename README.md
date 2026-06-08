@@ -145,10 +145,11 @@ HUBSPOT_OWNER_BY_REP_JSON={"Steve Foreman":"123456","Jane Rep":"789012"}
 HUBSPOT_DEFAULT_OWNER_ID=123456
 HUBSPOT_DEFAULT_OWNER_EMAIL=steve@example.com
 HUBSPOT_DEFAULT_OWNER_NAME=Steve Foreman
+HUBSPOT_CREATE_MISSING_CONTACTS=false
 HUBSPOT_DEAL_TO_CONTACT_ASSOCIATION_TYPE_ID=3
 ```
 
-`HUBSPOT_DEAL_STAGE` and `HUBSPOT_DEAL_PIPELINE` must match the internal IDs from your HubSpot pipeline settings. If you create a custom deal property for the Cin7 sale number, set `HUBSPOT_CIN7_SALE_PROPERTY`; otherwise duplicate checks fall back to the generated deal name. The optional order name, order amount, and sale URL properties populate matching HubSpot deal columns when those custom properties exist. With `crm.objects.owners.read`, the integration can match the visible Cin7 sales rep to a HubSpot owner. `HUBSPOT_DEFAULT_OWNER_EMAIL` or `HUBSPOT_DEFAULT_OWNER_NAME` can assign a fallback owner without needing the hidden owner ID.
+`HUBSPOT_DEAL_STAGE` and `HUBSPOT_DEAL_PIPELINE` must match the internal IDs from your HubSpot pipeline settings. By default, the integration only creates deals and links to an existing HubSpot contact when it can find one by email; set `HUBSPOT_CREATE_MISSING_CONTACTS=true` only if HubSpot should create contacts that Cin7 has not already synced. If you create a custom deal property for the Cin7 sale number, set `HUBSPOT_CIN7_SALE_PROPERTY`; otherwise duplicate checks fall back to the generated deal name. The optional order name, order amount, and sale URL properties populate matching HubSpot deal columns when those custom properties exist. With `crm.objects.owners.read`, the integration can match the visible Cin7 sales rep to a HubSpot owner. `HUBSPOT_DEFAULT_OWNER_EMAIL` or `HUBSPOT_DEFAULT_OWNER_NAME` can assign a fallback owner without needing the hidden owner ID.
 
 ## Build Apps
 
