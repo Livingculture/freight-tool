@@ -225,6 +225,19 @@ function getMappedHubSpotOwnerIdForSale(sale) {
   return looksLikeHubSpotOwnerId(defaultOwnerId) ? defaultOwnerId : '';
 }
 
+function getMappedHubSpotOwnerMatchValuesForSale(sale) {
+  const ownerByRep = getHubSpotOwnerByRepMap();
+  const repCandidates = [
+    sale.salesRep,
+    sale.placedBy,
+    sale.rep
+  ].map(normaliseOwnerMapKey).filter(Boolean);
+
+  return repCandidates
+    .map(rep => cleanTextValue(ownerByRep[rep]))
+    .filter(value => value && !looksLikeHubSpotOwnerId(value));
+}
+
 function normaliseOwnerName(owner) {
   return cleanTextValue([owner.firstName, owner.lastName].filter(Boolean).join(' ')).toLowerCase();
 }
@@ -279,17 +292,20 @@ async function getHubSpotOwnerIdForSale(sale) {
     sale.placedBy,
     sale.rep
   ].map(normaliseOwnerMapKey).filter(Boolean);
+  const mappedOwnerCandidates = getMappedHubSpotOwnerMatchValuesForSale(sale);
 
   const defaultCandidates = [
     HUBSPOT_DEFAULT_OWNER_EMAIL,
     HUBSPOT_DEFAULT_OWNER_NAME
   ].map(normaliseOwnerMapKey).filter(Boolean);
 
-  if (!repCandidates.length && !defaultCandidates.length) return '';
+  if (!repCandidates.length && !mappedOwnerCandidates.length && !defaultCandidates.length) return '';
 
   try {
     const owners = await getHubSpotOwners();
-    return findOwnerIdByValues(owners, repCandidates) || findOwnerIdByValues(owners, defaultCandidates);
+    return findOwnerIdByValues(owners, repCandidates) ||
+      findOwnerIdByValues(owners, mappedOwnerCandidates) ||
+      findOwnerIdByValues(owners, defaultCandidates);
   } catch (error) {
     console.error('HubSpot owner lookup failed:', error.message);
   }
