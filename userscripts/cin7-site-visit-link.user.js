@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.12.6
+// @version      1.12.7
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.6
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.6
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.7
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.7
 // ==/UserScript==
 
 (function () {
@@ -19,6 +19,7 @@
   const BUTTON_ID = 'lc-site-visit-inline-button-v2';
   const HUBSPOT_BUTTON_ID = 'lc-hubspot-deal-inline-button-v1';
   const QUOTE_REVIEW_BUTTON_ID = 'lc-quote-review-inline-button-v1';
+  const ACTION_ROW_ID = 'lc-cin7-action-row-v1';
   const FLOATING_BAR_ID = 'lc-cin7-floating-actions-v1';
   const OVERLAY_ID = 'lc-site-visit-overlay-v2';
   const WORKFLOW_API_URL = 'https://living-culture-workflow.vercel.app/api/site-visits';
@@ -564,6 +565,40 @@
     document.getElementById(QUOTE_REVIEW_BUTTON_ID)?.remove();
     const bar = document.getElementById(FLOATING_BAR_ID);
     if (bar && !bar.children.length) bar.remove();
+  }
+
+  function ensureActionRow() {
+    let row = document.getElementById(ACTION_ROW_ID);
+    if (row && document.body.contains(row)) return row;
+
+    const commentsAnchor = findCommentsAnchor();
+    if (!commentsAnchor) return null;
+
+    row = document.createElement('div');
+    row.id = ACTION_ROW_ID;
+    row.style.display = 'grid';
+    row.style.gridTemplateColumns = '1fr auto 1fr';
+    row.style.alignItems = 'center';
+    row.style.gap = '12px';
+    row.style.margin = '0 0 10px 0';
+    row.style.width = '100%';
+    commentsAnchor.insertAdjacentElement('beforebegin', row);
+    return row;
+  }
+
+  function placeActionButton(button, slot) {
+    const row = ensureActionRow();
+    if (!row || !button) return false;
+    button.style.position = 'static';
+    button.style.left = '';
+    button.style.top = '';
+    button.style.zIndex = '';
+    button.style.marginLeft = '0';
+    button.style.marginBottom = '0';
+    button.style.justifySelf = slot === 'right' ? 'end' : slot === 'center' ? 'center' : 'start';
+    button.style.gridColumn = slot === 'right' ? '3' : slot === 'center' ? '2' : '1';
+    row.appendChild(button);
+    return true;
   }
 
   function isSimpleSaleReady() {
@@ -1186,8 +1221,8 @@
       button.style.borderColor = '#05cbbf';
     });
     button.addEventListener('click', openPanel);
-    if (commentsAnchor) {
-      commentsAnchor.insertAdjacentElement('beforebegin', button);
+    if (commentsAnchor && placeActionButton(button, 'left')) {
+      return;
     } else {
       anchor.insertAdjacentElement('afterend', button);
     }
@@ -1234,31 +1269,13 @@
     button.style.height = `${Math.max(34, rect.height || 34)}px`;
     button.addEventListener('click', () => submitHubSpotDeal(button));
 
-    if (commentsAnchor && anchor === commentsAnchor) {
+    if (commentsAnchor && placeActionButton(button, 'right')) {
+      return;
+    } else if (commentsAnchor && anchor === commentsAnchor) {
       commentsAnchor.insertAdjacentElement('beforebegin', button);
     } else {
       anchor.insertAdjacentElement('afterend', button);
     }
-  }
-
-  function positionQuoteReviewBetweenButtons(button, siteVisitButton, hubspotButton) {
-    const siteRect = siteVisitButton.getBoundingClientRect();
-    const hubspotRect = hubspotButton.getBoundingClientRect();
-    if (!siteRect.width || !hubspotRect.width) return false;
-
-    if (button.parentElement !== document.body) {
-      document.body.appendChild(button);
-    }
-    button.style.position = 'absolute';
-    button.style.zIndex = '2147483644';
-    button.style.marginLeft = '0';
-    button.style.marginBottom = '0';
-    button.style.height = `${Math.max(34, siteRect.height || hubspotRect.height || 34)}px`;
-    const width = Math.max(button.offsetWidth || 0, 112);
-    const center = siteRect.right + ((hubspotRect.left - siteRect.right) / 2);
-    button.style.left = `${Math.max(8, window.scrollX + center - (width / 2))}px`;
-    button.style.top = `${Math.max(8, window.scrollY + siteRect.top)}px`;
-    return true;
   }
 
   function addQuoteReviewButton() {
@@ -1277,7 +1294,9 @@
     }
 
     if (existingButton) {
-      positionQuoteReviewBetweenButtons(existingButton, siteVisitButton, hubspotButton);
+      placeActionButton(siteVisitButton, 'left');
+      placeActionButton(existingButton, 'center');
+      placeActionButton(hubspotButton, 'right');
       return;
     }
 
@@ -1293,7 +1312,9 @@
     button.style.height = `${Math.max(34, rect.height || 34)}px`;
     button.addEventListener('click', () => submitQuoteReview(button));
 
-    positionQuoteReviewBetweenButtons(button, siteVisitButton, hubspotButton);
+    placeActionButton(siteVisitButton, 'left');
+    placeActionButton(button, 'center');
+    placeActionButton(hubspotButton, 'right');
   }
 
   let buttonPassScheduled = false;
