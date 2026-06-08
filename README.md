@@ -128,10 +128,13 @@ Optional:
 
 ```text
 HUBSPOT_CIN7_SALE_PROPERTY=cin7_sale_number
+HUBSPOT_CIN7_ORDER_NAME_PROPERTY=cin7_order_name
+HUBSPOT_CIN7_ORDER_AMOUNT_PROPERTY=cin7_order_amount
+HUBSPOT_CIN7_SALE_URL_PROPERTY=cin7_sale_url
 HUBSPOT_DEAL_TO_CONTACT_ASSOCIATION_TYPE_ID=3
 ```
 
-`HUBSPOT_DEAL_STAGE` and `HUBSPOT_DEAL_PIPELINE` must match the internal IDs from your HubSpot pipeline settings. If you create a custom deal property for the Cin7 sale number, set `HUBSPOT_CIN7_SALE_PROPERTY`; otherwise duplicate checks fall back to the generated deal name.
+`HUBSPOT_DEAL_STAGE` and `HUBSPOT_DEAL_PIPELINE` must match the internal IDs from your HubSpot pipeline settings. If you create a custom deal property for the Cin7 sale number, set `HUBSPOT_CIN7_SALE_PROPERTY`; otherwise duplicate checks fall back to the generated deal name. The optional order name, order amount, and sale URL properties populate matching HubSpot deal columns when those custom properties exist.
 
 ## Build Apps
 

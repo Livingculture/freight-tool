@@ -39,6 +39,9 @@ const HUBSPOT_ACCESS_TOKEN = process.env.HUBSPOT_ACCESS_TOKEN ||
 const HUBSPOT_DEAL_PIPELINE = process.env.HUBSPOT_DEAL_PIPELINE || process.env.HUBSPOT_PIPELINE || '';
 const HUBSPOT_DEAL_STAGE = process.env.HUBSPOT_DEAL_STAGE || process.env.HUBSPOT_DEALSTAGE || '';
 const HUBSPOT_CIN7_SALE_PROPERTY = process.env.HUBSPOT_CIN7_SALE_PROPERTY || '';
+const HUBSPOT_CIN7_ORDER_NAME_PROPERTY = process.env.HUBSPOT_CIN7_ORDER_NAME_PROPERTY || '';
+const HUBSPOT_CIN7_ORDER_AMOUNT_PROPERTY = process.env.HUBSPOT_CIN7_ORDER_AMOUNT_PROPERTY || '';
+const HUBSPOT_CIN7_SALE_URL_PROPERTY = process.env.HUBSPOT_CIN7_SALE_URL_PROPERTY || '';
 const HUBSPOT_PORTAL_ID = process.env.HUBSPOT_PORTAL_ID || process.env.HUBSPOT_ACCOUNT_ID || '';
 const HUBSPOT_DEAL_TO_CONTACT_ASSOCIATION_TYPE_ID = Number(
   process.env.HUBSPOT_DEAL_TO_CONTACT_ASSOCIATION_TYPE_ID || 3
@@ -176,6 +179,24 @@ function hubspotDealUrl(dealId) {
   return `https://app.hubspot.com/contacts/${HUBSPOT_PORTAL_ID}/deal/${id}`;
 }
 
+function buildHubSpotDealNames(sale) {
+  const saleNumber = cleanTextValue(sale.orderId || sale.saleNumber || sale.reference);
+  const customerName = cleanTextValue(sale.customerName);
+  const dateFallback = new Date().toISOString().slice(0, 10);
+  const baseName = [saleNumber || dateFallback, customerName].filter(Boolean).join(' - ');
+  const dealName = cleanTextValue(sale.dealName) || baseName || 'Cin7 Sale';
+  const legacyName = saleNumber || customerName
+    ? `Cin7 Sale ${saleNumber || dateFallback} - ${customerName || 'Cin7 customer'}`
+    : dealName;
+
+  return {
+    dealName,
+    legacyName,
+    saleNumber,
+    customerName
+  };
+}
+
 async function hubspotRequest(pathname, options = {}) {
   if (!HUBSPOT_ACCESS_TOKEN) {
     throw new Error('HubSpot access token is not configured.');
@@ -251,7 +272,7 @@ async function findOrCreateHubSpotContact(sale) {
   return { contact, created: true };
 }
 
-async function findExistingHubSpotDeal(dealName, saleNumber) {
+async function findExistingHubSpotDeal(dealNames, saleNumber) {
   const saleId = cleanTextValue(saleNumber);
   if (HUBSPOT_CIN7_SALE_PROPERTY && saleId) {
     const existingBySaleId = await searchHubSpotObject('deals', [
@@ -260,16 +281,18 @@ async function findExistingHubSpotDeal(dealName, saleNumber) {
     if (existingBySaleId?.id) return existingBySaleId;
   }
 
-  return searchHubSpotObject('deals', [
-    { propertyName: 'dealname', operator: 'EQ', value: dealName }
-  ], ['dealname', 'amount']);
+  for (const dealName of Array.from(new Set(dealNames.map(cleanTextValue).filter(Boolean)))) {
+    const existingByName = await searchHubSpotObject('deals', [
+      { propertyName: 'dealname', operator: 'EQ', value: dealName }
+    ], ['dealname', 'amount']);
+    if (existingByName?.id) return existingByName;
+  }
+
+  return null;
 }
 
 async function createHubSpotDeal(sale, contactId) {
-  const saleNumber = cleanTextValue(sale.orderId || sale.saleNumber || sale.reference);
-  const customerName = cleanTextValue(sale.customerName) || 'Cin7 customer';
-  const dealName = cleanTextValue(sale.dealName) ||
-    `Cin7 Sale ${saleNumber || new Date().toISOString().slice(0, 10)} - ${customerName}`;
+  const { saleNumber, dealName } = buildHubSpotDealNames(sale);
   const amount = parseMoneyValue(sale.amount || sale.total);
 
   const properties = cleanHubSpotProperties({
@@ -281,6 +304,15 @@ async function createHubSpotDeal(sale, contactId) {
 
   if (HUBSPOT_CIN7_SALE_PROPERTY && saleNumber) {
     properties[HUBSPOT_CIN7_SALE_PROPERTY] = saleNumber;
+  }
+  if (HUBSPOT_CIN7_ORDER_NAME_PROPERTY && saleNumber) {
+    properties[HUBSPOT_CIN7_ORDER_NAME_PROPERTY] = `${saleNumber} (DEAR)`;
+  }
+  if (HUBSPOT_CIN7_ORDER_AMOUNT_PROPERTY && amount) {
+    properties[HUBSPOT_CIN7_ORDER_AMOUNT_PROPERTY] = amount;
+  }
+  if (HUBSPOT_CIN7_SALE_URL_PROPERTY && sale.sourceUrl) {
+    properties[HUBSPOT_CIN7_SALE_URL_PROPERTY] = sale.sourceUrl;
   }
 
   const associations = contactId ? [{
@@ -3611,10 +3643,11 @@ app.post('/api/hubspot/create-deal', async (req, res) => {
 
   try {
     const { contact, created: contactCreated } = await findOrCreateHubSpotContact(sale);
-    const customerLabel = customerName || email || phone || 'Cin7 customer';
-    const dealName = cleanTextValue(sale.dealName) ||
-      `Cin7 Sale ${saleNumber || new Date().toISOString().slice(0, 10)} - ${customerLabel}`;
-    const existingDeal = await findExistingHubSpotDeal(dealName, saleNumber);
+    const { dealName, legacyName } = buildHubSpotDealNames({
+      ...sale,
+      customerName: customerName || email || phone || 'Cin7 customer'
+    });
+    const existingDeal = await findExistingHubSpotDeal([dealName, legacyName], saleNumber);
 
     if (existingDeal?.id) {
       return res.json({
