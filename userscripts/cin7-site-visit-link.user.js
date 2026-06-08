@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.12.0
+// @version      1.12.1
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -558,6 +558,20 @@
       .filter(isVisible)
       .filter((node) => normalizeLabel(node.textContent || '') === 'comments');
     return headings[0] || null;
+  }
+
+  function removeQuoteReviewButton() {
+    document.getElementById(QUOTE_REVIEW_BUTTON_ID)?.remove();
+    const bar = document.getElementById(FLOATING_BAR_ID);
+    if (bar && !bar.children.length) bar.remove();
+  }
+
+  function isSimpleSaleReady() {
+    const text = clean(document.body?.textContent || '');
+    if (!/\bSALE\s*#NZSO-\d+\b/i.test(text)) return false;
+    if (!/Customer details/i.test(text)) return false;
+    if (!findButtonByLabel('Quote')) return false;
+    return true;
   }
 
   function readValueNearLabel(labelText) {
@@ -1244,19 +1258,26 @@
   }
 
   function addQuoteReviewButton() {
-    const existingButton = document.getElementById(QUOTE_REVIEW_BUTTON_ID);
-    const hubspotButton = document.getElementById(HUBSPOT_BUTTON_ID);
-    const siteVisitButton = document.getElementById(BUTTON_ID);
-    if (existingButton) {
-      if (hubspotButton && siteVisitButton) positionQuoteReviewBetweenButtons(existingButton, siteVisitButton, hubspotButton);
+    if (!isSimpleSaleReady()) {
+      removeQuoteReviewButton();
       return;
     }
 
-    const installAnchor = findButtonByLabel('Install Fees') || findButtonByLabel('Scan');
-    const commentsAnchor = findCommentsAnchor();
-    const anchor = hubspotButton || siteVisitButton || installAnchor || commentsAnchor;
+    const existingButton = document.getElementById(QUOTE_REVIEW_BUTTON_ID);
+    const hubspotButton = document.getElementById(HUBSPOT_BUTTON_ID);
+    const siteVisitButton = document.getElementById(BUTTON_ID);
 
-    const rect = anchor ? anchor.getBoundingClientRect() : { height: 38 };
+    if (!hubspotButton || !siteVisitButton) {
+      removeQuoteReviewButton();
+      return;
+    }
+
+    if (existingButton) {
+      positionQuoteReviewBetweenButtons(existingButton, siteVisitButton, hubspotButton);
+      return;
+    }
+
+    const rect = siteVisitButton.getBoundingClientRect();
     const button = document.createElement('button');
     button.id = QUOTE_REVIEW_BUTTON_ID;
     button.type = 'button';
@@ -1268,34 +1289,7 @@
     button.style.height = `${Math.max(34, rect.height || 34)}px`;
     button.addEventListener('click', () => submitQuoteReview(button));
 
-    if (hubspotButton && siteVisitButton && positionQuoteReviewBetweenButtons(button, siteVisitButton, hubspotButton)) {
-      return;
-    } else if (commentsAnchor && anchor === commentsAnchor) {
-      commentsAnchor.insertAdjacentElement('beforebegin', button);
-    } else if (anchor) {
-      anchor.insertAdjacentElement('afterend', button);
-    } else {
-      let bar = document.getElementById(FLOATING_BAR_ID);
-      if (!bar) {
-        bar = document.createElement('div');
-        bar.id = FLOATING_BAR_ID;
-        bar.style.position = 'fixed';
-        bar.style.right = '18px';
-        bar.style.bottom = '18px';
-        bar.style.zIndex = '2147483644';
-        bar.style.display = 'flex';
-        bar.style.gap = '8px';
-        bar.style.alignItems = 'center';
-        bar.style.padding = '8px';
-        bar.style.borderRadius = '10px';
-        bar.style.background = 'rgba(255,255,255,.94)';
-        bar.style.boxShadow = '0 10px 30px rgba(0,0,0,.22)';
-        document.body.appendChild(bar);
-      }
-      button.style.marginLeft = '0';
-      button.style.height = '38px';
-      bar.appendChild(button);
-    }
+    positionQuoteReviewBetweenButtons(button, siteVisitButton, hubspotButton);
   }
 
   function boot() {
