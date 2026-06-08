@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.12.1
+// @version      1.12.2
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -568,8 +568,10 @@
 
   function isSimpleSaleReady() {
     const text = clean(document.body?.textContent || '');
-    if (!/\bSALE\s*#NZSO-\d+\b/i.test(text)) return false;
     if (!/Customer details/i.test(text)) return false;
+    if (!/Accounting details/i.test(text)) return false;
+    if (!/Shipping details/i.test(text)) return false;
+    if (!/Comments/i.test(text)) return false;
     if (!findButtonByLabel('Quote')) return false;
     return true;
   }
