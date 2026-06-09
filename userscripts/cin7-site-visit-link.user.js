@@ -1,21 +1,23 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.12.14
-// @description  Adds Site Visit and Quote Review helper buttons to Cin7 simple sale pages.
+// @version      1.12.13
+// @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
 // @grant        GM_xmlhttpRequest
 // @connect      living-culture-workflow.vercel.app
+// @connect      living-culture-freight.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.14
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.14
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.13
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.13
 // ==/UserScript==
 
 (function () {
   'use strict';
 
   const BUTTON_ID = 'lc-site-visit-inline-button-v2';
+  const HUBSPOT_BUTTON_ID = 'lc-hubspot-deal-inline-button-v1';
   const QUOTE_REVIEW_BUTTON_ID = 'lc-quote-review-inline-button-v1';
   const ACTION_ROW_ID = 'lc-cin7-action-row-v1';
   const FLOATING_BAR_ID = 'lc-cin7-floating-actions-v1';
@@ -23,6 +25,7 @@
   const WORKFLOW_API_URL = 'https://living-culture-workflow.vercel.app/api/site-visits';
   const QUOTE_REVIEW_API_URL = 'https://living-culture-workflow.vercel.app/api/quote-reviews';
   const WORKFLOW_PLANNER_URL = 'https://living-culture-workflow.vercel.app/';
+  const HUBSPOT_API_URL = 'https://living-culture-freight.vercel.app/api/hubspot/create-deal';
   const API_KEY = '';
   const STATUSES = ['To be confirmed', 'Site Visit Confirmed', 'Completed', 'Hold'];
   const POPUP_STATUSES = ['To be confirmed', 'Site Visit Confirmed'];
@@ -743,6 +746,98 @@
     };
   }
 
+  function copyTextToClipboard(text) {
+    const value = clean(text);
+    if (!value) return;
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(value).catch(() => {});
+      return;
+    }
+    const textarea = document.createElement('textarea');
+    textarea.value = value;
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      document.execCommand('copy');
+    } catch (error) {
+      // Clipboard copy is a convenience only.
+    }
+    textarea.remove();
+  }
+
+  function submitHubSpotDeal(button) {
+    const payload = hubspotDraft();
+    const summary = [
+      payload.orderId ? `Sale: ${payload.orderId}` : '',
+      payload.customerName ? `Customer: ${payload.customerName}` : '',
+      payload.amount ? `Amount: ${payload.amount}` : ''
+    ].filter(Boolean).join('\n');
+
+    if (!payload.customerName && !payload.email && !payload.phone) {
+      window.alert('Customer name, email, or phone is required before creating a HubSpot deal.');
+      return;
+    }
+
+    if (!window.confirm(`Create HubSpot deal?\n\n${summary || 'Cin7 sale details will be sent to HubSpot.'}`)) {
+      return;
+    }
+
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Sending...';
+
+    GM_xmlhttpRequest({
+      method: 'POST',
+      url: HUBSPOT_API_URL,
+      headers: { 'Content-Type': 'application/json' },
+      data: JSON.stringify(payload),
+      onload: (response) => {
+        let data = {};
+        try {
+          data = JSON.parse(response.responseText || '{}');
+        } catch (error) {
+          data = {};
+        }
+
+        if (response.status >= 200 && response.status < 300 && data.ok) {
+          button.textContent = data.orderDealAssociated
+            ? 'HubSpot Linked'
+            : data.duplicate ? 'Already in HubSpot' : 'HubSpot Created';
+          const message = data.duplicate
+            ? `HubSpot deal already exists:\n${data.dealName || data.dealId}`
+            : `HubSpot deal created:\n${data.dealName || data.dealId}`;
+          if (data.hubspotUrl) {
+            copyTextToClipboard(data.hubspotUrl);
+            const linkStatus = data.orderDealAssociated
+              ? 'DEAR deal linked.'
+              : data.orderDealAssociation?.reason
+                ? `DEAR deal not linked: ${data.orderDealAssociation.reason}.`
+                : 'DEAR deal not linked.';
+            window.alert(`${message}\n\n${linkStatus}\n\nHubSpot link copied:\n${data.hubspotUrl}`);
+          } else {
+            window.alert(message);
+          }
+          window.setTimeout(() => {
+            button.disabled = false;
+            button.textContent = originalText;
+          }, 2500);
+          return;
+        }
+
+        button.disabled = false;
+        button.textContent = originalText;
+        window.alert(data.error || `HubSpot deal failed (${response.status}).`);
+      },
+      onerror: () => {
+        button.disabled = false;
+        button.textContent = originalText;
+        window.alert('Could not connect to the HubSpot workflow API.');
+      }
+    });
+  }
+
   function submitQuoteReview(button) {
     const payload = {
       ...hubspotDraft(),
@@ -1166,6 +1261,10 @@
         openPanel();
         return;
       }
+      if (button.id === HUBSPOT_BUTTON_ID) {
+        submitHubSpotDeal(button);
+        return;
+      }
       if (button.id === QUOTE_REVIEW_BUTTON_ID) {
         submitQuoteReview(button);
       }
@@ -1182,7 +1281,7 @@
     const handleEvent = (event) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
-      const button = target.closest(`#${BUTTON_ID}, #${QUOTE_REVIEW_BUTTON_ID}`);
+      const button = target.closest(`#${BUTTON_ID}, #${HUBSPOT_BUTTON_ID}, #${QUOTE_REVIEW_BUTTON_ID}`);
       if (!button) return;
       event.preventDefault();
       event.stopPropagation();
@@ -1273,6 +1372,33 @@
     });
   }
 
+  function addHubSpotButton() {
+    if (document.getElementById(HUBSPOT_BUTTON_ID)) return;
+
+    const siteVisitButton = document.getElementById(BUTTON_ID);
+    const installAnchor = findButtonByLabel('Install Fees') || findButtonByLabel('Scan');
+    const commentsAnchor = findCommentsAnchor();
+    const anchor = siteVisitButton || installAnchor || commentsAnchor;
+    if (!anchor) return;
+
+    const rect = anchor.getBoundingClientRect();
+    const button = document.createElement('button');
+    button.id = HUBSPOT_BUTTON_ID;
+    button.type = 'button';
+    button.textContent = 'HubSpot Deal';
+    styleInlineButton(button, '#ff5c35');
+    button.style.height = `${Math.max(34, rect.height || 34)}px`;
+    wireActionButton(button);
+
+    if (commentsAnchor && placeActionButton(button, 'right')) {
+      return;
+    } else if (commentsAnchor && anchor === commentsAnchor) {
+      commentsAnchor.insertAdjacentElement('beforebegin', button);
+    } else {
+      anchor.insertAdjacentElement('afterend', button);
+    }
+  }
+
   function addQuoteReviewButton() {
     if (!isSimpleSaleReady()) {
       removeQuoteReviewButton();
@@ -1280,9 +1406,10 @@
     }
 
     const existingButton = document.getElementById(QUOTE_REVIEW_BUTTON_ID);
+    const hubspotButton = document.getElementById(HUBSPOT_BUTTON_ID);
     const siteVisitButton = document.getElementById(BUTTON_ID);
 
-    if (!siteVisitButton) {
+    if (!hubspotButton || !siteVisitButton) {
       removeQuoteReviewButton();
       return;
     }
@@ -1290,6 +1417,7 @@
     if (existingButton) {
       placeActionButton(siteVisitButton, 'left');
       placeActionButton(existingButton, 'center');
+      placeActionButton(hubspotButton, 'right');
       return;
     }
 
@@ -1307,6 +1435,7 @@
 
     placeActionButton(siteVisitButton, 'left');
     placeActionButton(button, 'center');
+    placeActionButton(hubspotButton, 'right');
   }
 
   let buttonPassScheduled = false;
@@ -1314,6 +1443,7 @@
   function runButtonPass() {
     buttonPassScheduled = false;
     addButton();
+    addHubSpotButton();
     addQuoteReviewButton();
   }
 

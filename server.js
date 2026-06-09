@@ -52,9 +52,6 @@ const HUBSPOT_PORTAL_ID = process.env.HUBSPOT_PORTAL_ID || process.env.HUBSPOT_A
 const HUBSPOT_DEAL_TO_CONTACT_ASSOCIATION_TYPE_ID = Number(
   process.env.HUBSPOT_DEAL_TO_CONTACT_ASSOCIATION_TYPE_ID || 3
 );
-const HUBSPOT_DEAL_TO_DEAL_ASSOCIATION_TYPE_ID = Number(
-  process.env.HUBSPOT_DEAL_TO_DEAL_ASSOCIATION_TYPE_ID || 451
-);
 const BLOCKED_RESOURCE_TYPES = new Set(['image', 'font', 'media']);
 const BLOCKED_AUTOMATION_URLS = [
   /cdn\.shopify\.com\/extensions\//i,
@@ -67,10 +64,6 @@ const BLOCKED_AUTOMATION_URLS = [
 const AUTOMATION_TEMP_PREFIXES = [
   'playwright_chromiumdev_profile-'
 ];
-let hubspotDealOrderPropertyCache = {
-  loadedAt: 0,
-  names: []
-};
 const PARTIAL_ADDRESS_SUFFIXES = [
   'Road',
   'Street',
@@ -396,18 +389,6 @@ async function searchHubSpotObject(objectType, filters, properties = []) {
   return Array.isArray(payload.results) && payload.results.length ? payload.results[0] : null;
 }
 
-async function searchHubSpotObjectsByFilterGroups(objectType, filterGroups, properties = [], limit = 10) {
-  const payload = await hubspotRequest(`/crm/v3/objects/${objectType}/search`, {
-    method: 'POST',
-    body: {
-      filterGroups,
-      properties,
-      limit
-    }
-  });
-  return Array.isArray(payload.results) ? payload.results : [];
-}
-
 async function searchHubSpotObjectsByQuery(objectType, query, properties = []) {
   const cleanQuery = cleanTextValue(query);
   if (!cleanQuery) return [];
@@ -421,136 +402,6 @@ async function searchHubSpotObjectsByQuery(objectType, query, properties = []) {
     }
   });
   return Array.isArray(payload.results) ? payload.results : [];
-}
-
-async function getHubSpotDealOrderPropertyNames() {
-  const now = Date.now();
-  if (hubspotDealOrderPropertyCache.names.length && now - hubspotDealOrderPropertyCache.loadedAt < 10 * 60 * 1000) {
-    return hubspotDealOrderPropertyCache.names;
-  }
-
-  const knownNames = [
-    HUBSPOT_CIN7_SALE_PROPERTY,
-    HUBSPOT_CIN7_ORDER_NAME_PROPERTY,
-    'copy_order_deal_name',
-    'dear_sale_id',
-    'cin7_sale_number',
-    'cin7_order_name',
-    'cin7_order_number',
-    'cin7_inv_paid',
-    'cin7_so_status',
-    'cin7_sale_id',
-    'cin7_sale_order',
-    'dear_order_number',
-    'dear_sale_number',
-    'order_number',
-    'order_name',
-    'sale_number',
-    'reference'
-  ].map(cleanTextValue).filter(Boolean);
-
-  try {
-    const payload = await hubspotRequest('/crm/v3/properties/deals?archived=false');
-    const discovered = (Array.isArray(payload.results) ? payload.results : [])
-      .filter((property) => {
-        const haystack = `${property.name || ''} ${property.label || ''} ${property.description || ''}`.toLowerCase();
-        return /cin7|dear|order|sale|invoice|quote|reference/.test(haystack);
-      })
-      .map((property) => cleanTextValue(property.name))
-      .filter(Boolean);
-
-    hubspotDealOrderPropertyCache = {
-      loadedAt: now,
-      names: Array.from(new Set([...knownNames, ...discovered]))
-    };
-  } catch (error) {
-    console.error('HubSpot deal property discovery failed:', error.message);
-    hubspotDealOrderPropertyCache = {
-      loadedAt: now,
-      names: Array.from(new Set(knownNames))
-    };
-  }
-
-  return hubspotDealOrderPropertyCache.names;
-}
-
-function hubSpotDealContainsSaleId(deal, saleId) {
-  const wanted = cleanTextValue(saleId).toUpperCase();
-  if (!wanted || !deal?.properties) return false;
-  return Object.values(deal.properties).some((value) => cleanTextValue(value).toUpperCase().includes(wanted));
-}
-
-function pickHubSpotOrderDealCandidate(deals, saleId, excludeDealId = '') {
-  const excludedId = cleanTextValue(excludeDealId);
-  const candidates = (Array.isArray(deals) ? deals : [])
-    .filter((deal) => cleanTextValue(deal?.id) !== excludedId)
-    .filter((deal) => hubSpotDealContainsSaleId(deal, saleId));
-
-  return candidates.find((deal) => /\(DEAR\)/i.test(cleanTextValue(deal.properties?.dealname)))
-    || candidates.find((deal) => /\(DEAR\)/i.test(cleanTextValue(deal.properties?.copy_order_deal_name)))
-    || candidates[0]
-    || null;
-}
-
-async function findHubSpotDealByOrderNumber(saleNumber, properties = [], options = {}) {
-  const saleId = cleanTextValue(saleNumber).toUpperCase();
-  if (!saleId) return null;
-
-  const customerName = cleanTextValue(options.customerName);
-  const excludeDealId = cleanTextValue(options.excludeDealId);
-  const propertyNames = await getHubSpotDealOrderPropertyNames();
-  const searchValues = Array.from(new Set([saleId, `${saleId} (DEAR)`]));
-  const returnProperties = Array.from(new Set(['dealname', 'amount', ...propertyNames, ...properties]));
-  const priorityProperties = propertyNames.slice(0, 12);
-
-  for (let index = 0; index < priorityProperties.length; index += 5) {
-    const chunk = priorityProperties.slice(index, index + 5);
-    const filterGroups = chunk.map((propertyName) => ({
-      filters: [{ propertyName, operator: 'CONTAINS_TOKEN', value: saleId }]
-    }));
-    const matches = await searchHubSpotObjectsByFilterGroups('deals', filterGroups, returnProperties, 10).catch((error) => {
-      console.error(`HubSpot order deal token search failed for ${chunk.join(', ')}:`, error.message);
-      return [];
-    });
-    const tokenMatch = pickHubSpotOrderDealCandidate(matches, saleId, excludeDealId);
-    if (tokenMatch?.id) return tokenMatch;
-  }
-
-  for (let index = 0; index < priorityProperties.length; index += 2) {
-    const chunk = priorityProperties.slice(index, index + 2);
-    const filterGroups = [];
-    for (const propertyName of chunk) {
-      for (const value of searchValues) {
-        filterGroups.push({
-          filters: [{ propertyName, operator: 'EQ', value }]
-        });
-      }
-    }
-    const matches = await searchHubSpotObjectsByFilterGroups('deals', filterGroups, returnProperties, 10).catch((error) => {
-      console.error(`HubSpot order deal exact search failed for ${chunk.join(', ')}:`, error.message);
-      return [];
-    });
-    const exactMatch = pickHubSpotOrderDealCandidate(matches, saleId, excludeDealId);
-    if (exactMatch?.id) return exactMatch;
-  }
-
-  const queriedDeals = await searchHubSpotObjectsByQuery('deals', saleId, returnProperties).catch((error) => {
-    console.error('HubSpot order deal query search failed:', error.message);
-    return [];
-  });
-  const orderQueryMatch = pickHubSpotOrderDealCandidate(queriedDeals, saleId, excludeDealId);
-  if (orderQueryMatch?.id) return orderQueryMatch;
-
-  if (customerName) {
-    const customerDeals = await searchHubSpotObjectsByQuery('deals', customerName, returnProperties).catch((error) => {
-      console.error('HubSpot customer deal query search failed:', error.message);
-      return [];
-    });
-    const customerQueryMatch = pickHubSpotOrderDealCandidate(customerDeals, saleId, excludeDealId);
-    if (customerQueryMatch?.id) return customerQueryMatch;
-  }
-
-  return null;
 }
 
 function scoreHubSpotContactMatch(contact, sale) {
@@ -771,26 +622,13 @@ async function associateHubSpotDealToDeal(fromDealId, toDealId) {
   const toId = cleanTextValue(toDealId);
   if (!fromId || !toId || fromId === toId) return false;
 
-  try {
-    await hubspotRequest(`/crm/v4/objects/deal/${fromId}/associations/deal/${toId}`, {
-      method: 'PUT',
-      body: [{
-        associationCategory: 'HUBSPOT_DEFINED',
-        associationTypeId: HUBSPOT_DEAL_TO_DEAL_ASSOCIATION_TYPE_ID
-      }]
-    });
-    return true;
-  } catch (error) {
-    console.error('HubSpot v4 deal-deal association failed; trying v3 association:', error.message);
-  }
-
-  await hubspotRequest(`/crm/v3/objects/deals/${fromId}/associations/deals/${toId}/${HUBSPOT_DEAL_TO_DEAL_ASSOCIATION_TYPE_ID}`, {
+  await hubspotRequest(`/crm/v4/objects/deals/${fromId}/associations/default/deals/${toId}`, {
     method: 'PUT'
   });
   return true;
 }
 
-async function associateCin7OrderDealIfAvailable(customerDealId, saleNumber, sale = {}) {
+async function associateCin7OrderDealIfAvailable(customerDealId, saleNumber) {
   if (!HUBSPOT_ASSOCIATE_CIN7_ORDER_DEAL) {
     return { associated: false, skipped: true, reason: 'disabled' };
   }
@@ -801,54 +639,25 @@ async function associateCin7OrderDealIfAvailable(customerDealId, saleNumber, sal
     return { associated: false, skipped: true, reason: 'missing_order_number' };
   }
 
-  const orderDeal = await findHubSpotDealByName(orderDealName, ['amount'])
-    || await findHubSpotDealByOrderNumber(saleNumber, ['amount'], {
-      customerName: sale.customerName,
-      excludeDealId: dealId
-    });
+  const orderDeal = await findHubSpotDealByName(orderDealName, ['amount']);
   if (!orderDeal?.id) {
-    const searchedProperties = await getHubSpotDealOrderPropertyNames().catch(() => []);
-    return {
-      associated: false,
-      skipped: true,
-      reason: 'order_deal_not_found',
-      orderDealName,
-      searchedProperties: searchedProperties.slice(0, 20)
-    };
+    return { associated: false, skipped: true, reason: 'order_deal_not_found', orderDealName };
   }
   const orderDealAmount = parseMoneyValue(orderDeal.properties?.amount);
   if (String(orderDeal.id) === String(dealId)) {
     return { associated: false, skipped: true, reason: 'same_deal', orderDealId: orderDeal.id, orderDealName, orderDealAmount };
   }
 
-  const customerAssociatedDealIds = await getAssociatedHubSpotDealIds(dealId);
-  const orderAssociatedDealIds = await getAssociatedHubSpotDealIds(orderDeal.id);
-  const customerToOrderLinked = customerAssociatedDealIds.includes(String(orderDeal.id));
-  const orderToCustomerLinked = orderAssociatedDealIds.includes(String(dealId));
-
-  let customerToOrderAssociated = false;
-  let orderToCustomerAssociated = false;
-
-  if (!customerToOrderLinked) {
-    customerToOrderAssociated = await associateHubSpotDealToDeal(dealId, orderDeal.id);
+  const associatedDealIds = await getAssociatedHubSpotDealIds(dealId);
+  if (associatedDealIds.includes(String(orderDeal.id))) {
+    return { associated: false, skipped: true, reason: 'already_associated', orderDealId: orderDeal.id, orderDealName, orderDealAmount };
+  }
+  if (associatedDealIds.length) {
+    return { associated: false, skipped: true, reason: 'association_limit_reached', orderDealId: orderDeal.id, orderDealName, orderDealAmount };
   }
 
-  if (!orderToCustomerLinked) {
-    orderToCustomerAssociated = await associateHubSpotDealToDeal(orderDeal.id, dealId);
-  }
-
-  const alreadyAssociated = customerToOrderLinked && orderToCustomerLinked;
-
-  return {
-    associated: true,
-    skipped: alreadyAssociated,
-    reason: alreadyAssociated ? 'already_associated' : '',
-    orderDealId: orderDeal.id,
-    orderDealName,
-    orderDealAmount,
-    customerToOrderAssociated: customerToOrderLinked || customerToOrderAssociated,
-    orderToCustomerAssociated: orderToCustomerLinked || orderToCustomerAssociated
-  };
+  await associateHubSpotDealToDeal(dealId, orderDeal.id);
+  return { associated: true, skipped: false, orderDealId: orderDeal.id, orderDealName, orderDealAmount };
 }
 
 function getCachedCin7Availability(sku) {
@@ -4137,7 +3946,6 @@ app.get('/api/health', (req, res) => {
     ok: true,
     service: 'living-culture-freight',
     runtime: process.env.VERCEL ? 'vercel' : 'local',
-    commit: process.env.VERCEL_GIT_COMMIT_SHA || '',
     hubspotConfigured: isHubSpotConfigured()
   });
 });
@@ -4169,7 +3977,7 @@ app.post('/api/hubspot/create-deal', async (req, res) => {
 
     if (existingDeal?.id) {
       const ownerId = await getHubSpotOwnerIdForSale(sale);
-      const orderDealAssociation = await associateCin7OrderDealIfAvailable(existingDeal.id, saleNumber, sale).catch(error => {
+      const orderDealAssociation = await associateCin7OrderDealIfAvailable(existingDeal.id, saleNumber).catch(error => {
         console.error('HubSpot existing Cin7 order deal association failed:', error.message);
         return { associated: false, skipped: false, reason: 'error', error: error.message };
       });
@@ -4213,7 +4021,7 @@ app.post('/api/hubspot/create-deal', async (req, res) => {
         return false;
       })
       : false;
-    const orderDealAssociation = await associateCin7OrderDealIfAvailable(deal.id, saleNumber, sale).catch(error => {
+    const orderDealAssociation = await associateCin7OrderDealIfAvailable(deal.id, saleNumber).catch(error => {
       console.error('HubSpot new Cin7 order deal association failed:', error.message);
       return { associated: false, skipped: false, reason: 'error', error: error.message };
     });
