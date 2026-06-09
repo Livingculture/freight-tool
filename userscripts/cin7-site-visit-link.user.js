@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.12.7
+// @version      1.12.13
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.7
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.7
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.13
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.13
 // ==/UserScript==
 
 (function () {
@@ -42,6 +42,8 @@
   ];
   let apiProductCache = [];
   let siteVisitBookingsCache = { key: '', bookings: [] };
+  let delegatedClickHandlerInstalled = false;
+  let lastHandledAction = { id: '', at: 0 };
   const TIME_OPTIONS = (() => {
     const options = [''];
     for (let hour = 8; hour <= 20; hour += 1) {
@@ -582,6 +584,9 @@
     row.style.gap = '12px';
     row.style.margin = '0 0 10px 0';
     row.style.width = '100%';
+    row.style.position = 'relative';
+    row.style.zIndex = '2147483600';
+    row.style.pointerEvents = 'auto';
     commentsAnchor.insertAdjacentElement('beforebegin', row);
     return row;
   }
@@ -595,6 +600,8 @@
     button.style.zIndex = '';
     button.style.marginLeft = '0';
     button.style.marginBottom = '0';
+    button.style.pointerEvents = 'auto';
+    button.style.boxShadow = '';
     button.style.justifySelf = slot === 'right' ? 'end' : slot === 'center' ? 'center' : 'start';
     button.style.gridColumn = slot === 'right' ? '3' : slot === 'center' ? '2' : '1';
     row.appendChild(button);
@@ -739,6 +746,27 @@
     };
   }
 
+  function copyTextToClipboard(text) {
+    const value = clean(text);
+    if (!value) return;
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(value).catch(() => {});
+      return;
+    }
+    const textarea = document.createElement('textarea');
+    textarea.value = value;
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      document.execCommand('copy');
+    } catch (error) {
+      // Clipboard copy is a convenience only.
+    }
+    textarea.remove();
+  }
+
   function submitHubSpotDeal(button) {
     const payload = hubspotDraft();
     const summary = [
@@ -781,7 +809,13 @@
             ? `HubSpot deal already exists:\n${data.dealName || data.dealId}`
             : `HubSpot deal created:\n${data.dealName || data.dealId}`;
           if (data.hubspotUrl) {
-            window.open(data.hubspotUrl, '_blank', 'noopener,noreferrer');
+            copyTextToClipboard(data.hubspotUrl);
+            const linkStatus = data.orderDealAssociated
+              ? 'DEAR deal linked.'
+              : data.orderDealAssociation?.reason
+                ? `DEAR deal not linked: ${data.orderDealAssociation.reason}.`
+                : 'DEAR deal not linked.';
+            window.alert(`${message}\n\n${linkStatus}\n\nHubSpot link copied:\n${data.hubspotUrl}`);
           } else {
             window.alert(message);
           }
@@ -847,6 +881,11 @@
 
         if (response.status >= 200 && response.status < 300 && data.ok) {
           button.textContent = data.duplicate ? 'Review Updated' : 'Review Sent';
+          window.alert(
+            data.duplicate
+              ? `Quote review updated:\n${payload.orderId || payload.customerName || 'Cin7 quote'}`
+              : `Quote review sent to Workflow:\n${payload.orderId || payload.customerName || 'Cin7 quote'}`
+          );
           window.open(`${WORKFLOW_PLANNER_URL}?planner=quote-review`, '_blank', 'noopener,noreferrer');
           window.setTimeout(() => {
             button.disabled = false;
@@ -1094,13 +1133,33 @@
       headers,
       data: JSON.stringify(payload),
       onload: (response) => {
-        const data = JSON.parse(response.responseText || '{}');
+        let data = {};
+        try {
+          data = JSON.parse(response.responseText || '{}');
+        } catch (error) {
+          const redirectedToLogin = response.finalUrl?.includes('/login') ||
+            String(response.responseText || '').toLowerCase().includes('/login');
+          setMessage(
+            redirectedToLogin
+              ? 'Workflow login required. Open the Workflow planner, log in, then save again.'
+              : `Workflow API returned an unreadable response (${response.status}).`,
+            true
+          );
+          return;
+        }
         if (response.status >= 200 && response.status < 300 && data.ok) {
-          setMessage('Saved to Site Visit planner.', false);
+          setMessage(`Saved to Site Visit planner for ${payload.bookedDate || 'selected date'}.`, false);
           openPlannerWithCard(payload);
           window.setTimeout(closePanel, 700);
         } else {
-          setMessage(data.error || `Save failed (${response.status}).`, true);
+          const loginRequired = response.status === 401 || response.status === 403 ||
+            response.status === 307 || response.finalUrl?.includes('/login');
+          setMessage(
+            loginRequired
+              ? 'Workflow login required. Open the Workflow planner, log in, then save again.'
+              : data.error || `Save failed (${response.status}).`,
+            true
+          );
         }
       },
       onerror: () => setMessage('Could not connect to workflow API.', true)
@@ -1187,6 +1246,66 @@
     field(OVERLAY_ID).classList.add('open');
   }
 
+  function shouldHandleAction(button) {
+    const now = Date.now();
+    if (lastHandledAction.id === button.id && now - lastHandledAction.at < 900) return false;
+    lastHandledAction = { id: button.id, at: now };
+    return true;
+  }
+
+  function handleActionButtonClick(button) {
+    if (!button || button.disabled) return;
+    if (!shouldHandleAction(button)) return;
+    try {
+      if (button.id === BUTTON_ID) {
+        openPanel();
+        return;
+      }
+      if (button.id === HUBSPOT_BUTTON_ID) {
+        submitHubSpotDeal(button);
+        return;
+      }
+      if (button.id === QUOTE_REVIEW_BUTTON_ID) {
+        submitQuoteReview(button);
+      }
+    } catch (error) {
+      const message = error && error.message ? error.message : String(error || 'Unknown error');
+      console.error('[LC Cin7 buttons] Button action failed:', error);
+      window.alert(`LC Cin7 button failed:\n\n${message}`);
+    }
+  }
+
+  function ensureDelegatedClickHandler() {
+    if (delegatedClickHandlerInstalled) return;
+    delegatedClickHandlerInstalled = true;
+    const handleEvent = (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const button = target.closest(`#${BUTTON_ID}, #${HUBSPOT_BUTTON_ID}, #${QUOTE_REVIEW_BUTTON_ID}`);
+      if (!button) return;
+      event.preventDefault();
+      event.stopPropagation();
+      handleActionButtonClick(button);
+    };
+    ['pointerdown', 'mousedown', 'click'].forEach((eventName) => {
+      document.addEventListener(eventName, handleEvent, true);
+    });
+  }
+
+  function wireActionButton(button) {
+    if (!button || button.dataset.lcActionWired === '1') return;
+    button.dataset.lcActionWired = '1';
+    const run = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      handleActionButtonClick(button);
+    };
+    ['pointerdown', 'mousedown', 'click'].forEach((eventName) => {
+      button.addEventListener(eventName, run, true);
+    });
+    button.onclick = run;
+  }
+
   function addButton() {
     if (document.getElementById(BUTTON_ID)) return;
     const commentsAnchor = findCommentsAnchor();
@@ -1212,6 +1331,7 @@
     button.style.marginBottom = commentsAnchor ? '10px' : '0';
     button.style.whiteSpace = 'nowrap';
     button.style.verticalAlign = 'middle';
+    button.style.pointerEvents = 'auto';
     button.addEventListener('mouseenter', () => {
       button.style.background = '#04b5aa';
       button.style.borderColor = '#04b5aa';
@@ -1220,7 +1340,7 @@
       button.style.background = '#05cbbf';
       button.style.borderColor = '#05cbbf';
     });
-    button.addEventListener('click', openPanel);
+    wireActionButton(button);
     if (commentsAnchor && placeActionButton(button, 'left')) {
       return;
     } else {
@@ -1242,6 +1362,7 @@
     button.style.marginBottom = '0';
     button.style.whiteSpace = 'nowrap';
     button.style.verticalAlign = 'middle';
+    button.style.pointerEvents = 'auto';
     button.addEventListener('mouseenter', () => {
       if (button.disabled) return;
       button.style.filter = 'brightness(.92)';
@@ -1267,7 +1388,7 @@
     button.textContent = 'HubSpot Deal';
     styleInlineButton(button, '#ff5c35');
     button.style.height = `${Math.max(34, rect.height || 34)}px`;
-    button.addEventListener('click', () => submitHubSpotDeal(button));
+    wireActionButton(button);
 
     if (commentsAnchor && placeActionButton(button, 'right')) {
       return;
@@ -1310,7 +1431,7 @@
     button.style.borderColor = '#f0b429';
     button.style.textShadow = '0 1px 1px rgba(0,0,0,.28)';
     button.style.height = `${Math.max(34, rect.height || 34)}px`;
-    button.addEventListener('click', () => submitQuoteReview(button));
+    wireActionButton(button);
 
     placeActionButton(siteVisitButton, 'left');
     placeActionButton(button, 'center');
@@ -1333,6 +1454,7 @@
   }
 
   function boot() {
+    ensureDelegatedClickHandler();
     scheduleButtonPass();
     setTimeout(scheduleButtonPass, 500);
     setTimeout(scheduleButtonPass, 1500);
