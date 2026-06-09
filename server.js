@@ -480,10 +480,24 @@ function hubSpotDealContainsSaleId(deal, saleId) {
   return Object.values(deal.properties).some((value) => cleanTextValue(value).toUpperCase().includes(wanted));
 }
 
-async function findHubSpotDealByOrderNumber(saleNumber, properties = []) {
+function pickHubSpotOrderDealCandidate(deals, saleId, excludeDealId = '') {
+  const excludedId = cleanTextValue(excludeDealId);
+  const candidates = (Array.isArray(deals) ? deals : [])
+    .filter((deal) => cleanTextValue(deal?.id) !== excludedId)
+    .filter((deal) => hubSpotDealContainsSaleId(deal, saleId));
+
+  return candidates.find((deal) => /\(DEAR\)/i.test(cleanTextValue(deal.properties?.dealname)))
+    || candidates.find((deal) => /\(DEAR\)/i.test(cleanTextValue(deal.properties?.copy_order_deal_name)))
+    || candidates[0]
+    || null;
+}
+
+async function findHubSpotDealByOrderNumber(saleNumber, properties = [], options = {}) {
   const saleId = cleanTextValue(saleNumber).toUpperCase();
   if (!saleId) return null;
 
+  const customerName = cleanTextValue(options.customerName);
+  const excludeDealId = cleanTextValue(options.excludeDealId);
   const propertyNames = await getHubSpotDealOrderPropertyNames();
   const searchValues = Array.from(new Set([saleId, `${saleId} (DEAR)`]));
   const returnProperties = Array.from(new Set(['dealname', 'amount', ...propertyNames, ...properties]));
@@ -498,7 +512,7 @@ async function findHubSpotDealByOrderNumber(saleNumber, properties = []) {
       console.error(`HubSpot order deal token search failed for ${chunk.join(', ')}:`, error.message);
       return [];
     });
-    const tokenMatch = matches.find((deal) => hubSpotDealContainsSaleId(deal, saleId));
+    const tokenMatch = pickHubSpotOrderDealCandidate(matches, saleId, excludeDealId);
     if (tokenMatch?.id) return tokenMatch;
   }
 
@@ -516,7 +530,7 @@ async function findHubSpotDealByOrderNumber(saleNumber, properties = []) {
       console.error(`HubSpot order deal exact search failed for ${chunk.join(', ')}:`, error.message);
       return [];
     });
-    const exactMatch = matches.find((deal) => hubSpotDealContainsSaleId(deal, saleId));
+    const exactMatch = pickHubSpotOrderDealCandidate(matches, saleId, excludeDealId);
     if (exactMatch?.id) return exactMatch;
   }
 
@@ -524,7 +538,19 @@ async function findHubSpotDealByOrderNumber(saleNumber, properties = []) {
     console.error('HubSpot order deal query search failed:', error.message);
     return [];
   });
-  return queriedDeals.find((deal) => hubSpotDealContainsSaleId(deal, saleId)) || null;
+  const orderQueryMatch = pickHubSpotOrderDealCandidate(queriedDeals, saleId, excludeDealId);
+  if (orderQueryMatch?.id) return orderQueryMatch;
+
+  if (customerName) {
+    const customerDeals = await searchHubSpotObjectsByQuery('deals', customerName, returnProperties).catch((error) => {
+      console.error('HubSpot customer deal query search failed:', error.message);
+      return [];
+    });
+    const customerQueryMatch = pickHubSpotOrderDealCandidate(customerDeals, saleId, excludeDealId);
+    if (customerQueryMatch?.id) return customerQueryMatch;
+  }
+
+  return null;
 }
 
 function scoreHubSpotContactMatch(contact, sale) {
@@ -764,7 +790,7 @@ async function associateHubSpotDealToDeal(fromDealId, toDealId) {
   return true;
 }
 
-async function associateCin7OrderDealIfAvailable(customerDealId, saleNumber) {
+async function associateCin7OrderDealIfAvailable(customerDealId, saleNumber, sale = {}) {
   if (!HUBSPOT_ASSOCIATE_CIN7_ORDER_DEAL) {
     return { associated: false, skipped: true, reason: 'disabled' };
   }
@@ -776,7 +802,10 @@ async function associateCin7OrderDealIfAvailable(customerDealId, saleNumber) {
   }
 
   const orderDeal = await findHubSpotDealByName(orderDealName, ['amount'])
-    || await findHubSpotDealByOrderNumber(saleNumber, ['amount']);
+    || await findHubSpotDealByOrderNumber(saleNumber, ['amount'], {
+      customerName: sale.customerName,
+      excludeDealId: dealId
+    });
   if (!orderDeal?.id) {
     const searchedProperties = await getHubSpotDealOrderPropertyNames().catch(() => []);
     return {
@@ -4140,7 +4169,7 @@ app.post('/api/hubspot/create-deal', async (req, res) => {
 
     if (existingDeal?.id) {
       const ownerId = await getHubSpotOwnerIdForSale(sale);
-      const orderDealAssociation = await associateCin7OrderDealIfAvailable(existingDeal.id, saleNumber).catch(error => {
+      const orderDealAssociation = await associateCin7OrderDealIfAvailable(existingDeal.id, saleNumber, sale).catch(error => {
         console.error('HubSpot existing Cin7 order deal association failed:', error.message);
         return { associated: false, skipped: false, reason: 'error', error: error.message };
       });
@@ -4184,7 +4213,7 @@ app.post('/api/hubspot/create-deal', async (req, res) => {
         return false;
       })
       : false;
-    const orderDealAssociation = await associateCin7OrderDealIfAvailable(deal.id, saleNumber).catch(error => {
+    const orderDealAssociation = await associateCin7OrderDealIfAvailable(deal.id, saleNumber, sale).catch(error => {
       console.error('HubSpot new Cin7 order deal association failed:', error.message);
       return { associated: false, skipped: false, reason: 'error', error: error.message };
     });

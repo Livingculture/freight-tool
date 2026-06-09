@@ -1,15 +1,15 @@
 // ==UserScript==
 // @name         Cin7 Living Culture HubSpot Deal
 // @namespace    https://livingculture.co.nz/
-// @version      1.3
+// @version      1.4
 // @description  Adds a standalone HubSpot Deal button to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
 // @grant        GM_xmlhttpRequest
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-hubspot-deal.user.js?v=1.3
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-hubspot-deal.user.js?v=1.3
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-hubspot-deal.user.js?v=1.4
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-hubspot-deal.user.js?v=1.4
 // ==/UserScript==
 
 (function () {
