@@ -648,16 +648,34 @@ async function associateCin7OrderDealIfAvailable(customerDealId, saleNumber) {
     return { associated: false, skipped: true, reason: 'same_deal', orderDealId: orderDeal.id, orderDealName, orderDealAmount };
   }
 
-  const associatedDealIds = await getAssociatedHubSpotDealIds(dealId);
-  if (associatedDealIds.includes(String(orderDeal.id))) {
-    return { associated: false, skipped: true, reason: 'already_associated', orderDealId: orderDeal.id, orderDealName, orderDealAmount };
-  }
-  if (associatedDealIds.length) {
-    return { associated: false, skipped: true, reason: 'association_limit_reached', orderDealId: orderDeal.id, orderDealName, orderDealAmount };
+  const customerAssociatedDealIds = await getAssociatedHubSpotDealIds(dealId);
+  const orderAssociatedDealIds = await getAssociatedHubSpotDealIds(orderDeal.id);
+  const customerToOrderLinked = customerAssociatedDealIds.includes(String(orderDeal.id));
+  const orderToCustomerLinked = orderAssociatedDealIds.includes(String(dealId));
+
+  let customerToOrderAssociated = false;
+  let orderToCustomerAssociated = false;
+
+  if (!customerToOrderLinked) {
+    customerToOrderAssociated = await associateHubSpotDealToDeal(dealId, orderDeal.id);
   }
 
-  await associateHubSpotDealToDeal(dealId, orderDeal.id);
-  return { associated: true, skipped: false, orderDealId: orderDeal.id, orderDealName, orderDealAmount };
+  if (!orderToCustomerLinked) {
+    orderToCustomerAssociated = await associateHubSpotDealToDeal(orderDeal.id, dealId);
+  }
+
+  const alreadyAssociated = customerToOrderLinked && orderToCustomerLinked;
+
+  return {
+    associated: true,
+    skipped: alreadyAssociated,
+    reason: alreadyAssociated ? 'already_associated' : '',
+    orderDealId: orderDeal.id,
+    orderDealName,
+    orderDealAmount,
+    customerToOrderAssociated: customerToOrderLinked || customerToOrderAssociated,
+    orderToCustomerAssociated: orderToCustomerLinked || orderToCustomerAssociated
+  };
 }
 
 function getCachedCin7Availability(sku) {
