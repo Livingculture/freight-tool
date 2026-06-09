@@ -1,15 +1,15 @@
 // ==UserScript==
 // @name         Cin7 Living Culture HubSpot Deal
 // @namespace    https://livingculture.co.nz/
-// @version      1.2
+// @version      1.3
 // @description  Adds a standalone HubSpot Deal button to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
 // @grant        GM_xmlhttpRequest
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-hubspot-deal.user.js?v=1.2
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-hubspot-deal.user.js?v=1.2
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-hubspot-deal.user.js?v=1.3
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-hubspot-deal.user.js?v=1.3
 // ==/UserScript==
 
 (function () {
@@ -376,12 +376,20 @@
     const originalText = button.textContent;
     button.disabled = true;
     button.textContent = 'Sending...';
+    const resetButton = (label = originalText, delay = 0) => {
+      window.setTimeout(() => {
+        button.disabled = false;
+        button.textContent = originalText;
+      }, delay);
+      if (label && label !== originalText) button.textContent = label;
+    };
 
     GM_xmlhttpRequest({
       method: 'POST',
       url: HUBSPOT_API_URL,
       headers: { 'Content-Type': 'application/json' },
       data: JSON.stringify(payload),
+      timeout: 45000,
       onload: (response) => {
         let data = {};
         try {
@@ -391,9 +399,10 @@
         }
 
         if (response.status >= 200 && response.status < 300 && data.ok) {
-          button.textContent = data.orderDealAssociated
+          const successLabel = data.orderDealAssociated
             ? 'HubSpot Linked'
             : data.duplicate ? 'Already in HubSpot' : 'HubSpot Created';
+          button.textContent = successLabel;
           const message = data.duplicate
             ? `HubSpot deal already exists:\n${data.dealName || data.dealId}`
             : `HubSpot deal created:\n${data.dealName || data.dealId}`;
@@ -415,25 +424,25 @@
                 data.orderDealAssociation.reason ? `Reason: ${data.orderDealAssociation.reason}` : ''
               ].filter(Boolean).join('\n')
               : '';
+            resetButton(successLabel, 2500);
             window.alert(`${message}\n\n${linkStatus}${associationDetails ? `\n${associationDetails}` : ''}\n\nHubSpot link copied:\n${data.hubspotUrl}`);
           } else {
+            resetButton(successLabel, 2500);
             window.alert(message);
           }
-          window.setTimeout(() => {
-            button.disabled = false;
-            button.textContent = originalText;
-          }, 2500);
           return;
         }
 
-        button.disabled = false;
-        button.textContent = originalText;
+        resetButton();
         window.alert(data.error || `HubSpot deal failed (${response.status}).`);
       },
       onerror: () => {
-        button.disabled = false;
-        button.textContent = originalText;
+        resetButton();
         window.alert('Could not connect to the HubSpot workflow API.');
+      },
+      ontimeout: () => {
+        resetButton();
+        window.alert('HubSpot deal request timed out. Please wait a moment and try again.');
       }
     });
   }

@@ -396,6 +396,18 @@ async function searchHubSpotObject(objectType, filters, properties = []) {
   return Array.isArray(payload.results) && payload.results.length ? payload.results[0] : null;
 }
 
+async function searchHubSpotObjectsByFilterGroups(objectType, filterGroups, properties = [], limit = 10) {
+  const payload = await hubspotRequest(`/crm/v3/objects/${objectType}/search`, {
+    method: 'POST',
+    body: {
+      filterGroups,
+      properties,
+      limit
+    }
+  });
+  return Array.isArray(payload.results) ? payload.results : [];
+}
+
 async function searchHubSpotObjectsByQuery(objectType, query, properties = []) {
   const cleanQuery = cleanTextValue(query);
   if (!cleanQuery) return [];
@@ -420,9 +432,13 @@ async function getHubSpotDealOrderPropertyNames() {
   const knownNames = [
     HUBSPOT_CIN7_SALE_PROPERTY,
     HUBSPOT_CIN7_ORDER_NAME_PROPERTY,
+    'copy_order_deal_name',
+    'dear_sale_id',
     'cin7_sale_number',
     'cin7_order_name',
     'cin7_order_number',
+    'cin7_inv_paid',
+    'cin7_so_status',
     'cin7_sale_id',
     'cin7_sale_order',
     'dear_order_number',
@@ -471,17 +487,37 @@ async function findHubSpotDealByOrderNumber(saleNumber, properties = []) {
   const propertyNames = await getHubSpotDealOrderPropertyNames();
   const searchValues = Array.from(new Set([saleId, `${saleId} (DEAR)`]));
   const returnProperties = Array.from(new Set(['dealname', 'amount', ...propertyNames, ...properties]));
+  const priorityProperties = propertyNames.slice(0, 12);
 
-  for (const propertyName of propertyNames) {
-    for (const value of searchValues) {
-      const exactMatch = await searchHubSpotObject('deals', [
-        { propertyName, operator: 'EQ', value }
-      ], returnProperties).catch((error) => {
-        console.error(`HubSpot order deal exact search failed for ${propertyName}:`, error.message);
-        return null;
-      });
-      if (exactMatch?.id) return exactMatch;
+  for (let index = 0; index < priorityProperties.length; index += 5) {
+    const chunk = priorityProperties.slice(index, index + 5);
+    const filterGroups = chunk.map((propertyName) => ({
+      filters: [{ propertyName, operator: 'CONTAINS_TOKEN', value: saleId }]
+    }));
+    const matches = await searchHubSpotObjectsByFilterGroups('deals', filterGroups, returnProperties, 10).catch((error) => {
+      console.error(`HubSpot order deal token search failed for ${chunk.join(', ')}:`, error.message);
+      return [];
+    });
+    const tokenMatch = matches.find((deal) => hubSpotDealContainsSaleId(deal, saleId));
+    if (tokenMatch?.id) return tokenMatch;
+  }
+
+  for (let index = 0; index < priorityProperties.length; index += 2) {
+    const chunk = priorityProperties.slice(index, index + 2);
+    const filterGroups = [];
+    for (const propertyName of chunk) {
+      for (const value of searchValues) {
+        filterGroups.push({
+          filters: [{ propertyName, operator: 'EQ', value }]
+        });
+      }
     }
+    const matches = await searchHubSpotObjectsByFilterGroups('deals', filterGroups, returnProperties, 10).catch((error) => {
+      console.error(`HubSpot order deal exact search failed for ${chunk.join(', ')}:`, error.message);
+      return [];
+    });
+    const exactMatch = matches.find((deal) => hubSpotDealContainsSaleId(deal, saleId));
+    if (exactMatch?.id) return exactMatch;
   }
 
   const queriedDeals = await searchHubSpotObjectsByQuery('deals', saleId, returnProperties).catch((error) => {
