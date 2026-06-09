@@ -1,15 +1,15 @@
 // ==UserScript==
 // @name         Cin7 Living Culture HubSpot Deal
 // @namespace    https://livingculture.co.nz/
-// @version      1.4
+// @version      1.5
 // @description  Adds a standalone HubSpot Deal button to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
 // @grant        GM_xmlhttpRequest
-// @connect      living-culture-freight.vercel.app
+// @connect      living-culture-workflow.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-hubspot-deal.user.js?v=1.4
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-hubspot-deal.user.js?v=1.4
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-hubspot-deal.user.js?v=1.5
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-hubspot-deal.user.js?v=1.5
 // ==/UserScript==
 
 (function () {
@@ -17,7 +17,7 @@
 
   const HUBSPOT_BUTTON_ID = 'lc-hubspot-deal-inline-button-v1';
   const ACTION_ROW_ID = 'lc-cin7-action-row-v1';
-  const HUBSPOT_API_URL = 'https://living-culture-freight.vercel.app/api/hubspot/create-deal';
+  const HUBSPOT_API_URL = 'https://living-culture-workflow.vercel.app/api/hubspot/create-deal';
   let lastHandledAt = 0;
 
   function clean(value) {
