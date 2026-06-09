@@ -1,15 +1,15 @@
 // ==UserScript==
 // @name         Cin7 Living Culture HubSpot Deal
 // @namespace    https://livingculture.co.nz/
-// @version      1.1
+// @version      1.2
 // @description  Adds a standalone HubSpot Deal button to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
 // @grant        GM_xmlhttpRequest
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-hubspot-deal.user.js?v=1.1
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-hubspot-deal.user.js?v=1.1
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-hubspot-deal.user.js?v=1.2
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-hubspot-deal.user.js?v=1.2
 // ==/UserScript==
 
 (function () {
@@ -409,6 +409,9 @@
                 data.orderDealAssociation.orderDealName ? `DEAR deal: ${data.orderDealAssociation.orderDealName}` : '',
                 data.orderDealAssociation.customerToOrderAssociated ? 'Customer -> DEAR: yes' : '',
                 data.orderDealAssociation.orderToCustomerAssociated ? 'DEAR -> Customer: yes' : '',
+                Array.isArray(data.orderDealAssociation.searchedProperties) && data.orderDealAssociation.searchedProperties.length
+                  ? `Searched fields: ${data.orderDealAssociation.searchedProperties.join(', ')}`
+                  : '',
                 data.orderDealAssociation.reason ? `Reason: ${data.orderDealAssociation.reason}` : ''
               ].filter(Boolean).join('\n')
               : '';
