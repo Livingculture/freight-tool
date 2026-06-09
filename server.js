@@ -52,6 +52,9 @@ const HUBSPOT_PORTAL_ID = process.env.HUBSPOT_PORTAL_ID || process.env.HUBSPOT_A
 const HUBSPOT_DEAL_TO_CONTACT_ASSOCIATION_TYPE_ID = Number(
   process.env.HUBSPOT_DEAL_TO_CONTACT_ASSOCIATION_TYPE_ID || 3
 );
+const HUBSPOT_DEAL_TO_DEAL_ASSOCIATION_TYPE_ID = Number(
+  process.env.HUBSPOT_DEAL_TO_DEAL_ASSOCIATION_TYPE_ID || 451
+);
 const BLOCKED_RESOURCE_TYPES = new Set(['image', 'font', 'media']);
 const BLOCKED_AUTOMATION_URLS = [
   /cdn\.shopify\.com\/extensions\//i,
@@ -622,7 +625,20 @@ async function associateHubSpotDealToDeal(fromDealId, toDealId) {
   const toId = cleanTextValue(toDealId);
   if (!fromId || !toId || fromId === toId) return false;
 
-  await hubspotRequest(`/crm/v4/objects/deals/${fromId}/associations/default/deals/${toId}`, {
+  try {
+    await hubspotRequest(`/crm/v4/objects/deal/${fromId}/associations/deal/${toId}`, {
+      method: 'PUT',
+      body: [{
+        associationCategory: 'HUBSPOT_DEFINED',
+        associationTypeId: HUBSPOT_DEAL_TO_DEAL_ASSOCIATION_TYPE_ID
+      }]
+    });
+    return true;
+  } catch (error) {
+    console.error('HubSpot v4 deal-deal association failed; trying v3 association:', error.message);
+  }
+
+  await hubspotRequest(`/crm/v3/objects/deals/${fromId}/associations/deals/${toId}/${HUBSPOT_DEAL_TO_DEAL_ASSOCIATION_TYPE_ID}`, {
     method: 'PUT'
   });
   return true;
@@ -3964,6 +3980,7 @@ app.get('/api/health', (req, res) => {
     ok: true,
     service: 'living-culture-freight',
     runtime: process.env.VERCEL ? 'vercel' : 'local',
+    commit: process.env.VERCEL_GIT_COMMIT_SHA || '',
     hubspotConfigured: isHubSpotConfigured()
   });
 });

@@ -1,15 +1,15 @@
 // ==UserScript==
 // @name         Cin7 Living Culture HubSpot Deal
 // @namespace    https://livingculture.co.nz/
-// @version      1.0
+// @version      1.1
 // @description  Adds a standalone HubSpot Deal button to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
 // @grant        GM_xmlhttpRequest
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-hubspot-deal.user.js?v=1.0
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-hubspot-deal.user.js?v=1.0
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-hubspot-deal.user.js?v=1.1
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-hubspot-deal.user.js?v=1.1
 // ==/UserScript==
 
 (function () {
@@ -404,7 +404,15 @@
               : data.orderDealAssociation?.reason
                 ? `DEAR deal not linked: ${data.orderDealAssociation.reason}.`
                 : 'DEAR deal not linked.';
-            window.alert(`${message}\n\n${linkStatus}\n\nHubSpot link copied:\n${data.hubspotUrl}`);
+            const associationDetails = data.orderDealAssociation
+              ? [
+                data.orderDealAssociation.orderDealName ? `DEAR deal: ${data.orderDealAssociation.orderDealName}` : '',
+                data.orderDealAssociation.customerToOrderAssociated ? 'Customer -> DEAR: yes' : '',
+                data.orderDealAssociation.orderToCustomerAssociated ? 'DEAR -> Customer: yes' : '',
+                data.orderDealAssociation.reason ? `Reason: ${data.orderDealAssociation.reason}` : ''
+              ].filter(Boolean).join('\n')
+              : '';
+            window.alert(`${message}\n\n${linkStatus}${associationDetails ? `\n${associationDetails}` : ''}\n\nHubSpot link copied:\n${data.hubspotUrl}`);
           } else {
             window.alert(message);
           }
