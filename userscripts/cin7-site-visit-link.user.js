@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.12.14
+// @version      1.12.15
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.14
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.14
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.15
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.15
 // ==/UserScript==
 
 (function () {
@@ -665,12 +665,21 @@
   }
 
   function readMoneyNearLabels(labels) {
+    const moneyPattern = /(?:NZ)?\$\s*-?\d[\d,]*(?:\.\d{1,2})?|-?\d[\d,]*\.\d{2}/i;
+    const moneyValue = (value) => {
+      const match = clean(value).match(moneyPattern);
+      if (!match) return null;
+      const number = Number(match[0].replace(/[^\d.-]/g, ''));
+      return Number.isFinite(number) ? { raw: match[0], number } : null;
+    };
+    const candidates = [];
+
     for (const label of labels) {
       const value = readValueNearLabel(label);
-      if (/\d/.test(value || '')) return value;
+      const money = moneyValue(value);
+      if (money) candidates.push(money);
     }
 
-    const moneyPattern = /(?:NZ)?\$\s*-?\d[\d,]*(?:\.\d{1,2})?|-?\d[\d,]*\.\d{2}/i;
     const bodyText = document.body ? document.body.innerText : '';
     const lines = bodyText.split('\n').map(clean).filter(Boolean);
     const wantedLabels = labels.map(normalizeLabel);
@@ -679,7 +688,16 @@
       if (!wantedLabels.some(label => normalisedLine === label || normalisedLine.startsWith(label))) continue;
       const nearby = lines.slice(index, index + 4).join(' ');
       const match = nearby.match(moneyPattern);
-      if (match) return match[0];
+      if (match) {
+        const money = moneyValue(match[0]);
+        if (money) candidates.push(money);
+      }
+    }
+
+    if (candidates.length) {
+      return candidates
+        .filter(candidate => candidate.number > 0)
+        .sort((a, b) => b.number - a.number)[0]?.raw || candidates[0].raw;
     }
 
     const moneyMatches = bodyText.match(new RegExp(moneyPattern.source, 'gi')) || [];
@@ -722,11 +740,11 @@
   function hubspotDraft() {
     const draft = cin7Draft();
     const amount = readMoneyNearLabels([
-      'Total',
       'Grand total',
       'Order total',
       'Sale total',
       'Total after tax',
+      'Total',
       'Total before tax'
     ]);
 
