@@ -1,6 +1,16 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "npm ci --omit=dev",
+  "rewrites": [
+    {
+      "source": "/pergola",
+      "destination": "/pergola-quick-reference.html"
+    },
+    {
+      "source": "/pergola-quick-reference",
+      "destination": "/pergola-quick-reference.html"
+    }
+  ],
   "functions": {
     "server.js": {
       "maxDuration": 300,
