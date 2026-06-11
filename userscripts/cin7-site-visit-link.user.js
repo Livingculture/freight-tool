@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.12.15
+// @version      1.12.16
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.15
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.15
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.16
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.16
 // ==/UserScript==
 
 (function () {
@@ -747,6 +747,11 @@
       'Total',
       'Total before tax'
     ]);
+    const notes = readValueNearLabel('Quote memo') ||
+      readValueNearLabel('Comments') ||
+      readValueNearLabel('Shipping notes') ||
+      readValueNearLabel('Memo') ||
+      '';
 
     return {
       orderId: draft.orderId,
@@ -760,6 +765,7 @@
       total: amount,
       salesRep: draft.placedBy,
       product: draft.product,
+      notes,
       sourceUrl: draft.sourceUrl
     };
   }
