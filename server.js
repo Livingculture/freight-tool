@@ -22,9 +22,6 @@ app.use((req, res, next) => {
   return next();
 });
 app.use(express.static(path.join(__dirname, 'public')));
-app.get(['/pergola', '/pergola-quick-reference'], (_req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'pergola-quick-reference.html'));
-});
 app.use(express.json());
 
 const DEFAULT_WAIT = 10000;
