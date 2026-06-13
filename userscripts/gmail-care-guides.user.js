@@ -1,15 +1,16 @@
 // ==UserScript==
 // @name         Gmail Living Culture Care Guides
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.1
+// @version      0.1.2
 // @description  Inserts Living Culture care guide download links into Gmail compose windows.
 // @author       Living Culture
 // @match        https://mail.google.com/*
 // @grant        GM_xmlhttpRequest
+// @grant        GM_registerMenuCommand
 // @connect      cin7-pdf-attachments.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.1
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.1
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.2
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.2
 // ==/UserScript==
 
 (function () {
@@ -28,6 +29,7 @@
     open: false,
   };
   let lastToggleAt = 0;
+  let menuRegistered = false;
 
   function escapeHtml(value) {
     return String(value || "")
@@ -187,12 +189,14 @@
     renderPanel();
     const panel = document.getElementById(PANEL_ID);
     if (panel) {
-      panel.style.left = "50%";
-      panel.style.top = "50%";
-      panel.style.right = "auto";
-      panel.style.bottom = "auto";
-      panel.style.transform = "translate(-50%, -50%)";
-      panel.style.display = "block";
+      document.body.appendChild(panel);
+      panel.style.setProperty("left", "50%", "important");
+      panel.style.setProperty("top", "50%", "important");
+      panel.style.setProperty("right", "auto", "important");
+      panel.style.setProperty("bottom", "auto", "important");
+      panel.style.setProperty("transform", "translate(-50%, -50%)", "important");
+      panel.style.setProperty("display", "block", "important");
+      panel.style.setProperty("z-index", "2147483647", "important");
     }
     if (!state.loaded) loadFiles();
   }
@@ -212,7 +216,7 @@
         position: fixed;
         right: 22px;
         bottom: 22px;
-        z-index: 2147483600;
+        z-index: 2147483646;
         height: 38px;
         border: 1px solid #0d6f78;
         border-radius: 19px;
@@ -228,7 +232,7 @@
       #${PANEL_ID} {
         display: none;
         position: fixed;
-        z-index: 2147483601;
+        z-index: 2147483647;
         width: 380px;
         max-width: calc(100vw - 32px);
         background: #fff;
@@ -238,6 +242,7 @@
         color: #17202a;
         font: 13px Arial, sans-serif;
         transform: translate(-50%, -50%);
+        pointer-events: auto;
       }
       .lc-gmail-care-head,
       .lc-gmail-care-actions {
@@ -315,18 +320,32 @@
     button.textContent = "Care Guides";
     button.title = "Insert Living Culture care guide links";
     const toggle = (event) => {
-      event.preventDefault();
-      event.stopPropagation();
+      if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (typeof event.stopImmediatePropagation === "function") event.stopImmediatePropagation();
+      }
       const now = Date.now();
       if (now - lastToggleAt < 250) return;
       lastToggleAt = now;
+      button.textContent = state.open ? "Care Guides" : "Opening...";
       if (state.open) closePanel();
       else openPanel();
+      window.setTimeout(() => {
+        button.textContent = "Care Guides";
+      }, 400);
     };
+    button.addEventListener("pointerdown", toggle, true);
     button.addEventListener("mousedown", toggle, true);
+    button.addEventListener("touchstart", toggle, true);
     button.addEventListener("click", toggle, true);
     button.onclick = toggle;
     document.body.appendChild(button);
+
+    if (!menuRegistered && typeof GM_registerMenuCommand === "function") {
+      GM_registerMenuCommand("Open Care Guides", () => toggle());
+      menuRegistered = true;
+    }
   }
 
   function boot() {
