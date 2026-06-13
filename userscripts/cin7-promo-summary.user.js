@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Promo Summary
 // @namespace    livingculture-cin7
-// @version      2.4
+// @version      2.5
 // @description  Compact grouped Living Culture promo summary inside Cin7 from the Summary tab.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
 // @match        https://inventory.dearsystems.com/*
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=2.4
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=2.4
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=2.5
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=2.5
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
@@ -42,6 +42,9 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
   const ACTION_ROW_ID = 'lc-cin7-action-row-v1';
   const SITE_VISIT_BUTTON_ID = 'lc-site-visit-inline-button-v2';
   const QUOTE_REVIEW_BUTTON_ID = 'lc-quote-review-inline-button-v1';
+  const TOP_ROW_SETTLE_MS = 1800;
+  const scriptStartedAt = Date.now();
+  let revealRetryTimer = null;
 
   function clean(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
@@ -757,14 +760,29 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
     button.style.zIndex = '2147483601';
     button.style.marginLeft = '0';
     button.style.marginBottom = '0';
-    button.style.visibility = 'visible';
-    button.style.opacity = '1';
+
+    const elapsed = Date.now() - scriptStartedAt;
+    if (elapsed < TOP_ROW_SETTLE_MS) {
+      button.style.visibility = 'hidden';
+      button.style.opacity = '0';
+      if (!revealRetryTimer) {
+        revealRetryTimer = window.setTimeout(() => {
+          revealRetryTimer = null;
+          insertButtonNextToScan();
+        }, TOP_ROW_SETTLE_MS - elapsed + 80);
+      }
+    } else {
+      button.style.visibility = 'visible';
+      button.style.opacity = '1';
+    }
     return true;
   }
 
   function insertButtonNextToScan() {
     const existingButton = document.getElementById(INLINE_BUTTON_ID);
     if (existingButton) {
+      existingButton.style.visibility = 'hidden';
+      existingButton.style.opacity = '0';
       positionButtonBetweenSiteVisitAndQuoteReview(existingButton);
       return;
     }
