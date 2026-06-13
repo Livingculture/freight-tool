@@ -1,15 +1,15 @@
 // ==UserScript==
 // @name         Gmail Living Culture Care Guides
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.0
+// @version      0.1.1
 // @description  Inserts Living Culture care guide download links into Gmail compose windows.
 // @author       Living Culture
 // @match        https://mail.google.com/*
 // @grant        GM_xmlhttpRequest
 // @connect      cin7-pdf-attachments.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.0
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.0
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.1
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.1
 // ==/UserScript==
 
 (function () {
@@ -27,6 +27,7 @@
     busy: false,
     open: false,
   };
+  let lastToggleAt = 0;
 
   function escapeHtml(value) {
     return String(value || "")
@@ -184,12 +185,13 @@
   function openPanel() {
     state.open = true;
     renderPanel();
-    const button = document.getElementById(BUTTON_ID);
     const panel = document.getElementById(PANEL_ID);
-    if (button && panel) {
-      const rect = button.getBoundingClientRect();
-      panel.style.right = `${Math.max(16, window.innerWidth - rect.right)}px`;
-      panel.style.bottom = `${Math.max(16, window.innerHeight - rect.top + 8)}px`;
+    if (panel) {
+      panel.style.left = "50%";
+      panel.style.top = "50%";
+      panel.style.right = "auto";
+      panel.style.bottom = "auto";
+      panel.style.transform = "translate(-50%, -50%)";
       panel.style.display = "block";
     }
     if (!state.loaded) loadFiles();
@@ -219,6 +221,8 @@
         padding: 0 16px;
         font: 700 14px Arial, sans-serif;
         cursor: pointer;
+        pointer-events: auto;
+        user-select: none;
         box-shadow: 0 8px 22px rgba(20, 31, 38, .24);
       }
       #${PANEL_ID} {
@@ -233,6 +237,7 @@
         box-shadow: 0 18px 42px rgba(20, 31, 38, .24);
         color: #17202a;
         font: 13px Arial, sans-serif;
+        transform: translate(-50%, -50%);
       }
       .lc-gmail-care-head,
       .lc-gmail-care-actions {
@@ -308,10 +313,19 @@
     button.id = BUTTON_ID;
     button.type = "button";
     button.textContent = "Care Guides";
-    button.addEventListener("click", () => {
+    button.title = "Insert Living Culture care guide links";
+    const toggle = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const now = Date.now();
+      if (now - lastToggleAt < 250) return;
+      lastToggleAt = now;
       if (state.open) closePanel();
       else openPanel();
-    });
+    };
+    button.addEventListener("mousedown", toggle, true);
+    button.addEventListener("click", toggle, true);
+    button.onclick = toggle;
     document.body.appendChild(button);
   }
 
