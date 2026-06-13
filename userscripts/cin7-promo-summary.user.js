@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Promo Summary
 // @namespace    livingculture-cin7
-// @version      2.5
+// @version      2.6
 // @description  Compact grouped Living Culture promo summary inside Cin7 from the Summary tab.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
 // @match        https://inventory.dearsystems.com/*
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=2.5
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=2.5
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=2.6
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=2.6
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
@@ -45,6 +45,7 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
   const TOP_ROW_SETTLE_MS = 1800;
   const scriptStartedAt = Date.now();
   let revealRetryTimer = null;
+  let positionScheduled = false;
 
   function clean(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
@@ -833,6 +834,15 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
     positionButtonBetweenSiteVisitAndQuoteReview(button);
   }
 
+  function schedulePromoButtonPosition() {
+    if (positionScheduled) return;
+    positionScheduled = true;
+    window.requestAnimationFrame(() => {
+      positionScheduled = false;
+      insertButtonNextToScan();
+    });
+  }
+
   function createWidget() {
     if (document.getElementById('lc-promo-summary-root')) return;
     if (!document.body) return;
@@ -1238,11 +1248,14 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
 
     createWidget();
 
-    setTimeout(insertButtonNextToScan, 500);
-    setTimeout(insertButtonNextToScan, 1500);
-    setTimeout(insertButtonNextToScan, 3000);
+    setTimeout(schedulePromoButtonPosition, 500);
+    setTimeout(schedulePromoButtonPosition, 1500);
+    setTimeout(schedulePromoButtonPosition, 3000);
   }
 
   boot();
   window.addEventListener('load', boot);
+  window.addEventListener('resize', schedulePromoButtonPosition);
+  window.addEventListener('orientationchange', schedulePromoButtonPosition);
+  new MutationObserver(schedulePromoButtonPosition).observe(document.body, { childList: true, subtree: true });
 })();
