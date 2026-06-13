@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.12.17
+// @version      1.12.18
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.17
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.17
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.18
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.18
 // ==/UserScript==
 
 (function () {
@@ -474,10 +474,6 @@
     return Array.from(keys);
   }
 
-  function visitorCount(value) {
-    return visitorNameParts(value).length;
-  }
-
   function singleVisitByOptions() {
     const names = workflowRepOptions.length ? workflowRepOptions : VISIT_BY;
     const seen = new Set();
@@ -555,7 +551,6 @@
   }
 
   function bookingBlocksSelectedVisitor(booking, selectedVisitBy) {
-    if (visitorCount(booking?.visitBy) >= 2) return true;
     if (!clean(selectedVisitBy)) return false;
     return sameVisitor(booking?.visitBy, selectedVisitBy);
   }
