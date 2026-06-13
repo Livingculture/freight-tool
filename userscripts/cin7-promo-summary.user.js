@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Promo Summary
 // @namespace    livingculture-cin7
-// @version      2.2
+// @version      2.3
 // @description  Compact grouped Living Culture promo summary inside Cin7 from the Summary tab.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
@@ -37,6 +37,11 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
   let allRows = [];
   let filteredRows = [];
   let sourceLabel = 'Loading Summary tab...';
+
+  const INLINE_BUTTON_ID = 'lc-promo-summary-inline-button';
+  const ACTION_ROW_ID = 'lc-cin7-action-row-v1';
+  const SITE_VISIT_BUTTON_ID = 'lc-site-visit-inline-button-v2';
+  const QUOTE_REVIEW_BUTTON_ID = 'lc-quote-review-inline-button-v1';
 
   function clean(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
@@ -732,8 +737,37 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
     if (modal) modal.classList.remove('open');
   }
 
+  function positionButtonBetweenSiteVisitAndQuoteReview(button) {
+    const row = document.getElementById(ACTION_ROW_ID);
+    const siteVisitButton = document.getElementById(SITE_VISIT_BUTTON_ID);
+    const quoteReviewButton = document.getElementById(QUOTE_REVIEW_BUTTON_ID);
+    if (!row || !siteVisitButton || !quoteReviewButton || !button) return false;
+
+    if (button.parentElement !== row) row.appendChild(button);
+
+    const rowRect = row.getBoundingClientRect();
+    const siteRect = siteVisitButton.getBoundingClientRect();
+    const quoteRect = quoteReviewButton.getBoundingClientRect();
+    const buttonRect = button.getBoundingClientRect();
+    const centerBetween = siteRect.right + (quoteRect.left - siteRect.right) / 2;
+
+    button.style.position = 'absolute';
+    button.style.left = `${Math.max(0, centerBetween - rowRect.left - buttonRect.width / 2)}px`;
+    button.style.top = `${Math.max(0, quoteRect.top - rowRect.top)}px`;
+    button.style.zIndex = '2147483601';
+    button.style.marginLeft = '0';
+    button.style.marginBottom = '0';
+    button.style.visibility = 'visible';
+    button.style.opacity = '1';
+    return true;
+  }
+
   function insertButtonNextToScan() {
-    if (document.getElementById('lc-promo-summary-inline-button')) return;
+    const existingButton = document.getElementById(INLINE_BUTTON_ID);
+    if (existingButton) {
+      positionButtonBetweenSiteVisitAndQuoteReview(existingButton);
+      return;
+    }
 
     const scanButton = Array.from(document.querySelectorAll('button, a, div, span'))
       .filter(element => isElementVisible(element))
@@ -742,15 +776,15 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
     if (!scanButton) return;
 
     const button = document.createElement('button');
-    button.id = 'lc-promo-summary-inline-button';
+    button.id = INLINE_BUTTON_ID;
     button.type = 'button';
     button.textContent = 'Promo Summary';
 
     const scanRect = scanButton.getBoundingClientRect();
 
-    button.style.background = '#05cbbf';
+    button.style.background = '#7c3aed';
     button.style.color = '#fff';
-    button.style.border = '1px solid #05cbbf';
+    button.style.border = '1px solid #7c3aed';
     button.style.borderRadius = '4px';
     button.style.padding = '0 14px';
     button.style.font = '700 14px Arial, sans-serif';
@@ -760,20 +794,25 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
     button.style.marginLeft = '8px';
     button.style.whiteSpace = 'nowrap';
     button.style.verticalAlign = 'middle';
+    button.style.visibility = 'hidden';
+    button.style.opacity = '0';
 
     button.addEventListener('mouseenter', () => {
-      button.style.background = '#04b5aa';
-      button.style.borderColor = '#04b5aa';
+      button.style.background = '#6d28d9';
+      button.style.borderColor = '#6d28d9';
     });
 
     button.addEventListener('mouseleave', () => {
-      button.style.background = '#05cbbf';
-      button.style.borderColor = '#05cbbf';
+      button.style.background = '#7c3aed';
+      button.style.borderColor = '#7c3aed';
     });
 
     button.addEventListener('click', openModal);
 
+    if (positionButtonBetweenSiteVisitAndQuoteReview(button)) return;
+
     scanButton.insertAdjacentElement('afterend', button);
+    positionButtonBetweenSiteVisitAndQuoteReview(button);
   }
 
   function createWidget() {
