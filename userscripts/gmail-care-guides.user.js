@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Living Culture Care Guides
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.6
+// @version      0.1.7
 // @description  Attaches Living Culture care guide PDFs to Gmail compose windows.
 // @author       Living Culture
 // @match        https://mail.google.com/*
@@ -9,8 +9,8 @@
 // @grant        GM_registerMenuCommand
 // @connect      cin7-pdf-attachments.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.6
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.6
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.7
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.7
 // ==/UserScript==
 
 (function () {
@@ -30,6 +30,7 @@
   };
   let lastToggleAt = 0;
   let menuRegistered = false;
+  let syncTimer = null;
 
   function apiRequest(path) {
     return new Promise((resolve, reject) => {
@@ -95,7 +96,7 @@
 
   function activeComposeRoot() {
     const body = activeComposeBody();
-    return body?.closest('div[role="dialog"], div[aria-label="Message Body"]') || body;
+    return body?.closest('div[role="dialog"], div[role="listitem"]') || body;
   }
 
   function insertNodeIntoCompose(node) {
@@ -365,20 +366,21 @@
     style.textContent = `
       #${BUTTON_ID} {
         position: fixed;
-        right: 22px;
-        bottom: 22px;
+        left: 0;
+        top: 0;
         z-index: 2147483646;
-        height: 38px;
+        display: none;
+        height: 30px;
         border: 1px solid #0d6f78;
-        border-radius: 19px;
+        border-radius: 15px;
         background: #0d6f78;
         color: #fff;
-        padding: 0 16px;
-        font: 700 14px Arial, sans-serif;
+        padding: 0 12px;
+        font: 700 12px Arial, sans-serif;
         cursor: pointer;
         pointer-events: auto;
         user-select: none;
-        box-shadow: 0 8px 22px rgba(20, 31, 38, .24);
+        box-shadow: 0 4px 12px rgba(20, 31, 38, .20);
       }
       #${PANEL_ID} {
         display: none;
@@ -497,6 +499,7 @@
     button.addEventListener("click", toggle, true);
     button.onclick = toggle;
     document.body.appendChild(button);
+    syncButtonToCompose();
 
     if (!menuRegistered && typeof GM_registerMenuCommand === "function") {
       GM_registerMenuCommand("Open Care Guides", () => toggle());
@@ -504,9 +507,41 @@
     }
   }
 
+  function syncButtonToCompose() {
+    const button = document.getElementById(BUTTON_ID);
+    if (!button) return;
+
+    const composeRoot = activeComposeRoot();
+    if (!composeRoot) {
+      button.style.display = "none";
+      if (state.open) closePanel();
+      return;
+    }
+
+    const rect = composeRoot.getBoundingClientRect();
+    if (!rect.width || !rect.height) {
+      button.style.display = "none";
+      return;
+    }
+
+    const left = Math.min(rect.left + 300, rect.right - 128);
+    const top = rect.bottom - 44;
+    button.style.left = `${Math.max(8, left)}px`;
+    button.style.top = `${Math.max(8, top)}px`;
+    button.style.display = "inline-flex";
+    button.style.alignItems = "center";
+    button.style.justifyContent = "center";
+  }
+
   function boot() {
     if (!document.body) return;
     injectButton();
+    if (!syncTimer) {
+      syncTimer = window.setInterval(syncButtonToCompose, 500);
+      window.addEventListener("resize", syncButtonToCompose);
+      document.addEventListener("focusin", syncButtonToCompose);
+      document.addEventListener("click", () => window.setTimeout(syncButtonToCompose, 50), true);
+    }
   }
 
   if (document.readyState === "loading") {
