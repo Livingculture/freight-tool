@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Living Culture Care Guides
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.3
+// @version      0.1.4
 // @description  Inserts Living Culture care guide download links into Gmail compose windows.
 // @author       Living Culture
 // @match        https://mail.google.com/*
@@ -9,8 +9,8 @@
 // @grant        GM_registerMenuCommand
 // @connect      cin7-pdf-attachments.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.3
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.3
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.4
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.4
 // ==/UserScript==
 
 (function () {
@@ -30,15 +30,6 @@
   };
   let lastToggleAt = 0;
   let menuRegistered = false;
-
-  function escapeHtml(value) {
-    return String(value || "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
-  }
 
   function apiRequest(path) {
     return new Promise((resolve, reject) => {
@@ -81,14 +72,25 @@
     });
   }
 
-  function insertHtmlIntoCompose(html) {
+  function insertNodeIntoCompose(node) {
     const body = activeComposeBody();
     if (!body) {
       window.alert("Open a Gmail compose or reply box first.");
       return false;
     }
     body.focus();
-    document.execCommand("insertHTML", false, html);
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount) {
+      const range = selection.getRangeAt(0);
+      range.deleteContents();
+      range.insertNode(node);
+      range.setStartAfter(node);
+      range.setEndAfter(node);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    } else {
+      body.appendChild(node);
+    }
     return true;
   }
 
@@ -118,51 +120,91 @@
     panel.style.setProperty("z-index", "2147483647", "important");
   }
 
-  function bindClick(panel, selector, handler) {
-    const element = panel.querySelector(selector);
-    if (element) element.addEventListener("click", handler);
+  function createHeader() {
+    const head = document.createElement("div");
+    head.className = "lc-gmail-care-head";
+
+    const title = document.createElement("strong");
+    title.textContent = "Care Guides";
+    head.appendChild(title);
+
+    const close = document.createElement("button");
+    close.type = "button";
+    close.id = "lc-gmail-care-close";
+    close.title = "Close";
+    close.textContent = "x";
+    close.addEventListener("click", closePanel);
+    head.appendChild(close);
+
+    return head;
+  }
+
+  function createEmpty(message) {
+    const empty = document.createElement("div");
+    empty.className = "lc-gmail-care-empty";
+    empty.textContent = message;
+    return empty;
   }
 
   function renderPanel() {
     const panel = ensurePanel();
+    panel.replaceChildren();
+    panel.appendChild(createHeader());
 
-    const filesMarkup = state.files.length
-      ? state.files
-          .map((file) => {
-            const checked = state.selected.has(file.id) ? "checked" : "";
-            return `
-              <label class="lc-gmail-care-row">
-                <input type="checkbox" value="${escapeHtml(file.id)}" ${checked}>
-                <span title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</span>
-              </label>
-            `;
-          })
-          .join("")
-      : '<div class="lc-gmail-care-empty">No care guides found.</div>';
+    const list = document.createElement("div");
+    list.className = "lc-gmail-care-list";
+    if (!state.loaded) {
+      list.appendChild(createEmpty("Loading guides..."));
+    } else if (!state.files.length) {
+      list.appendChild(createEmpty("No care guides found."));
+    } else {
+      state.files.forEach((file) => {
+        const row = document.createElement("label");
+        row.className = "lc-gmail-care-row";
 
-    panel.innerHTML = `
-      <div class="lc-gmail-care-head">
-        <strong>Care Guides</strong>
-        <button type="button" id="lc-gmail-care-close" title="Close">x</button>
-      </div>
-      <div class="lc-gmail-care-list">${state.loaded ? filesMarkup : '<div class="lc-gmail-care-empty">Loading guides...</div>'}</div>
-      <div class="lc-gmail-care-actions">
-        <button type="button" id="lc-gmail-care-refresh">Refresh</button>
-        <button type="button" id="lc-gmail-care-insert" ${state.busy || !state.selected.size ? "disabled" : ""}>Insert ${state.selected.size || ""}</button>
-      </div>
-      <div id="lc-gmail-care-guides-status" class="lc-gmail-care-status"></div>
-    `;
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.value = file.id;
+        input.checked = state.selected.has(file.id);
+        input.addEventListener("change", (event) => {
+          if (event.target.checked) state.selected.add(event.target.value);
+          else state.selected.delete(event.target.value);
+          renderPanel();
+        });
+        row.appendChild(input);
 
-    bindClick(panel, "#lc-gmail-care-close", closePanel);
-    bindClick(panel, "#lc-gmail-care-refresh", loadFiles);
-    bindClick(panel, "#lc-gmail-care-insert", insertSelected);
-    panel.querySelectorAll("input[type='checkbox']").forEach((input) => {
-      input.addEventListener("change", (event) => {
-        if (event.target.checked) state.selected.add(event.target.value);
-        else state.selected.delete(event.target.value);
-        renderPanel();
+        const name = document.createElement("span");
+        name.title = file.name;
+        name.textContent = file.name;
+        row.appendChild(name);
+        list.appendChild(row);
       });
-    });
+    }
+    panel.appendChild(list);
+
+    const actions = document.createElement("div");
+    actions.className = "lc-gmail-care-actions";
+
+    const refresh = document.createElement("button");
+    refresh.type = "button";
+    refresh.id = "lc-gmail-care-refresh";
+    refresh.textContent = "Refresh";
+    refresh.addEventListener("click", loadFiles);
+    actions.appendChild(refresh);
+
+    const insert = document.createElement("button");
+    insert.type = "button";
+    insert.id = "lc-gmail-care-insert";
+    insert.disabled = state.busy || !state.selected.size;
+    insert.textContent = `Insert ${state.selected.size || ""}`.trim();
+    insert.addEventListener("click", insertSelected);
+    actions.appendChild(insert);
+    panel.appendChild(actions);
+
+    const status = document.createElement("div");
+    status.id = "lc-gmail-care-guides-status";
+    status.className = "lc-gmail-care-status";
+    panel.appendChild(status);
   }
 
   async function loadFiles() {
@@ -190,16 +232,28 @@
     const files = state.files.filter((file) => state.selected.has(file.id));
     if (!files.length) return;
 
-    const items = files
-      .map((file) => `<li><a href="${escapeHtml(file.downloadUrl)}" target="_blank">${escapeHtml(file.name)}</a></li>`)
-      .join("");
-    const html = `
-      <div><br></div>
-      <div><strong>Care guides:</strong></div>
-      <ul>${items}</ul>
-    `;
+    const wrapper = document.createElement("div");
+    wrapper.appendChild(document.createElement("br"));
 
-    if (insertHtmlIntoCompose(html)) {
+    const label = document.createElement("div");
+    const strong = document.createElement("strong");
+    strong.textContent = "Care guides:";
+    label.appendChild(strong);
+    wrapper.appendChild(label);
+
+    const list = document.createElement("ul");
+    files.forEach((file) => {
+      const item = document.createElement("li");
+      const link = document.createElement("a");
+      link.href = file.downloadUrl;
+      link.target = "_blank";
+      link.textContent = file.name;
+      item.appendChild(link);
+      list.appendChild(item);
+    });
+    wrapper.appendChild(list);
+
+    if (insertNodeIntoCompose(wrapper)) {
       state.selected.clear();
       closePanel();
     }
@@ -208,14 +262,7 @@
   function openPanel() {
     state.open = true;
     const panel = ensurePanel();
-    panel.innerHTML = `
-      <div class="lc-gmail-care-head">
-        <strong>Care Guides</strong>
-        <button type="button" id="lc-gmail-care-close" title="Close">x</button>
-      </div>
-      <div class="lc-gmail-care-empty">Opening guides...</div>
-    `;
-    bindClick(panel, "#lc-gmail-care-close", closePanel);
+    panel.replaceChildren(createHeader(), createEmpty("Opening guides..."));
     positionPanel(panel);
     window.requestAnimationFrame(() => {
       try {
@@ -223,14 +270,7 @@
         positionPanel(panel);
         if (!state.loaded) loadFiles();
       } catch (error) {
-        panel.innerHTML = `
-          <div class="lc-gmail-care-head">
-            <strong>Care Guides</strong>
-            <button type="button" id="lc-gmail-care-close" title="Close">x</button>
-          </div>
-          <div class="lc-gmail-care-empty">Could not open guides: ${escapeHtml(error.message || error)}</div>
-        `;
-        bindClick(panel, "#lc-gmail-care-close", closePanel);
+        panel.replaceChildren(createHeader(), createEmpty(`Could not open guides: ${error.message || error}`));
         positionPanel(panel);
       }
     });
