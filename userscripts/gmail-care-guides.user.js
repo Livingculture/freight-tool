@@ -1,16 +1,16 @@
 // ==UserScript==
 // @name         Gmail Living Culture Care Guides
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.4
-// @description  Inserts Living Culture care guide download links into Gmail compose windows.
+// @version      0.1.5
+// @description  Attaches Living Culture care guide PDFs to Gmail compose windows.
 // @author       Living Culture
 // @match        https://mail.google.com/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_registerMenuCommand
 // @connect      cin7-pdf-attachments.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.4
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.4
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.5
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.5
 // ==/UserScript==
 
 (function () {
@@ -61,6 +61,27 @@
     });
   }
 
+  function downloadPdf(file) {
+    return new Promise((resolve, reject) => {
+      GM_xmlhttpRequest({
+        method: "GET",
+        url: file.downloadUrl,
+        responseType: "arraybuffer",
+        onload(response) {
+          if (response.status < 200 || response.status >= 300) {
+            reject(new Error(`${file.name} download returned HTTP ${response.status}.`));
+            return;
+          }
+          const blob = new Blob([response.response], { type: "application/pdf" });
+          resolve(new File([blob], file.name, { type: "application/pdf" }));
+        },
+        onerror() {
+          reject(new Error(`Could not download ${file.name}.`));
+        },
+      });
+    });
+  }
+
   function activeComposeBody() {
     const bodies = Array.from(
       document.querySelectorAll('div[aria-label="Message Body"][contenteditable="true"], div[role="textbox"][contenteditable="true"]'),
@@ -70,6 +91,11 @@
       const style = window.getComputedStyle(body);
       return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
     });
+  }
+
+  function activeComposeRoot() {
+    const body = activeComposeBody();
+    return body?.closest('div[role="dialog"], div[aria-label="Message Body"]') || body;
   }
 
   function insertNodeIntoCompose(node) {
@@ -192,11 +218,19 @@
     refresh.addEventListener("click", loadFiles);
     actions.appendChild(refresh);
 
+    const attach = document.createElement("button");
+    attach.type = "button";
+    attach.id = "lc-gmail-care-attach";
+    attach.disabled = state.busy || !state.selected.size;
+    attach.textContent = `Attach ${state.selected.size || ""}`.trim();
+    attach.addEventListener("click", attachSelected);
+    actions.appendChild(attach);
+
     const insert = document.createElement("button");
     insert.type = "button";
     insert.id = "lc-gmail-care-insert";
     insert.disabled = state.busy || !state.selected.size;
-    insert.textContent = `Insert ${state.selected.size || ""}`.trim();
+    insert.textContent = "Insert links";
     insert.addEventListener("click", insertSelected);
     actions.appendChild(insert);
     panel.appendChild(actions);
@@ -225,6 +259,55 @@
     } finally {
       state.busy = false;
       renderPanel();
+    }
+  }
+
+  async function attachSelected() {
+    const files = state.files.filter((file) => state.selected.has(file.id));
+    if (!files.length) return;
+
+    const composeRoot = activeComposeRoot();
+    if (!composeRoot) {
+      window.alert("Open a Gmail compose or reply box first.");
+      return;
+    }
+
+    state.busy = true;
+    renderPanel();
+    setStatus(`Downloading ${files.length} guide${files.length === 1 ? "" : "s"}...`);
+    let resultMessage = "";
+    let shouldClose = false;
+
+    try {
+      const downloaded = [];
+      for (const file of files) {
+        setStatus(`Downloading ${file.name}...`);
+        downloaded.push(await downloadPdf(file));
+      }
+
+      const inputs = Array.from(composeRoot.querySelectorAll('input[type="file"]'));
+      const allInputs = inputs.length ? inputs : Array.from(document.querySelectorAll('input[type="file"]'));
+      const fileInput = allInputs.reverse().find((input) => !input.disabled);
+      if (!fileInput) {
+        throw new Error("Could not find Gmail's attachment input. Click the Gmail paperclip once, then try Attach again.");
+      }
+
+      const dataTransfer = new DataTransfer();
+      downloaded.forEach((file) => dataTransfer.items.add(file));
+      fileInput.files = dataTransfer.files;
+      fileInput.dispatchEvent(new Event("input", { bubbles: true }));
+      fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+
+      resultMessage = `Attached ${downloaded.length} guide${downloaded.length === 1 ? "" : "s"}.`;
+      state.selected.clear();
+      shouldClose = true;
+    } catch (error) {
+      resultMessage = error.message || String(error);
+    } finally {
+      state.busy = false;
+      renderPanel();
+      if (resultMessage) setStatus(resultMessage);
+      if (shouldClose) window.setTimeout(closePanel, 900);
     }
   }
 
@@ -369,7 +452,7 @@
         font: 700 12px Arial, sans-serif;
         cursor: pointer;
       }
-      .lc-gmail-care-actions #lc-gmail-care-insert {
+      .lc-gmail-care-actions #lc-gmail-care-attach {
         background: #0d6f78;
         color: #fff;
       }
