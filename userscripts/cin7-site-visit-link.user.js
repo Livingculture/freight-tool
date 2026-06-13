@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.12.16
+// @version      1.12.17
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.16
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.16
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.17
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.17
 // ==/UserScript==
 
 (function () {
@@ -23,6 +23,7 @@
   const FLOATING_BAR_ID = 'lc-cin7-floating-actions-v1';
   const OVERLAY_ID = 'lc-site-visit-overlay-v2';
   const WORKFLOW_API_URL = 'https://living-culture-workflow.vercel.app/api/site-visits';
+  const REP_OPTIONS_API_URL = 'https://living-culture-workflow.vercel.app/api/rep-options';
   const QUOTE_REVIEW_API_URL = 'https://living-culture-workflow.vercel.app/api/quote-reviews';
   const WORKFLOW_PLANNER_URL = 'https://living-culture-workflow.vercel.app/';
   const HUBSPOT_API_URL = 'https://living-culture-workflow.vercel.app/api/hubspot/create-deal';
@@ -41,6 +42,8 @@
     ['NPE', 'NPE · Napier']
   ];
   let apiProductCache = [];
+  let workflowRepOptions = [];
+  let repOptionsLoadPromise = null;
   let siteVisitBookingsCache = { key: '', bookings: [] };
   let delegatedClickHandlerInstalled = false;
   let lastHandledAction = { id: '', at: 0 };
@@ -473,6 +476,76 @@
 
   function visitorCount(value) {
     return visitorNameParts(value).length;
+  }
+
+  function singleVisitByOptions() {
+    const names = workflowRepOptions.length ? workflowRepOptions : VISIT_BY;
+    const seen = new Set();
+    return names
+      .flatMap(visitorNameParts)
+      .map(clean)
+      .filter(Boolean)
+      .filter((name) => {
+        const key = normaliseVisitorName(name);
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .sort((left, right) => left.localeCompare(right));
+  }
+
+  function visitByOptions(exclude = '') {
+    const excluded = normaliseVisitorName(exclude);
+    return [''].concat(singleVisitByOptions().filter((name) => normaliseVisitorName(name) !== excluded));
+  }
+
+  function selectedVisitBy() {
+    const first = clean(field('lcSvVisitBy')?.value || '');
+    const second = clean(field('lcSvVisitBy2')?.value || '');
+    return Array.from(new Set([first, second].filter(Boolean))).join(' / ');
+  }
+
+  function setSelectOptions(select, options, blankLabel, currentValue = '') {
+    if (!select) return;
+    select.innerHTML = options.map((value) => {
+      const label = value || blankLabel;
+      return `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`;
+    }).join('');
+    if (options.includes(currentValue)) select.value = currentValue;
+  }
+
+  function refreshVisitBySelects() {
+    const first = field('lcSvVisitBy');
+    const second = field('lcSvVisitBy2');
+    const firstValue = clean(first?.value || '');
+    const secondValue = clean(second?.value || '');
+    setSelectOptions(first, visitByOptions(secondValue), 'Visit by', firstValue);
+    setSelectOptions(second, visitByOptions(first?.value || ''), 'Second rep (optional)', secondValue);
+  }
+
+  function loadRepOptions() {
+    if (repOptionsLoadPromise) return repOptionsLoadPromise;
+    repOptionsLoadPromise = new Promise((resolve) => {
+      GM_xmlhttpRequest({
+        method: 'GET',
+        url: REP_OPTIONS_API_URL,
+        onload: (response) => {
+          try {
+            const data = JSON.parse(response.responseText || '{}');
+            const reps = Array.isArray(data.reps) ? data.reps.map(clean).filter(Boolean) : [];
+            if (response.status >= 200 && response.status < 300 && reps.length) {
+              workflowRepOptions = Array.from(new Set(reps)).sort((left, right) => left.localeCompare(right));
+              refreshVisitBySelects();
+            }
+          } catch (_error) {
+            // Keep the built-in fallback list if Workflow is not reachable or login is required.
+          }
+          resolve(workflowRepOptions);
+        },
+        onerror: () => resolve(workflowRepOptions)
+      });
+    });
+    return repOptionsLoadPromise;
   }
 
   function sameVisitor(left, right) {
@@ -984,7 +1057,11 @@
     field('lcSvTime').value = data.time || '';
     field('lcSvOrder').value = data.orderId || '';
     field('lcSvPlacedBy').value = data.placedBy || '';
-    field('lcSvVisitBy').value = data.visitBy || '';
+    refreshVisitBySelects();
+    const visitors = visitorNameParts(data.visitBy || '');
+    field('lcSvVisitBy').value = visitors[0] || '';
+    refreshVisitBySelects();
+    field('lcSvVisitBy2').value = visitors[1] || '';
     field('lcSvCustomer').value = data.customerName || '';
     field('lcSvAddress').value = data.address || '';
     field('lcSvPhone').value = data.phone || '';
@@ -1084,7 +1161,7 @@
   function refreshSiteVisitBookings() {
     const dateValue = field('lcSvDate')?.value || localDateKey();
     const branchValue = field('lcSvArea')?.value || '';
-    const visitByValue = field('lcSvVisitBy')?.value || '';
+    const visitByValue = selectedVisitBy();
     const key = bookingsCacheKey(dateValue, branchValue, visitByValue);
     if (siteVisitBookingsCache.key === key) {
       updateTimeOptionAvailability(siteVisitBookingsCache.bookings);
@@ -1117,7 +1194,7 @@
       time: clean(field('lcSvTime').value),
       orderId: clean(field('lcSvOrder').value),
       placedBy: clean(field('lcSvPlacedBy').value),
-      visitBy: clean(field('lcSvVisitBy').value),
+      visitBy: selectedVisitBy(),
       customerName: clean(field('lcSvCustomer').value),
       address: clean(field('lcSvAddress').value),
       phone: clean(field('lcSvPhone').value),
@@ -1201,7 +1278,10 @@
           <h3>New site visit card</h3>
         </div>
         <form id="lcSvForm" class="lc-sv-body">
-          <div class="lc-sv-field"><label>Visit By</label><select id="lcSvVisitBy">${VISIT_BY.map((s) => `<option value="${s}">${s || '—'}</option>`).join('')}</select></div>
+          <div class="lc-sv-grid">
+            <div class="lc-sv-field"><label>Visit By</label><select id="lcSvVisitBy"></select></div>
+            <div class="lc-sv-field"><label>Second Rep</label><select id="lcSvVisitBy2"></select></div>
+          </div>
           <div class="lc-sv-grid">
             <div class="lc-sv-field"><label>Status</label><select id="lcSvStatus">${POPUP_STATUSES.map((s) => `<option>${s}</option>`).join('')}</select></div>
             <div class="lc-sv-field"><label>LC Branch</label><select id="lcSvArea">${LC_BRANCHES.map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select></div>
@@ -1245,7 +1325,14 @@
       refreshSiteVisitBookings();
     });
     field('lcSvArea').addEventListener('change', refreshSiteVisitBookings);
-    field('lcSvVisitBy').addEventListener('change', refreshSiteVisitBookings);
+    field('lcSvVisitBy').addEventListener('change', () => {
+      refreshVisitBySelects();
+      refreshSiteVisitBookings();
+    });
+    field('lcSvVisitBy2').addEventListener('change', () => {
+      refreshVisitBySelects();
+      refreshSiteVisitBookings();
+    });
     field('lcSvTimeButton').addEventListener('click', () => {
       const menu = field('lcSvTimeMenu');
       const button = field('lcSvTimeButton');
@@ -1260,6 +1347,8 @@
       if (event.target === overlay) closePanel();
     });
     renderTimeOptions([]);
+    refreshVisitBySelects();
+    void loadRepOptions();
     updateSubmitButtonLabel();
   }
 
