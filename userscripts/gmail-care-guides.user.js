@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Living Culture Care Guides
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.2
+// @version      0.1.3
 // @description  Inserts Living Culture care guide download links into Gmail compose windows.
 // @author       Living Culture
 // @match        https://mail.google.com/*
@@ -9,8 +9,8 @@
 // @grant        GM_registerMenuCommand
 // @connect      cin7-pdf-attachments.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.2
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.2
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.3
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.3
 // ==/UserScript==
 
 (function () {
@@ -97,13 +97,34 @@
     if (status) status.textContent = message;
   }
 
-  function renderPanel() {
+  function ensurePanel() {
     let panel = document.getElementById(PANEL_ID);
     if (!panel) {
       panel = document.createElement("div");
       panel.id = PANEL_ID;
       document.body.appendChild(panel);
     }
+    return panel;
+  }
+
+  function positionPanel(panel) {
+    document.body.appendChild(panel);
+    panel.style.setProperty("left", "50%", "important");
+    panel.style.setProperty("top", "50%", "important");
+    panel.style.setProperty("right", "auto", "important");
+    panel.style.setProperty("bottom", "auto", "important");
+    panel.style.setProperty("transform", "translate(-50%, -50%)", "important");
+    panel.style.setProperty("display", "block", "important");
+    panel.style.setProperty("z-index", "2147483647", "important");
+  }
+
+  function bindClick(panel, selector, handler) {
+    const element = panel.querySelector(selector);
+    if (element) element.addEventListener("click", handler);
+  }
+
+  function renderPanel() {
+    const panel = ensurePanel();
 
     const filesMarkup = state.files.length
       ? state.files
@@ -132,9 +153,9 @@
       <div id="lc-gmail-care-guides-status" class="lc-gmail-care-status"></div>
     `;
 
-    panel.querySelector("#lc-gmail-care-close").addEventListener("click", closePanel);
-    panel.querySelector("#lc-gmail-care-refresh").addEventListener("click", loadFiles);
-    panel.querySelector("#lc-gmail-care-insert").addEventListener("click", insertSelected);
+    bindClick(panel, "#lc-gmail-care-close", closePanel);
+    bindClick(panel, "#lc-gmail-care-refresh", loadFiles);
+    bindClick(panel, "#lc-gmail-care-insert", insertSelected);
     panel.querySelectorAll("input[type='checkbox']").forEach((input) => {
       input.addEventListener("change", (event) => {
         if (event.target.checked) state.selected.add(event.target.value);
@@ -186,19 +207,33 @@
 
   function openPanel() {
     state.open = true;
-    renderPanel();
-    const panel = document.getElementById(PANEL_ID);
-    if (panel) {
-      document.body.appendChild(panel);
-      panel.style.setProperty("left", "50%", "important");
-      panel.style.setProperty("top", "50%", "important");
-      panel.style.setProperty("right", "auto", "important");
-      panel.style.setProperty("bottom", "auto", "important");
-      panel.style.setProperty("transform", "translate(-50%, -50%)", "important");
-      panel.style.setProperty("display", "block", "important");
-      panel.style.setProperty("z-index", "2147483647", "important");
-    }
-    if (!state.loaded) loadFiles();
+    const panel = ensurePanel();
+    panel.innerHTML = `
+      <div class="lc-gmail-care-head">
+        <strong>Care Guides</strong>
+        <button type="button" id="lc-gmail-care-close" title="Close">x</button>
+      </div>
+      <div class="lc-gmail-care-empty">Opening guides...</div>
+    `;
+    bindClick(panel, "#lc-gmail-care-close", closePanel);
+    positionPanel(panel);
+    window.requestAnimationFrame(() => {
+      try {
+        renderPanel();
+        positionPanel(panel);
+        if (!state.loaded) loadFiles();
+      } catch (error) {
+        panel.innerHTML = `
+          <div class="lc-gmail-care-head">
+            <strong>Care Guides</strong>
+            <button type="button" id="lc-gmail-care-close" title="Close">x</button>
+          </div>
+          <div class="lc-gmail-care-empty">Could not open guides: ${escapeHtml(error.message || error)}</div>
+        `;
+        bindClick(panel, "#lc-gmail-care-close", closePanel);
+        positionPanel(panel);
+      }
+    });
   }
 
   function closePanel() {
@@ -329,11 +364,16 @@
       if (now - lastToggleAt < 250) return;
       lastToggleAt = now;
       button.textContent = state.open ? "Care Guides" : "Opening...";
-      if (state.open) closePanel();
-      else openPanel();
       window.setTimeout(() => {
         button.textContent = "Care Guides";
       }, 400);
+      try {
+        if (state.open) closePanel();
+        else openPanel();
+      } catch (error) {
+        button.textContent = "Care Guides";
+        window.alert(`Care Guides could not open: ${error.message || error}`);
+      }
     };
     button.addEventListener("pointerdown", toggle, true);
     button.addEventListener("mousedown", toggle, true);
