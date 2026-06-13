@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Living Culture Care Guides
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.5
+// @version      0.1.6
 // @description  Attaches Living Culture care guide PDFs to Gmail compose windows.
 // @author       Living Culture
 // @match        https://mail.google.com/*
@@ -9,8 +9,8 @@
 // @grant        GM_registerMenuCommand
 // @connect      cin7-pdf-attachments.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.5
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.5
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.6
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.6
 // ==/UserScript==
 
 (function () {
@@ -226,13 +226,6 @@
     attach.addEventListener("click", attachSelected);
     actions.appendChild(attach);
 
-    const insert = document.createElement("button");
-    insert.type = "button";
-    insert.id = "lc-gmail-care-insert";
-    insert.disabled = state.busy || !state.selected.size;
-    insert.textContent = "Insert links";
-    insert.addEventListener("click", insertSelected);
-    actions.appendChild(insert);
     panel.appendChild(actions);
 
     const status = document.createElement("div");
