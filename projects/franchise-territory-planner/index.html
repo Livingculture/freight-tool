@@ -558,7 +558,15 @@
                 <div class="field"><label for="localMarketing">Local marketing / year</label><input id="localMarketing" type="number" step="5000" value="10000" /></div>
                 <div class="field"><label for="fitoutCost">Fitout + equipment per store</label><input id="fitoutCost" type="number" step="25000" value="150000" /></div>
                 <div class="field"><label for="stockCost">Opening stock per store</label><input id="stockCost" type="number" step="25000" value="100000" /></div>
-                <div class="field"><label for="franchiseFee">Franchise / territory fee per store</label><input id="franchiseFee" type="number" step="10000" value="75000" /></div>
+                <div class="field">
+                  <label for="franchiseFeeMode">Franchise fee basis</label>
+                  <select id="franchiseFeeMode">
+                    <option value="population" selected>Population-linked fee</option>
+                    <option value="fixed">Fixed manual fee</option>
+                  </select>
+                </div>
+                <div class="field"><label for="franchiseFee">Base franchise / territory fee per store</label><input id="franchiseFee" type="number" step="10000" value="75000" /></div>
+                <div class="field"><label for="populationFeePremium">Population premium per 100,000 people</label><input id="populationFeePremium" type="number" step="1000" value="10000" /></div>
                 <div class="field"><label for="launchCost">Launch marketing + training</label><input id="launchCost" type="number" step="5000" value="60000" /></div>
               </div>
             </div>
@@ -740,6 +748,7 @@
       financialSummary: document.getElementById('financialSummary'),
       financeTable: document.getElementById('financeTable'),
       currencySelect: document.getElementById('currencySelect'),
+      franchiseFeeMode: document.getElementById('franchiseFeeMode'),
       applicationSnapshot: document.getElementById('applicationSnapshot'),
       heroArea: document.getElementById('heroArea'),
       heroStores: document.getElementById('heroStores'),
@@ -749,7 +758,7 @@
       toast: document.getElementById('toast')
     };
 
-    const financeInputIds = ['turnoverPerStore','grossMargin','royalty','marketingLevy','staffCost','rentCost','operatingCost','localMarketing','fitoutCost','stockCost','franchiseFee','launchCost'];
+    const financeInputIds = ['turnoverPerStore','grossMargin','royalty','marketingLevy','staffCost','rentCost','operatingCost','localMarketing','fitoutCost','stockCost','franchiseFeeMode','franchiseFee','populationFeePremium','launchCost'];
     const financeInputs = financeInputIds.reduce((acc, id) => ({ ...acc, [id]: document.getElementById(id) }), {});
 
     let map, selectedMarker, radiusCircle, radiusLabelMarker, centerLabelMarker, showroomLayer;
@@ -1097,18 +1106,21 @@
       const annualOperatingCosts = costOfGoods + royaltyCost + marketingCost + fixedOperating;
       const ebitda = grossProfit - royaltyCost - marketingCost - fixedOperating;
       const ebitdaMargin = annualRevenue > 0 ? ebitda / annualRevenue : 0;
-      const initialInvestment = stores * (val('fitoutCost') + val('stockCost') + val('franchiseFee') + val('launchCost'));
+      const franchiseFee = calculateFranchiseFeePerStore(stores);
+      const franchiseFeeTotal = stores * franchiseFee.fee;
+      const initialInvestment = stores * (val('fitoutCost') + val('stockCost') + val('launchCost')) + franchiseFeeTotal;
       const payback = ebitda > 0 ? initialInvestment / ebitda : Infinity;
       const lowEbitda = calcScenario(turnoverPerStore * 0.8, stores);
       const highEbitda = calcScenario(turnoverPerStore * 1.2, stores);
       const currency = els.currencySelect.value;
 
-      state.latestFinancials = { stores, turnoverPerStore, annualRevenue, costOfGoods, grossProfit, royaltyCost, marketingCost, fixedOperating, annualOperatingCosts, ebitda, ebitdaMargin, initialInvestment, payback, lowEbitda, highEbitda, currency };
+      state.latestFinancials = { stores, turnoverPerStore, annualRevenue, costOfGoods, grossProfit, royaltyCost, marketingCost, fixedOperating, annualOperatingCosts, ebitda, ebitdaMargin, franchiseFeePerStore: franchiseFee.fee, franchiseFeeTotal, franchiseFeeFormula: franchiseFee.formula, initialInvestment, payback, lowEbitda, highEbitda, currency };
 
       els.financeMetrics.innerHTML = `
         ${metric('Annual revenue', moneyFormat(annualRevenue), `${whole.format(stores)} store${stores === 1 ? '' : 's'} × ${moneyFormat(turnoverPerStore)}`)}
         ${metric('Annual operating cost', moneyFormat(annualOperatingCosts), 'COGS + royalties + fixed costs')}
         ${metric('Indicative EBITDA', `<span class="${ebitda >= 0 ? 'profit-positive' : 'profit-negative'}">${moneyFormat(ebitda)}</span>`, `${pct.format(ebitdaMargin)} EBITDA margin`)}
+        ${metric('Franchise fee / store', moneyFormat(franchiseFee.fee), franchiseFee.formula)}
         ${metric('Initial investment', moneyFormat(initialInvestment), isFinite(payback) ? `${payback.toFixed(1)} year payback` : 'No payback at current assumptions')}
       `;
 
@@ -1124,6 +1136,7 @@
         ['National marketing levy', `${val('marketingLevy')}% of revenue`, -marketingCost],
         ['Fixed operating costs', 'staff + rent + other + local marketing', -fixedOperating],
         ['Indicative EBITDA', 'gross profit − operating costs', ebitda],
+        ['Franchise fee total', `${whole.format(stores)} × ${moneyFormat(franchiseFee.fee)}`, -franchiseFeeTotal],
         ['Initial investment', 'fitout + stock + franchise fee + launch', -initialInvestment]
       ];
       els.financeTable.innerHTML = rows.map(([name, formula, amount]) => `<tr><td>${name}</td><td>${formula}</td><td class="${amount >= 0 ? 'profit-positive' : 'profit-negative'}">${moneyFormat(amount)}</td></tr>`).join('');
@@ -1147,6 +1160,25 @@
       return grossProfit - royaltyCost - marketingCost - fixedOperating;
     }
 
+    function calculateFranchiseFeePerStore(stores) {
+      const baseFee = val('franchiseFee');
+      if (els.franchiseFeeMode.value === 'fixed') {
+        return { fee: baseFee, formula: 'Fixed manual fee' };
+      }
+
+      const population = els.usePopulationBasis.value === 'catchment' ? state.catchmentPopulation : state.selected.population;
+      const populationPerStore = population / Math.max(1, stores);
+      const minimumPopulation = Number(els.minimumPopulation.value) || 0;
+      const premiumPer100k = val('populationFeePremium');
+      const extraPopulation = Math.max(0, populationPerStore - minimumPopulation);
+      const premium = (extraPopulation / 100000) * premiumPer100k;
+      const fee = Math.round((baseFee + premium) / 1000) * 1000;
+      return {
+        fee,
+        formula: `${moneyFormat(baseFee)} base + ${moneyFormat(premiumPer100k)} per 100k people above ${whole.format(minimumPopulation)}`
+      };
+    }
+
     function updateApplicationSnapshot() {
       const f = state.latestFinancials;
       if (!f) return;
@@ -1158,6 +1190,7 @@
         <strong>Population basis:</strong> ${basis}; ${whole.format(els.usePopulationBasis.value === 'catchment' ? state.catchmentPopulation : state.selected.population)} people<br>
         <strong>Suggested store count:</strong> ${whole.format(f.stores)}<br>
         <strong>Turnover assumption:</strong> ${moneyFormat(f.turnoverPerStore)} per store<br>
+        <strong>Franchise fee:</strong> ${moneyFormat(f.franchiseFeePerStore)} per store<br>
         <strong>Indicative EBITDA:</strong> ${moneyFormat(f.ebitda)} (${pct.format(f.ebitdaMargin)})<br>
         <strong>Initial investment:</strong> ${moneyFormat(f.initialInvestment)}<br>
         <strong>Population source:</strong> ${escapeHtml(state.catchmentSource)}
@@ -1287,6 +1320,8 @@
         `Suggested stores: ${whole.format(f.stores)}`,
         `Currency: ${f.currency}`,
         `Turnover per store: ${moneyFormat(f.turnoverPerStore)}`,
+        `Franchise fee per store: ${moneyFormat(f.franchiseFeePerStore)}`,
+        `Franchise fee formula: ${f.franchiseFeeFormula}`,
         `Annual revenue: ${moneyFormat(f.annualRevenue)}`,
         `Annual operating costs: ${moneyFormat(f.annualOperatingCosts)}`,
         `Indicative EBITDA: ${moneyFormat(f.ebitda)} (${pct.format(f.ebitdaMargin)})`,
@@ -1313,6 +1348,9 @@
         ['population_source', state.catchmentSource],
         ['suggested_stores', f.stores],
         ['turnover_per_store', f.turnoverPerStore],
+        ['franchise_fee_per_store', Math.round(f.franchiseFeePerStore)],
+        ['franchise_fee_total', Math.round(f.franchiseFeeTotal)],
+        ['franchise_fee_formula', f.franchiseFeeFormula],
         ['annual_revenue', Math.round(f.annualRevenue)],
         ['annual_operating_costs', Math.round(f.annualOperatingCosts)],
         ['ebitda', Math.round(f.ebitda)],
