@@ -111,6 +111,17 @@ The hosted service uses the existing Express freight endpoints on Vercel. When d
 
 The hosted API only enables browser access from Cin7, Cin7 Core, Dear Systems and local development pages. Do not expose the hosted domain broadly; browser automation has Vercel compute cost.
 
+## Separate Vercel Projects
+
+This repository also contains a standalone franchise territory planner at [projects/franchise-territory-planner](./projects/franchise-territory-planner).
+
+Use two Vercel projects from the same GitHub repository:
+
+- Freight costing API: root directory `.`.
+- Franchise territory planner: root directory `projects/franchise-territory-planner`.
+
+This keeps the public franchise sales page separate from the freight automation service.
+
 ### HubSpot Deal Creation
 
 The Cin7 site-visit userscript also adds a `HubSpot Deal` button on Simple Sale pages. The button sends the visible Cin7 customer and sale details to the hosted backend, and the backend creates or reuses a HubSpot contact before creating the deal.

@@ -1,0 +1,1412 @@
+i am putting to gether a francihesee system for living culture, i want it as a html as a separate project in vercel, basically a page for how a fracchises work with living culture  you will have to look up alot of pages to get a plan and a sales page to help purchasers throught the process, i want to have a selectable area which then looks up the population of that area and a radius that can be set so we may have more than 1 store if a city has over 600000 population and  a  cost and profit   so can put in turnover and for the population and it will work out cost and profit for that area
+
+I’ll shape this into a Vercel-ready franchise mini site with a sales/process page and an interactive territory, population, store-count, cost, and profit calculator. I’ll also ground it in practical franchise-page structure and population-data options.
+
+I’ve confirmed the brand context and showroom footprint, and I’ll frame the calculator as scenario-based with clear estimate/disclosure wording. For population lookup, I’ll use seed data plus manual override first.
+
+Thought for 9m 36s
+
+Done — I built a Vercel-ready static HTML project for the Living Culture franchise / territory calculator concept.
+
+Files:
+
+Download the full Vercel project ZIP
+
+Open the main HTML file
+
+Open the README
+
+I based the page structure on Living Culture’s public positioning as an outdoor living and shade supplier across NZ/Australia, with showroom-led product categories like outdoor furniture, pergolas, shade and custom outdoor solutions. I also used their current showroom footprint as the basis for “existing presence” flags in the territory planner, including Auckland, Hamilton, Tauranga, Napier, Christchurch and Whangārei. The purchaser support story borrows from the public trade-program style: trade pricing, expert support, CAD/resources, custom engineered solutions and priority quote turnarounds.
+
+What’s included:
+
+A franchise-style sales page for prospective purchasers.
+A “how the process works” journey from enquiry through launch.
+A selectable NZ area dropdown.
+Interactive map with radius circle.
+Manual / international area mode.
+Population-per-store rule, defaulted to 600,000 people per store.
+Suggested store count, so a large area like Auckland can show more than one store.
+Turnover, cost, profit, EBITDA, investment and payback calculator.
+CSV export, copy summary, print/save PDF, and email-enquiry button.
+Vercel deployment files: index.html, package.json, vercel.json, .gitignore, README.md.
+
+For population, I used a practical first-version approach. The page has built-in seed data so it works immediately, and it also attempts a live New Zealand radius population lookup using a public ArcGIS layer derived from Stats NZ population estimates. Stats NZ’s subnational population series covers territorial authorities, urban areas, SA2 and SA3 areas, and its estimates are designed for local planning, market growth and consumer-needs analysis. The ArcGIS layer exposes 2024 population fields and supports query-with-distance, which is why it is a good prototype source for a radius-based tool.
+
+The README includes deployment instructions and next-step notes. The main thing I would improve before publishing commercially is adding a small Vercel serverless API route to proxy the population lookup, then replacing the starter population data and financial assumptions with approved Living Culture franchise figures. Territory planning should also consider demographics, competitors and overlap, not just a simple radius, because franchise territory mapping is normally used to define operating areas, reduce cannibalisation and set clear expectations between franchisees.
+
+the map doesnt show very well and it should show the approx radius, also i want australia as well, see image some figures dont fit in boxes
+Thought for 18m 47s
+
+Thanks for the screenshot — I’ve updated the project so the figures fit properly, the map is much clearer, and Australia is now included.
+
+Download the updated Vercel project ZIP
+
+Open the updated HTML file
+
+Open the updated README
+
+What I changed:
+
+Fixed the result boxes so large values like $1,800,000 and $1,503,000 no longer get cut off.
+Improved the map so it automatically zooms to the selected territory.
+Added a visible approximate radius circle with a label such as “≈ 40 km radius”.
+Added New Zealand / Australia filtering.
+Added Australian starter markets including Sydney, Melbourne, Brisbane, Perth, Adelaide, Canberra, Hobart, Darwin, Gold Coast, Sunshine Coast, Newcastle, Wollongong, Geelong, Townsville and Cairns.
+Added country-aware currency, so New Zealand shows NZ$ and Australia shows A$.
+Added a setting so the store count can be based on either the full selected market population or the radius catchment population.
+Kept the default rule as 1 store per 600,000 people, so major cities can automatically show multiple suggested stores.
+
+For the Australia seed data, I used ABS regional population information for capital city and regional population planning; the ABS release covers Australia’s capital cities and regions and includes 2024–25 population estimates. I also kept the page aligned with Living Culture’s public positioning as an outdoor living and shade supplier operating across New Zealand and Australia.
+
+One honest note: the Australia radius population is currently an estimate based on seeded market population and density logic. It works well for a planning/sales prototype, but the production version should ideally connect to an ABS SA2/SA3 dataset or a small Vercel API endpoint for more accurate radius population lookups.
+
+<!doctype html>
+<html lang="en-NZ">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Living Culture Franchise Territory Planner</title>
+  <meta name="description" content="Purchaser-facing Living Culture franchise page with NZ and Australia territory, radius, store-count and profit calculator." />
+  <meta name="theme-color" content="#16382f" />
+  <link rel="preconnect" href="https://unpkg.com" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQwCC8qKfbF2VMlycIRyrwPccx8B7sE=" crossorigin="" />
+  <style>
+    :root {
+      --forest: #16382f;
+      --forest-2: #215345;
+      --sage: #e7efe7;
+      --sage-2: #cadccf;
+      --cream: #fbf8f1;
+      --sand: #eee2ce;
+      --terracotta: #bc6f4c;
+      --ink: #17211d;
+      --muted: #5e6964;
+      --white: #ffffff;
+      --line: rgba(22, 56, 47, 0.16);
+      --shadow: 0 22px 70px rgba(17, 43, 36, 0.14);
+      --radius: 28px;
+      --radius-sm: 18px;
+      --max: 1180px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: linear-gradient(180deg, var(--cream), #fff 46%, #f5f1e8 100%);
+      line-height: 1.5;
+      overflow-x: hidden;
+    }
+    a { color: inherit; }
+    button, input, select, textarea { font: inherit; }
+    button { cursor: pointer; }
+
+    .announcement {
+      background: var(--forest);
+      color: rgba(255,255,255,0.92);
+      text-align: center;
+      padding: 0.65rem 1rem;
+      font-size: 0.9rem;
+    }
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      backdrop-filter: blur(18px);
+      background: rgba(251, 248, 241, 0.86);
+      border-bottom: 1px solid rgba(22, 56, 47, 0.1);
+    }
+    .nav-inner {
+      max-width: var(--max);
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.95rem 1.25rem;
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.8rem;
+      text-decoration: none;
+      font-weight: 850;
+      letter-spacing: -0.02em;
+      color: var(--forest);
+      min-width: max-content;
+    }
+    .brand-mark {
+      width: 42px;
+      height: 42px;
+      border-radius: 999px;
+      background: radial-gradient(circle at 34% 28%, #d7e6d8, #2a6655 55%, #16382f 56%);
+      display: grid;
+      place-items: center;
+      box-shadow: 0 12px 24px rgba(22, 56, 47, 0.18);
+    }
+    .brand-mark span { color: var(--white); font-weight: 900; font-size: 0.9rem; letter-spacing: 0.04em; }
+    .links { display: flex; align-items: center; gap: 1rem; color: var(--muted); font-size: 0.93rem; }
+    .links a { text-decoration: none; }
+    .links a:hover { color: var(--forest); }
+    .cta-small, .button {
+      border: 0;
+      background: var(--forest);
+      color: var(--white);
+      border-radius: 999px;
+      padding: 0.78rem 1rem;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      font-weight: 800;
+      box-shadow: 0 10px 24px rgba(22, 56, 47, 0.22);
+    }
+    .button { padding: 1rem 1.25rem; }
+    .cta-small.secondary, .button.alt {
+      background: rgba(22, 56, 47, 0.08);
+      color: var(--forest);
+      box-shadow: none;
+    }
+    .cta-small:hover, .button:hover { transform: translateY(-1px); }
+
+    .hero { position: relative; overflow: hidden; padding: clamp(3.5rem, 7vw, 7.5rem) 1.25rem 3rem; }
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: -20% -10% auto auto;
+      width: 54vw;
+      min-width: 380px;
+      height: 54vw;
+      min-height: 380px;
+      background: radial-gradient(circle, rgba(188,111,76,0.2), rgba(202,220,207,0.28) 45%, rgba(255,255,255,0) 68%);
+      pointer-events: none;
+    }
+    .hero-grid {
+      max-width: var(--max);
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(340px, 0.95fr);
+      align-items: center;
+      gap: clamp(2rem, 5vw, 5rem);
+      position: relative;
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.55rem;
+      background: rgba(33, 83, 69, 0.1);
+      color: var(--forest);
+      border: 1px solid rgba(33, 83, 69, 0.14);
+      padding: 0.5rem 0.78rem;
+      border-radius: 999px;
+      font-size: 0.86rem;
+      font-weight: 750;
+      margin-bottom: 1.15rem;
+    }
+    .dot { width: 8px; height: 8px; background: var(--terracotta); border-radius: 999px; }
+    h1, h2, h3 { line-height: 1.04; letter-spacing: -0.045em; margin: 0; color: var(--forest); }
+    h1 { font-size: clamp(3rem, 7vw, 6.4rem); max-width: 11ch; }
+    h2 { font-size: clamp(2.1rem, 4vw, 4rem); }
+    h3 { font-size: clamp(1.35rem, 2vw, 1.85rem); }
+    .lead { font-size: clamp(1.08rem, 1.7vw, 1.28rem); color: var(--muted); max-width: 680px; margin: 1.25rem 0 1.8rem; }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 0.8rem; align-items: center; }
+    .mini-proof { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.8rem; margin-top: 2rem; max-width: 650px; }
+    .proof-card { border: 1px solid var(--line); background: rgba(255,255,255,0.65); border-radius: 18px; padding: 1rem; }
+    .proof-card strong { display: block; color: var(--forest); font-size: 1.35rem; letter-spacing: -0.03em; }
+    .proof-card span { color: var(--muted); font-size: 0.88rem; }
+    .hero-card {
+      background: linear-gradient(145deg, rgba(22,56,47,0.98), rgba(33,83,69,0.88));
+      color: white;
+      border-radius: 38px;
+      padding: clamp(1.35rem, 3vw, 2rem);
+      box-shadow: var(--shadow);
+      position: relative;
+      overflow: hidden;
+    }
+    .territory-visual {
+      min-height: 315px;
+      border-radius: 28px;
+      background:
+        radial-gradient(circle at 63% 35%, rgba(188,111,76,0.45), transparent 18%),
+        radial-gradient(circle at 54% 48%, rgba(255,255,255,0.12), transparent 18%),
+        repeating-linear-gradient(90deg, rgba(255,255,255,0.045) 0 22px, transparent 22px 44px),
+        linear-gradient(180deg, #355d4e, #1a3d35);
+      border: 1px solid rgba(255,255,255,0.12);
+      position: relative;
+      overflow: hidden;
+    }
+    .territory-visual::after {
+      content: "";
+      position: absolute;
+      width: 170px;
+      height: 170px;
+      border-radius: 999px;
+      border: 3px dashed rgba(255,255,255,0.62);
+      left: 50%;
+      top: 46%;
+      transform: translate(-50%, -50%);
+      background: rgba(255,255,255,0.07);
+    }
+    .territory-badge { position: absolute; left: 1.2rem; right: 1.2rem; bottom: 1.2rem; display: grid; gap: 0.55rem; }
+    .badge-line {
+      background: rgba(255,255,255,0.94);
+      color: var(--forest);
+      border-radius: 18px;
+      padding: 0.8rem 0.9rem;
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      font-weight: 800;
+      box-shadow: 0 18px 42px rgba(0,0,0,0.15);
+    }
+    .badge-line span:first-child { color: var(--muted); font-weight: 650; }
+    .hero-card-copy { position: relative; padding-top: 1.25rem; display: grid; gap: 0.65rem; }
+    .hero-card-copy p { margin: 0; color: rgba(255,255,255,0.74); }
+    .hero-card-copy strong { color: white; }
+
+    section { padding: clamp(3rem, 6vw, 5.8rem) 1.25rem; }
+    .wrap { max-width: var(--max); margin: 0 auto; }
+    .section-head { display: flex; justify-content: space-between; gap: 2rem; align-items: end; margin-bottom: 2rem; }
+    .section-head p { margin: 0; color: var(--muted); max-width: 600px; font-size: 1.05rem; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+    .card {
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.75);
+      border-radius: var(--radius-sm);
+      padding: 1.25rem;
+      box-shadow: 0 12px 34px rgba(22,56,47,0.06);
+      min-width: 0;
+    }
+    .card .icon { width: 46px; height: 46px; border-radius: 15px; background: var(--sage); color: var(--forest); display: grid; place-items: center; font-size: 1.3rem; margin-bottom: 1rem; }
+    .card p, .step p, .note p { color: var(--muted); margin: 0.75rem 0 0; }
+    .pill-list { display: flex; gap: 0.55rem; flex-wrap: wrap; margin-top: 1rem; }
+    .pill { border: 1px solid var(--line); background: rgba(255,255,255,0.72); border-radius: 999px; padding: 0.45rem 0.68rem; font-size: 0.86rem; color: var(--muted); }
+
+    .process { background: linear-gradient(180deg, rgba(231,239,231,0.58), rgba(255,255,255,0.2)); border-block: 1px solid rgba(22,56,47,0.08); }
+    .steps { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0.8rem; }
+    .step { background: var(--white); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 1rem; min-height: 188px; }
+    .step-number { display: inline-grid; place-items: center; width: 38px; height: 38px; border-radius: 999px; background: var(--forest); color: var(--white); font-weight: 900; margin-bottom: 1rem; }
+    .step h3 { font-size: 1.05rem; letter-spacing: -0.02em; }
+    .step p { font-size: 0.92rem; }
+
+    .calculator-shell { display: grid; grid-template-columns: minmax(320px, 0.88fr) minmax(0, 1.12fr); gap: 1rem; align-items: start; }
+    .panel { background: rgba(255,255,255,0.9); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; min-width: 0; }
+    .panel-header { padding: 1.2rem 1.25rem; background: linear-gradient(135deg, rgba(22,56,47,0.95), rgba(33,83,69,0.88)); color: white; }
+    .panel-header h3 { color: white; font-size: 1.45rem; }
+    .panel-header p { margin: 0.45rem 0 0; color: rgba(255,255,255,0.74); }
+    .panel-body { padding: 1.25rem; }
+    .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.9rem; }
+    .form-grid.one { grid-template-columns: 1fr; }
+    .field { display: grid; gap: 0.4rem; min-width: 0; }
+    label { color: var(--forest); font-weight: 800; font-size: 0.88rem; }
+    input, select, textarea { width: 100%; border: 1px solid rgba(22,56,47,0.18); background: #fff; color: var(--ink); border-radius: 14px; padding: 0.82rem 0.9rem; outline: none; }
+    input:focus, select:focus, textarea:focus { border-color: var(--forest-2); box-shadow: 0 0 0 4px rgba(33,83,69,0.09); }
+    input[type="range"] { padding: 0; accent-color: var(--forest); }
+    .field small { color: var(--muted); }
+    .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.8rem 0; border-top: 1px solid rgba(22,56,47,0.08); border-bottom: 1px solid rgba(22,56,47,0.08); margin: 1rem 0; }
+    .toggle-row input { width: auto; transform: scale(1.1); }
+
+    .map-stack { display: grid; gap: 1rem; min-width: 0; }
+    .map-panel { position: relative; }
+    .map-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.9rem 1rem; background: rgba(231,239,231,0.72); border-bottom: 1px solid var(--line); }
+    .map-toolbar strong { color: var(--forest); font-size: 1rem; display: block; }
+    .map-toolbar span { color: var(--muted); font-size: 0.84rem; display: block; }
+    .map-badge { border-radius: 999px; background: var(--forest); color: #fff; padding: 0.55rem 0.75rem; font-size: 0.82rem; font-weight: 850; white-space: nowrap; }
+    #map { width: 100%; height: clamp(460px, 56vw, 620px); min-height: 460px; z-index: 1; background: var(--sage); }
+    .leaflet-container { font: inherit; }
+    .radius-label, .center-label { border-radius: 999px; box-shadow: 0 10px 24px rgba(0,0,0,0.16); font-size: 0.78rem; font-weight: 900; padding: 0.35rem 0.58rem; white-space: nowrap; }
+    .radius-label { background: rgba(22,56,47,0.96); color: #fff; border: 2px solid rgba(255,255,255,0.9); }
+    .center-label { background: rgba(255,255,255,0.96); color: var(--forest); border: 1px solid var(--line); }
+    .results-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 0.75rem; margin: 1rem 0; min-width: 0; }
+    #financeMetrics.results-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 245px), 1fr)); }
+    .metric { background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 1rem; min-height: 118px; min-width: 0; overflow: hidden; }
+    .metric span { display: block; color: var(--muted); font-size: 0.82rem; font-weight: 750; }
+    .metric strong { display: block; margin-top: 0.35rem; color: var(--forest); font-size: clamp(1.25rem, 1.25vw + 0.95rem, 1.95rem); letter-spacing: -0.055em; line-height: 1.05; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+    #financeMetrics .metric strong { font-size: clamp(1.18rem, 1vw + 0.95rem, 1.75rem); }
+    .metric strong span { display: inline; color: inherit; font-size: inherit; }
+    .metric small { color: var(--muted); display: block; margin-top: 0.35rem; line-height: 1.35; overflow-wrap: anywhere; }
+    .status { padding: 0.95rem 1rem; border-radius: 18px; background: rgba(202,220,207,0.5); border: 1px solid var(--line); color: var(--forest); font-weight: 750; margin-top: 1rem; }
+    .status.warning { background: rgba(188,111,76,0.1); color: #7d3f26; }
+    .status.good { background: rgba(33,83,69,0.1); color: var(--forest); }
+    .summary-box { background: #fff; border: 1px solid var(--line); border-radius: 20px; padding: 1rem; color: var(--muted); margin-top: 1rem; }
+    .summary-box strong { color: var(--forest); }
+    .table-wrap { overflow-x: auto; margin-top: 1rem; border: 1px solid var(--line); border-radius: 18px; background: #fff; }
+    table { width: 100%; border-collapse: collapse; min-width: 590px; }
+    th, td { text-align: left; padding: 0.9rem; border-bottom: 1px solid rgba(22,56,47,0.08); }
+    th { color: var(--forest); font-size: 0.85rem; background: rgba(231,239,231,0.55); }
+    td:last-child, th:last-child { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    tr:last-child td { border-bottom: 0; }
+    .profit-positive { color: #236246; font-weight: 900; }
+    .profit-negative { color: #a9472c; font-weight: 900; }
+    .actions-row { display: flex; flex-wrap: wrap; gap: 0.7rem; margin-top: 1rem; }
+    .tiny { font-size: 0.83rem; color: var(--muted); }
+
+    .split { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 1rem; align-items: stretch; }
+    .quote-card { background: var(--forest); color: white; border-radius: var(--radius); padding: clamp(1.5rem, 3vw, 2rem); display: grid; align-content: space-between; min-height: 420px; box-shadow: var(--shadow); position: relative; overflow: hidden; }
+    .quote-card h2 { color: white; }
+    .quote-card p { color: rgba(255,255,255,0.76); font-size: 1.05rem; }
+    .check-list { display: grid; gap: 0.78rem; padding: 0; list-style: none; margin: 0; }
+    .check-list li { display: grid; grid-template-columns: 28px 1fr; gap: 0.7rem; color: var(--muted); align-items: start; }
+    .check-list li::before { content: "✓"; width: 28px; height: 28px; border-radius: 999px; background: rgba(33,83,69,0.1); color: var(--forest); display: grid; place-items: center; font-weight: 900; }
+    .apply { background: linear-gradient(135deg, #183c33, #24594a); color: white; }
+    .apply .section-head h2, .apply label { color: white; }
+    .apply .section-head p { color: rgba(255,255,255,0.74); }
+    .apply .panel { box-shadow: 0 22px 70px rgba(0,0,0,0.18); }
+    .source-note { font-size: 0.82rem; color: rgba(255,255,255,0.66); max-width: var(--max); margin: 2rem auto 0; }
+    footer { padding: 2.2rem 1.25rem; background: #102b25; color: rgba(255,255,255,0.75); }
+    footer .wrap { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+    .toast { position: fixed; left: 50%; bottom: 1.2rem; transform: translateX(-50%) translateY(120px); background: var(--forest); color: white; border-radius: 999px; padding: 0.8rem 1rem; box-shadow: 0 18px 45px rgba(0,0,0,0.22); z-index: 60; transition: transform 0.22s ease; font-weight: 750; }
+    .toast.show { transform: translateX(-50%) translateY(0); }
+
+    @media (max-width: 1060px) {
+      .hero-grid, .calculator-shell, .split { grid-template-columns: 1fr; }
+      .steps { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    @media (max-width: 760px) {
+      .links { display: none; }
+      .mini-proof, .grid-3, .steps, .form-grid { grid-template-columns: 1fr; }
+      .hero-card { border-radius: 28px; }
+      .section-head { display: grid; }
+      .map-toolbar { align-items: flex-start; flex-direction: column; }
+      .map-badge { white-space: normal; }
+      #map { height: 420px; min-height: 420px; }
+      .results-grid { grid-template-columns: 1fr; }
+      h1 { max-width: 100%; }
+    }
+    @media print {
+      .nav, .announcement, .hero-actions, .actions-row, footer { display: none !important; }
+      body { background: #fff; }
+      .panel, .card, .quote-card { box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="announcement">Franchise opportunity concept page + NZ/Australia territory calculator. Figures are indicative and should be reviewed before publishing.</div>
+
+  <nav class="nav" aria-label="Main navigation">
+    <div class="nav-inner">
+      <a class="brand" href="#top" aria-label="Living Culture Franchise Planner home">
+        <span class="brand-mark"><span>LC</span></span>
+        <span>Living Culture Franchise</span>
+      </a>
+      <div class="links" aria-label="Page links">
+        <a href="#opportunity">Opportunity</a>
+        <a href="#system">System</a>
+        <a href="#territory">Territory calculator</a>
+        <a href="#numbers">Numbers</a>
+        <a href="#apply">Apply</a>
+      </div>
+      <a class="cta-small" href="#territory">Check territory →</a>
+    </div>
+  </nav>
+
+  <main id="top">
+    <header class="hero">
+      <div class="hero-grid">
+        <div>
+          <div class="eyebrow"><span class="dot"></span> Showroom-led outdoor living franchise concept</div>
+          <h1>Own the next Living Culture growth territory.</h1>
+          <p class="lead">A purchaser-facing franchise page for candidates who want to build a premium outdoor living showroom territory, backed by product range, trade support, territory planning, and a clear financial model.</p>
+          <div class="hero-actions">
+            <a class="button" href="#territory">Calculate my area</a>
+            <a class="button alt" href="#system">See the process</a>
+          </div>
+          <div class="mini-proof" aria-label="Franchise proof points">
+            <div class="proof-card"><strong>600k</strong><span>default population per showroom rule</span></div>
+            <div class="proof-card"><strong>NZ + AU</strong><span>selectable seed markets with manual mode</span></div>
+            <div class="proof-card"><strong>Full model</strong><span>turnover, costs, profit and payback</span></div>
+          </div>
+        </div>
+        <aside class="hero-card" aria-label="Territory snapshot illustration">
+          <div class="territory-visual">
+            <div class="territory-badge">
+              <div class="badge-line"><span>Selected area</span><b id="heroArea">Auckland</b></div>
+              <div class="badge-line"><span>Suggested stores</span><b id="heroStores">3</b></div>
+            </div>
+          </div>
+          <div class="hero-card-copy">
+            <strong>Built for local operators with a premium showroom mindset.</strong>
+            <p>Use this page to guide buyers from initial interest through territory validation, discovery, documentation and launch planning.</p>
+          </div>
+        </aside>
+      </div>
+    </header>
+
+    <section id="opportunity">
+      <div class="wrap">
+        <div class="section-head">
+          <h2>The franchise story</h2>
+          <p>Living Culture speaks to a high-value outdoor lifestyle category: furniture, shade, pergolas, awnings, carports, outdoor cooking and custom solutions. This page turns that positioning into a buyer journey.</p>
+        </div>
+        <div class="grid-3">
+          <article class="card">
+            <div class="icon">🏡</div>
+            <h3>Showroom experience</h3>
+            <p>Candidates are buying into a showroom-led sales model where customers can see, touch and configure premium outdoor products before committing.</p>
+            <div class="pill-list"><span class="pill">Furniture</span><span class="pill">Pergolas</span><span class="pill">Shade</span><span class="pill">Outdoor cooking</span></div>
+          </article>
+          <article class="card">
+            <div class="icon">🧰</div>
+            <h3>Trade and project support</h3>
+            <p>The system can lean into trade-style benefits: fast quotes, technical information, samples, CAD resources, and project support for builders, landscapers and designers.</p>
+            <div class="pill-list"><span class="pill">CAD resources</span><span class="pill">Samples</span><span class="pill">Fast quotes</span></div>
+          </article>
+          <article class="card">
+            <div class="icon">📍</div>
+            <h3>Territory discipline</h3>
+            <p>The calculator below helps avoid guesswork. It shows population, radius, suggested store count, existing presence, and indicative profit before a purchaser moves deeper into the process.</p>
+            <div class="pill-list"><span class="pill">Radius</span><span class="pill">Population</span><span class="pill">Store count</span></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="system" class="process">
+      <div class="wrap">
+        <div class="section-head">
+          <h2>How the purchaser journey works</h2>
+          <p>A clean process builds trust. Each step should give the buyer enough information to proceed while protecting commercial, legal and territory decisions until qualification is complete.</p>
+        </div>
+        <div class="steps">
+          <article class="step"><span class="step-number">1</span><h3>Initial enquiry</h3><p>Buyer enters their city, preferred radius, available capital and contact details.</p></article>
+          <article class="step"><span class="step-number">2</span><h3>Territory check</h3><p>Population, catchment size and existing showroom overlap are reviewed.</p></article>
+          <article class="step"><span class="step-number">3</span><h3>Discovery call</h3><p>Discuss fit, experience, capital, values, and whether the area is available.</p></article>
+          <article class="step"><span class="step-number">4</span><h3>Financial review</h3><p>Candidate reviews turnover, cost, profit, cash-flow and sensitivity assumptions.</p></article>
+          <article class="step"><span class="step-number">5</span><h3>Documentation</h3><p>Issue franchise documents, territory map and launch obligations for professional advice.</p></article>
+          <article class="step"><span class="step-number">6</span><h3>Launch plan</h3><p>Site selection, showroom fitout, product training, trade launch and local marketing.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="territory">
+      <div class="wrap">
+        <div class="section-head">
+          <h2>Territory + population calculator</h2>
+          <p>Select a New Zealand or Australian area, set a catchment radius, and calculate suggested store count. The map fits to the selected radius so purchasers can see the approximate catchment circle.</p>
+        </div>
+
+        <div class="calculator-shell">
+          <div class="panel">
+            <div class="panel-header">
+              <h3>Territory inputs</h3>
+              <p>Start with the NZ/Australia seed dataset, or use manual mode for any city or country.</p>
+            </div>
+            <div class="panel-body">
+              <div class="form-grid">
+                <div class="field">
+                  <label for="countrySelect">Country</label>
+                  <select id="countrySelect">
+                    <option value="all">New Zealand + Australia</option>
+                    <option value="NZ">New Zealand</option>
+                    <option value="AU">Australia</option>
+                  </select>
+                  <small>Filter the territory list by market.</small>
+                </div>
+                <div class="field">
+                  <label for="areaSelect">Select area</label>
+                  <select id="areaSelect"></select>
+                  <small>Major seed markets are included. Use manual mode for any area not listed.</small>
+                </div>
+              </div>
+
+              <div class="toggle-row">
+                <div>
+                  <label for="manualMode">Manual / international area</label>
+                  <div class="tiny">Use this when the city is not in the dropdown.</div>
+                </div>
+                <input type="checkbox" id="manualMode" />
+              </div>
+
+              <div id="manualFields" class="form-grid" style="display:none">
+                <div class="field">
+                  <label for="manualName">Area name</label>
+                  <input id="manualName" value="My Territory" />
+                </div>
+                <div class="field">
+                  <label for="manualCountry">Manual country</label>
+                  <select id="manualCountry">
+                    <option value="NZ">New Zealand</option>
+                    <option value="AU">Australia</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="manualPopulation">Population</label>
+                  <input id="manualPopulation" type="number" min="0" step="1000" value="600000" />
+                </div>
+              </div>
+
+              <div class="form-grid" style="margin-top:0.9rem">
+                <div class="field">
+                  <label for="radius">Radius: <span id="radiusValue">40</span> km</label>
+                  <input id="radius" type="range" min="5" max="250" step="5" value="40" />
+                </div>
+                <div class="field">
+                  <label for="populationPerStore">People per store</label>
+                  <input id="populationPerStore" type="number" min="100000" step="50000" value="600000" />
+                </div>
+                <div class="field">
+                  <label for="minimumPopulation">Minimum viable population</label>
+                  <input id="minimumPopulation" type="number" min="0" step="10000" value="180000" />
+                </div>
+                <div class="field">
+                  <label for="usePopulationBasis">Store count basis</label>
+                  <select id="usePopulationBasis">
+                    <option value="area">Use selected area population</option>
+                    <option value="catchment">Use radius catchment population</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="status" id="populationStatus">Population source, radius and territory notes will appear here.</div>
+              <div class="actions-row">
+                <button class="cta-small" id="refreshPopulation" type="button">Refresh / re-estimate</button>
+                <button class="cta-small secondary" id="resetTerritory" type="button">Reset to Auckland</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="map-stack">
+            <div class="panel map-panel">
+              <div class="map-toolbar">
+                <div>
+                  <strong id="mapTitle">Selected territory</strong>
+                  <span id="mapSubtitle">The shaded circle shows the approximate radius catchment.</span>
+                </div>
+                <div class="map-badge" id="mapPopulationBadge">40 km radius</div>
+              </div>
+              <div id="map" role="application" aria-label="Territory map showing approximate franchise radius"></div>
+            </div>
+            <div class="results-grid" id="territoryMetrics" aria-live="polite"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="numbers">
+      <div class="wrap">
+        <div class="section-head">
+          <h2>Cost + profit calculator</h2>
+          <p>Put in the expected turnover and the model calculates operating cost, profit, investment, and payback for the selected territory.</p>
+        </div>
+        <div class="calculator-shell">
+          <div class="panel">
+            <div class="panel-header">
+              <h3>Financial assumptions</h3>
+              <p>These are editable placeholders. Replace with approved franchise numbers before publishing.</p>
+            </div>
+            <div class="panel-body">
+              <div class="form-grid">
+                <div class="field"><label for="currencySelect">Model currency</label><select id="currencySelect"><option value="NZD">NZD</option><option value="AUD">AUD</option></select></div>
+                <div class="field"><label for="turnoverPerStore">Annual turnover per store</label><input id="turnoverPerStore" type="number" step="50000" value="1800000" /></div>
+                <div class="field"><label for="grossMargin">Gross margin %</label><input id="grossMargin" type="number" step="0.5" value="48" /></div>
+                <div class="field"><label for="royalty">Royalty % of turnover</label><input id="royalty" type="number" step="0.25" value="6" /></div>
+                <div class="field"><label for="marketingLevy">National marketing levy %</label><input id="marketingLevy" type="number" step="0.25" value="2" /></div>
+                <div class="field"><label for="staffCost">Staff cost per store / year</label><input id="staffCost" type="number" step="10000" value="220000" /></div>
+                <div class="field"><label for="rentCost">Rent + showroom occupancy / year</label><input id="rentCost" type="number" step="10000" value="110000" /></div>
+                <div class="field"><label for="operatingCost">Other operating costs / year</label><input id="operatingCost" type="number" step="5000" value="65000" /></div>
+                <div class="field"><label for="localMarketing">Local marketing / year</label><input id="localMarketing" type="number" step="5000" value="28000" /></div>
+                <div class="field"><label for="fitoutCost">Fitout + equipment per store</label><input id="fitoutCost" type="number" step="25000" value="375000" /></div>
+                <div class="field"><label for="stockCost">Opening stock per store</label><input id="stockCost" type="number" step="25000" value="200000" /></div>
+                <div class="field"><label for="franchiseFee">Franchise / territory fee per store</label><input id="franchiseFee" type="number" step="10000" value="75000" /></div>
+                <div class="field"><label for="launchCost">Launch marketing + training</label><input id="launchCost" type="number" step="5000" value="60000" /></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
+              <h3>Calculated result</h3>
+              <p>Cards now auto-resize so large figures do not clip inside the boxes.</p>
+            </div>
+            <div class="panel-body">
+              <div class="results-grid" id="financeMetrics"></div>
+              <div class="summary-box" id="financialSummary"></div>
+              <div class="table-wrap">
+                <table aria-label="Financial model breakdown">
+                  <thead><tr><th>Line item</th><th>Formula</th><th>Total</th></tr></thead>
+                  <tbody id="financeTable"></tbody>
+                </table>
+              </div>
+              <div class="actions-row">
+                <button class="cta-small" id="copySummary" type="button">Copy territory summary</button>
+                <button class="cta-small secondary" id="downloadCsv" type="button">Download CSV</button>
+                <button class="cta-small secondary" type="button" onclick="window.print()">Print / save PDF</button>
+              </div>
+              <p class="tiny">Indicative model only. It excludes tax, GST treatment, finance costs, depreciation, owner salary choices, legal fees and working capital buffers.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap split">
+        <div class="quote-card">
+          <div>
+            <div class="eyebrow" style="background:rgba(255,255,255,0.1);color:white;border-color:rgba(255,255,255,0.18)"><span class="dot"></span> Candidate fit</div>
+            <h2>Who this opportunity is for</h2>
+            <p>Best suited to operators who can sell premium home-improvement products, manage a showroom team, build trade relationships, and follow a structured brand system.</p>
+          </div>
+          <a class="button" style="background:white;color:var(--forest);box-shadow:none;width:max-content" href="#apply">Start enquiry</a>
+        </div>
+        <div class="card">
+          <h3>What buyers should understand before proceeding</h3>
+          <ul class="check-list" style="margin-top:1rem">
+            <li><span>A territory is not just a circle on a map. It should consider population, accessibility, competitor presence, trade density, existing showrooms and logistics.</span></li>
+            <li><span>More than one store may make sense when the population exceeds the people-per-store threshold, but rollout timing should be staged.</span></li>
+            <li><span>Numbers should be treated as a feasibility guide until the franchisor approves real costs, margins, royalties and territory terms.</span></li>
+            <li><span>Candidates should obtain independent legal and accounting advice before signing any franchise or territory agreement.</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="apply" class="apply">
+      <div class="wrap">
+        <div class="section-head">
+          <h2>Franchise enquiry</h2>
+          <p>Static Vercel pages do not process forms by themselves, so this enquiry button opens an email with the selected territory and calculator result. Connect a real CRM or form endpoint when ready.</p>
+        </div>
+        <div class="calculator-shell">
+          <div class="panel">
+            <div class="panel-header">
+              <h3>Candidate details</h3>
+              <p>Use this to capture the first conversation.</p>
+            </div>
+            <div class="panel-body">
+              <div class="form-grid">
+                <div class="field"><label for="candidateName">Name</label><input id="candidateName" placeholder="Full name" /></div>
+                <div class="field"><label for="candidateEmail">Email</label><input id="candidateEmail" type="email" placeholder="name@example.com" /></div>
+                <div class="field"><label for="candidatePhone">Phone</label><input id="candidatePhone" placeholder="Mobile" /></div>
+                <div class="field"><label for="availableCapital">Available capital</label><input id="availableCapital" type="number" step="25000" placeholder="e.g. 750000" /></div>
+                <div class="field" style="grid-column:1/-1"><label for="experience">Relevant experience</label><textarea id="experience" rows="4" placeholder="Retail, trade, building, landscaping, franchise, sales or management experience"></textarea></div>
+              </div>
+              <div class="actions-row">
+                <button class="button" id="emailApplication" type="button">Create enquiry email</button>
+                <a class="button alt" href="#territory">Recheck territory</a>
+              </div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header">
+              <h3>Application snapshot</h3>
+              <p>This is what the purchaser sees before sending an enquiry.</p>
+            </div>
+            <div class="panel-body">
+              <div id="applicationSnapshot" class="summary-box"></div>
+              <p class="tiny">Change the recipient email in the script near the bottom of this file before publishing.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="source-note">Prototype source notes: brand copy is based on Living Culture public pages; population concepts use Stats NZ and ABS regional population releases, with an optional NZ public GIS lookup. Australian radius population currently uses seeded ABS-style market estimates rather than a live ABS radius API. This is a planning prototype, not a disclosure document.</p>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <span>© <span id="year"></span> Living Culture Franchise Planner</span>
+      <span>Static HTML project for Vercel deployment</span>
+    </div>
+  </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite">Copied</div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script>
+    const whole = new Intl.NumberFormat('en-NZ', { maximumFractionDigits: 0 });
+    const pct = new Intl.NumberFormat('en-NZ', { style: 'percent', maximumFractionDigits: 1 });
+    const CONTACT_EMAIL = 'commercial@livingculture.co.nz';
+
+    const countryMeta = {
+      NZ: { name: 'New Zealand', locale: 'en-NZ', currency: 'NZD', center: [-40.9006, 174.8860] },
+      AU: { name: 'Australia', locale: 'en-AU', currency: 'AUD', center: [-25.2744, 133.7751] }
+    };
+
+    const places = [
+      { id: 'auckland', countryCode: 'NZ', name: 'Auckland / Tāmaki Makaurau', lat: -36.8485, lng: 174.7633, population: 1739300, areaKm2: 4939, existing: true, source: 'Stats NZ 2024 regional seed' },
+      { id: 'christchurch', countryCode: 'NZ', name: 'Christchurch', lat: -43.5321, lng: 172.6362, population: 419200, areaKm2: 608, existing: true, source: 'NZ city seed' },
+      { id: 'wellington', countryCode: 'NZ', name: 'Wellington', lat: -41.2865, lng: 174.7762, population: 202700, areaKm2: 444, existing: false, source: 'NZ city seed' },
+      { id: 'hamilton', countryCode: 'NZ', name: 'Hamilton', lat: -37.7870, lng: 175.2793, population: 174700, areaKm2: 111, existing: true, source: 'NZ city seed' },
+      { id: 'tauranga', countryCode: 'NZ', name: 'Tauranga', lat: -37.6878, lng: 176.1651, population: 152800, areaKm2: 141, existing: true, source: 'NZ city seed' },
+      { id: 'napier-hastings', countryCode: 'NZ', name: 'Napier / Hastings / Hawke’s Bay', lat: -39.4928, lng: 176.9120, population: 170000, areaKm2: 520, existing: true, source: 'combined market planning seed' },
+      { id: 'whangarei', countryCode: 'NZ', name: 'Whangārei', lat: -35.7251, lng: 174.3237, population: 96678, areaKm2: 2712, existing: true, source: '2023 census seed' },
+      { id: 'dunedin', countryCode: 'NZ', name: 'Dunedin', lat: -45.8795, lng: 170.5006, population: 128900, areaKm2: 3314, existing: false, source: 'NZ city seed' },
+      { id: 'new-plymouth', countryCode: 'NZ', name: 'New Plymouth', lat: -39.0556, lng: 174.0752, population: 89500, areaKm2: 2205, existing: false, source: 'NZ district seed' },
+      { id: 'rotorua', countryCode: 'NZ', name: 'Rotorua', lat: -38.1368, lng: 176.2497, population: 76600, areaKm2: 2409, existing: false, source: 'NZ district seed' },
+      { id: 'palmerston-north', countryCode: 'NZ', name: 'Palmerston North', lat: -40.3523, lng: 175.6082, population: 87090, areaKm2: 395, existing: false, source: '2023 census seed' },
+      { id: 'nelson', countryCode: 'NZ', name: 'Nelson', lat: -41.2706, lng: 173.2840, population: 52584, areaKm2: 422, existing: false, source: '2023 census seed' },
+      { id: 'queenstown-lakes', countryCode: 'NZ', name: 'Queenstown-Lakes', lat: -45.0312, lng: 168.6626, population: 47808, areaKm2: 8704, existing: false, source: '2023 census seed' },
+
+      { id: 'sydney', countryCode: 'AU', name: 'Sydney / Greater Sydney', lat: -33.8688, lng: 151.2093, population: 5638830, areaKm2: 12369, existing: false, source: 'ABS GCCSA ERP 30 Jun 2025 seed' },
+      { id: 'melbourne', countryCode: 'AU', name: 'Melbourne / Greater Melbourne', lat: -37.8136, lng: 144.9631, population: 5435590, areaKm2: 9993, existing: false, source: 'ABS GCCSA ERP 30 Jun 2025 seed' },
+      { id: 'brisbane', countryCode: 'AU', name: 'Brisbane / Greater Brisbane', lat: -27.4698, lng: 153.0251, population: 2833524, areaKm2: 15842, existing: false, source: 'ABS GCCSA ERP 30 Jun 2025 seed' },
+      { id: 'perth', countryCode: 'AU', name: 'Perth / Greater Perth', lat: -31.9523, lng: 115.8613, population: 2452765, areaKm2: 6417, existing: false, source: 'ABS GCCSA ERP 30 Jun 2025 seed' },
+      { id: 'adelaide', countryCode: 'AU', name: 'Adelaide / Greater Adelaide', lat: -34.9285, lng: 138.6007, population: 1491015, areaKm2: 3260, existing: false, source: 'ABS GCCSA ERP 30 Jun 2025 seed' },
+      { id: 'canberra', countryCode: 'AU', name: 'Canberra / ACT', lat: -35.2809, lng: 149.1300, population: 484630, areaKm2: 2358, existing: false, source: 'ABS GCCSA ERP 30 Jun 2025 seed' },
+      { id: 'gold-coast', countryCode: 'AU', name: 'Gold Coast', lat: -28.0167, lng: 153.4000, population: 732000, areaKm2: 1334, existing: false, source: 'ABS/LGA planning seed' },
+      { id: 'sunshine-coast', countryCode: 'AU', name: 'Sunshine Coast', lat: -26.6500, lng: 153.0667, population: 398000, areaKm2: 3124, existing: false, source: 'ABS/LGA planning seed' },
+      { id: 'newcastle-hunter', countryCode: 'AU', name: 'Newcastle / Hunter', lat: -32.9283, lng: 151.7817, population: 513000, areaKm2: 4290, existing: false, source: 'ABS regional planning seed' },
+      { id: 'wollongong-illawarra', countryCode: 'AU', name: 'Wollongong / Illawarra', lat: -34.4278, lng: 150.8931, population: 313000, areaKm2: 714, existing: false, source: 'ABS regional planning seed' },
+      { id: 'geelong', countryCode: 'AU', name: 'Geelong', lat: -38.1499, lng: 144.3617, population: 295000, areaKm2: 1247, existing: false, source: 'ABS regional planning seed' },
+      { id: 'townsville', countryCode: 'AU', name: 'Townsville', lat: -19.2589, lng: 146.8169, population: 200000, areaKm2: 3742, existing: false, source: 'ABS regional planning seed' },
+      { id: 'cairns', countryCode: 'AU', name: 'Cairns', lat: -16.9186, lng: 145.7781, population: 180000, areaKm2: 1689, existing: false, source: 'ABS regional planning seed' },
+      { id: 'hobart', countryCode: 'AU', name: 'Hobart / Greater Hobart', lat: -42.8821, lng: 147.3272, population: 255250, areaKm2: 1695, existing: false, source: 'ABS GCCSA ERP 30 Jun 2025 seed' },
+      { id: 'darwin', countryCode: 'AU', name: 'Darwin / Greater Darwin', lat: -12.4634, lng: 130.8456, population: 159284, areaKm2: 3168, existing: false, source: 'ABS GCCSA ERP 30 Jun 2025 seed' }
+    ];
+
+    const state = {
+      selected: places[0],
+      radius: 40,
+      catchmentPopulation: places[0].population,
+      catchmentSource: 'Seed data',
+      suggestedStores: 3,
+      manualPoint: null,
+      latestFinancials: null
+    };
+
+    const els = {
+      areaSelect: document.getElementById('areaSelect'),
+      countrySelect: document.getElementById('countrySelect'),
+      manualMode: document.getElementById('manualMode'),
+      manualFields: document.getElementById('manualFields'),
+      manualName: document.getElementById('manualName'),
+      manualCountry: document.getElementById('manualCountry'),
+      manualPopulation: document.getElementById('manualPopulation'),
+      radius: document.getElementById('radius'),
+      radiusValue: document.getElementById('radiusValue'),
+      populationPerStore: document.getElementById('populationPerStore'),
+      minimumPopulation: document.getElementById('minimumPopulation'),
+      usePopulationBasis: document.getElementById('usePopulationBasis'),
+      populationStatus: document.getElementById('populationStatus'),
+      refreshPopulation: document.getElementById('refreshPopulation'),
+      resetTerritory: document.getElementById('resetTerritory'),
+      territoryMetrics: document.getElementById('territoryMetrics'),
+      mapTitle: document.getElementById('mapTitle'),
+      mapSubtitle: document.getElementById('mapSubtitle'),
+      mapPopulationBadge: document.getElementById('mapPopulationBadge'),
+      financeMetrics: document.getElementById('financeMetrics'),
+      financialSummary: document.getElementById('financialSummary'),
+      financeTable: document.getElementById('financeTable'),
+      currencySelect: document.getElementById('currencySelect'),
+      applicationSnapshot: document.getElementById('applicationSnapshot'),
+      heroArea: document.getElementById('heroArea'),
+      heroStores: document.getElementById('heroStores'),
+      copySummary: document.getElementById('copySummary'),
+      downloadCsv: document.getElementById('downloadCsv'),
+      emailApplication: document.getElementById('emailApplication'),
+      toast: document.getElementById('toast')
+    };
+
+    const financeInputIds = ['turnoverPerStore','grossMargin','royalty','marketingLevy','staffCost','rentCost','operatingCost','localMarketing','fitoutCost','stockCost','franchiseFee','launchCost'];
+    const financeInputs = financeInputIds.reduce((acc, id) => ({ ...acc, [id]: document.getElementById(id) }), {});
+
+    let map, selectedMarker, radiusCircle, radiusLabelMarker, centerLabelMarker, showroomLayer;
+
+    function init() {
+      document.getElementById('year').textContent = new Date().getFullYear();
+      populateAreaSelect(false);
+      initMap();
+      bindEvents();
+      syncCurrencyToCountry();
+      updateTerritory(false);
+    }
+
+    function populateAreaSelect(keepCurrent = true) {
+      const current = keepCurrent ? els.areaSelect.value : state.selected.id;
+      const filter = els.countrySelect.value;
+      els.areaSelect.innerHTML = '';
+      const countryCodes = filter === 'all' ? ['NZ', 'AU'] : [filter];
+
+      countryCodes.forEach(code => {
+        const group = document.createElement('optgroup');
+        group.label = countryMeta[code].name;
+        places.filter(p => p.countryCode === code).forEach(place => {
+          const option = document.createElement('option');
+          option.value = place.id;
+          option.textContent = `${place.name}${place.existing ? ' — current showroom market' : ''}`;
+          group.appendChild(option);
+        });
+        els.areaSelect.appendChild(group);
+      });
+
+      const available = [...els.areaSelect.options].some(option => option.value === current);
+      els.areaSelect.value = available ? current : els.areaSelect.options[0]?.value;
+      state.selected = places.find(p => p.id === els.areaSelect.value) || state.selected;
+    }
+
+    function initMap() {
+      map = L.map('map', { scrollWheelZoom: false, zoomControl: true }).setView([state.selected.lat, state.selected.lng], 8);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 18,
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+
+      showroomLayer = L.layerGroup().addTo(map);
+      places.filter(p => p.existing).forEach(place => {
+        L.circleMarker([place.lat, place.lng], {
+          radius: 7,
+          color: '#16382f',
+          fillColor: '#bc6f4c',
+          fillOpacity: 0.92,
+          weight: 2
+        }).bindPopup(`<strong>${escapeHtml(place.name)}</strong><br>Current Living Culture showroom market`).addTo(showroomLayer);
+      });
+
+      selectedMarker = L.marker([state.selected.lat, state.selected.lng], { draggable: true }).addTo(map);
+      selectedMarker.on('dragend', () => {
+        const pos = selectedMarker.getLatLng();
+        setCustomPoint(pos.lat, pos.lng);
+        updateTerritory(false);
+      });
+
+      radiusCircle = L.circle([state.selected.lat, state.selected.lng], {
+        radius: state.radius * 1000,
+        color: '#bc6f4c',
+        fillColor: '#bc6f4c',
+        fillOpacity: 0.14,
+        weight: 3,
+        dashArray: '8 7'
+      }).addTo(map);
+
+      map.on('click', event => {
+        setCustomPoint(event.latlng.lat, event.latlng.lng);
+        updateTerritory(false);
+      });
+    }
+
+    function bindEvents() {
+      els.countrySelect.addEventListener('change', () => {
+        populateAreaSelect(false);
+        state.manualPoint = null;
+        els.manualMode.checked = false;
+        els.manualFields.style.display = 'none';
+        syncCurrencyToCountry();
+        updateTerritory(false);
+      });
+
+      els.areaSelect.addEventListener('change', () => {
+        state.selected = places.find(p => p.id === els.areaSelect.value) || places[0];
+        state.manualPoint = null;
+        els.manualMode.checked = false;
+        els.manualFields.style.display = 'none';
+        syncCurrencyToCountry();
+        updateTerritory(false);
+      });
+
+      els.manualMode.addEventListener('change', () => {
+        els.manualFields.style.display = els.manualMode.checked ? 'grid' : 'none';
+        if (els.manualMode.checked) {
+          const code = els.manualCountry.value;
+          state.selected = createManualPlace(code);
+          state.manualPoint = { lat: state.selected.lat, lng: state.selected.lng };
+        } else {
+          state.selected = places.find(p => p.id === els.areaSelect.value) || places[0];
+          state.manualPoint = null;
+        }
+        syncCurrencyToCountry();
+        updateTerritory(false);
+      });
+
+      ['input', 'change'].forEach(eventName => {
+        els.manualName.addEventListener(eventName, () => {
+          if (!els.manualMode.checked) return;
+          state.selected.name = els.manualName.value || 'Manual territory';
+          updateTerritory(false);
+        });
+        els.manualPopulation.addEventListener(eventName, () => {
+          if (!els.manualMode.checked) return;
+          state.selected.population = Number(els.manualPopulation.value) || 0;
+          updateTerritory(false);
+        });
+        els.radius.addEventListener(eventName, debounce(() => {
+          state.radius = Number(els.radius.value);
+          updateTerritory(false);
+        }, 160));
+        els.populationPerStore.addEventListener(eventName, () => updateTerritory(false));
+        els.minimumPopulation.addEventListener(eventName, () => updateTerritory(false));
+        els.usePopulationBasis.addEventListener(eventName, () => updateTerritory(false));
+        Object.values(financeInputs).forEach(input => input.addEventListener(eventName, () => updateFinancials()));
+      });
+
+      els.manualCountry.addEventListener('change', () => {
+        if (!els.manualMode.checked) return;
+        const code = els.manualCountry.value;
+        const previous = state.manualPoint || { lat: state.selected.lat, lng: state.selected.lng };
+        state.selected = createManualPlace(code, previous.lat, previous.lng);
+        state.manualPoint = { lat: state.selected.lat, lng: state.selected.lng };
+        syncCurrencyToCountry();
+        updateTerritory(false);
+      });
+
+      els.currencySelect.addEventListener('change', () => updateFinancials());
+      els.refreshPopulation.addEventListener('click', () => updateTerritory(true));
+      els.resetTerritory.addEventListener('click', () => {
+        state.selected = places[0];
+        state.manualPoint = null;
+        els.countrySelect.value = 'all';
+        populateAreaSelect(false);
+        els.areaSelect.value = 'auckland';
+        els.manualMode.checked = false;
+        els.manualFields.style.display = 'none';
+        els.radius.value = 40;
+        state.radius = 40;
+        syncCurrencyToCountry();
+        updateTerritory(false);
+      });
+      els.copySummary.addEventListener('click', copySummary);
+      els.downloadCsv.addEventListener('click', downloadCsv);
+      els.emailApplication.addEventListener('click', createEmail);
+    }
+
+    function createManualPlace(countryCode, lat = null, lng = null) {
+      const meta = countryMeta[countryCode];
+      const center = meta.center;
+      return {
+        id: 'manual',
+        countryCode,
+        name: els.manualName.value || 'Manual territory',
+        lat: lat ?? center[0],
+        lng: lng ?? center[1],
+        population: Number(els.manualPopulation.value) || 0,
+        areaKm2: 0,
+        existing: false,
+        source: 'Manual population supplied by user'
+      };
+    }
+
+    function setCustomPoint(lat, lng) {
+      const countryCode = determineCountryCode(lat, lng, state.selected.countryCode);
+      const nearest = nearestSeedPlace(lat, lng, countryCode);
+      state.manualPoint = { lat, lng };
+      if (els.manualMode.checked) {
+        state.selected = createManualPlace(els.manualCountry.value, lat, lng);
+      } else {
+        state.selected = {
+          id: 'custom-point',
+          countryCode,
+          name: 'Custom map point',
+          lat,
+          lng,
+          population: nearest?.population || 0,
+          areaKm2: nearest?.areaKm2 || 0,
+          existing: false,
+          source: `nearest seed point: ${nearest?.name || 'n/a'}`
+        };
+      }
+      syncCurrencyToCountry();
+    }
+
+    function syncCurrencyToCountry() {
+      const desired = countryMeta[state.selected.countryCode]?.currency || 'NZD';
+      els.currencySelect.value = desired;
+    }
+
+    async function updateTerritory(tryLiveLookup = false) {
+      state.radius = Number(els.radius.value) || 40;
+      els.radiusValue.textContent = whole.format(state.radius);
+
+      if (els.manualMode.checked) {
+        state.selected.name = els.manualName.value || 'Manual territory';
+        state.selected.population = Number(els.manualPopulation.value) || 0;
+        state.selected.countryCode = els.manualCountry.value;
+      }
+
+      const lat = state.manualPoint?.lat ?? state.selected.lat;
+      const lng = state.manualPoint?.lng ?? state.selected.lng;
+      state.selected.lat = lat;
+      state.selected.lng = lng;
+
+      selectedMarker.setLatLng([lat, lng]);
+      radiusCircle.setLatLng([lat, lng]);
+      radiusCircle.setRadius(state.radius * 1000);
+      selectedMarker.bindPopup(`<strong>${escapeHtml(state.selected.name)}</strong><br>${whole.format(state.selected.population)} people`).openPopup();
+      updateRadiusLabel(lat, lng);
+      updateCenterLabel(lat, lng);
+      fitMapToRadius(true);
+
+      let population = estimatePopulationWithinRadius(lat, lng, state.radius, state.selected.countryCode);
+      let source = `${state.selected.source}; radius/density estimate`;
+      let liveSucceeded = false;
+
+      if (tryLiveLookup && state.selected.countryCode === 'NZ' && !els.manualMode.checked) {
+        els.populationStatus.textContent = 'Checking public NZ radius population service…';
+        try {
+          const live = await fetchNzPopulation(lat, lng, state.radius);
+          if (Number.isFinite(live) && live > 0) {
+            population = Math.round(live);
+            source = 'Live SA2 radius estimate via public ArcGIS layer derived from Stats NZ, 2024 field';
+            liveSucceeded = true;
+          }
+        } catch (error) {
+          source = `${state.selected.source}; live NZ lookup unavailable, using radius/density estimate`;
+          console.warn('Population lookup failed:', error);
+        }
+      } else if (tryLiveLookup && state.selected.countryCode === 'AU') {
+        source = `${state.selected.source}; Australian live radius API not connected yet`;
+      }
+
+      if (els.manualMode.checked) {
+        population = Number(els.manualPopulation.value) || 0;
+        source = 'Manual population supplied by user';
+      }
+
+      state.catchmentPopulation = population;
+      state.catchmentSource = source;
+      const basisPopulation = els.usePopulationBasis.value === 'catchment' ? state.catchmentPopulation : state.selected.population;
+      state.suggestedStores = suggestedStores(basisPopulation);
+
+      updateMapToolbar();
+      updateTerritoryMetrics(liveSucceeded);
+      updateFinancials();
+      updateHero();
+    }
+
+    async function fetchNzPopulation(lat, lng, radiusKm) {
+      const url = new URL('https://gis.wcc.govt.nz/arcgis/rest/services/StateOfHousing/StateOfHousing/MapServer/8/query');
+      url.search = new URLSearchParams({
+        f: 'json',
+        where: '1=1',
+        geometry: `${lng},${lat}`,
+        geometryType: 'esriGeometryPoint',
+        inSR: '4326',
+        spatialRel: 'esriSpatialRelIntersects',
+        distance: String(radiusKm),
+        units: 'esriSRUnit_Kilometer',
+        returnGeometry: 'false',
+        outStatistics: JSON.stringify([{ statisticType: 'sum', onStatisticField: 'pop_estimate_2024', outStatisticFieldName: 'population' }])
+      }).toString();
+      const response = await fetch(url.toString(), { mode: 'cors' });
+      if (!response.ok) throw new Error(`Population service returned ${response.status}`);
+      const data = await response.json();
+      if (data.error) throw new Error(data.error.message || 'ArcGIS error');
+      return data?.features?.[0]?.attributes?.population;
+    }
+
+    function updateTerritoryMetrics(liveSucceeded) {
+      const basisPopulation = els.usePopulationBasis.value === 'catchment' ? state.catchmentPopulation : state.selected.population;
+      const perStore = Number(els.populationPerStore.value) || 600000;
+      const minPopulation = Number(els.minimumPopulation.value) || 0;
+      const coverage = state.suggestedStores > 0 ? basisPopulation / state.suggestedStores : 0;
+      const radiusAreaKm2 = Math.PI * state.radius * state.radius;
+      const countryName = countryMeta[state.selected.countryCode]?.name || 'Manual';
+      const existingNearby = nearestExistingShowroomDistance(state.selected.lat, state.selected.lng, state.selected.countryCode);
+      const status = viabilityStatus(basisPopulation, minPopulation, state.selected.existing, existingNearby.distance);
+      const showroomNote = Number.isFinite(existingNearby.distance) && existingNearby.distance <= 500
+        ? `Nearest current showroom market: ${existingNearby.name} (${whole.format(existingNearby.distance)} km).`
+        : 'No seeded current showroom market within 500 km.';
+      const lookupNote = liveSucceeded ? 'Live NZ lookup succeeded.' : state.selected.countryCode === 'AU' ? 'Australia uses seeded ABS-style market data until a live ABS radius API is connected.' : 'Using seed or selected-area data until live lookup is refreshed.';
+
+      els.territoryMetrics.innerHTML = `
+        ${metric('Selected area population', whole.format(state.selected.population), `${countryName} • ${state.selected.source}`)}
+        ${metric('Radius catchment population', whole.format(state.catchmentPopulation), state.catchmentSource)}
+        ${metric('Approx. radius area', `${whole.format(radiusAreaKm2)} km²`, `Circle shown on map: ${whole.format(state.radius)} km radius`)}
+        ${metric('Suggested stores', whole.format(state.suggestedStores), `1 per ${whole.format(perStore)} people`)}
+        ${metric('Population per store', whole.format(coverage), 'after suggested split')}
+      `;
+      els.populationStatus.className = `status ${status.className}`;
+      els.populationStatus.innerHTML = `<strong>${status.label}</strong> ${status.message}<br><span class="tiny">${showroomNote} ${lookupNote}</span>`;
+    }
+
+    function updateMapToolbar() {
+      const basis = els.usePopulationBasis.value === 'catchment' ? 'Store count uses radius catchment' : 'Store count uses selected area';
+      const radiusAreaKm2 = Math.PI * state.radius * state.radius;
+      els.mapTitle.textContent = `${state.selected.name}`;
+      els.mapSubtitle.textContent = `${whole.format(state.radius)} km approximate radius • ${whole.format(radiusAreaKm2)} km² circle • ${basis}.`;
+      els.mapPopulationBadge.textContent = `${whole.format(state.catchmentPopulation)} people in radius model`;
+    }
+
+    function metric(label, value, small) {
+      return `<div class="metric"><span>${label}</span><strong>${value}</strong><small>${small}</small></div>`;
+    }
+
+    function updateHero() {
+      els.heroArea.textContent = state.selected.name.replace(' / Hastings / Hawke’s Bay', '');
+      els.heroStores.textContent = whole.format(state.suggestedStores);
+    }
+
+    function updateFinancials() {
+      const stores = Math.max(1, Number(state.suggestedStores) || 1);
+      const turnoverPerStore = val('turnoverPerStore');
+      const grossMargin = val('grossMargin') / 100;
+      const royalty = val('royalty') / 100;
+      const marketingLevy = val('marketingLevy') / 100;
+      const annualRevenue = turnoverPerStore * stores;
+      const costOfGoods = annualRevenue * (1 - grossMargin);
+      const grossProfit = annualRevenue * grossMargin;
+      const royaltyCost = annualRevenue * royalty;
+      const marketingCost = annualRevenue * marketingLevy;
+      const fixedOperating = stores * (val('staffCost') + val('rentCost') + val('operatingCost') + val('localMarketing'));
+      const annualOperatingCosts = costOfGoods + royaltyCost + marketingCost + fixedOperating;
+      const ebitda = grossProfit - royaltyCost - marketingCost - fixedOperating;
+      const ebitdaMargin = annualRevenue > 0 ? ebitda / annualRevenue : 0;
+      const initialInvestment = stores * (val('fitoutCost') + val('stockCost') + val('franchiseFee') + val('launchCost'));
+      const payback = ebitda > 0 ? initialInvestment / ebitda : Infinity;
+      const lowEbitda = calcScenario(turnoverPerStore * 0.8, stores);
+      const highEbitda = calcScenario(turnoverPerStore * 1.2, stores);
+      const currency = els.currencySelect.value;
+
+      state.latestFinancials = { stores, turnoverPerStore, annualRevenue, costOfGoods, grossProfit, royaltyCost, marketingCost, fixedOperating, annualOperatingCosts, ebitda, ebitdaMargin, initialInvestment, payback, lowEbitda, highEbitda, currency };
+
+      els.financeMetrics.innerHTML = `
+        ${metric('Annual revenue', moneyFormat(annualRevenue), `${whole.format(stores)} store${stores === 1 ? '' : 's'} × ${moneyFormat(turnoverPerStore)}`)}
+        ${metric('Annual operating cost', moneyFormat(annualOperatingCosts), 'COGS + royalties + fixed costs')}
+        ${metric('Indicative EBITDA', `<span class="${ebitda >= 0 ? 'profit-positive' : 'profit-negative'}">${moneyFormat(ebitda)}</span>`, `${pct.format(ebitdaMargin)} EBITDA margin`)}
+        ${metric('Initial investment', moneyFormat(initialInvestment), isFinite(payback) ? `${payback.toFixed(1)} year payback` : 'No payback at current assumptions')}
+      `;
+
+      els.financialSummary.innerHTML = `
+        <strong>${escapeHtml(state.selected.name)}</strong> currently supports <strong>${whole.format(stores)} suggested store${stores === 1 ? '' : 's'}</strong> under the selected population rule. At ${moneyFormat(turnoverPerStore)} turnover per store, the model shows ${moneyFormat(annualRevenue)} revenue, ${moneyFormat(annualOperatingCosts)} annual operating cost, and <strong class="${ebitda >= 0 ? 'profit-positive' : 'profit-negative'}">${moneyFormat(ebitda)} indicative EBITDA</strong>. Sensitivity: ${moneyFormat(lowEbitda)} at 80% turnover and ${moneyFormat(highEbitda)} at 120% turnover.
+      `;
+
+      const rows = [
+        ['Revenue', `${whole.format(stores)} × ${moneyFormat(turnoverPerStore)}`, annualRevenue],
+        ['Cost of goods', `${whole.format(100 - val('grossMargin'))}% of revenue`, -costOfGoods],
+        ['Gross profit', `${whole.format(val('grossMargin'))}% gross margin`, grossProfit],
+        ['Royalty', `${val('royalty')}% of revenue`, -royaltyCost],
+        ['National marketing levy', `${val('marketingLevy')}% of revenue`, -marketingCost],
+        ['Fixed operating costs', 'staff + rent + other + local marketing', -fixedOperating],
+        ['Indicative EBITDA', 'gross profit − operating costs', ebitda],
+        ['Initial investment', 'fitout + stock + franchise fee + launch', -initialInvestment]
+      ];
+      els.financeTable.innerHTML = rows.map(([name, formula, amount]) => `<tr><td>${name}</td><td>${formula}</td><td class="${amount >= 0 ? 'profit-positive' : 'profit-negative'}">${moneyFormat(amount)}</td></tr>`).join('');
+      updateApplicationSnapshot();
+    }
+
+    function moneyFormat(value) {
+      const currency = els.currencySelect?.value || countryMeta[state.selected.countryCode]?.currency || 'NZD';
+      const number = Math.round(Number(value) || 0);
+      const sign = number < 0 ? '-' : '';
+      const prefix = currency === 'AUD' ? 'A$' : 'NZ$';
+      return `${sign}${prefix}${whole.format(Math.abs(number))}`;
+    }
+
+    function calcScenario(turnoverPerStore, stores) {
+      const annualRevenue = turnoverPerStore * stores;
+      const grossProfit = annualRevenue * (val('grossMargin') / 100);
+      const royaltyCost = annualRevenue * (val('royalty') / 100);
+      const marketingCost = annualRevenue * (val('marketingLevy') / 100);
+      const fixedOperating = stores * (val('staffCost') + val('rentCost') + val('operatingCost') + val('localMarketing'));
+      return grossProfit - royaltyCost - marketingCost - fixedOperating;
+    }
+
+    function updateApplicationSnapshot() {
+      const f = state.latestFinancials;
+      if (!f) return;
+      const basis = els.usePopulationBasis.value === 'catchment' ? 'radius catchment' : 'selected area';
+      els.applicationSnapshot.innerHTML = `
+        <strong>Territory:</strong> ${escapeHtml(state.selected.name)}, ${escapeHtml(countryMeta[state.selected.countryCode]?.name || 'Manual')}<br>
+        <strong>Currency:</strong> ${escapeHtml(f.currency)}<br>
+        <strong>Radius:</strong> ${whole.format(state.radius)} km<br>
+        <strong>Population basis:</strong> ${basis}; ${whole.format(els.usePopulationBasis.value === 'catchment' ? state.catchmentPopulation : state.selected.population)} people<br>
+        <strong>Suggested store count:</strong> ${whole.format(f.stores)}<br>
+        <strong>Turnover assumption:</strong> ${moneyFormat(f.turnoverPerStore)} per store<br>
+        <strong>Indicative EBITDA:</strong> ${moneyFormat(f.ebitda)} (${pct.format(f.ebitdaMargin)})<br>
+        <strong>Initial investment:</strong> ${moneyFormat(f.initialInvestment)}<br>
+        <strong>Population source:</strong> ${escapeHtml(state.catchmentSource)}
+      `;
+    }
+
+    function suggestedStores(population) {
+      const perStore = Math.max(1, Number(els.populationPerStore.value) || 600000);
+      if (!population || population <= 0) return 1;
+      return Math.max(1, Math.ceil(population / perStore));
+    }
+
+    function estimatePopulationWithinRadius(lat, lng, radiusKm, countryCode) {
+      if (els.manualMode.checked || state.selected.id === 'manual') return Number(state.selected.population) || 0;
+      const selected = state.selected.id === 'custom-point' ? nearestSeedPlace(lat, lng, countryCode) : state.selected;
+      if (!selected || !selected.population) return 0;
+
+      const circleAreaKm2 = Math.PI * radiusKm * radiusKm;
+      const density = selected.areaKm2 > 0 ? selected.population / selected.areaKm2 : 0;
+      const corePopulation = density > 0 ? Math.min(selected.population, density * circleAreaKm2) : selected.population;
+      const satellitePopulation = places
+        .filter(p => p.countryCode === countryCode && p.id !== selected.id)
+        .filter(p => distanceKm(lat, lng, p.lat, p.lng) <= radiusKm)
+        .reduce((sum, p) => sum + p.population, 0);
+
+      return Math.round(Math.max(1, corePopulation + satellitePopulation));
+    }
+
+    function nearestSeedPlace(lat, lng, countryCode = null) {
+      const code = countryCode || determineCountryCode(lat, lng, state.selected.countryCode);
+      return places
+        .filter(p => p.countryCode === code)
+        .map(p => ({ ...p, distance: distanceKm(lat, lng, p.lat, p.lng) }))
+        .sort((a, b) => a.distance - b.distance)[0];
+    }
+
+    function nearestExistingShowroomDistance(lat, lng, countryCode) {
+      const candidates = places.filter(p => p.existing && p.countryCode === countryCode);
+      if (!candidates.length) return { name: 'None listed', distance: Infinity };
+      return candidates.map(p => ({ name: p.name, distance: distanceKm(lat, lng, p.lat, p.lng) })).sort((a,b) => a.distance - b.distance)[0];
+    }
+
+    function viabilityStatus(population, minPopulation, existing, nearestKm) {
+      if (existing || nearestKm < 15) return { className: 'warning', label: 'Existing presence.', message: 'This area has a current showroom market or close overlap, so territory availability should be checked carefully.' };
+      if (population < minPopulation) return { className: 'warning', label: 'Below target population.', message: `The selected basis is below the minimum viable population of ${whole.format(minPopulation)}.` };
+      if (population >= Number(els.populationPerStore.value || 600000)) return { className: 'good', label: 'Multi-store capable.', message: 'The population basis exceeds the people-per-store threshold, so staged rollout may be considered.' };
+      return { className: 'good', label: 'Single-store candidate.', message: 'The population basis can be explored as a one-showroom territory, subject to economics and availability.' };
+    }
+
+    function determineCountryCode(lat, lng, fallback = 'NZ') {
+      if (lat <= -9 && lat >= -45 && lng >= 112 && lng <= 154.5) return 'AU';
+      if (lat <= -33 && lat >= -48.5 && lng >= 165 && lng <= 179.5) return 'NZ';
+      const nearest = places.map(p => ({ code: p.countryCode, distance: distanceKm(lat, lng, p.lat, p.lng) })).sort((a, b) => a.distance - b.distance)[0];
+      return nearest?.code || fallback;
+    }
+
+    function updateRadiusLabel(lat, lng) {
+      const labelPoint = destinationPoint(lat, lng, 45, Math.max(3, state.radius));
+      const icon = L.divIcon({ className: '', html: `<div class="radius-label">≈ ${whole.format(state.radius)} km radius</div>`, iconSize: null });
+      if (!radiusLabelMarker) {
+        radiusLabelMarker = L.marker(labelPoint, { icon, interactive: false, keyboard: false }).addTo(map);
+      } else {
+        radiusLabelMarker.setLatLng(labelPoint);
+        radiusLabelMarker.setIcon(icon);
+      }
+    }
+
+    function updateCenterLabel(lat, lng) {
+      const icon = L.divIcon({ className: '', html: `<div class="center-label">${escapeHtml(state.selected.name)}</div>`, iconSize: null });
+      if (!centerLabelMarker) {
+        centerLabelMarker = L.marker([lat, lng], { icon, interactive: false, keyboard: false }).addTo(map);
+      } else {
+        centerLabelMarker.setLatLng([lat, lng]);
+        centerLabelMarker.setIcon(icon);
+      }
+    }
+
+    function fitMapToRadius(animate = true) {
+      if (!map || !radiusCircle) return;
+      window.requestAnimationFrame(() => {
+        map.invalidateSize();
+        const bounds = radiusCircle.getBounds();
+        if (bounds?.isValid?.()) {
+          map.fitBounds(bounds, { padding: [42, 42], maxZoom: 11, animate });
+        }
+      });
+    }
+
+    function destinationPoint(lat, lng, bearingDeg, distanceKmValue) {
+      const R = 6371;
+      const bearing = toRad(bearingDeg);
+      const phi1 = toRad(lat);
+      const lambda1 = toRad(lng);
+      const delta = distanceKmValue / R;
+      const sinPhi2 = Math.sin(phi1) * Math.cos(delta) + Math.cos(phi1) * Math.sin(delta) * Math.cos(bearing);
+      const phi2 = Math.asin(sinPhi2);
+      const y = Math.sin(bearing) * Math.sin(delta) * Math.cos(phi1);
+      const x = Math.cos(delta) - Math.sin(phi1) * Math.sin(phi2);
+      const lambda2 = lambda1 + Math.atan2(y, x);
+      return [phi2 * 180 / Math.PI, ((lambda2 * 180 / Math.PI + 540) % 360) - 180];
+    }
+
+    function distanceKm(lat1, lon1, lat2, lon2) {
+      const R = 6371;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(a));
+    }
+
+    function toRad(value) { return value * Math.PI / 180; }
+    function val(id) { return Number(financeInputs[id].value) || 0; }
+
+    function createSummaryText() {
+      const f = state.latestFinancials;
+      const basis = els.usePopulationBasis.value === 'catchment' ? 'radius catchment' : 'selected area';
+      return [
+        'Living Culture franchise scenario',
+        `Area: ${state.selected.name}`,
+        `Country: ${countryMeta[state.selected.countryCode]?.name || 'Manual'}`,
+        `Radius: ${whole.format(state.radius)} km`,
+        `Selected area population: ${whole.format(state.selected.population)}`,
+        `Catchment population: ${whole.format(state.catchmentPopulation)}`,
+        `Population basis: ${basis}`,
+        `Population source: ${state.catchmentSource}`,
+        `Suggested stores: ${whole.format(f.stores)}`,
+        `Currency: ${f.currency}`,
+        `Turnover per store: ${moneyFormat(f.turnoverPerStore)}`,
+        `Annual revenue: ${moneyFormat(f.annualRevenue)}`,
+        `Annual operating costs: ${moneyFormat(f.annualOperatingCosts)}`,
+        `Indicative EBITDA: ${moneyFormat(f.ebitda)} (${pct.format(f.ebitdaMargin)})`,
+        `Initial investment: ${moneyFormat(f.initialInvestment)}`,
+        `Payback: ${isFinite(f.payback) ? f.payback.toFixed(1) + ' years' : 'not achieved at current assumptions'}`
+      ].join('\n');
+    }
+
+    async function copySummary() {
+      await navigator.clipboard.writeText(createSummaryText());
+      showToast('Summary copied');
+    }
+
+    function downloadCsv() {
+      const f = state.latestFinancials;
+      const rows = [
+        ['field', 'value'],
+        ['area', state.selected.name],
+        ['country', countryMeta[state.selected.countryCode]?.name || 'Manual'],
+        ['currency', f.currency],
+        ['radius_km', state.radius],
+        ['selected_area_population', state.selected.population],
+        ['catchment_population', state.catchmentPopulation],
+        ['population_source', state.catchmentSource],
+        ['suggested_stores', f.stores],
+        ['turnover_per_store', f.turnoverPerStore],
+        ['annual_revenue', Math.round(f.annualRevenue)],
+        ['annual_operating_costs', Math.round(f.annualOperatingCosts)],
+        ['ebitda', Math.round(f.ebitda)],
+        ['ebitda_margin', f.ebitdaMargin.toFixed(4)],
+        ['initial_investment', Math.round(f.initialInvestment)],
+        ['payback_years', isFinite(f.payback) ? f.payback.toFixed(2) : 'n/a']
+      ];
+      const csv = rows.map(row => row.map(cell => `"${String(cell).replaceAll('"', '""')}"`).join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `living-culture-territory-${state.selected.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('CSV downloaded');
+    }
+
+    function createEmail() {
+      const name = document.getElementById('candidateName').value || 'New candidate';
+      const email = document.getElementById('candidateEmail').value || '';
+      const phone = document.getElementById('candidatePhone').value || '';
+      const capital = document.getElementById('availableCapital').value ? moneyFormat(Number(document.getElementById('availableCapital').value)) : 'Not supplied';
+      const experience = document.getElementById('experience').value || 'Not supplied';
+      const body = `${createSummaryText()}\n\nCandidate details\nName: ${name}\nEmail: ${email}\nPhone: ${phone}\nAvailable capital: ${capital}\nExperience: ${experience}`;
+      const subject = `Living Culture franchise enquiry - ${state.selected.name}`;
+      window.location.href = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    }
+
+    function showToast(message) {
+      els.toast.textContent = message;
+      els.toast.classList.add('show');
+      setTimeout(() => els.toast.classList.remove('show'), 1700);
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
+    }
+
+    function debounce(fn, wait = 250) {
+      let timeout;
+      return (...args) => {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => fn(...args), wait);
+      };
+    }
+
+    document.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>

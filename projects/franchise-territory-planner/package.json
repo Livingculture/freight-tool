@@ -1,0 +1,14 @@
+{
+  "name": "livingculture-franchise-territory-planner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Static Living Culture franchise territory planner for Vercel.",
+  "scripts": {
+    "start": "npx serve .",
+    "dev": "npx serve .",
+    "build": "echo \"Static HTML site - no build step required\""
+  },
+  "engines": {
+    "node": "24.x"
+  }
+}
