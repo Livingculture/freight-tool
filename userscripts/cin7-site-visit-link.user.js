@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.12.18
+// @version      1.12.19
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.18
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.18
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.19
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.19
 // ==/UserScript==
 
 (function () {
@@ -62,6 +62,15 @@
 
   function clean(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function cleanMultiline(value) {
+    return String(value || '')
+      .replace(/\r\n/g, '\n')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n[ \t]+/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   }
 
   function escapeHtml(value) {
@@ -732,6 +741,36 @@
     return '';
   }
 
+  function readMultilineNearLabel(labelText) {
+    const wanted = normalizeLabel(labelText);
+
+    const fieldsets = Array.from(document.querySelectorAll('fieldset'))
+      .filter(isVisible)
+      .filter((fieldset) => normalizeLabel(fieldset.querySelector('legend')?.textContent || '') === wanted);
+
+    for (const fieldset of fieldsets) {
+      const textarea = fieldset.querySelector('textarea');
+      if (textarea) {
+        const value = cleanMultiline(textarea.value || textarea.textContent || '');
+        if (value) return value;
+      }
+    }
+
+    const labels = Array.from(document.querySelectorAll('label, legend, span, div'))
+      .filter(isVisible)
+      .filter((node) => normalizeLabel(node.textContent || '') === wanted);
+
+    for (const label of labels) {
+      const root = label.closest('fieldset, .row, .col, .form-group, .input-group, div');
+      const textarea = root?.querySelector('textarea');
+      if (!textarea) continue;
+      const value = cleanMultiline(textarea.value || textarea.textContent || '');
+      if (value) return value;
+    }
+
+    return readValueNearLabel(labelText);
+  }
+
   function readMoneyNearLabels(labels) {
     const moneyPattern = /(?:NZ)?\$\s*-?\d[\d,]*(?:\.\d{1,2})?|-?\d[\d,]*\.\d{2}/i;
     const moneyValue = (value) => {
@@ -782,6 +821,7 @@
     const pageOrderId = extractOrderId(pageText);
     const referenceOrderId = extractOrderId(reference);
     const customerName = readValueNearLabel('Customer');
+    const comments = readMultilineNearLabel('Comments');
     let productText = extractProductLines();
     if (productText && customerName && clean(productText).toLowerCase() === clean(customerName).toLowerCase()) {
       productText = '';
@@ -799,7 +839,7 @@
       phone: readValueNearLabel('Phone'),
       email: readValueNearLabel('Email'),
       product: productText,
-      comments: '',
+      comments,
       area: deriveBranchFromRep(rep),
       sourceUrl: window.location.href
     };
@@ -815,8 +855,8 @@
       'Total',
       'Total before tax'
     ]);
-    const notes = readValueNearLabel('Quote memo') ||
-      readValueNearLabel('Comments') ||
+    const notes = readMultilineNearLabel('Quote memo') ||
+      draft.comments ||
       readValueNearLabel('Shipping notes') ||
       readValueNearLabel('Memo') ||
       '';
@@ -931,9 +971,10 @@
   }
 
   function submitQuoteReview(button) {
+    const quoteComments = readMultilineNearLabel('Quote memo') || readMultilineNearLabel('Comments');
     const payload = {
       ...hubspotDraft(),
-      notes: readValueNearLabel('Quote memo') || readValueNearLabel('Comments') || ''
+      notes: quoteComments || ''
     };
     const summary = [
       payload.orderId ? `Quote: ${payload.orderId}` : '',
