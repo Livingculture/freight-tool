@@ -115,10 +115,10 @@ The hosted API only enables browser access from Cin7, Cin7 Core, Dear Systems an
 
 This repository also contains a standalone franchise territory planner at [projects/franchise-territory-planner](./projects/franchise-territory-planner).
 
-Use two Vercel projects from the same GitHub repository:
+Use separate Vercel projects:
 
 - Freight costing API: root directory `.`.
-- Franchise territory planner: root directory `projects/franchise-territory-planner`.
+- Franchise territory planner: `living-culture-franchise-planner`, deployed at `https://living-culture-franchise-planner.vercel.app`.
 
 This keeps the public franchise sales page separate from the freight automation service.
 

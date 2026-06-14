@@ -13,11 +13,12 @@ Or open `index.html` directly in a browser.
 
 ## Deploy As A Separate Vercel Project
 
-Import the same GitHub repository into Vercel a second time and use these project settings:
+Create a standalone Vercel project and deploy this folder with these settings:
 
 ```text
-Project name: livingculture-franchise-territory-planner
-Root directory: projects/franchise-territory-planner
+Project name: living-culture-franchise-planner
+Production URL: https://living-culture-franchise-planner.vercel.app
+Root directory: .
 Framework preset: Other
 Build command: npm run build
 Output directory: .
@@ -25,7 +26,7 @@ Install command: npm install
 Node.js version: 24.x
 ```
 
-Keep the existing freight project pointed at the repository root. This folder is intentionally separate so the franchise page deploys independently from the hosted freight API.
+Keep the existing freight project pointed at the repository root. The live Vercel project is intentionally separate from the freight API project.
 
 ## Notes
 
