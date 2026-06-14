@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.12.20
+// @version      1.12.21
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.20
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.20
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.21
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.21
 // ==/UserScript==
 
 (function () {
@@ -771,6 +771,29 @@
     return readValueNearLabel(labelText);
   }
 
+  function readCin7CommentsTextarea() {
+    const commentsAnchor = findCommentsAnchor();
+    if (!commentsAnchor) return readMultilineNearLabel('Comments');
+
+    const anchorRect = commentsAnchor.getBoundingClientRect();
+    const candidates = Array.from(document.querySelectorAll('textarea'))
+      .filter(isVisible)
+      .map((textarea) => ({ textarea, rect: textarea.getBoundingClientRect() }))
+      .filter(({ rect }) => rect.top >= anchorRect.bottom - 2)
+      .filter(({ rect }) => Math.abs(rect.left - anchorRect.left) < Math.max(80, anchorRect.width + 80))
+      .sort((a, b) => {
+        const topDiff = a.rect.top - b.rect.top;
+        return Math.abs(topDiff) > 2 ? topDiff : a.rect.left - b.rect.left;
+      });
+
+    for (const { textarea } of candidates) {
+      const value = cleanMultiline(textarea.value || textarea.textContent || '');
+      if (value) return value;
+    }
+
+    return readMultilineNearLabel('Comments');
+  }
+
   function readMoneyNearLabels(labels) {
     const moneyPattern = /(?:NZ)?\$\s*-?\d[\d,]*(?:\.\d{1,2})?|-?\d[\d,]*\.\d{2}/i;
     const moneyValue = (value) => {
@@ -821,7 +844,7 @@
     const pageOrderId = extractOrderId(pageText);
     const referenceOrderId = extractOrderId(reference);
     const customerName = readValueNearLabel('Customer');
-    const comments = readMultilineNearLabel('Comments');
+    const comments = readCin7CommentsTextarea();
     let productText = extractProductLines();
     if (productText && customerName && clean(productText).toLowerCase() === clean(customerName).toLowerCase()) {
       productText = '';
@@ -971,7 +994,7 @@
   }
 
   function submitQuoteReview(button) {
-    const quoteComments = readMultilineNearLabel('Comments');
+    const quoteComments = readCin7CommentsTextarea();
     const payload = {
       ...hubspotDraft(),
       notes: quoteComments || ''
