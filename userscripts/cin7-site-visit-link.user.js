@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.12.22
+// @version      1.12.23
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.22
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.22
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.23
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.23
 // ==/UserScript==
 
 (function () {
@@ -857,6 +857,28 @@
     return moneyMatches.length ? moneyMatches.at(-1) : '';
   }
 
+  function readPhoneNumber() {
+    const labelled = readValueNearLabel('Phone') ||
+      readValueNearLabel('Phone number') ||
+      readValueNearLabel('Mobile') ||
+      readValueNearLabel('Customer phone') ||
+      readValueNearLabel('Contact phone');
+    if (labelled) return labelled;
+
+    const bodyText = document.body ? document.body.innerText : '';
+    const lines = bodyText.split('\n').map(clean).filter(Boolean);
+    for (let index = 0; index < lines.length; index += 1) {
+      const label = normalizeLabel(lines[index]);
+      if (!/^(phone|phone number|mobile|customer phone|contact phone)$/.test(label)) continue;
+      const nearby = lines.slice(index, index + 4).join(' ');
+      const match = nearby.match(/(?:\+?64|0)\s*(?:\d[\s().-]*){7,11}\d/);
+      if (match) return clean(match[0]);
+    }
+
+    const match = bodyText.match(/(?:\+?64|0)\s*(?:\d[\s().-]*){7,11}\d/);
+    return match ? clean(match[0]) : '';
+  }
+
   function cin7Draft() {
     const address1 = readValueNearLabel('Shipping address line 1') || readValueNearLabel('Billing address line 1');
     const address2 = readValueNearLabel('Shipping address line 2') || readValueNearLabel('Billing address line 2');
@@ -882,7 +904,7 @@
       visitBy: '',
       customerName,
       address: clean(`${address1} ${address2}`),
-      phone: readValueNearLabel('Phone'),
+      phone: readPhoneNumber(),
       email: readValueNearLabel('Email'),
       product: productText,
       comments,
@@ -894,6 +916,11 @@
   function hubspotDraft() {
     const draft = cin7Draft();
     const amount = readMoneyNearLabels([
+      'Invoice total',
+      'Invoice amount',
+      'Invoice value',
+      'Amount',
+      'Amount paid',
       'Grand total',
       'Order total',
       'Sale total',
