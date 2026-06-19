@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.12.21
+// @version      1.12.22
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.21
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.21
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.22
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.22
 // ==/UserScript==
 
 (function () {
@@ -130,6 +130,24 @@
     return text;
   }
 
+  function cleanQuantity(value) {
+    const text = clean(value);
+    if (!text) return '';
+    const match = text.match(/-?\d+(?:\.\d+)?/);
+    if (!match) return '';
+    const number = Number(match[0]);
+    if (!Number.isFinite(number) || number <= 0) return '';
+    return Number.isInteger(number) ? String(number) : String(number).replace(/\.0+$/, '');
+  }
+
+  function productLineWithQuantity(productText, quantityText) {
+    const product = cleanProductLine(productText);
+    if (!product) return '';
+    if (/^\d+(?:\.\d+)?\s*x\s+/i.test(product)) return product;
+    const quantity = cleanQuantity(quantityText);
+    return quantity ? `${quantity} x ${product}` : product;
+  }
+
   function productCompareKey(value) {
     return cleanProductLine(value)
       .toLowerCase()
@@ -160,13 +178,18 @@
         if (/^total:?$/i.test(rowText) || /^add more items/i.test(rowText)) continue;
         if (/additional charges and services/i.test(rowText)) continue;
 
-        const productCell = row.querySelector('td:nth-child(2), th:nth-child(2)') || row.querySelector('td,th');
+        const cells = Array.from(row.querySelectorAll('td,th'));
+        const productColumnIndex = headerCells.indexOf('product');
+        const quantityColumnIndex = headerCells.indexOf('quantity');
+        const productCell = cells[productColumnIndex >= 0 ? productColumnIndex : 1] || row.querySelector('td:nth-child(2), th:nth-child(2)') || row.querySelector('td,th');
+        const quantityCell = quantityColumnIndex >= 0 ? cells[quantityColumnIndex] : null;
         const productLink = productCell?.querySelector('a') || row.querySelector('a');
-        const productText = cleanProductLine(
+        const productText = productLineWithQuantity(
           productLink?.textContent ||
           productLink?.getAttribute('title') ||
           productLink?.getAttribute('aria-label') ||
-          ''
+          '',
+          quantityCell?.textContent || ''
         );
 
         // Accept product lines that include a SKU prefix pattern in the visible row.
@@ -218,7 +241,7 @@
 
   function extractProductLines() {
     const quoteProducts = extractQuoteProductLines();
-    if (quoteProducts.length) return quoteProducts.join(' | ');
+    if (quoteProducts.length) return quoteProducts.join('\n');
 
     const products = [];
 
@@ -306,10 +329,10 @@
 
     // If we still have nothing useful from DOM, allow API-captured lines as final fallback.
     if (!unique.length && apiProductCache.length) {
-      return apiProductCache.join(' | ');
+      return apiProductCache.join('\n');
     }
 
-    return unique.slice(0, 8).join(' | ');
+    return unique.slice(0, 8).join('\n');
   }
 
   function collectProductCandidatesFromObject(node, out) {
@@ -994,10 +1017,9 @@
   }
 
   function submitQuoteReview(button) {
-    const quoteComments = readCin7CommentsTextarea();
     const payload = {
       ...hubspotDraft(),
-      notes: quoteComments || ''
+      notes: ''
     };
     const summary = [
       payload.orderId ? `Quote: ${payload.orderId}` : '',
