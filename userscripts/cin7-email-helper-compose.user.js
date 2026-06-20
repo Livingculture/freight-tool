@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Email Helper Compose
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.2
+// @version      0.1.3
 // @description  Adds a Compose button to Cin7 email popups and sends Living Culture Email Helper drafts back into Cin7.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-email-helper-compose.user.js?v=0.1.2
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-email-helper-compose.user.js?v=0.1.2
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-email-helper-compose.user.js?v=0.1.3
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-email-helper-compose.user.js?v=0.1.3
 // ==/UserScript==
 
 (function () {
@@ -137,28 +137,42 @@
   }
 
   function findEmailEditor(dialog) {
-    const contentEditable = Array.from(dialog.querySelectorAll("[contenteditable='true']")).find(isVisible);
-    if (contentEditable) return contentEditable;
-
     for (const frame of Array.from(dialog.querySelectorAll("iframe")).filter(isVisible)) {
       try {
-        if (frame.contentDocument?.body) return frame.contentDocument.body;
+        const body = frame.contentDocument?.body;
+        if (body) return { element: body, frame };
       } catch {
         // Cin7's editor iframe is same-origin when available.
       }
+    }
+
+    const contentEditable = Array.from(dialog.querySelectorAll("[contenteditable='true']")).find(isVisible);
+    if (contentEditable) {
+      const body = contentEditable.ownerDocument?.body;
+      if (body && body !== document.body) return { element: body };
+      return { element: contentEditable };
     }
     return null;
   }
 
   function insertDraftIntoCin7Email(html) {
     const dialog = activeEmailDialog();
-    const editor = findEmailEditor(dialog);
+    const target = findEmailEditor(dialog);
+    const editor = target?.element;
     if (!dialog || !editor) {
       window.alert("Open the Cin7 email window first, then click Copy to Cin7 in the email helper again.");
       return false;
     }
 
     editor.innerHTML = `${html}<p><br></p>`;
+    if (window.tinymce?.activeEditor) {
+      try {
+        window.tinymce.activeEditor.setContent(editor.innerHTML);
+        window.tinymce.activeEditor.fire("change");
+      } catch {
+        // Direct DOM insertion above is still the primary path.
+      }
+    }
     editor.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertHTML" }));
     editor.dispatchEvent(new Event("change", { bubbles: true }));
     return true;
