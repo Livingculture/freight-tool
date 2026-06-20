@@ -1,25 +1,23 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Care Guides
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.11
+// @version      0.1.12
 // @description  Adds a Care Guides dropdown to attach Google Drive PDFs to Cin7 quote and sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
 // @grant        GM_xmlhttpRequest
 // @connect      cin7-pdf-attachments.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-care-guides.user.js?v=0.1.11
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-care-guides.user.js?v=0.1.11
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-care-guides.user.js?v=0.1.12
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-care-guides.user.js?v=0.1.12
 // ==/UserScript==
 
 (function () {
   "use strict";
 
   const API_BASE = "https://cin7-pdf-attachments.vercel.app";
-  const EMAIL_HELPER_URL = "https://living-culture-email-helper.vercel.app";
   const PANEL_ID = "lc-cin7-pdf-panel";
   const BUTTON_ID = "lc-cin7-pdf-button";
-  const COMPOSE_BUTTON_ID = "lc-cin7-compose-helper-button";
   const TOKEN_KEY = "lcCin7PdfToken";
   const EMBEDDED_TOOL_TOKEN = "fXlAMocbHnglrq02Vg4WZY0xbHaPsA+b";
   const ACTION_ROW_ID = "lc-cin7-action-row-v1";
@@ -288,26 +286,6 @@
     const style = document.createElement("style");
     style.id = "lc-cin7-pdf-styles";
     style.textContent = `
-      #${COMPOSE_BUTTON_ID} {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 34px;
-        margin-right: 8px;
-        border: 1px solid #05cabe;
-        border-radius: 4px;
-        background: #fff;
-        color: #138f89;
-        padding: 0 14px;
-        font: 700 14px Arial, sans-serif;
-        line-height: 1;
-        white-space: nowrap;
-        vertical-align: middle;
-        cursor: pointer;
-      }
-      #${COMPOSE_BUTTON_ID}:hover {
-        background: #eefdfb;
-      }
       #${BUTTON_ID} {
         display: inline-flex;
         visibility: hidden;
@@ -505,95 +483,17 @@
     target.appendChild(button);
   }
 
-  function emailDialogCandidates() {
-    return Array.from(document.querySelectorAll(".modal, .modal-dialog, .modal-content, [role='dialog'], body"))
-      .filter(isVisible)
-      .filter((element) => /email template|email subject|send the email/i.test(element.innerText || ""));
-  }
-
-  function activeEmailDialog() {
-    return emailDialogCandidates().find((dialog) =>
-      Array.from(dialog.querySelectorAll("button")).some((button) => /^send$/i.test(clean(button.textContent || button.value || "")) && isVisible(button))
-    );
-  }
-
-  function findSendButton(dialog) {
-    if (!dialog) return null;
-    return Array.from(dialog.querySelectorAll("button"))
-      .filter(isVisible)
-      .find((button) => /^send$/i.test(clean(button.textContent || button.value || "")));
-  }
-
-  function openEmailHelper() {
-    const order = extractOrderNumber();
-    const url = new URL(EMAIL_HELPER_URL);
-    if (order) url.searchParams.set("order", order);
-    window.open(url.toString(), "lc-email-helper", "width=1500,height=950");
-  }
-
-  function injectEmailComposeButton() {
-    injectStyles();
-    const dialog = activeEmailDialog();
-    const sendButton = findSendButton(dialog);
-    if (!dialog || !sendButton || dialog.querySelector(`#${COMPOSE_BUTTON_ID}`)) return;
-
-    const button = document.createElement("button");
-    button.type = "button";
-    button.id = COMPOSE_BUTTON_ID;
-    button.textContent = "Compose";
-    button.addEventListener("click", openEmailHelper);
-    sendButton.insertAdjacentElement("beforebegin", button);
-  }
-
-  function findEmailEditor(dialog) {
-    const contentEditable = Array.from(dialog.querySelectorAll("[contenteditable='true']")).find(isVisible);
-    if (contentEditable) return contentEditable;
-
-    for (const frame of Array.from(dialog.querySelectorAll("iframe")).filter(isVisible)) {
-      try {
-        if (frame.contentDocument?.body) return frame.contentDocument.body;
-      } catch {
-        // Ignore cross-origin frames; Cin7's editor iframe is same-origin when available.
-      }
-    }
-    return null;
-  }
-
-  function insertDraftIntoCin7Email(html) {
-    const dialog = activeEmailDialog();
-    const editor = findEmailEditor(dialog);
-    if (!dialog || !editor) {
-      window.alert("Open the Cin7 email window first, then click Copy to Cin7 in the email helper again.");
-      return false;
-    }
-
-    editor.innerHTML = `${html}<p><br></p>${editor.innerHTML || ""}`;
-    editor.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertHTML" }));
-    editor.dispatchEvent(new Event("change", { bubbles: true }));
-    return true;
-  }
-
-  window.addEventListener("message", (event) => {
-    if (event.origin !== EMAIL_HELPER_URL) return;
-    const payload = event.data || {};
-    if (payload.type !== "LC_EMAIL_HELPER_DRAFT") return;
-    const html = String(payload.html || "").trim() || escapeHtml(payload.text || "").replace(/\n/g, "<br>");
-    if (insertDraftIntoCin7Email(html)) window.focus();
-  });
-
   function scheduleInjectButton() {
     if (injectScheduled) return;
     injectScheduled = true;
     window.setTimeout(() => {
       injectScheduled = false;
       injectButton();
-      injectEmailComposeButton();
     }, 500);
   }
 
   function boot() {
     injectButton();
-    injectEmailComposeButton();
     const observer = new MutationObserver(() => scheduleInjectButton());
     observer.observe(document.body, { childList: true, subtree: true });
   }
