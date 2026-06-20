@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Email Helper Compose
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.0
+// @version      0.1.1
 // @description  Adds a Compose button to Cin7 email popups and sends Living Culture Email Helper drafts back into Cin7.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-email-helper-compose.user.js?v=0.1.0
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-email-helper-compose.user.js?v=0.1.0
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-email-helper-compose.user.js?v=0.1.1
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-email-helper-compose.user.js?v=0.1.1
 // ==/UserScript==
 
 (function () {
@@ -150,6 +150,34 @@
     return null;
   }
 
+  function elementStyle(element) {
+    return element.ownerDocument.defaultView.getComputedStyle(element);
+  }
+
+  function hasDottedBorder(element) {
+    const style = elementStyle(element);
+    return [style.borderTopStyle, style.borderRightStyle, style.borderBottomStyle, style.borderLeftStyle].some((value) => /dashed|dotted/i.test(value));
+  }
+
+  function findCin7TemplateBox(editor) {
+    const candidates = Array.from(editor.querySelectorAll("div, table, tbody, tr, td, section, article"))
+      .filter((element) => {
+        const text = clean(element.innerText || element.textContent || "");
+        return hasDottedBorder(element) || /thank you for your inquiry|quotes are valid for 14 days|living culture sales team/i.test(text);
+      })
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        return { element, area: rect.width * rect.height, dotted: hasDottedBorder(element) };
+      })
+      .filter((item) => item.area > 0);
+
+    candidates.sort((a, b) => {
+      if (a.dotted !== b.dotted) return a.dotted ? -1 : 1;
+      return b.area - a.area;
+    });
+    return candidates[0]?.element || null;
+  }
+
   function insertDraftIntoCin7Email(html) {
     const dialog = activeEmailDialog();
     const editor = findEmailEditor(dialog);
@@ -158,7 +186,10 @@
       return false;
     }
 
-    editor.innerHTML = `${html}<p><br></p>${editor.innerHTML || ""}`;
+    const target = findCin7TemplateBox(editor) || editor;
+    target.innerHTML = `${html}<p><br></p>`;
+    target.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertHTML" }));
+    target.dispatchEvent(new Event("change", { bubbles: true }));
     editor.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertHTML" }));
     editor.dispatchEvent(new Event("change", { bubbles: true }));
     return true;
