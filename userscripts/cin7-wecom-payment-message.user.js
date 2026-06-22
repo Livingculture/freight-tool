@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 WeCom Payment Message Sender
 // @namespace    livingculture
-// @version      4.1
+// @version      4.2
 // @description  Sends a WeCom payment message from Cin7 invoice/payment screen only.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -400,6 +400,8 @@
 
     const balanceIsZero = balanceDue !== null && nearlyEqual(balanceDue, 0, 0.05);
     const paymentEqualsTotal = invoiceTotal !== null && nearlyEqual(paymentAmount, invoiceTotal, 1.5);
+    const twentyPercentTotal = invoiceTotal !== null ? invoiceTotal * 0.2 : null;
+    const paymentIsTwentyPercent = twentyPercentTotal !== null && nearlyEqual(paymentAmount, twentyPercentTotal, 2.5);
     const halfTotal = invoiceTotal !== null ? invoiceTotal / 2 : null;
     const paymentIsHalf = halfTotal !== null && nearlyEqual(paymentAmount, halfTotal, 2.5);
     const balanceRoughlyEqualsPayment = balanceDue !== null && nearlyEqual(balanceDue, paymentAmount, 2.5);
@@ -414,6 +416,10 @@
 
     if (balanceIsZero && invoiceTotal !== null && paymentAmount < invoiceTotal - 1.5) {
       return 'outstanding balance';
+    }
+
+    if (!balanceIsZero && paymentIsTwentyPercent) {
+      return '20% deposit/payment';
     }
 
     if (!balanceIsZero && paymentIsHalf) {
@@ -447,6 +453,8 @@
 
     if (paymentType === 'paid in full') {
       message = `${orderNumber} ${paymentMethod} payment ${amount} paid in full`;
+    } else if (paymentType === '20% deposit/payment') {
+      message = `${orderNumber} ${paymentMethod} 20% deposit/payment ${amount}`;
     } else if (paymentType === '50% deposit') {
       message = `${orderNumber} ${paymentMethod} 50% deposit ${amount}`;
     } else if (paymentType === 'outstanding balance') {
