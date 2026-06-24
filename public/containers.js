@@ -109,20 +109,27 @@ function oneMonthAgo() {
   return threshold;
 }
 
-function isArchivedContainer(container) {
-  const status = clean(container.status).toLowerCase();
-  const dehireDate = parseDate(container.dehireDate);
-  const arriveDate = parseDate(container.arrive);
-  const completed = Boolean(dehireDate) && (
-    container.stage === 'Dehired' ||
-    status.includes('dehire') ||
-    status.includes('devan')
-  );
-  const oldArrival = container.stage === 'Arrived' &&
-    Boolean(arriveDate) &&
-    arriveDate < oneMonthAgo();
+function milestoneDates(container) {
+  return [
+    container.loadingDate,
+    container.departure,
+    container.arrive,
+    container.dischargeDate,
+    container.dispatchToWarehouse,
+    container.lastFreeDate,
+    container.dehireDate
+  ].map(parseDate).filter(Boolean);
+}
 
-  return oldArrival || (completed && dehireDate < oneMonthAgo());
+function latestMilestoneDate(container) {
+  const dates = milestoneDates(container);
+  if (!dates.length) return null;
+  return new Date(Math.max(...dates.map(date => date.getTime())));
+}
+
+function isArchivedContainer(container) {
+  const latestDate = latestMilestoneDate(container);
+  return Boolean(latestDate) && latestDate < oneMonthAgo();
 }
 
 function relativeDate(value) {
