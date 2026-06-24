@@ -306,24 +306,33 @@ function card(container) {
 }
 
 function tableRow(container) {
+  const milestoneLine = [
+    ['Load', formatDate(container.loadingDate)],
+    ['ETD', formatLastDate(container.departure)],
+    ['ETA', formatLastDate(container.arrive)]
+  ]
+    .map(([label, value]) => `${label} ${value && value !== '-' ? value : '-'}`)
+    .join(' | ');
+  const returnLine = [
+    ['Last free', formatDate(container.lastFreeDate)],
+    ['Dehire', formatDate(container.dehireDate)]
+  ]
+    .map(([label, value]) => `${label} ${value && value !== '-' ? value : '-'}`)
+    .join(' | ');
+
   return `
     <tr>
       <td><strong>${escapeHtml(container.container)}</strong><span>${escapeHtml(container.month || '')}</span></td>
       <td><strong>${escapeHtml(container.where)}</strong><span>${escapeHtml(container.stage)}</span><span>${escapeHtml(container.status || '')}</span></td>
-      <td class="next-cell"><strong>${escapeHtml(container.nextLabel)}</strong></td>
-      ${dateCell(formatDate(container.loadingDate))}
-      ${dateCell(formatLastDate(container.departure))}
-      ${dateCell(formatLastDate(container.arrive), 'eta-cell')}
+      <td class="when-cell">
+        <strong>${escapeHtml(container.nextLabel)}</strong>
+        <span>${escapeHtml(milestoneLine)}</span>
+        <span>${escapeHtml(returnLine)}</span>
+      </td>
       <td><strong>${escapeHtml(container.products || '-')}</strong><span>${escapeHtml(container.volume || '')}</span></td>
       <td><strong>${escapeHtml(container.categoryManager || '-')}</strong><span>${escapeHtml(container.shipper || '')}</span></td>
     </tr>
   `;
-}
-
-function dateCell(value, className = '') {
-  const display = value && value !== '-' ? value : '-';
-  const emptyClass = display === '-' ? 'is-empty' : '';
-  return `<td class="date-cell ${escapeHtml(className)} ${emptyClass}"><strong>${escapeHtml(display)}</strong></td>`;
 }
 
 function isDevannedContainer(container) {
@@ -334,7 +343,7 @@ function isDevannedContainer(container) {
 function tableDividerRow(label, count) {
   return `
     <tr class="table-divider">
-      <td colspan="8">
+      <td colspan="5">
         <strong>${escapeHtml(label)}</strong>
         <span>${escapeHtml(count)} containers</span>
       </td>
@@ -433,7 +442,7 @@ function render() {
     : '<div class="empty">No containers match this filter.</div>';
   elements.containerTable.innerHTML = list.length
     ? renderTableRows(list)
-    : '<tr><td colspan="8">No containers match this filter.</td></tr>';
+    : '<tr><td colspan="5">No containers match this filter.</td></tr>';
 }
 
 async function loadContainers() {
