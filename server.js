@@ -2,6 +2,7 @@ const express = require('express');
 const fs = require('fs/promises');
 const os = require('os');
 const path = require('path');
+const AdmZip = require('adm-zip');
 const { chromium } = require('playwright-core');
 
 const app = express();
@@ -55,6 +56,7 @@ const HUBSPOT_DEAL_TO_CONTACT_ASSOCIATION_TYPE_ID = Number(
 const CONTAINER_SHEET_ID = process.env.CONTAINER_SHEET_ID || '1vdNuRxr2nD9IKz923KdJPtNGV3EvLPAsQkhikG5KnpY';
 const CONTAINER_SHEET_GID = process.env.CONTAINER_SHEET_GID || '853793483';
 const CONTAINER_SHEET_CSV_URL = `https://docs.google.com/spreadsheets/d/${CONTAINER_SHEET_ID}/export?format=csv&gid=${CONTAINER_SHEET_GID}`;
+const CONTAINER_SHEET_XLSX_URL = `https://docs.google.com/spreadsheets/d/${CONTAINER_SHEET_ID}/export?format=xlsx`;
 const CONTAINER_SHEET_CACHE_MS = 5 * 60 * 1000;
 const BLOCKED_RESOURCE_TYPES = new Set(['image', 'font', 'media']);
 const BLOCKED_AUTOMATION_URLS = [
@@ -203,6 +205,152 @@ function parseCsv(text) {
   return rows;
 }
 
+function decodeXmlText(value) {
+  return String(value || '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'");
+}
+
+function columnIndex(column) {
+  return String(column || '').split('').reduce((index, char) => (
+    index * 26 + char.toUpperCase().charCodeAt(0) - 64
+  ), 0) - 1;
+}
+
+function parseSharedStringsXml(xml) {
+  if (!xml) return [];
+
+  return Array.from(xml.matchAll(/<si>([\s\S]*?)<\/si>/g)).map(match => (
+    Array.from(match[1].matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g))
+      .map(textMatch => decodeXmlText(textMatch[1]))
+      .join('')
+  ));
+}
+
+function getZipText(zip, entryName) {
+  const entry = zip.getEntry(entryName);
+  return entry ? entry.getData().toString('utf8') : '';
+}
+
+function parseWorkbookSheets(zip) {
+  const workbookXml = getZipText(zip, 'xl/workbook.xml');
+  const relsXml = getZipText(zip, 'xl/_rels/workbook.xml.rels');
+  const relTargets = {};
+
+  for (const match of relsXml.matchAll(/<Relationship[^>]*Id="([^"]+)"[^>]*Target="([^"]+)"/g)) {
+    relTargets[match[1]] = match[2].replace(/^\/?xl\//, '');
+  }
+
+  return Array.from(workbookXml.matchAll(/<sheet[^>]*name="([^"]+)"[^>]*r:id="([^"]+)"[^>]*\/>/g))
+    .map(match => ({
+      name: decodeXmlText(match[1]),
+      path: `xl/${relTargets[match[2]] || ''}`.replace(/\/+$/, '')
+    }))
+    .filter(sheet => sheet.name && sheet.path !== 'xl/');
+}
+
+function parseWorksheetRows(xml, sharedStrings) {
+  const rows = [];
+
+  for (const rowMatch of xml.matchAll(/<row[^>]*>([\s\S]*?)<\/row>/g)) {
+    const row = [];
+
+    for (const cellMatch of rowMatch[1].matchAll(/<c[^>]*r="([A-Z]+)\d+"([^>]*)>([\s\S]*?)<\/c>/g)) {
+      const index = columnIndex(cellMatch[1]);
+      const attrs = cellMatch[2];
+      const body = cellMatch[3];
+      const rawValue = body.match(/<v>([\s\S]*?)<\/v>/)?.[1] || '';
+      row[index] = attrs.includes('t="s"') ? sharedStrings[Number(rawValue)] || '' : rawValue;
+    }
+
+    if (row.some(Boolean)) rows.push(row.map(cleanTextValue));
+  }
+
+  return rows;
+}
+
+function normaliseHeader(value) {
+  return cleanTextValue(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function findHeaderIndex(headers, names) {
+  const wanted = names.map(normaliseHeader);
+  return headers.findIndex(header => wanted.includes(normaliseHeader(header)));
+}
+
+function parseContainerDetailRows(sheetName, rows) {
+  const headerIndex = rows.findIndex(row => {
+    const headers = row.map(normaliseHeader);
+    return headers.includes('sku') && headers.includes('title');
+  });
+
+  if (headerIndex < 0) return null;
+
+  const headers = rows[headerIndex] || [];
+  const skuIndex = findHeaderIndex(headers, ['sku', 'variant sku']);
+  const titleIndex = findHeaderIndex(headers, ['title', 'product title']);
+  const setIndex = findHeaderIndex(headers, ['set']);
+  const cartonsIndex = findHeaderIndex(headers, ['cartons', 'carton']);
+  const dimensionIndex = findHeaderIndex(headers, ['dimension', 'dimensions']);
+  const totalIndex = findHeaderIndex(headers, ['total']);
+  const locationIndex = findHeaderIndex(headers, ['location']);
+
+  const items = rows.slice(headerIndex + 1)
+    .map(row => ({
+      sku: skuIndex >= 0 ? row[skuIndex] : '',
+      title: titleIndex >= 0 ? row[titleIndex] : '',
+      set: setIndex >= 0 ? row[setIndex] : '',
+      cartons: cartonsIndex >= 0 ? row[cartonsIndex] : '',
+      dimension: dimensionIndex >= 0 ? row[dimensionIndex] : '',
+      total: totalIndex >= 0 ? row[totalIndex] : '',
+      location: locationIndex >= 0 ? row[locationIndex] : ''
+    }))
+    .filter(item => item.title)
+    .slice(0, 80);
+
+  if (!items.length) return null;
+
+  return {
+    sourceSheet: sheetName,
+    itemCount: items.length,
+    items
+  };
+}
+
+function containerNumberKey(value) {
+  const match = cleanTextValue(value).match(/\d+/);
+  return match ? String(Number(match[0])) : '';
+}
+
+async function getContainerWorkbookDetails() {
+  const response = await fetch(CONTAINER_SHEET_XLSX_URL, {
+    headers: { Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,*/*' }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Google Sheet workbook returned ${response.status}`);
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  const zip = new AdmZip(buffer);
+  const sharedStrings = parseSharedStringsXml(getZipText(zip, 'xl/sharedStrings.xml'));
+  const detailsByContainer = {};
+
+  for (const sheet of parseWorkbookSheets(zip)) {
+    const key = containerNumberKey(sheet.name);
+    if (!key || ['f'].includes(sheet.name.toLowerCase())) continue;
+
+    const rows = parseWorksheetRows(getZipText(zip, sheet.path), sharedStrings);
+    const detail = parseContainerDetailRows(sheet.name, rows);
+    if (detail) detailsByContainer[key] = detail;
+  }
+
+  return detailsByContainer;
+}
+
 function normaliseContainerRows(csvText) {
   const rows = parseCsv(csvText)
     .map(row => row.map(cleanTextValue))
@@ -277,6 +425,21 @@ async function getContainerSheetData() {
 
   const csvText = await response.text();
   const containers = normaliseContainerRows(csvText);
+  let detailsByContainer = {};
+
+  try {
+    detailsByContainer = await getContainerWorkbookDetails();
+  } catch (error) {
+    console.error('Container workbook details fetch failed:', error.message);
+  }
+
+  for (const container of containers) {
+    const key = containerNumberKey(container.container);
+    if (key && detailsByContainer[key]) {
+      container.contents = detailsByContainer[key];
+    }
+  }
+
   containerSheetCache = {
     ok: true,
     source: 'google-sheet',

@@ -263,6 +263,52 @@ function timeline(container) {
   `;
 }
 
+function renderContentsRows(container) {
+  const items = container.contents?.items || [];
+
+  if (!items.length) {
+    return `
+      <div class="contents-empty">
+        <strong>${escapeHtml(container.products || 'Products not listed')}</strong>
+        <span>${escapeHtml(container.volume || '')}</span>
+        <span>No matching detail tab was found for this container in the workbook.</span>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="contents-meta">
+      <span>${escapeHtml(container.contents.sourceSheet)}</span>
+      <span>${escapeHtml(container.contents.itemCount)} products</span>
+    </div>
+    <div class="contents-list">
+      ${items.map(item => `
+        <div class="contents-row">
+          <strong>${escapeHtml(item.sku || '-')}</strong>
+          <span>${escapeHtml(item.title || 'Untitled product')}</span>
+          <em>${[
+            item.set ? `Set ${item.set}` : '',
+            item.cartons ? `${item.cartons} cartons` : '',
+            item.location ? `Location ${item.location}` : ''
+          ].filter(Boolean).map(escapeHtml).join(' | ')}</em>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderContentsDropdown(container) {
+  const count = container.contents?.itemCount || 0;
+  const label = count ? `${count} product details` : 'Product summary';
+
+  return `
+    <details class="contents-dropdown">
+      <summary>${escapeHtml(label)}</summary>
+      ${renderContentsRows(container)}
+    </details>
+  `;
+}
+
 function card(container) {
   const volume = clean(container.volume);
   const refs = [container.po, container.tristarRef].map(clean).filter(Boolean).join(' / ');
@@ -278,6 +324,7 @@ function card(container) {
         <p>${escapeHtml([container.shipper, container.categoryManager].map(clean).filter(Boolean).join(' - ') || 'People not listed')}</p>
         ${refs ? `<p>${escapeHtml(refs)}</p>` : ''}
         ${timeline(container)}
+        ${renderContentsDropdown(container)}
       </div>
     </article>
   `;
