@@ -292,15 +292,28 @@ function filteredContainers() {
   });
 }
 
-function sortByNextDate(a, b) {
-  const aTime = a.nextDate ? a.nextDate.getTime() : Number.MAX_SAFE_INTEGER;
-  const bTime = b.nextDate ? b.nextDate.getTime() : Number.MAX_SAFE_INTEGER;
-  return aTime - bTime || String(a.container).localeCompare(String(b.container));
+function numericContainerValue(container) {
+  const match = clean(container.container).match(/\d+/);
+  return match ? Number(match[0]) : Number.MAX_SAFE_INTEGER;
 }
 
-function sortForCards(a, b) {
-  if (a.attention !== b.attention) return a.attention ? -1 : 1;
-  return sortByNextDate(a, b);
+function compareContainerNumbers(a, b) {
+  const aNumber = numericContainerValue(a);
+  const bNumber = numericContainerValue(b);
+
+  if (aNumber !== bNumber) return aNumber - bNumber;
+  return clean(a.container).localeCompare(clean(b.container), undefined, {
+    numeric: true,
+    sensitivity: 'base'
+  });
+}
+
+function sortByClosestDateThenContainer(a, b) {
+  const aDistance = a.nextDate ? Math.abs(daysFromToday(a.nextDate)) : Number.MAX_SAFE_INTEGER;
+  const bDistance = b.nextDate ? Math.abs(daysFromToday(b.nextDate)) : Number.MAX_SAFE_INTEGER;
+
+  if (aDistance !== bDistance) return aDistance - bDistance;
+  return compareContainerNumbers(a, b);
 }
 
 function renderFilters() {
@@ -322,8 +335,8 @@ function renderFilters() {
 }
 
 function render() {
-  const list = filteredContainers();
-  const cards = [...list].sort(sortForCards);
+  const list = filteredContainers().sort(sortByClosestDateThenContainer);
+  const cards = [...list];
 
   elements.metricTotal.textContent = state.containers.length;
   elements.metricTransit.textContent = state.containers.filter(item => item.stage === 'On water' || item.stage === 'Arriving soon').length;
