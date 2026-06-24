@@ -1,16 +1,16 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.12.28
+// @version      1.12.29
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
 // @grant        GM_xmlhttpRequest
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
-// @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.28
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.28
+// @run-at       document-start
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.29
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.29
 // ==/UserScript==
 
 (function () {
@@ -42,6 +42,7 @@
     ['NPE', 'NPE · Napier']
   ];
   let apiProductCache = [];
+  let apiLineItemCache = [];
   let workflowRepOptions = [];
   let repOptionsLoadPromise = null;
   let siteVisitBookingsCache = { key: '', bookings: [] };
@@ -169,9 +170,52 @@
     return Number.isFinite(number) ? number.toFixed(2) : '';
   }
 
+  function readObjectValue(object, names) {
+    if (!object || typeof object !== 'object') return '';
+    const entries = Object.entries(object);
+    for (const wanted of names) {
+      const found = entries.find(([key]) => key.toLowerCase() === wanted.toLowerCase());
+      if (found && found[1] !== null && found[1] !== undefined) return found[1];
+    }
+    for (const wanted of names) {
+      const found = entries.find(([key]) => key.toLowerCase().includes(wanted.toLowerCase()));
+      if (found && found[1] !== null && found[1] !== undefined) return found[1];
+    }
+    return '';
+  }
+
   function skuFromText(value) {
     const match = clean(value).match(/\b[A-Z]{1,8}\d{3,}(?:-\d+)?\b/);
     return match ? match[0].toUpperCase() : '';
+  }
+
+  function lineItemCompareKey(item) {
+    return [
+      clean(item?.sku).toUpperCase(),
+      cleanProductLine(item?.name).toLowerCase()
+    ].filter(Boolean).join('|');
+  }
+
+  function enrichLineItemsFromApi(items) {
+    if (!apiLineItemCache.length) return items;
+    if (items.length && items.every((item) => !clean(item.price) && !clean(item.total)) && apiLineItemCache.length === items.length) {
+      return apiLineItemCache;
+    }
+
+    const apiByKey = new Map();
+    apiLineItemCache.forEach((item) => {
+      const key = lineItemCompareKey(item);
+      if (key) apiByKey.set(key, item);
+    });
+
+    return items.map((item, index) => {
+      const apiItem = apiByKey.get(lineItemCompareKey(item)) || apiLineItemCache[index] || {};
+      return {
+        ...item,
+        price: clean(item.price) || clean(apiItem.price),
+        total: clean(item.total) || clean(apiItem.total)
+      };
+    });
   }
 
   function tableHeaderMap(table) {
@@ -260,9 +304,11 @@
       }
     }
 
+    const enrichedItems = items.length ? enrichLineItemsFromApi(items) : apiLineItemCache;
+
     const unique = [];
     const seen = new Set();
-    for (const item of items) {
+    for (const item of enrichedItems) {
       const key = [item.sku, item.name, item.quantity, item.price, item.total].map(clean).join('|').toLowerCase();
       if (!key || seen.has(key)) continue;
       seen.add(key);
@@ -529,6 +575,84 @@
     });
   }
 
+  function collectLineItemCandidatesFromObject(node, out) {
+    if (!node) return;
+    if (Array.isArray(node)) {
+      node.forEach((item) => collectLineItemCandidatesFromObject(item, out));
+      return;
+    }
+    if (typeof node !== 'object') return;
+
+    const keySet = new Set(Object.keys(node).map((key) => key.toLowerCase()));
+    const hasProduct =
+      keySet.has('product') ||
+      keySet.has('productname') ||
+      keySet.has('itemname') ||
+      keySet.has('description') ||
+      keySet.has('itemdescription') ||
+      keySet.has('sku') ||
+      keySet.has('productsku') ||
+      keySet.has('productcode');
+    const hasQuantity =
+      keySet.has('quantity') ||
+      keySet.has('qty') ||
+      keySet.has('orderquantity') ||
+      keySet.has('orderedquantity');
+
+    if (hasProduct && hasQuantity) {
+      const rawName = readObjectValue(node, [
+        'ProductName',
+        'Product',
+        'ItemName',
+        'Description',
+        'ItemDescription',
+        'ProductDescription',
+        'Name'
+      ]);
+      const name = cleanProductLine(rawName);
+      const quantity = cleanQuantity(readObjectValue(node, [
+        'Quantity',
+        'Qty',
+        'OrderQuantity',
+        'OrderedQuantity'
+      ]));
+      const price = parseMoneyText(readObjectValue(node, [
+        'Price',
+        'UnitPrice',
+        'Unit Price',
+        'SalePrice',
+        'SellPrice',
+        'Sale Price',
+        'UnitCost',
+        'Unit Cost'
+      ]));
+      const total = parseMoneyText(readObjectValue(node, [
+        'Total',
+        'LineTotal',
+        'Line Total',
+        'Amount',
+        'Subtotal',
+        'SubTotal'
+      ]));
+      const sku = clean(readObjectValue(node, [
+        'SKU',
+        'Sku',
+        'ProductSKU',
+        'ProductSku',
+        'ProductCode',
+        'Code'
+      ])).toUpperCase() || skuFromText(rawName);
+
+      if (name && quantity && (price || total)) {
+        out.push({ name, sku, quantity, price, total });
+      }
+    }
+
+    Object.keys(node).forEach((key) => {
+      collectLineItemCandidatesFromObject(node[key], out);
+    });
+  }
+
   function extractProductsFromApiPayload(payload) {
     const candidates = [];
     collectProductCandidatesFromObject(payload, candidates);
@@ -545,6 +669,20 @@
     return unique.slice(0, 8);
   }
 
+  function extractLineItemsFromApiPayload(payload) {
+    const candidates = [];
+    collectLineItemCandidatesFromObject(payload, candidates);
+    const unique = [];
+    const seen = new Set();
+    for (const item of candidates) {
+      const key = [item.sku, item.name, item.quantity, item.price, item.total].map(clean).join('|').toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      unique.push(item);
+    }
+    return unique.slice(0, 30);
+  }
+
   function inspectApiTextForProducts(text) {
     if (!text || typeof text !== 'string') return;
     if (text.length < 5 || text[0] !== '{' && text[0] !== '[') return;
@@ -552,6 +690,8 @@
       const json = JSON.parse(text);
       const products = extractProductsFromApiPayload(json);
       if (products.length) apiProductCache = products;
+      const lineItems = extractLineItemsFromApiPayload(json);
+      if (lineItems.length) apiLineItemCache = lineItems;
     } catch (error) {
       // Not JSON payload
     }
@@ -1126,14 +1266,29 @@
     textarea.remove();
   }
 
+  function hubspotLineItemSummary(lineItems) {
+    const items = Array.isArray(lineItems) ? lineItems : [];
+    if (!items.length) return '';
+    return items.slice(0, 6).map((item) => {
+      const quantity = clean(item.quantity) || '1';
+      const name = clean(item.name);
+      const price = clean(item.price);
+      const total = clean(item.total);
+      const money = price ? `$${price}` : total ? `total $${total}` : 'price missing';
+      return `- ${quantity} x ${name}: ${money}`;
+    }).join('\n');
+  }
+
   function submitHubSpotDeal(button) {
     const payload = hubspotDraft();
+    const lineItemDetails = hubspotLineItemSummary(payload.lineItems);
     const summary = [
       payload.orderId ? `Sale: ${payload.orderId}` : '',
       payload.customerName ? `Customer: ${payload.customerName}` : '',
       payload.phone ? `Phone: ${payload.phone}` : '',
       payload.amount ? `Amount: ${payload.amount}` : '',
-      payload.lineItems?.length ? `Line items: ${payload.lineItems.length}` : ''
+      payload.lineItems?.length ? `Line items: ${payload.lineItems.length}` : '',
+      lineItemDetails
     ].filter(Boolean).join('\n');
 
     if (!payload.customerName && !payload.email && !payload.phone) {
