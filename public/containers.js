@@ -287,55 +287,8 @@ function timeline(container) {
   `;
 }
 
-function renderContentsRows(container) {
-  const items = container.contents?.items || [];
-
-  if (!items.length) {
-    return `
-      <div class="contents-empty">
-        <strong>${escapeHtml(container.products || 'Products not listed')}</strong>
-        <span>${escapeHtml(container.volume || '')}</span>
-        <span>No matching detail tab was found for this container in the workbook.</span>
-      </div>
-    `;
-  }
-
-  return `
-    <div class="contents-meta">
-      <span>${escapeHtml(container.contents.sourceSheet)}</span>
-      <span>${escapeHtml(container.contents.itemCount)} products</span>
-    </div>
-    <div class="contents-list">
-      ${items.map(item => `
-        <div class="contents-row">
-          <strong>${escapeHtml(item.sku || '-')}</strong>
-          <span>${escapeHtml(item.title || 'Untitled product')}</span>
-          <em>${[
-            item.set ? `Set ${item.set}` : '',
-            item.cartons ? `${item.cartons} cartons` : '',
-            item.location ? `Location ${item.location}` : ''
-          ].filter(Boolean).map(escapeHtml).join(' | ')}</em>
-        </div>
-      `).join('')}
-    </div>
-  `;
-}
-
-function renderContentsDropdown(container) {
-  const count = container.contents?.itemCount || 0;
-  if (!count) return '';
-
-  return `
-    <details class="contents-dropdown">
-      <summary>${escapeHtml(`${count} product details`)}</summary>
-      ${renderContentsRows(container)}
-    </details>
-  `;
-}
-
 function card(container) {
   const volume = clean(container.volume);
-  const refs = [container.po, container.tristarRef].map(clean).filter(Boolean).join(' / ');
   return `
     <article class="container-card ${escapeHtml(container.tone)}">
       <div class="container-id">
@@ -346,10 +299,8 @@ function card(container) {
         <p><strong>${escapeHtml(container.where)}</strong> ${escapeHtml(container.nextLabel)}</p>
         <p>${escapeHtml(container.products || 'Products not listed')}${volume ? ` - ${escapeHtml(volume)}` : ''}</p>
         <p>${escapeHtml([container.shipper, container.categoryManager].map(clean).filter(Boolean).join(' - ') || 'People not listed')}</p>
-        ${refs ? `<p>${escapeHtml(refs)}</p>` : ''}
       </div>
       ${timeline(container)}
-      ${renderContentsDropdown(container)}
     </article>
   `;
 }
@@ -358,9 +309,7 @@ function tableRow(container) {
   const dateChips = [
     ['Load', formatDate(container.loadingDate)],
     ['ETD', formatLastDate(container.departure)],
-    ['ETA', formatLastDate(container.arrive)],
-    ['Last free', formatDate(container.lastFreeDate)],
-    ['Dehire', formatDate(container.dehireDate)]
+    ['ETA', formatLastDate(container.arrive)]
   ].filter(([, value]) => value && value !== '-');
 
   return `
@@ -369,15 +318,14 @@ function tableRow(container) {
       <td><strong>${escapeHtml(container.where)}</strong><span>${escapeHtml(container.stage)}</span><span>${escapeHtml(container.status || '')}</span></td>
       <td>
         <strong>${escapeHtml(container.nextLabel)}</strong>
-        <div class="date-chips">
+        <div class="date-pill-grid">
           ${dateChips.map(([label, value]) => `
-            <span class="date-chip"><b>${escapeHtml(label)}</b>${escapeHtml(value)}</span>
+            <span class="date-pill"><b>${escapeHtml(label)}</b><span>${escapeHtml(value)}</span></span>
           `).join('')}
         </div>
       </td>
       <td><strong>${escapeHtml(container.products || '-')}</strong><span>${escapeHtml(container.volume || '')}</span></td>
       <td><strong>${escapeHtml(container.categoryManager || '-')}</strong><span>${escapeHtml(container.shipper || '')}</span></td>
-      <td><strong>${escapeHtml(container.po || '-')}</strong><span>${escapeHtml(container.tristarRef || '')}</span></td>
     </tr>
   `;
 }
@@ -390,7 +338,7 @@ function isDevannedContainer(container) {
 function tableDividerRow(label, count) {
   return `
     <tr class="table-divider">
-      <td colspan="6">
+      <td colspan="5">
         <strong>${escapeHtml(label)}</strong>
         <span>${escapeHtml(count)} containers</span>
       </td>
@@ -489,7 +437,7 @@ function render() {
     : '<div class="empty">No containers match this filter.</div>';
   elements.containerTable.innerHTML = list.length
     ? renderTableRows(list)
-    : '<tr><td colspan="6">No containers match this filter.</td></tr>';
+    : '<tr><td colspan="5">No containers match this filter.</td></tr>';
 }
 
 async function loadContainers() {

@@ -345,90 +345,6 @@ select:focus {
   white-space: nowrap;
 }
 
-.contents-dropdown {
-  grid-column: 1 / -1;
-  margin-top: 4px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fbfcfa;
-}
-
-.contents-dropdown summary {
-  min-height: 38px;
-  padding: 9px 10px;
-  color: var(--green-dark);
-  font-weight: 900;
-  cursor: pointer;
-}
-
-.contents-meta,
-.contents-empty,
-.contents-list {
-  border-top: 1px solid var(--line);
-}
-
-.contents-meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 10px;
-  color: var(--muted);
-  font-size: 0.82rem;
-  font-weight: 800;
-}
-
-.contents-empty {
-  display: grid;
-  gap: 4px;
-  padding: 10px;
-  color: var(--muted);
-}
-
-.contents-empty strong,
-.contents-empty span {
-  display: block;
-}
-
-.contents-list {
-  display: grid;
-  max-height: 360px;
-  overflow: auto;
-}
-
-.contents-row {
-  display: grid;
-  grid-template-columns: minmax(100px, 0.8fr) minmax(0, 2fr);
-  gap: 6px 10px;
-  padding: 9px 10px;
-  border-bottom: 1px solid var(--line);
-}
-
-.contents-row:last-child {
-  border-bottom: 0;
-}
-
-.contents-row strong,
-.contents-row span,
-.contents-row em {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.contents-row strong {
-  color: var(--green-dark);
-}
-
-.contents-row span {
-  color: var(--ink);
-}
-
-.contents-row em {
-  grid-column: 2;
-  color: var(--muted);
-  font-style: normal;
-  font-size: 0.82rem;
-}
-
 .table-section {
   padding: 24px;
 }
@@ -442,7 +358,7 @@ select:focus {
 
 table {
   width: 100%;
-  min-width: 920px;
+  min-width: 820px;
   border-collapse: collapse;
 }
 
@@ -478,31 +394,42 @@ td span {
   font-size: 0.88rem;
 }
 
-.date-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+.date-pill-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
   margin-top: 8px;
+  max-width: 460px;
 }
 
-.date-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 26px;
-  padding: 4px 8px;
+.date-pill {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  min-height: 48px;
+  padding: 7px 9px;
   border: 1px solid var(--line);
   border-radius: 7px;
   background: #fbfcfa;
-  color: var(--muted);
-  font-size: 0.82rem;
-  white-space: nowrap;
 }
 
-.date-chip b {
-  color: var(--green-dark);
-  font-size: 0.72rem;
+.date-pill b,
+.date-pill span {
+  display: block;
+}
+
+.date-pill b {
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1;
   text-transform: uppercase;
+}
+
+.date-pill span {
+  color: var(--green-dark);
+  font-size: 0.84rem;
+  font-weight: 850;
+  line-height: 1.15;
 }
 
 .table-divider td {
@@ -559,12 +486,8 @@ td span {
     grid-template-columns: 1fr;
   }
 
-  .contents-row {
-    grid-template-columns: 1fr;
-  }
-
-  .contents-row em {
-    grid-column: 1;
+  .date-pill-grid {
+    max-width: none;
   }
 }
 
