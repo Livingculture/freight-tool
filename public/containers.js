@@ -100,6 +100,25 @@ function daysFromToday(date) {
   return Math.round((target - start) / 86400000);
 }
 
+function oneMonthAgo() {
+  const today = new Date();
+  const threshold = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  threshold.setMonth(threshold.getMonth() - 1);
+  return threshold;
+}
+
+function isArchivedContainer(container) {
+  const status = clean(container.status).toLowerCase();
+  const dehireDate = parseDate(container.dehireDate);
+  const completed = Boolean(dehireDate) && (
+    container.stage === 'Dehired' ||
+    status.includes('dehire') ||
+    status.includes('devan')
+  );
+
+  return completed && dehireDate < oneMonthAgo();
+}
+
 function relativeDate(value) {
   const date = parseDate(value);
   const label = formatDate(value);
@@ -287,7 +306,10 @@ function sortForCards(a, b) {
 function renderFilters() {
   const currentStage = state.stage;
   const currentManager = state.manager;
-  elements.stageFilter.innerHTML = '<option value="">All stages</option>' + STAGES.map(stage => (
+  const availableStages = STAGES.filter(stage => state.containers.some(item => item.stage === stage));
+  if (currentStage && !availableStages.includes(currentStage)) state.stage = '';
+
+  elements.stageFilter.innerHTML = '<option value="">All stages</option>' + availableStages.map(stage => (
     `<option value="${escapeHtml(stage)}">${escapeHtml(stage)}</option>`
   )).join('');
 
@@ -295,7 +317,7 @@ function renderFilters() {
   elements.managerFilter.innerHTML = '<option value="">All managers</option>' + managers.map(manager => (
     `<option value="${escapeHtml(manager)}">${escapeHtml(manager)}</option>`
   )).join('');
-  elements.stageFilter.value = currentStage;
+  elements.stageFilter.value = state.stage;
   elements.managerFilter.value = currentManager;
 }
 
@@ -329,7 +351,9 @@ async function loadContainers() {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Spreadsheet load failed');
 
-    state.containers = (data.containers || []).map(deriveContainer);
+    state.containers = (data.containers || [])
+      .map(deriveContainer)
+      .filter(container => !isArchivedContainer(container));
     renderFilters();
     render();
     const updated = new Date(data.updatedAt).toLocaleString('en-NZ', {
