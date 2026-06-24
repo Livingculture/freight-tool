@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.12.27
+// @version      1.12.28
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.27
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.27
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.28
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.28
 // ==/UserScript==
 
 (function () {
@@ -200,7 +200,16 @@
 
   function cellText(cells, index) {
     if (index < 0 || !cells[index]) return '';
-    return clean(cells[index].textContent || '');
+    const cell = cells[index];
+    const control = cell.querySelector('input, textarea, select');
+    return clean(
+      control?.value ||
+      control?.getAttribute('value') ||
+      cell.getAttribute('title') ||
+      cell.getAttribute('aria-label') ||
+      cell.textContent ||
+      ''
+    );
   }
 
   function extractHubSpotLineItems() {
