@@ -154,8 +154,40 @@ select:focus {
 }
 
 .card-section {
-  padding: 24px;
+  padding: 0 24px 32px;
   background: #fff;
+}
+
+.card-section--secondary {
+  border-top: 1px solid var(--line);
+}
+
+.card-section--secondary > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.card-section--secondary > summary::-webkit-details-marker {
+  display: none;
+}
+
+.card-section--secondary > summary h2::before {
+  content: '+';
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-right: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--green-dark);
+  background: #fff;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.card-section--secondary[open] > summary h2::before {
+  content: '-';
 }
 
 .card-section,
@@ -398,7 +430,7 @@ select:focus {
 }
 
 .table-section {
-  padding: 0 24px 32px;
+  padding: 24px;
 }
 
 .table-wrap {

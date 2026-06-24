@@ -432,7 +432,7 @@ function render() {
   elements.metricSoon.textContent = state.containers.filter(item => item.etaDays !== null && item.etaDays >= 0 && item.etaDays <= 7).length;
   elements.metricAttention.textContent = state.containers.filter(item => item.attention).length;
 
-  elements.cardListTitle.textContent = state.stage ? `${state.stage} Container Cards` : 'All Container Cards';
+  elements.cardListTitle.textContent = state.stage ? `${state.stage} Card View` : 'Card View';
   elements.cardCount.textContent = cards.length;
   elements.resultCount.textContent = list.length;
 
