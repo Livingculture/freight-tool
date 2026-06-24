@@ -27,7 +27,6 @@ const STAGES = [
   'On water',
   'Loading planned',
   'Awaiting departure',
-  'Planned',
   'Arrived',
   'Discharged',
   'To warehouse',
@@ -67,6 +66,11 @@ function parseDate(value) {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function parseLastDate(value) {
+  const dates = extractDateTexts(value);
+  return parseDate(dates.at(-1) || value);
+}
+
 function extractDateTexts(value) {
   const text = clean(value);
   if (!text) return [];
@@ -94,6 +98,11 @@ function formatDate(value) {
   return `${formatted.slice(0, 3).join(', ')} +${formatted.length - 3}`;
 }
 
+function formatLastDate(value) {
+  const dates = extractDateTexts(value);
+  return formatDate(dates.at(-1) || value);
+}
+
 function daysFromToday(date) {
   if (!date) return null;
   const today = new Date();
@@ -111,13 +120,13 @@ function oneMonthAgo() {
 
 function milestoneDates(container) {
   return [
-    container.loadingDate,
-    container.departure,
-    container.arrive,
-    container.dischargeDate,
-    container.dispatchToWarehouse,
-    container.lastFreeDate,
-    container.dehireDate
+    ...extractDateTexts(container.loadingDate),
+    ...extractDateTexts(container.departure),
+    ...extractDateTexts(container.arrive),
+    ...extractDateTexts(container.dischargeDate),
+    ...extractDateTexts(container.dispatchToWarehouse),
+    ...extractDateTexts(container.lastFreeDate),
+    ...extractDateTexts(container.dehireDate)
   ].map(parseDate).filter(Boolean);
 }
 
@@ -145,6 +154,19 @@ function relativeDate(value) {
   return `${label} - ${Math.abs(days)} days ago`;
 }
 
+function relativeLastDate(value) {
+  const date = parseLastDate(value);
+  const label = formatLastDate(value);
+  const days = daysFromToday(date);
+
+  if (days === null) return label;
+  if (days === 0) return `${label} - today`;
+  if (days === 1) return `${label} - tomorrow`;
+  if (days > 1) return `${label} - in ${days} days`;
+  if (days === -1) return `${label} - yesterday`;
+  return `${label} - ${Math.abs(days)} days ago`;
+}
+
 function hasDate(value) {
   return Boolean(parseDate(value));
 }
@@ -153,7 +175,7 @@ function deriveContainer(container) {
   const status = clean(container.status);
   const loadingDate = parseDate(container.loadingDate);
   const departure = parseDate(container.departure);
-  const arrive = parseDate(container.arrive);
+  const arrive = parseLastDate(container.arrive);
   const dischargeDate = parseDate(container.dischargeDate);
   const dehireDate = parseDate(container.dehireDate);
   const dispatchToWarehouse = clean(container.dispatchToWarehouse);
@@ -187,13 +209,13 @@ function deriveContainer(container) {
     stage = 'Arriving soon';
     where = 'At sea';
     nextDate = arrive;
-    nextLabel = `ETA ${relativeDate(container.arrive)}`;
+    nextLabel = `ETA ${relativeLastDate(container.arrive)}`;
     tone = 'soon';
   } else if (departure && dayStart >= new Date(departure.getFullYear(), departure.getMonth(), departure.getDate())) {
     stage = 'On water';
     where = 'At sea';
     nextDate = arrive;
-    nextLabel = arrive ? `ETA ${relativeDate(container.arrive)}` : 'Add ETA';
+    nextLabel = arrive ? `ETA ${relativeLastDate(container.arrive)}` : 'Add ETA';
     tone = 'transit';
   } else if (departure) {
     stage = 'Awaiting departure';
@@ -243,7 +265,7 @@ function timeline(container) {
   const steps = [
     ['Loading', container.loadingDate, ['Loading planned', 'Awaiting departure']],
     ['ETD', container.departure, ['On water', 'Arriving soon']],
-    ['ETA', container.arrive, ['Arrived', 'Discharged', 'To warehouse']],
+    ['ETA', formatLastDate(container.arrive), ['Arrived', 'Discharged', 'To warehouse']],
     ['Dehire', container.dehireDate, ['Dehired']]
   ];
 
@@ -299,11 +321,11 @@ function renderContentsRows(container) {
 
 function renderContentsDropdown(container) {
   const count = container.contents?.itemCount || 0;
-  const label = count ? `${count} product details` : 'Product summary';
+  if (!count) return '';
 
   return `
     <details class="contents-dropdown">
-      <summary>${escapeHtml(label)}</summary>
+      <summary>${escapeHtml(`${count} product details`)}</summary>
       ${renderContentsRows(container)}
     </details>
   `;
@@ -335,7 +357,7 @@ function tableRow(container) {
     <tr>
       <td><strong>${escapeHtml(container.container)}</strong><span>${escapeHtml(container.month || '')}</span></td>
       <td><strong>${escapeHtml(container.where)}</strong><span>${escapeHtml(container.stage)}</span><span>${escapeHtml(container.status || '')}</span></td>
-      <td><strong>${escapeHtml(container.nextLabel)}</strong><span>Load ${escapeHtml(formatDate(container.loadingDate))} | ETD ${escapeHtml(formatDate(container.departure))} | ETA ${escapeHtml(formatDate(container.arrive))}</span><span>Last free ${escapeHtml(formatDate(container.lastFreeDate))} | Dehire ${escapeHtml(formatDate(container.dehireDate))}</span></td>
+      <td><strong>${escapeHtml(container.nextLabel)}</strong><span>Load ${escapeHtml(formatDate(container.loadingDate))} | ETD ${escapeHtml(formatDate(container.departure))} | ETA ${escapeHtml(formatLastDate(container.arrive))}</span><span>Last free ${escapeHtml(formatDate(container.lastFreeDate))} | Dehire ${escapeHtml(formatDate(container.dehireDate))}</span></td>
       <td><strong>${escapeHtml(container.products || '-')}</strong><span>${escapeHtml(container.volume || '')}</span></td>
       <td><strong>${escapeHtml(container.categoryManager || '-')}</strong><span>${escapeHtml(container.shipper || '')}</span></td>
       <td><strong>${escapeHtml(container.po || '-')}</strong><span>${escapeHtml(container.tristarRef || '')}</span></td>
@@ -431,6 +453,7 @@ async function loadContainers() {
 
     state.containers = (data.containers || [])
       .map(deriveContainer)
+      .filter(container => container.stage !== 'Planned')
       .filter(container => !isArchivedContainer(container));
     renderFilters();
     render();
