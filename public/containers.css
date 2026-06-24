@@ -265,13 +265,17 @@ select:focus {
 .timeline {
   display: grid;
   grid-column: 1 / -1;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(4, 1fr);
   gap: 8px;
   margin-top: 6px;
 }
 
 .step {
-  min-height: 54px;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  align-items: center;
+  height: 66px;
+  min-width: 0;
   padding: 8px 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -302,8 +306,10 @@ select:focus {
 
 .step strong {
   margin-top: 4px;
-  font-size: 0.88rem;
+  font-size: 0.86rem;
   line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -469,10 +475,6 @@ td span {
     grid-template-columns: 1fr;
   }
 
-  .timeline {
-    grid-template-columns: 1fr 1fr;
-  }
-
   .contents-row {
     grid-template-columns: 1fr;
   }
@@ -496,6 +498,6 @@ td span {
   }
 
   .timeline {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 1fr;
   }
 }
