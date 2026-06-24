@@ -355,11 +355,26 @@ function card(container) {
 }
 
 function tableRow(container) {
+  const dateChips = [
+    ['Load', formatDate(container.loadingDate)],
+    ['ETD', formatLastDate(container.departure)],
+    ['ETA', formatLastDate(container.arrive)],
+    ['Last free', formatDate(container.lastFreeDate)],
+    ['Dehire', formatDate(container.dehireDate)]
+  ].filter(([, value]) => value && value !== '-');
+
   return `
     <tr>
       <td><strong>${escapeHtml(container.container)}</strong><span>${escapeHtml(container.month || '')}</span></td>
       <td><strong>${escapeHtml(container.where)}</strong><span>${escapeHtml(container.stage)}</span><span>${escapeHtml(container.status || '')}</span></td>
-      <td><strong>${escapeHtml(container.nextLabel)}</strong><span>Load ${escapeHtml(formatDate(container.loadingDate))} | ETD ${escapeHtml(formatLastDate(container.departure))} | ETA ${escapeHtml(formatLastDate(container.arrive))}</span><span>Last free ${escapeHtml(formatDate(container.lastFreeDate))} | Dehire ${escapeHtml(formatDate(container.dehireDate))}</span></td>
+      <td>
+        <strong>${escapeHtml(container.nextLabel)}</strong>
+        <div class="date-chips">
+          ${dateChips.map(([label, value]) => `
+            <span class="date-chip"><b>${escapeHtml(label)}</b>${escapeHtml(value)}</span>
+          `).join('')}
+        </div>
+      </td>
       <td><strong>${escapeHtml(container.products || '-')}</strong><span>${escapeHtml(container.volume || '')}</span></td>
       <td><strong>${escapeHtml(container.categoryManager || '-')}</strong><span>${escapeHtml(container.shipper || '')}</span></td>
       <td><strong>${escapeHtml(container.po || '-')}</strong><span>${escapeHtml(container.tristarRef || '')}</span></td>
