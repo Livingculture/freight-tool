@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.12.24
+// @version      1.12.25
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.24
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.24
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.25
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.25
 // ==/UserScript==
 
 (function () {
@@ -153,6 +153,113 @@
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, ' ')
       .trim();
+  }
+
+  function parseNumberText(value) {
+    const match = clean(value).replace(/,/g, '').match(/-?\d+(?:\.\d+)?/);
+    if (!match) return '';
+    const number = Number(match[0]);
+    return Number.isFinite(number) ? String(number) : '';
+  }
+
+  function parseMoneyText(value) {
+    const match = clean(value).replace(/,/g, '').match(/-?\d+(?:\.\d{1,4})?/);
+    if (!match) return '';
+    const number = Number(match[0]);
+    return Number.isFinite(number) ? number.toFixed(2) : '';
+  }
+
+  function skuFromText(value) {
+    const match = clean(value).match(/\b[A-Z]{1,8}\d{3,}(?:-\d+)?\b/);
+    return match ? match[0].toUpperCase() : '';
+  }
+
+  function tableHeaderMap(table) {
+    const headerRow = Array.from(table.querySelectorAll('tr')).find((row) =>
+      Array.from(row.querySelectorAll('th,td')).some((cell) => /product|description|quantity|price|total/i.test(cell.textContent || ''))
+    );
+    if (!headerRow) return {};
+
+    return Array.from(headerRow.querySelectorAll('th,td')).reduce((map, cell, index) => {
+      const label = normalizeLabel(cell.textContent || '');
+      if (label) map[label] = index;
+      return map;
+    }, {});
+  }
+
+  function indexForHeader(headers, names) {
+    for (const name of names) {
+      if (typeof headers[name] === 'number') return headers[name];
+    }
+    const labels = Object.keys(headers);
+    for (const label of labels) {
+      if (names.some((name) => label.includes(name))) return headers[label];
+    }
+    return -1;
+  }
+
+  function cellText(cells, index) {
+    if (index < 0 || !cells[index]) return '';
+    return clean(cells[index].textContent || '');
+  }
+
+  function extractHubSpotLineItems() {
+    const items = [];
+    const tables = Array.from(document.querySelectorAll('table')).filter(isVisible);
+
+    for (const table of tables) {
+      const headers = tableHeaderMap(table);
+      const productIndex = indexForHeader(headers, ['product', 'description']);
+      const quantityIndex = indexForHeader(headers, ['quantity', 'qty']);
+      const priceIndex = indexForHeader(headers, ['price', 'unit price']);
+      const totalIndex = indexForHeader(headers, ['total', 'amount']);
+
+      if (productIndex < 0 || quantityIndex < 0) continue;
+
+      const rows = Array.from(table.querySelectorAll('tbody tr, tr')).filter(isVisible);
+      for (const row of rows) {
+        const cells = Array.from(row.querySelectorAll('td,th'));
+        if (cells.length <= Math.max(productIndex, quantityIndex)) continue;
+
+        const rowText = clean(row.textContent || '');
+        if (!rowText || /^(product|description)\b/i.test(rowText)) continue;
+        if (/^total:?$/i.test(rowText) || /add more items|export|import/i.test(rowText)) continue;
+
+        const productCell = cells[productIndex];
+        const productLink = productCell?.querySelector('a');
+        const rawName = productLink?.textContent ||
+          productLink?.getAttribute('title') ||
+          productLink?.getAttribute('aria-label') ||
+          productCell?.textContent ||
+          '';
+        const name = cleanProductLine(rawName);
+        const quantity = parseNumberText(cellText(cells, quantityIndex));
+        const price = parseMoneyText(cellText(cells, priceIndex));
+        const total = parseMoneyText(cellText(cells, totalIndex));
+        const sku = skuFromText(rowText) || skuFromText(rawName);
+
+        if (!name || !quantity) continue;
+        if (/tax|discount|subtotal|total/i.test(name) && name.length < 30) continue;
+
+        items.push({
+          name,
+          sku,
+          quantity,
+          price,
+          total
+        });
+      }
+    }
+
+    const unique = [];
+    const seen = new Set();
+    for (const item of items) {
+      const key = [item.sku, item.name, item.quantity, item.price, item.total].map(clean).join('|').toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      unique.push(item);
+    }
+    return unique.slice(0, 30);
   }
 
   function extractQuoteProductLines() {
@@ -946,6 +1053,7 @@
       total: amount,
       salesRep: draft.placedBy,
       product: draft.product,
+      lineItems: extractHubSpotLineItems(),
       notes,
       sourceUrl: draft.sourceUrl
     };
@@ -978,7 +1086,8 @@
       payload.orderId ? `Sale: ${payload.orderId}` : '',
       payload.customerName ? `Customer: ${payload.customerName}` : '',
       payload.phone ? `Phone: ${payload.phone}` : '',
-      payload.amount ? `Amount: ${payload.amount}` : ''
+      payload.amount ? `Amount: ${payload.amount}` : '',
+      payload.lineItems?.length ? `Line items: ${payload.lineItems.length}` : ''
     ].filter(Boolean).join('\n');
 
     if (!payload.customerName && !payload.email && !payload.phone) {
@@ -1021,7 +1130,10 @@
               : data.orderDealAssociation?.reason
                 ? `DEAR deal not linked: ${data.orderDealAssociation.reason}.`
                 : 'DEAR deal not linked.';
-            window.alert(`${message}\n\n${linkStatus}\n\nHubSpot link copied:\n${data.hubspotUrl}`);
+            const lineItemStatus = data.lineItems
+              ? `Line items: ${data.lineItems.created || 0} added, ${data.lineItems.skipped || 0} already there${data.lineItems.errors?.length ? `, ${data.lineItems.errors.length} error(s)` : ''}.`
+              : '';
+            window.alert(`${message}\n\n${linkStatus}${lineItemStatus ? `\n${lineItemStatus}` : ''}\n\nHubSpot link copied:\n${data.hubspotUrl}`);
           } else {
             window.alert(message);
           }
