@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.12.26
+// @version      1.12.27
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.26
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.26
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.27
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.27
 // ==/UserScript==
 
 (function () {
@@ -1168,7 +1168,7 @@
                 ? `DEAR deal not linked: ${data.orderDealAssociation.reason}.`
                 : 'DEAR deal not linked.';
             const lineItemStatus = data.lineItems
-              ? `Line items: ${data.lineItems.created || 0} added, ${data.lineItems.skipped || 0} already there${data.lineItems.errors?.length ? `, ${data.lineItems.errors.length} error(s)` : ''}.`
+              ? `Line items: ${data.lineItems.created || 0} added, ${data.lineItems.skipped || 0} already there${data.lineItems.errors?.length ? `, ${data.lineItems.errors.length} error(s): ${data.lineItems.errors[0]}` : ''}.`
               : '';
             window.alert(`${message}\n\n${linkStatus}${lineItemStatus ? `\n${lineItemStatus}` : ''}\n\nHubSpot link copied:\n${data.hubspotUrl}`);
           } else {
