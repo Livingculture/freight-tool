@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en-NZ">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Container Tracker | Living Culture</title>
+  <link rel="stylesheet" href="/containers.css" />
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <div>
+        <img class="logo" src="https://livingculture.co.nz/cdn/shop/files/logo_ec2b0c5e-42ca-4695-8c7e-43b344144c58.png?v=1675047511&width=260" alt="Living Culture" />
+        <h1>Container Tracker</h1>
+      </div>
+      <div class="sync">
+        <span id="syncStatus">Loading spreadsheet...</span>
+        <button id="refreshButton" type="button">Refresh</button>
+      </div>
+    </header>
+
+    <section class="controls" aria-label="Container filters">
+      <input id="searchInput" type="search" placeholder="Search container, PO, product, shipper, manager" autocomplete="off" />
+      <select id="stageFilter" aria-label="Stage">
+        <option value="">All stages</option>
+      </select>
+      <select id="managerFilter" aria-label="Category manager">
+        <option value="">All managers</option>
+      </select>
+    </section>
+
+    <section class="metrics" aria-label="Container summary">
+      <div class="metric"><span id="metricTotal">0</span><strong>Total</strong></div>
+      <div class="metric"><span id="metricTransit">0</span><strong>On water</strong></div>
+      <div class="metric"><span id="metricSoon">0</span><strong>ETA 7 days</strong></div>
+      <div class="metric"><span id="metricAttention">0</span><strong>Need dates</strong></div>
+    </section>
+
+    <section class="split">
+      <section class="lane" aria-labelledby="attentionTitle">
+        <div class="section-heading">
+          <h2 id="attentionTitle">Needs Attention</h2>
+          <span id="attentionCount">0</span>
+        </div>
+        <div id="attentionList" class="cards"></div>
+      </section>
+
+      <section class="lane" aria-labelledby="upcomingTitle">
+        <div class="section-heading">
+          <h2 id="upcomingTitle">Next Movements</h2>
+          <span id="upcomingCount">0</span>
+        </div>
+        <div id="upcomingList" class="cards"></div>
+      </section>
+    </section>
+
+    <section class="table-section" aria-labelledby="allContainersTitle">
+      <div class="section-heading">
+        <h2 id="allContainersTitle">All Containers</h2>
+        <span id="resultCount">0</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Container</th>
+              <th>Where</th>
+              <th>When</th>
+              <th>Products</th>
+              <th>People</th>
+              <th>Refs</th>
+            </tr>
+          </thead>
+          <tbody id="containerTable"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="/containers.js"></script>
+</body>
+</html>

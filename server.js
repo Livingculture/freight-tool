@@ -52,6 +52,10 @@ const HUBSPOT_PORTAL_ID = process.env.HUBSPOT_PORTAL_ID || process.env.HUBSPOT_A
 const HUBSPOT_DEAL_TO_CONTACT_ASSOCIATION_TYPE_ID = Number(
   process.env.HUBSPOT_DEAL_TO_CONTACT_ASSOCIATION_TYPE_ID || 3
 );
+const CONTAINER_SHEET_ID = process.env.CONTAINER_SHEET_ID || '1vdNuRxr2nD9IKz923KdJPtNGV3EvLPAsQkhikG5KnpY';
+const CONTAINER_SHEET_GID = process.env.CONTAINER_SHEET_GID || '853793483';
+const CONTAINER_SHEET_CSV_URL = `https://docs.google.com/spreadsheets/d/${CONTAINER_SHEET_ID}/export?format=csv&gid=${CONTAINER_SHEET_GID}`;
+const CONTAINER_SHEET_CACHE_MS = 5 * 60 * 1000;
 const BLOCKED_RESOURCE_TYPES = new Set(['image', 'font', 'media']);
 const BLOCKED_AUTOMATION_URLS = [
   /cdn\.shopify\.com\/extensions\//i,
@@ -84,6 +88,8 @@ const freightQuoteInFlight = new Map();
 const FREIGHT_QUOTE_CACHE_MS = 30 * 60 * 1000;
 const cin7AvailabilityCache = new Map();
 const CIN7_AVAILABILITY_CACHE_MS = 2 * 60 * 1000;
+let containerSheetCache = null;
+let containerSheetCacheAt = 0;
 let activeCheckout = null;
 let sharedBrowser = null;
 let sharedBrowserPromise = null;
@@ -152,6 +158,141 @@ function numberValue(value) {
 
 function cleanTextValue(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let cell = '';
+  let inQuotes = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        cell += '"';
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === ',' && !inQuotes) {
+      row.push(cell);
+      cell = '';
+      continue;
+    }
+
+    if ((char === '\n' || char === '\r') && !inQuotes) {
+      if (char === '\r' && next === '\n') index += 1;
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = '';
+      continue;
+    }
+
+    cell += char;
+  }
+
+  row.push(cell);
+  rows.push(row);
+  return rows;
+}
+
+function normaliseContainerRows(csvText) {
+  const rows = parseCsv(csvText)
+    .map(row => row.map(cleanTextValue))
+    .filter(row => row.some(Boolean));
+  const headerIndex = rows.findIndex(row => /^con#$/i.test(row[0] || ''));
+  const sourceRows = headerIndex >= 0 ? rows.slice(headerIndex + 1) : rows;
+  const containers = [];
+  let month = '';
+
+  for (const row of sourceRows) {
+    const first = cleanTextValue(row[0]);
+    const restHasData = row.slice(1).some(Boolean);
+
+    if (/^20\d{2}\s+[A-Za-z]{3,}/.test(first) && !restHasData) {
+      month = first;
+      continue;
+    }
+
+    if (!first || /^etd$/i.test(first)) continue;
+
+    const container = {
+      month,
+      container: first,
+      po: row[1] || '',
+      tristarRef: row[2] || '',
+      dischargeDate: row[3] || '',
+      dispatchToWarehouse: row[4] || '',
+      lastFreeDate: row[5] || '',
+      dehireDate: row[6] || '',
+      volume: row[7] || '',
+      products: row[8] || '',
+      shipper: row[9] || '',
+      categoryManager: row[10] || '',
+      status: row[11] || '',
+      loadingDate: row[12] || '',
+      departure: row[13] || '',
+      arrive: row[14] || '',
+      preArrivalNotice: row[15] || '',
+      productValueRmb: row[16] || '',
+      productValueUsd: row[17] || '',
+      freightUsd: row[18] || '',
+      productValueNzd: row[19] || '',
+      importTaxEstimate: row[20] || '',
+      actualTax: row[21] || ''
+    };
+
+    if (container.container || container.po || container.products) {
+      containers.push(container);
+    }
+  }
+
+  return containers;
+}
+
+async function getContainerSheetData() {
+  const now = Date.now();
+  if (containerSheetCache && now - containerSheetCacheAt < CONTAINER_SHEET_CACHE_MS) {
+    return {
+      ...containerSheetCache,
+      cached: true,
+      cacheAgeSeconds: Math.round((now - containerSheetCacheAt) / 1000)
+    };
+  }
+
+  const response = await fetch(CONTAINER_SHEET_CSV_URL, {
+    headers: { Accept: 'text/csv,*/*' }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Google Sheet returned ${response.status}`);
+  }
+
+  const csvText = await response.text();
+  const containers = normaliseContainerRows(csvText);
+  containerSheetCache = {
+    ok: true,
+    source: 'google-sheet',
+    sheetId: CONTAINER_SHEET_ID,
+    gid: CONTAINER_SHEET_GID,
+    updatedAt: new Date().toISOString(),
+    count: containers.length,
+    containers
+  };
+  containerSheetCacheAt = now;
+
+  return {
+    ...containerSheetCache,
+    cached: false,
+    cacheAgeSeconds: 0
+  };
 }
 
 function parseMoneyValue(value) {
@@ -3948,6 +4089,20 @@ app.get('/api/health', (req, res) => {
     runtime: process.env.VERCEL ? 'vercel' : 'local',
     hubspotConfigured: isHubSpotConfigured()
   });
+});
+
+app.get('/api/containers', async (req, res) => {
+  try {
+    const payload = await getContainerSheetData();
+    res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
+    return res.json(payload);
+  } catch (error) {
+    console.error('Container sheet fetch failed:', error);
+    return res.status(502).json({
+      ok: false,
+      error: error.message || 'Could not load container spreadsheet.'
+    });
+  }
 });
 
 app.post('/api/hubspot/create-deal', async (req, res) => {

@@ -21,6 +21,7 @@
 
   const HOSTED_API_BASE = 'https://living-culture-freight.vercel.app';
   const API_BASE = HOSTED_API_BASE || 'http://localhost:3001';
+  const CONTAINER_DASHBOARD_URL = `${API_BASE}/containers.html`;
 
   const state = {
     price: '',
@@ -1166,12 +1167,21 @@
 
   function placeFreightButtonNextToMemo() {
     const freightButton = document.getElementById('lc-freight-toggle');
+    const containerButton = document.getElementById('lc-containers-open');
     if (!freightButton) return;
 
     const memoButton = findQuoteMemoButton();
 
     if (!memoButton || !isVisible(memoButton)) {
       freightButton.style.display = 'none';
+      if (containerButton) {
+        containerButton.style.display = 'block';
+        containerButton.style.position = 'fixed';
+        containerButton.style.top = '74px';
+        containerButton.style.right = '16px';
+        containerButton.style.height = '34px';
+        containerButton.style.zIndex = '2147483646';
+      }
       return;
     }
 
@@ -1187,14 +1197,29 @@
       parent.appendChild(freightButton);
     }
 
+    if (containerButton && containerButton.parentElement !== parent) {
+      parent.appendChild(containerButton);
+    }
+
     const parentRect = parent.getBoundingClientRect();
+    const buttonHeight = Math.max(34, memoRect.height || 34);
 
     freightButton.style.display = 'block';
     freightButton.style.position = 'absolute';
     freightButton.style.left = `${memoRect.right - parentRect.left + 8}px`;
     freightButton.style.top = `${memoRect.top - parentRect.top}px`;
-    freightButton.style.height = `${Math.max(34, memoRect.height || 34)}px`;
+    freightButton.style.height = `${buttonHeight}px`;
     freightButton.style.zIndex = '51';
+
+    if (containerButton) {
+      const freightWidth = freightButton.getBoundingClientRect().width || 120;
+      containerButton.style.display = 'block';
+      containerButton.style.position = 'absolute';
+      containerButton.style.left = `${memoRect.right - parentRect.left + freightWidth + 16}px`;
+      containerButton.style.top = `${memoRect.top - parentRect.top}px`;
+      containerButton.style.height = `${buttonHeight}px`;
+      containerButton.style.zIndex = '51';
+    }
   }
 
   function styleFreightInlineButton(button) {
@@ -1222,6 +1247,34 @@
     button.addEventListener('mouseleave', () => {
       button.style.background = '#05cabe';
       button.style.borderColor = '#05cabe';
+    });
+  }
+
+  function styleContainersInlineButton(button) {
+    button.style.boxSizing = 'border-box';
+    button.style.minWidth = '132px';
+    button.style.minHeight = '34px';
+    button.style.padding = '0 14px';
+    button.style.background = '#2d5c4e';
+    button.style.color = '#fff';
+    button.style.border = '1px solid #2d5c4e';
+    button.style.borderRadius = '4px';
+    button.style.boxShadow = 'none';
+    button.style.font = '800 14px Arial, sans-serif';
+    button.style.cursor = 'pointer';
+    button.style.lineHeight = '1';
+    button.style.whiteSpace = 'nowrap';
+    button.style.verticalAlign = 'middle';
+    button.style.display = 'none';
+
+    button.addEventListener('mouseenter', () => {
+      button.style.background = '#244c41';
+      button.style.borderColor = '#244c41';
+    });
+
+    button.addEventListener('mouseleave', () => {
+      button.style.background = '#2d5c4e';
+      button.style.borderColor = '#2d5c4e';
     });
   }
 
@@ -1279,6 +1332,13 @@
     button.type = 'button';
     button.textContent = 'LC Freight';
     styleFreightInlineButton(button);
+
+    const containerButton = document.createElement('button');
+    containerButton.id = 'lc-containers-open';
+    containerButton.type = 'button';
+    containerButton.textContent = 'LC Containers';
+    containerButton.title = 'Open the live container tracker';
+    styleContainersInlineButton(containerButton);
 
     const panel = document.createElement('div');
     panel.id = 'lc-freight-panel';
@@ -1668,7 +1728,7 @@
     `;
 
     document.head.appendChild(styles);
-    document.body.append(button, panel);
+    document.body.append(button, containerButton, panel);
 
     button.addEventListener('click', () => {
       panel.classList.toggle('is-open');
@@ -1678,6 +1738,10 @@
         renderDetectedDetails();
         scheduleAutoCin7Lookup(350);
       }
+    });
+
+    containerButton.addEventListener('click', () => {
+      window.open(CONTAINER_DASHBOARD_URL, '_blank', 'noopener,noreferrer');
     });
 
     panel.querySelector('#lc-panel-close').addEventListener('click', () => {
