@@ -174,7 +174,7 @@ function hasDate(value) {
 function deriveContainer(container) {
   const status = clean(container.status);
   const loadingDate = parseDate(container.loadingDate);
-  const departure = parseDate(container.departure);
+  const departure = parseLastDate(container.departure);
   const arrive = parseLastDate(container.arrive);
   const dischargeDate = parseDate(container.dischargeDate);
   const dehireDate = parseDate(container.dehireDate);
@@ -221,7 +221,7 @@ function deriveContainer(container) {
     stage = 'Awaiting departure';
     where = 'Origin port';
     nextDate = departure;
-    nextLabel = `ETD ${relativeDate(container.departure)}`;
+    nextLabel = `ETD ${relativeLastDate(container.departure)}`;
   } else if (loadingDate) {
     stage = 'Loading planned';
     where = 'Supplier';
@@ -264,7 +264,7 @@ function timeline(container) {
   const current = container.stage;
   const steps = [
     ['Loading', container.loadingDate, ['Loading planned', 'Awaiting departure']],
-    ['ETD', container.departure, ['On water', 'Arriving soon']],
+    ['ETD', formatLastDate(container.departure), ['On water', 'Arriving soon']],
     ['ETA', formatLastDate(container.arrive), ['Arrived', 'Discharged', 'To warehouse']],
     ['Dehire', container.dehireDate, ['Dehired']]
   ];
@@ -357,7 +357,7 @@ function tableRow(container) {
     <tr>
       <td><strong>${escapeHtml(container.container)}</strong><span>${escapeHtml(container.month || '')}</span></td>
       <td><strong>${escapeHtml(container.where)}</strong><span>${escapeHtml(container.stage)}</span><span>${escapeHtml(container.status || '')}</span></td>
-      <td><strong>${escapeHtml(container.nextLabel)}</strong><span>Load ${escapeHtml(formatDate(container.loadingDate))} | ETD ${escapeHtml(formatDate(container.departure))} | ETA ${escapeHtml(formatLastDate(container.arrive))}</span><span>Last free ${escapeHtml(formatDate(container.lastFreeDate))} | Dehire ${escapeHtml(formatDate(container.dehireDate))}</span></td>
+      <td><strong>${escapeHtml(container.nextLabel)}</strong><span>Load ${escapeHtml(formatDate(container.loadingDate))} | ETD ${escapeHtml(formatLastDate(container.departure))} | ETA ${escapeHtml(formatLastDate(container.arrive))}</span><span>Last free ${escapeHtml(formatDate(container.lastFreeDate))} | Dehire ${escapeHtml(formatDate(container.dehireDate))}</span></td>
       <td><strong>${escapeHtml(container.products || '-')}</strong><span>${escapeHtml(container.volume || '')}</span></td>
       <td><strong>${escapeHtml(container.categoryManager || '-')}</strong><span>${escapeHtml(container.shipper || '')}</span></td>
       <td><strong>${escapeHtml(container.po || '-')}</strong><span>${escapeHtml(container.tristarRef || '')}</span></td>
