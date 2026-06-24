@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.12.25
+// @version      1.12.26
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.25
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.25
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.26
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.26
 // ==/UserScript==
 
 (function () {
@@ -255,6 +255,39 @@
     const seen = new Set();
     for (const item of items) {
       const key = [item.sku, item.name, item.quantity, item.price, item.total].map(clean).join('|').toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      unique.push(item);
+    }
+    return unique.slice(0, 30);
+  }
+
+  function lineItemsFromProductText(productText) {
+    const lines = cleanMultiline(productText)
+      .split('\n')
+      .map(clean)
+      .filter(Boolean);
+    const items = [];
+
+    for (const line of lines) {
+      const quantityMatch = line.match(/^(\d+(?:\.\d+)?)\s*x\s+(.+)$/i);
+      const quantity = quantityMatch ? cleanQuantity(quantityMatch[1]) || '1' : '1';
+      const rawName = quantityMatch ? quantityMatch[2] : line;
+      const name = cleanProductLine(rawName);
+      if (!name) continue;
+      items.push({
+        name,
+        sku: skuFromText(line),
+        quantity,
+        price: '',
+        total: ''
+      });
+    }
+
+    const unique = [];
+    const seen = new Set();
+    for (const item of items) {
+      const key = [item.sku, item.name, item.quantity].map(clean).join('|').toLowerCase();
       if (!key || seen.has(key)) continue;
       seen.add(key);
       unique.push(item);
@@ -1040,6 +1073,10 @@
       readValueNearLabel('Shipping notes') ||
       readValueNearLabel('Memo') ||
       '';
+    const structuredLineItems = extractHubSpotLineItems();
+    const lineItems = structuredLineItems.length
+      ? structuredLineItems
+      : lineItemsFromProductText(draft.product);
 
     return {
       orderId: draft.orderId,
@@ -1053,7 +1090,7 @@
       total: amount,
       salesRep: draft.placedBy,
       product: draft.product,
-      lineItems: extractHubSpotLineItems(),
+      lineItems,
       notes,
       sourceUrl: draft.sourceUrl
     };
