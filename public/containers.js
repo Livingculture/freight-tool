@@ -137,7 +137,9 @@ function latestMilestoneDate(container) {
 }
 
 function isArchivedContainer(container) {
+  const etaDate = parseLastDate(container.arrive);
   const latestDate = latestMilestoneDate(container);
+  if (etaDate && etaDate < oneMonthAgo()) return true;
   return Boolean(latestDate) && latestDate < oneMonthAgo();
 }
 
