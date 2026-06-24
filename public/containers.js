@@ -23,16 +23,18 @@ const elements = {
 };
 
 const STAGES = [
-  'Planned',
+  'Arriving soon',
+  'On water',
   'Loading planned',
   'Awaiting departure',
-  'On water',
-  'Arriving soon',
+  'Planned',
   'Arrived',
   'Discharged',
   'To warehouse',
   'Dehired'
 ];
+
+const STAGE_PRIORITY = new Map(STAGES.map((stage, index) => [stage, index]));
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, char => ({
@@ -110,13 +112,17 @@ function oneMonthAgo() {
 function isArchivedContainer(container) {
   const status = clean(container.status).toLowerCase();
   const dehireDate = parseDate(container.dehireDate);
+  const arriveDate = parseDate(container.arrive);
   const completed = Boolean(dehireDate) && (
     container.stage === 'Dehired' ||
     status.includes('dehire') ||
     status.includes('devan')
   );
+  const oldArrival = container.stage === 'Arrived' &&
+    Boolean(arriveDate) &&
+    arriveDate < oneMonthAgo();
 
-  return completed && dehireDate < oneMonthAgo();
+  return oldArrival || (completed && dehireDate < oneMonthAgo());
 }
 
 function relativeDate(value) {
@@ -308,7 +314,12 @@ function compareContainerNumbers(a, b) {
   });
 }
 
-function sortByClosestDateThenContainer(a, b) {
+function sortByPriorityDateThenContainer(a, b) {
+  const aPriority = STAGE_PRIORITY.get(a.stage) ?? Number.MAX_SAFE_INTEGER;
+  const bPriority = STAGE_PRIORITY.get(b.stage) ?? Number.MAX_SAFE_INTEGER;
+
+  if (aPriority !== bPriority) return aPriority - bPriority;
+
   const aDistance = a.nextDate ? Math.abs(daysFromToday(a.nextDate)) : Number.MAX_SAFE_INTEGER;
   const bDistance = b.nextDate ? Math.abs(daysFromToday(b.nextDate)) : Number.MAX_SAFE_INTEGER;
 
@@ -335,7 +346,7 @@ function renderFilters() {
 }
 
 function render() {
-  const list = filteredContainers().sort(sortByClosestDateThenContainer);
+  const list = filteredContainers().sort(sortByPriorityDateThenContainer);
   const cards = [...list];
 
   elements.metricTotal.textContent = state.containers.length;
