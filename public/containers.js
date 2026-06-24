@@ -25,8 +25,8 @@ const elements = {
 const STAGES = [
   'Arriving soon',
   'On water',
-  'Loading planned',
   'Awaiting departure',
+  'Loading planned',
   'Arrived',
   'Discharged',
   'To warehouse',
