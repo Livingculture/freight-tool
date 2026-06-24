@@ -15,11 +15,10 @@ const elements = {
   metricTransit: document.getElementById('metricTransit'),
   metricSoon: document.getElementById('metricSoon'),
   metricAttention: document.getElementById('metricAttention'),
-  attentionCount: document.getElementById('attentionCount'),
-  upcomingCount: document.getElementById('upcomingCount'),
+  cardListTitle: document.getElementById('cardListTitle'),
+  cardCount: document.getElementById('cardCount'),
   resultCount: document.getElementById('resultCount'),
-  attentionList: document.getElementById('attentionList'),
-  upcomingList: document.getElementById('upcomingList'),
+  containerCards: document.getElementById('containerCards'),
   containerTable: document.getElementById('containerTable')
 };
 
@@ -280,6 +279,11 @@ function sortByNextDate(a, b) {
   return aTime - bTime || String(a.container).localeCompare(String(b.container));
 }
 
+function sortForCards(a, b) {
+  if (a.attention !== b.attention) return a.attention ? -1 : 1;
+  return sortByNextDate(a, b);
+}
+
 function renderFilters() {
   const currentStage = state.stage;
   const currentManager = state.manager;
@@ -297,27 +301,20 @@ function renderFilters() {
 
 function render() {
   const list = filteredContainers();
-  const attention = list.filter(container => container.attention).sort(sortByNextDate).slice(0, 6);
-  const upcoming = list
-    .filter(container => container.nextDate && daysFromToday(container.nextDate) >= 0 && container.stage !== 'Dehired')
-    .sort(sortByNextDate)
-    .slice(0, 6);
+  const cards = [...list].sort(sortForCards);
 
   elements.metricTotal.textContent = state.containers.length;
   elements.metricTransit.textContent = state.containers.filter(item => item.stage === 'On water' || item.stage === 'Arriving soon').length;
   elements.metricSoon.textContent = state.containers.filter(item => item.etaDays !== null && item.etaDays >= 0 && item.etaDays <= 7).length;
   elements.metricAttention.textContent = state.containers.filter(item => item.attention).length;
 
-  elements.attentionCount.textContent = attention.length;
-  elements.upcomingCount.textContent = upcoming.length;
+  elements.cardListTitle.textContent = state.stage ? `${state.stage} Container Cards` : 'All Container Cards';
+  elements.cardCount.textContent = cards.length;
   elements.resultCount.textContent = list.length;
 
-  elements.attentionList.innerHTML = attention.length
-    ? attention.map(card).join('')
-    : '<div class="empty">No containers need attention for this filter.</div>';
-  elements.upcomingList.innerHTML = upcoming.length
-    ? upcoming.map(card).join('')
-    : '<div class="empty">No upcoming movement dates for this filter.</div>';
+  elements.containerCards.innerHTML = cards.length
+    ? cards.map(card).join('')
+    : '<div class="empty">No containers match this filter.</div>';
   elements.containerTable.innerHTML = list.length
     ? list.map(tableRow).join('')
     : '<tr><td colspan="6">No containers match this filter.</td></tr>';
@@ -342,8 +339,7 @@ async function loadContainers() {
     elements.syncStatus.textContent = `Live from Google Sheet. Last checked ${updated}.`;
   } catch (error) {
     elements.syncStatus.textContent = error.message;
-    elements.attentionList.innerHTML = '<div class="empty">Could not load the spreadsheet.</div>';
-    elements.upcomingList.innerHTML = '<div class="empty">Try refresh, or check the sheet sharing setting.</div>';
+    elements.containerCards.innerHTML = '<div class="empty">Could not load the spreadsheet. Try refresh, or check the sheet sharing setting.</div>';
   } finally {
     elements.refreshButton.disabled = false;
   }

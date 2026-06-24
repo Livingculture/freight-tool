@@ -153,15 +153,12 @@ select:focus {
   text-transform: uppercase;
 }
 
-.split {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 24px;
+.card-section {
   padding: 24px;
   background: #fff;
 }
 
-.lane,
+.card-section,
 .table-section {
   min-width: 0;
 }
@@ -188,6 +185,11 @@ select:focus {
 .cards {
   display: grid;
   gap: 10px;
+}
+
+.card-grid {
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  align-items: start;
 }
 
 .container-card {
@@ -366,8 +368,11 @@ td span {
   }
 
   .controls,
-  .split,
   .metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .card-grid {
     grid-template-columns: 1fr;
   }
 
@@ -383,7 +388,7 @@ td span {
 @media (max-width: 560px) {
   .topbar,
   .controls,
-  .split,
+  .card-section,
   .table-section {
     padding-left: 14px;
     padding-right: 14px;
