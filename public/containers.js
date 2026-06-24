@@ -347,9 +347,9 @@ function card(container) {
         <p>${escapeHtml(container.products || 'Products not listed')}${volume ? ` - ${escapeHtml(volume)}` : ''}</p>
         <p>${escapeHtml([container.shipper, container.categoryManager].map(clean).filter(Boolean).join(' - ') || 'People not listed')}</p>
         ${refs ? `<p>${escapeHtml(refs)}</p>` : ''}
-        ${timeline(container)}
-        ${renderContentsDropdown(container)}
       </div>
+      ${timeline(container)}
+      ${renderContentsDropdown(container)}
     </article>
   `;
 }

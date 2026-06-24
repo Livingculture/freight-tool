@@ -189,13 +189,16 @@ select:focus {
 
 .card-grid {
   grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
-  align-items: start;
+  align-items: stretch;
+  grid-auto-rows: 1fr;
 }
 
 .container-card {
   display: grid;
   grid-template-columns: minmax(96px, 0.8fr) minmax(0, 2.2fr);
+  grid-template-rows: auto 1fr;
   gap: 14px;
+  height: 100%;
   padding: 14px;
   border: 1px solid var(--line);
   border-left: 5px solid var(--green);
@@ -261,14 +264,15 @@ select:focus {
 
 .timeline {
   display: grid;
+  grid-column: 1 / -1;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
-  margin-top: 4px;
+  gap: 8px;
+  margin-top: 6px;
 }
 
 .step {
-  min-height: 56px;
-  padding: 8px;
+  min-height: 54px;
+  padding: 8px 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fbfcfa;
@@ -299,10 +303,12 @@ select:focus {
 .step strong {
   margin-top: 4px;
   font-size: 0.88rem;
-  line-height: 1.2;
+  line-height: 1.15;
+  white-space: nowrap;
 }
 
 .contents-dropdown {
+  grid-column: 1 / -1;
   margin-top: 4px;
   border: 1px solid var(--line);
   border-radius: 8px;
