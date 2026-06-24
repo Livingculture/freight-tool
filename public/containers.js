@@ -367,6 +367,39 @@ function tableRow(container) {
   `;
 }
 
+function isDevannedContainer(container) {
+  return clean(container.status).toLowerCase().includes('devan') ||
+    clean(container.nextLabel).toLowerCase().includes('devan');
+}
+
+function tableDividerRow(label, count) {
+  return `
+    <tr class="table-divider">
+      <td colspan="6">
+        <strong>${escapeHtml(label)}</strong>
+        <span>${escapeHtml(count)} containers</span>
+      </td>
+    </tr>
+  `;
+}
+
+function renderTableRows(containers) {
+  const devanned = containers.filter(isDevannedContainer);
+  const active = containers.filter(container => !isDevannedContainer(container));
+  const rows = [];
+
+  if (active.length) {
+    rows.push(...active.map(tableRow));
+  }
+
+  if (devanned.length) {
+    rows.push(tableDividerRow('Devanned / NZ port', devanned.length));
+    rows.push(...devanned.map(tableRow));
+  }
+
+  return rows.join('');
+}
+
 function filteredContainers() {
   return state.containers.filter(container => {
     if (state.query && !container.searchable.includes(state.query.toLowerCase())) return false;
@@ -440,7 +473,7 @@ function render() {
     ? cards.map(card).join('')
     : '<div class="empty">No containers match this filter.</div>';
   elements.containerTable.innerHTML = list.length
-    ? list.map(tableRow).join('')
+    ? renderTableRows(list)
     : '<tr><td colspan="6">No containers match this filter.</td></tr>';
 }
 
