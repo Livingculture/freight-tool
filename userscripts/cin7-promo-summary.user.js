@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Promo Summary
 // @namespace    livingculture-cin7
-// @version      2.6
+// @version      2.7
 // @description  Compact grouped Living Culture promo summary inside Cin7 from the Summary tab.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
 // @match        https://inventory.dearsystems.com/*
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=2.6
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=2.6
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=2.7
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=2.7
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
@@ -46,6 +46,7 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
   const scriptStartedAt = Date.now();
   let revealRetryTimer = null;
   let positionScheduled = false;
+  let lastLocationKey = `${window.location.href}|${document.title}`;
 
   function clean(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
@@ -780,58 +781,61 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
   }
 
   function insertButtonNextToScan() {
-    const existingButton = document.getElementById(INLINE_BUTTON_ID);
-    if (existingButton) {
-      existingButton.style.visibility = 'hidden';
-      existingButton.style.opacity = '0';
-      positionButtonBetweenSiteVisitAndQuoteReview(existingButton);
-      return;
+    let button = document.getElementById(INLINE_BUTTON_ID);
+
+    if (!button) {
+      button = document.createElement('button');
+      button.id = INLINE_BUTTON_ID;
+      button.type = 'button';
+      button.textContent = 'Promo Summary';
+
+      button.style.background = '#7c3aed';
+      button.style.color = '#fff';
+      button.style.border = '1px solid #7c3aed';
+      button.style.borderRadius = '4px';
+      button.style.padding = '0 14px';
+      button.style.font = '700 14px Arial, sans-serif';
+      button.style.cursor = 'pointer';
+      button.style.lineHeight = '1';
+      button.style.marginLeft = '8px';
+      button.style.whiteSpace = 'nowrap';
+      button.style.verticalAlign = 'middle';
+      button.style.visibility = 'hidden';
+      button.style.opacity = '0';
+
+      button.addEventListener('mouseenter', () => {
+        button.style.background = '#6d28d9';
+        button.style.borderColor = '#6d28d9';
+      });
+
+      button.addEventListener('mouseleave', () => {
+        button.style.background = '#7c3aed';
+        button.style.borderColor = '#7c3aed';
+      });
+
+      button.addEventListener('click', openModal);
     }
+
+    if (positionButtonBetweenSiteVisitAndQuoteReview(button)) return true;
 
     const scanButton = Array.from(document.querySelectorAll('button, a, div, span'))
       .filter(element => isElementVisible(element))
       .find(element => clean(element.textContent || '').toLowerCase() === 'scan');
 
-    if (!scanButton) return;
-
-    const button = document.createElement('button');
-    button.id = INLINE_BUTTON_ID;
-    button.type = 'button';
-    button.textContent = 'Promo Summary';
+    if (!scanButton) return false;
 
     const scanRect = scanButton.getBoundingClientRect();
-
-    button.style.background = '#7c3aed';
-    button.style.color = '#fff';
-    button.style.border = '1px solid #7c3aed';
-    button.style.borderRadius = '4px';
-    button.style.padding = '0 14px';
-    button.style.font = '700 14px Arial, sans-serif';
-    button.style.cursor = 'pointer';
+    button.style.position = '';
+    button.style.left = '';
+    button.style.top = '';
+    button.style.zIndex = '2147483601';
     button.style.height = `${Math.max(34, scanRect.height || 34)}px`;
-    button.style.lineHeight = '1';
-    button.style.marginLeft = '8px';
-    button.style.whiteSpace = 'nowrap';
-    button.style.verticalAlign = 'middle';
-    button.style.visibility = 'hidden';
-    button.style.opacity = '0';
-
-    button.addEventListener('mouseenter', () => {
-      button.style.background = '#6d28d9';
-      button.style.borderColor = '#6d28d9';
-    });
-
-    button.addEventListener('mouseleave', () => {
-      button.style.background = '#7c3aed';
-      button.style.borderColor = '#7c3aed';
-    });
-
-    button.addEventListener('click', openModal);
-
-    if (positionButtonBetweenSiteVisitAndQuoteReview(button)) return;
+    button.style.visibility = 'visible';
+    button.style.opacity = '1';
 
     scanButton.insertAdjacentElement('afterend', button);
     positionButtonBetweenSiteVisitAndQuoteReview(button);
+    return true;
   }
 
   function schedulePromoButtonPosition() {
@@ -841,6 +845,40 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
       positionScheduled = false;
       insertButtonNextToScan();
     });
+  }
+
+  function schedulePromoButtonRecovery() {
+    schedulePromoButtonPosition();
+    window.setTimeout(schedulePromoButtonPosition, 350);
+    window.setTimeout(schedulePromoButtonPosition, 900);
+    window.setTimeout(schedulePromoButtonPosition, 1800);
+  }
+
+  function watchCin7Navigation() {
+    const wrapHistoryMethod = methodName => {
+      const original = history[methodName];
+      if (typeof original !== 'function' || original.__lcPromoWrapped) return;
+
+      history[methodName] = function () {
+        const result = original.apply(this, arguments);
+        schedulePromoButtonRecovery();
+        return result;
+      };
+      history[methodName].__lcPromoWrapped = true;
+    };
+
+    wrapHistoryMethod('pushState');
+    wrapHistoryMethod('replaceState');
+
+    window.setInterval(() => {
+      const key = `${window.location.href}|${document.title}`;
+      const button = document.getElementById(INLINE_BUTTON_ID);
+
+      if (key !== lastLocationKey || !button || !button.isConnected || !isElementVisible(button)) {
+        lastLocationKey = key;
+        schedulePromoButtonRecovery();
+      }
+    }, 1500);
   }
 
   function createWidget() {
@@ -1257,5 +1295,15 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
   window.addEventListener('load', boot);
   window.addEventListener('resize', schedulePromoButtonPosition);
   window.addEventListener('orientationchange', schedulePromoButtonPosition);
-  new MutationObserver(schedulePromoButtonPosition).observe(document.body, { childList: true, subtree: true });
+  window.addEventListener('focus', schedulePromoButtonRecovery);
+  window.addEventListener('popstate', schedulePromoButtonRecovery);
+  window.addEventListener('hashchange', schedulePromoButtonRecovery);
+  watchCin7Navigation();
+
+  if (document.body) {
+    new MutationObserver(schedulePromoButtonPosition).observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+  }
 })();
