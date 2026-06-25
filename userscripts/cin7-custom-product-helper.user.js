@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Custom Product Helper
 // @namespace    livingculture-cin7
-// @version      1.6
+// @version      1.7
 // @description  Shows Living Culture customised pergola/product SKUs inside Cin7 and fills the product code into the quote line.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
@@ -785,11 +785,40 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
     setTimeout(() => search?.focus(), 50);
   }
 
+  function findQuoteSectionHeading() {
+    return Array.from(document.querySelectorAll('h1, h2, h3, h4, div, span'))
+      .filter(element => isElementVisible(element))
+      .find(element => {
+        if (element.closest('button, a, [role="button"]')) return false;
+        return clean(element.textContent || '').toLowerCase() === 'quote';
+      });
+  }
+
+  function getQuoteHelperRow() {
+    let row = document.getElementById('lc-cin7-product-helper-fallback-row');
+    if (row) return row;
+
+    const heading = findQuoteSectionHeading();
+    if (!heading) return null;
+
+    row = document.createElement('div');
+    row.id = 'lc-cin7-product-helper-fallback-row';
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.gap = '8px';
+    row.style.margin = '0 0 12px 0';
+    row.style.width = '100%';
+
+    heading.insertAdjacentElement('afterend', row);
+    return row;
+  }
+
   function insertButtonNextToScan() {
     const visibleButtons = Array.from(document.querySelectorAll('button, a, div, span'))
       .filter(element => isElementVisible(element));
-    const targetButton = visibleButtons.find(element => clean(element.textContent || '').toLowerCase() === 'scan') ||
-      visibleButtons.find(element => clean(element.textContent || '').toLowerCase() === 'quote');
+    const scanButton = visibleButtons.find(element => clean(element.textContent || '').toLowerCase() === 'scan');
+    const fallbackRow = scanButton ? null : getQuoteHelperRow();
+    const targetButton = scanButton || fallbackRow;
 
     const existingButton = document.getElementById('lc-custom-product-inline-button');
     if (!targetButton) {
@@ -798,7 +827,6 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
     }
 
     const button = existingButton || document.createElement('button');
-    const scanRect = targetButton.getBoundingClientRect();
 
     button.id = 'lc-custom-product-inline-button';
     button.type = 'button';
@@ -811,9 +839,13 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
     button.style.padding = '0 14px';
     button.style.font = '700 14px Arial, sans-serif';
     button.style.cursor = 'pointer';
-    button.style.height = `${Math.max(34, scanRect.height || 34)}px`;
+    button.style.height = '34px';
+    button.style.minHeight = '34px';
+    button.style.display = 'inline-flex';
+    button.style.alignItems = 'center';
+    button.style.justifyContent = 'center';
     button.style.lineHeight = '1';
-    button.style.marginLeft = '8px';
+    button.style.marginLeft = scanButton ? '8px' : '0';
     button.style.whiteSpace = 'nowrap';
     button.style.verticalAlign = 'middle';
 
@@ -831,7 +863,8 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
       button.addEventListener('click', openModal);
     }
 
-    targetButton.insertAdjacentElement('afterend', button);
+    if (fallbackRow) fallbackRow.appendChild(button);
+    else targetButton.insertAdjacentElement('afterend', button);
   }
 
   function createWidget() {

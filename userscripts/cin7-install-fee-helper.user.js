@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Installation Fee Helper
 // @namespace    livingculture-cin7
-// @version      3.4
+// @version      3.5
 // @description  Shows Living Culture installation fee SKUs and prices inside Cin7 for quick add. Loads Google Sheet pricing with built-in fallback.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
@@ -928,12 +928,40 @@ AS10139	Assembly Roosevelt Motorised Sliding Gate & Post with Post with Bury int
       .join('');
   }
 
+  function findQuoteSectionHeading() {
+    return Array.from(document.querySelectorAll('h1, h2, h3, h4, div, span'))
+      .filter(element => isElementVisible(element))
+      .find(element => {
+        if (element.closest('button, a, [role="button"]')) return false;
+        return clean(element.textContent || '').toLowerCase() === 'quote';
+      });
+  }
+
+  function getQuoteHelperRow() {
+    let row = document.getElementById('lc-cin7-product-helper-fallback-row');
+    if (row) return row;
+
+    const heading = findQuoteSectionHeading();
+    if (!heading) return null;
+
+    row = document.createElement('div');
+    row.id = 'lc-cin7-product-helper-fallback-row';
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.gap = '8px';
+    row.style.margin = '0 0 12px 0';
+    row.style.width = '100%';
+
+    heading.insertAdjacentElement('afterend', row);
+    return row;
+  }
+
   function insertInstallFeeButtonNextToScan() {
     const visibleButtons = Array.from(document.querySelectorAll('button, a, div, span'))
       .filter(element => isElementVisible(element));
-    const targetButton = document.getElementById('lc-custom-product-inline-button') ||
-      visibleButtons.find(element => clean(element.textContent || '').toLowerCase() === 'scan') ||
-      visibleButtons.find(element => clean(element.textContent || '').toLowerCase() === 'quote');
+    const scanButton = visibleButtons.find(element => clean(element.textContent || '').toLowerCase() === 'scan');
+    const fallbackRow = scanButton ? null : getQuoteHelperRow();
+    const targetButton = document.getElementById('lc-custom-product-inline-button') || scanButton || fallbackRow;
 
     const existingButton = document.getElementById('lc-install-fee-inline-button');
     if (!targetButton) {
@@ -946,8 +974,6 @@ AS10139	Assembly Roosevelt Motorised Sliding Gate & Post with Post with Bury int
     button.type = 'button';
     button.textContent = 'Install Fees';
 
-    const scanRect = targetButton.getBoundingClientRect();
-
     button.style.background = '#05cbbf';
     button.style.color = '#fff';
     button.style.border = '1px solid #05cbbf';
@@ -955,9 +981,13 @@ AS10139	Assembly Roosevelt Motorised Sliding Gate & Post with Post with Bury int
     button.style.padding = '0 14px';
     button.style.font = '700 14px Arial, sans-serif';
     button.style.cursor = 'pointer';
-    button.style.height = `${Math.max(34, scanRect.height || 34)}px`;
+    button.style.height = '34px';
+    button.style.minHeight = '34px';
+    button.style.display = 'inline-flex';
+    button.style.alignItems = 'center';
+    button.style.justifyContent = 'center';
     button.style.lineHeight = '1';
-    button.style.marginLeft = '8px';
+    button.style.marginLeft = targetButton === fallbackRow ? '0' : '8px';
     button.style.whiteSpace = 'nowrap';
     button.style.verticalAlign = 'middle';
 
@@ -975,7 +1005,8 @@ AS10139	Assembly Roosevelt Motorised Sliding Gate & Post with Post with Bury int
       button.addEventListener('click', openModal);
     }
 
-    targetButton.insertAdjacentElement('afterend', button);
+    if (targetButton === fallbackRow) fallbackRow.appendChild(button);
+    else targetButton.insertAdjacentElement('afterend', button);
   }
 
   function createWidget() {
