@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Custom Product Helper
 // @namespace    livingculture-cin7
-// @version      1.5
+// @version      1.6
 // @description  Shows Living Culture customised pergola/product SKUs inside Cin7 and fills the product code into the quote line.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
@@ -786,20 +786,23 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
   }
 
   function insertButtonNextToScan() {
-    if (document.getElementById('lc-custom-product-inline-button')) return;
+    const visibleButtons = Array.from(document.querySelectorAll('button, a, div, span'))
+      .filter(element => isElementVisible(element));
+    const targetButton = visibleButtons.find(element => clean(element.textContent || '').toLowerCase() === 'scan') ||
+      visibleButtons.find(element => clean(element.textContent || '').toLowerCase() === 'quote');
 
-    const scanButton = Array.from(document.querySelectorAll('button, a, div, span'))
-      .filter(element => isElementVisible(element))
-      .find(element => clean(element.textContent || '').toLowerCase() === 'scan');
+    const existingButton = document.getElementById('lc-custom-product-inline-button');
+    if (!targetButton) {
+      existingButton?.remove();
+      return;
+    }
 
-    if (!scanButton) return;
+    const button = existingButton || document.createElement('button');
+    const scanRect = targetButton.getBoundingClientRect();
 
-    const button = document.createElement('button');
     button.id = 'lc-custom-product-inline-button';
     button.type = 'button';
     button.textContent = 'Custom Products';
-
-    const scanRect = scanButton.getBoundingClientRect();
 
     button.style.background = '#05cbbf';
     button.style.color = '#fff';
@@ -814,19 +817,21 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
     button.style.whiteSpace = 'nowrap';
     button.style.verticalAlign = 'middle';
 
-    button.addEventListener('mouseenter', () => {
-      button.style.background = '#04b5aa';
-      button.style.borderColor = '#04b5aa';
-    });
+    if (!existingButton) {
+      button.addEventListener('mouseenter', () => {
+        button.style.background = '#04b5aa';
+        button.style.borderColor = '#04b5aa';
+      });
 
-    button.addEventListener('mouseleave', () => {
-      button.style.background = '#05cbbf';
-      button.style.borderColor = '#05cbbf';
-    });
+      button.addEventListener('mouseleave', () => {
+        button.style.background = '#05cbbf';
+        button.style.borderColor = '#05cbbf';
+      });
 
-    button.addEventListener('click', openModal);
+      button.addEventListener('click', openModal);
+    }
 
-    scanButton.insertAdjacentElement('afterend', button);
+    targetButton.insertAdjacentElement('afterend', button);
   }
 
   function createWidget() {

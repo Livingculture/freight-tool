@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Product Availability
 // @namespace    livingculture-product-availability
-// @version      1.3
+// @version      1.4
 // @description  Adds a Product Availability button beside China Warehouse and matches its exact style
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/*
@@ -53,7 +53,8 @@
       findButtonByText('China Warehouse') ||
       findButtonByText('Install Fees') ||
       findButtonByText('Custom Products') ||
-      findButtonByText('Scan')
+      findButtonByText('Scan') ||
+      findButtonByText('Quote')
     );
   }
 

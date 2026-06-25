@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Installation Fee Helper
 // @namespace    livingculture-cin7
-// @version      3.3
+// @version      3.4
 // @description  Shows Living Culture installation fee SKUs and prices inside Cin7 for quick add. Loads Google Sheet pricing with built-in fallback.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
@@ -929,20 +929,24 @@ AS10139	Assembly Roosevelt Motorised Sliding Gate & Post with Post with Bury int
   }
 
   function insertInstallFeeButtonNextToScan() {
-    if (document.getElementById('lc-install-fee-inline-button')) return;
+    const visibleButtons = Array.from(document.querySelectorAll('button, a, div, span'))
+      .filter(element => isElementVisible(element));
+    const targetButton = document.getElementById('lc-custom-product-inline-button') ||
+      visibleButtons.find(element => clean(element.textContent || '').toLowerCase() === 'scan') ||
+      visibleButtons.find(element => clean(element.textContent || '').toLowerCase() === 'quote');
 
-    const scanButton = Array.from(document.querySelectorAll('button, a, div, span'))
-      .filter(element => isElementVisible(element))
-      .find(element => clean(element.textContent || '').toLowerCase() === 'scan');
+    const existingButton = document.getElementById('lc-install-fee-inline-button');
+    if (!targetButton) {
+      existingButton?.remove();
+      return;
+    }
 
-    if (!scanButton) return;
-
-    const button = document.createElement('button');
+    const button = existingButton || document.createElement('button');
     button.id = 'lc-install-fee-inline-button';
     button.type = 'button';
     button.textContent = 'Install Fees';
 
-    const scanRect = scanButton.getBoundingClientRect();
+    const scanRect = targetButton.getBoundingClientRect();
 
     button.style.background = '#05cbbf';
     button.style.color = '#fff';
@@ -957,19 +961,21 @@ AS10139	Assembly Roosevelt Motorised Sliding Gate & Post with Post with Bury int
     button.style.whiteSpace = 'nowrap';
     button.style.verticalAlign = 'middle';
 
-    button.addEventListener('mouseenter', () => {
-      button.style.background = '#04b5aa';
-      button.style.borderColor = '#04b5aa';
-    });
+    if (!existingButton) {
+      button.addEventListener('mouseenter', () => {
+        button.style.background = '#04b5aa';
+        button.style.borderColor = '#04b5aa';
+      });
 
-    button.addEventListener('mouseleave', () => {
-      button.style.background = '#05cbbf';
-      button.style.borderColor = '#05cbbf';
-    });
+      button.addEventListener('mouseleave', () => {
+        button.style.background = '#05cbbf';
+        button.style.borderColor = '#05cbbf';
+      });
 
-    button.addEventListener('click', openModal);
+      button.addEventListener('click', openModal);
+    }
 
-    scanButton.insertAdjacentElement('afterend', button);
+    targetButton.insertAdjacentElement('afterend', button);
   }
 
   function createWidget() {
