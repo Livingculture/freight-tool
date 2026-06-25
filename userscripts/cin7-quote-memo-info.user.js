@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Quote Memo Info
 // @namespace    livingculture
-// @version      2.4
+// @version      2.5
 // @description  Quote Memo Info panel with copy and auto-fill into Cin7 Quote Memo only.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -410,7 +410,10 @@ Extra charges may be incurred for extra work required in materials and labour ou
     let button = document.getElementById('lc-quote-memo-inline-button');
     const plusButton = findAdditionalChargesPlusButton();
 
-    if (!plusButton) return;
+    if (!plusButton) {
+      button?.remove();
+      return;
+    }
 
     if (!button) {
       button = document.createElement('button');
