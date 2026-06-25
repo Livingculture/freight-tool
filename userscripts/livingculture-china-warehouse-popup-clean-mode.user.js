@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture China Warehouse Popup Clean Mode
 // @namespace    livingculture-china-warehouse-clean-popup
-// @version      5.1
+// @version      5.2
 // @description  Adds China Warehouse button beside Install Fees and opens a cleaner popup stock page
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/*
@@ -60,7 +60,7 @@
     return (
       findButtonByText('Install Fees') ||
       findButtonByText('Custom Products') ||
-      findButtonByText('Promo Summary')
+      findButtonByText('Scan')
     );
   }
 
@@ -146,7 +146,10 @@
 
   function addButton() {
     const targetButton = findTargetButton();
-    if (!targetButton) return;
+    if (!targetButton) {
+      removeOldButton();
+      return;
+    }
 
     const existing = document.getElementById(BUTTON_ID);
 
