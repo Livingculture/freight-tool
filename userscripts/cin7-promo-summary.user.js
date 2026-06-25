@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Promo Summary
 // @namespace    livingculture-cin7
-// @version      2.7
+// @version      2.8
 // @description  Compact grouped Living Culture promo summary inside Cin7 from the Summary tab.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
 // @match        https://inventory.dearsystems.com/*
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=2.7
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=2.7
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=2.8
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=2.8
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
@@ -742,6 +742,23 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
     if (modal) modal.classList.remove('open');
   }
 
+  function applyInlineButtonSizing(button, sourceElement) {
+    if (!button) return;
+
+    const sourceRect = sourceElement?.getBoundingClientRect?.();
+    const height = Math.max(34, Math.round(sourceRect?.height || 34));
+
+    button.style.boxSizing = 'border-box';
+    button.style.display = 'inline-flex';
+    button.style.alignItems = 'center';
+    button.style.justifyContent = 'center';
+    button.style.height = `${height}px`;
+    button.style.minHeight = `${height}px`;
+    button.style.minWidth = '116px';
+    button.style.padding = '0 14px';
+    button.style.lineHeight = '1';
+  }
+
   function positionButtonBetweenSiteVisitAndQuoteReview(button) {
     const row = document.getElementById(ACTION_ROW_ID);
     const siteVisitButton = document.getElementById(SITE_VISIT_BUTTON_ID);
@@ -749,6 +766,7 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
     if (!row || !siteVisitButton || !quoteReviewButton || !button) return false;
 
     if (button.parentElement !== row) row.appendChild(button);
+    applyInlineButtonSizing(button, quoteReviewButton);
 
     const rowRect = row.getBoundingClientRect();
     const siteRect = siteVisitButton.getBoundingClientRect();
@@ -793,15 +811,14 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
       button.style.color = '#fff';
       button.style.border = '1px solid #7c3aed';
       button.style.borderRadius = '4px';
-      button.style.padding = '0 14px';
       button.style.font = '700 14px Arial, sans-serif';
       button.style.cursor = 'pointer';
-      button.style.lineHeight = '1';
       button.style.marginLeft = '8px';
       button.style.whiteSpace = 'nowrap';
       button.style.verticalAlign = 'middle';
       button.style.visibility = 'hidden';
       button.style.opacity = '0';
+      applyInlineButtonSizing(button);
 
       button.addEventListener('mouseenter', () => {
         button.style.background = '#6d28d9';
@@ -829,7 +846,7 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
     button.style.left = '';
     button.style.top = '';
     button.style.zIndex = '2147483601';
-    button.style.height = `${Math.max(34, scanRect.height || 34)}px`;
+    applyInlineButtonSizing(button, scanButton);
     button.style.visibility = 'visible';
     button.style.opacity = '1';
 
