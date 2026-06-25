@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Product Availability
 // @namespace    livingculture-product-availability
-// @version      1.1
+// @version      1.2
 // @description  Adds a Product Availability button beside China Warehouse and matches its exact style
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/*
@@ -88,9 +88,15 @@
     newButton.style.cursor = 'pointer';
     newButton.style.whiteSpace = 'nowrap';
 
-    // Important: do not force it wider than needed
-    newButton.style.minWidth = 'unset';
-    newButton.style.width = 'auto';
+    // Cin7 invoice screens can give copied button classes full-width flex sizing.
+    newButton.style.setProperty('display', 'inline-flex', 'important');
+    newButton.style.setProperty('flex', '0 0 auto', 'important');
+    newButton.style.setProperty('width', 'auto', 'important');
+    newButton.style.setProperty('min-width', '0', 'important');
+    newButton.style.setProperty('max-width', 'none', 'important');
+    newButton.style.setProperty('height', '34px', 'important');
+    newButton.style.setProperty('min-height', '34px', 'important');
+    newButton.style.setProperty('padding', '0 14px', 'important');
   }
 
   function openProductAvailabilityPopup() {

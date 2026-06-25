@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Promo Summary
 // @namespace    livingculture-cin7
-// @version      2.8
+// @version      2.9
 // @description  Compact grouped Living Culture promo summary inside Cin7 from the Summary tab.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
 // @match        https://inventory.dearsystems.com/*
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=2.8
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=2.8
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=2.9
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=2.9
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
@@ -835,24 +835,8 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
 
     if (positionButtonBetweenSiteVisitAndQuoteReview(button)) return true;
 
-    const scanButton = Array.from(document.querySelectorAll('button, a, div, span'))
-      .filter(element => isElementVisible(element))
-      .find(element => clean(element.textContent || '').toLowerCase() === 'scan');
-
-    if (!scanButton) return false;
-
-    const scanRect = scanButton.getBoundingClientRect();
-    button.style.position = '';
-    button.style.left = '';
-    button.style.top = '';
-    button.style.zIndex = '2147483601';
-    applyInlineButtonSizing(button, scanButton);
-    button.style.visibility = 'visible';
-    button.style.opacity = '1';
-
-    scanButton.insertAdjacentElement('afterend', button);
-    positionButtonBetweenSiteVisitAndQuoteReview(button);
-    return true;
+    if (button.isConnected) button.remove();
+    return false;
   }
 
   function schedulePromoButtonPosition() {

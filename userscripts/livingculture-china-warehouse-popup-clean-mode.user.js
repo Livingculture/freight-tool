@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture China Warehouse Popup Clean Mode
 // @namespace    livingculture-china-warehouse-clean-popup
-// @version      5.0
+// @version      5.1
 // @description  Adds China Warehouse button beside Install Fees and opens a cleaner popup stock page
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/*
@@ -94,8 +94,15 @@
     newButton.style.marginRight = '0';
     newButton.style.cursor = 'pointer';
     newButton.style.whiteSpace = 'nowrap';
-    newButton.style.minWidth = 'unset';
-    newButton.style.width = 'auto';
+    // Cin7 invoice screens can give copied button classes full-width flex sizing.
+    newButton.style.setProperty('display', 'inline-flex', 'important');
+    newButton.style.setProperty('flex', '0 0 auto', 'important');
+    newButton.style.setProperty('width', 'auto', 'important');
+    newButton.style.setProperty('min-width', '0', 'important');
+    newButton.style.setProperty('max-width', 'none', 'important');
+    newButton.style.setProperty('height', '34px', 'important');
+    newButton.style.setProperty('min-height', '34px', 'important');
+    newButton.style.setProperty('padding', '0 14px', 'important');
   }
 
   function openChinaWarehousePopup() {
