@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Custom Comments
 // @namespace    livingculture-cin7
-// @version      1.3
+// @version      1.4
 // @description  Builds custom pergola comments and fills both the sale Comments box and quote line comment in Cin7.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
@@ -462,16 +462,31 @@
   }
 
   function insertButton() {
-    if (document.getElementById(BUTTON_ID)) return;
-
     const anchor = findQuoteToolbarAnchor();
     if (!anchor) return;
 
-    const button = document.createElement('button');
-    button.id = BUTTON_ID;
-    button.type = 'button';
+    let button = document.getElementById(BUTTON_ID);
+
+    if (!button) {
+      button = document.createElement('button');
+      button.id = BUTTON_ID;
+      button.type = 'button';
+      button.textContent = 'Custom Comments';
+
+      button.addEventListener('mouseenter', () => {
+        button.style.background = '#04b5aa';
+        button.style.borderColor = '#04b5aa';
+      });
+
+      button.addEventListener('mouseleave', () => {
+        button.style.background = '#05cabe';
+        button.style.borderColor = '#05cabe';
+      });
+
+      button.addEventListener('click', openPanel);
+    }
+
     button.className = anchor.className || '';
-    button.textContent = 'Custom Comments';
     button.style.background = '#05cabe';
     button.style.color = '#fff';
     button.style.border = '1px solid #05cabe';
@@ -484,19 +499,9 @@
     button.style.marginLeft = '8px';
     button.style.boxSizing = 'border-box';
 
-    button.addEventListener('mouseenter', () => {
-      button.style.background = '#04b5aa';
-      button.style.borderColor = '#04b5aa';
-    });
-
-    button.addEventListener('mouseleave', () => {
-      button.style.background = '#05cabe';
-      button.style.borderColor = '#05cabe';
-    });
-
-    button.addEventListener('click', openPanel);
-
-    anchor.insertAdjacentElement('afterend', button);
+    if (anchor.nextElementSibling !== button) {
+      anchor.insertAdjacentElement('afterend', button);
+    }
   }
 
   function ensureRoot() {
