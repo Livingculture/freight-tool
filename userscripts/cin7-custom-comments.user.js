@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Custom Comments
 // @namespace    livingculture-cin7
-// @version      1.1
+// @version      1.2
 // @description  Builds custom pergola comments and fills both the sale Comments box and quote line comment in Cin7.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
@@ -397,7 +397,14 @@
 
     const mainField = findMainCommentsTextarea();
     const mainFilled = mainField ? setNativeValue(mainField, text) : false;
-    const lineFilled = await fillLineComment(text);
+    let lineFilled = false;
+    setModalPassthrough(true);
+    await wait(100);
+    try {
+      lineFilled = await fillLineComment(text);
+    } finally {
+      setModalPassthrough(false);
+    }
 
     if (mainFilled && lineFilled) {
       setStatus('Filled both comment areas and copied text.');
@@ -427,6 +434,14 @@
   function closePanel() {
     const root = document.getElementById(ROOT_ID);
     root?.shadowRoot?.getElementById('lc-custom-comments-modal')?.classList.remove('open');
+  }
+
+  function setModalPassthrough(enabled) {
+    const root = document.getElementById(ROOT_ID);
+    const modal = root?.shadowRoot?.getElementById('lc-custom-comments-modal');
+    if (!modal) return;
+
+    modal.classList.toggle('working', Boolean(enabled));
   }
 
   function findButtonByText(label) {
@@ -507,6 +522,13 @@
           box-sizing: border-box;
         }
         #lc-custom-comments-modal.open { display: flex; }
+        #lc-custom-comments-modal.working {
+          pointer-events: none;
+          background: transparent;
+        }
+        #lc-custom-comments-modal.working .panel {
+          opacity: .38;
+        }
         .panel {
           width: min(440px, calc(100vw - 28px));
           background: #fff;
