@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Custom Comments
 // @namespace    livingculture-cin7
-// @version      1.0
+// @version      1.1
 // @description  Builds custom pergola comments and fills both the sale Comments box and quote line comment in Cin7.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
@@ -201,6 +201,65 @@
       .sort((a, b) => a.top - b.top)[0] || null;
   }
 
+  function findFirstQuoteLineRect() {
+    const productHeader = findQuoteHeaderRect('product');
+    if (!productHeader) return null;
+
+    const additionalTop = findAdditionalChargesTop();
+    const candidates = visibleElements('a, td, div, span')
+      .map(element => ({ element, rect: element.getBoundingClientRect(), text: clean(element.textContent || '') }))
+      .filter(({ rect, text }) => {
+        const centerX = rect.left + rect.width / 2;
+
+        return (
+          text &&
+          rect.top > productHeader.bottom + 6 &&
+          rect.top < additionalTop &&
+          rect.height >= 16 &&
+          rect.width >= 90 &&
+          centerX >= productHeader.left - 40 &&
+          centerX <= productHeader.right + 520
+        );
+      })
+      .sort((a, b) => a.rect.top - b.rect.top);
+
+    return candidates[0]?.rect || null;
+  }
+
+  function findEditableNearPoint(x, y, maxDistance = 360) {
+    const active = document.activeElement;
+
+    if (
+      active instanceof HTMLInputElement ||
+      active instanceof HTMLTextAreaElement ||
+      active?.isContentEditable
+    ) {
+      const rect = active.getBoundingClientRect();
+      const dx = Math.abs(rect.left + rect.width / 2 - x);
+      const dy = Math.abs(rect.top + rect.height / 2 - y);
+      if (dx <= maxDistance && dy <= maxDistance) return active;
+    }
+
+    const fields = visibleElements('textarea, input, [contenteditable="true"]')
+      .map(field => ({ field, rect: field.getBoundingClientRect() }))
+      .filter(({ rect }) => {
+        const dx = Math.abs(rect.left + rect.width / 2 - x);
+        const dy = Math.abs(rect.top + rect.height / 2 - y);
+        return dx <= maxDistance && dy <= maxDistance;
+      })
+      .sort((a, b) => {
+        const ad =
+          Math.abs(a.rect.left + a.rect.width / 2 - x) +
+          Math.abs(a.rect.top + a.rect.height / 2 - y);
+        const bd =
+          Math.abs(b.rect.left + b.rect.width / 2 - x) +
+          Math.abs(b.rect.top + b.rect.height / 2 - y);
+        return ad - bd;
+      });
+
+    return fields[0]?.field || null;
+  }
+
   function findAdditionalChargesTop() {
     return visibleElements('h1, h2, h3, div, span')
       .filter(element => clean(element.textContent || '').toLowerCase().includes('additional charges and services'))
@@ -233,38 +292,28 @@
     const commentHeader = findQuoteHeaderRect('comment');
     if (!commentHeader) return null;
 
-    const additionalTop = findAdditionalChargesTop();
-    const rowCandidates = visibleElements('td, div, span, a')
-      .map(element => ({ element, rect: element.getBoundingClientRect() }))
-      .filter(({ rect }) => {
-        const centerX = rect.left + rect.width / 2;
-        return (
-          rect.top > commentHeader.bottom &&
-          rect.top < additionalTop &&
-          rect.height >= 18 &&
-          rect.width >= 60 &&
-          centerX >= commentHeader.left - 120 &&
-          centerX <= commentHeader.right + 220
-        );
-      })
-      .sort((a, b) => a.rect.top - b.rect.top);
+    const lineRect = findFirstQuoteLineRect();
+    const y = lineRect
+      ? lineRect.top + Math.min(Math.max(lineRect.height / 2, 22), 46)
+      : commentHeader.bottom + 36;
+    const targetPoints = [
+      [commentHeader.left + 18, y],
+      [commentHeader.left + Math.min(commentHeader.width / 2, 80), y],
+      [commentHeader.right - 12, y],
+      [commentHeader.left + 18, y + 24]
+    ];
 
-    const target = rowCandidates[0]?.rect;
-    if (!target) return null;
+    for (const [x, targetY] of targetPoints) {
+      clickAt(x, targetY);
+      await wait(180);
+      clickAt(x, targetY);
+      await wait(280);
 
-    clickAt(target.left + Math.min(target.width / 2, 140), target.top + Math.min(target.height / 2, 30));
-    await wait(250);
-
-    const active = document.activeElement;
-    if (
-      active instanceof HTMLInputElement ||
-      active instanceof HTMLTextAreaElement ||
-      active?.isContentEditable
-    ) {
-      return active;
+      const editable = findEditableNearPoint(x, targetY) || findLineCommentEditable();
+      if (editable) return editable;
     }
 
-    return findLineCommentEditable();
+    return null;
   }
 
   async function fillLineComment(text) {
@@ -300,9 +349,9 @@
 
     return [
       typeLabel,
-      `Height:${height}mm Standard`,
-      `Lenght:${length}mm includes footplates`,
-      `Width:${width}mm includes footplate`,
+      `Height:${height}mm`,
+      `Lenght:${length}mm`,
+      `Width:${width}mm`,
       `Frame Colour: ${frameColour}`,
       `Louvre Colour:${louvreColour}`
     ].join('\n');
@@ -567,23 +616,23 @@
             </label>
             <label>
               Height
-              <input id="lc-cc-height" inputmode="numeric" placeholder="2515" />
+              <input id="lc-cc-height" inputmode="numeric" />
             </label>
             <label>
               Length
-              <input id="lc-cc-length" inputmode="numeric" placeholder="2098" />
+              <input id="lc-cc-length" inputmode="numeric" />
             </label>
             <label>
               Width
-              <input id="lc-cc-width" inputmode="numeric" placeholder="1809" />
+              <input id="lc-cc-width" inputmode="numeric" />
             </label>
             <label>
               Frame colour
-              <input id="lc-cc-frame-colour" placeholder="Black" />
+              <input id="lc-cc-frame-colour" />
             </label>
             <label>
               Louvre colour
-              <input id="lc-cc-louvre-colour" placeholder="White" />
+              <input id="lc-cc-louvre-colour" />
             </label>
             <div id="lc-cc-status"></div>
             <div class="actions">
