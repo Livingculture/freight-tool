@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Custom Comments
 // @namespace    livingculture-cin7
-// @version      1.2
+// @version      1.3
 // @description  Builds custom pergola comments and fills both the sale Comments box and quote line comment in Cin7.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
@@ -453,9 +453,9 @@
 
   function findQuoteToolbarAnchor() {
     return (
-      findButtonByText('NZ Availability') ||
-      findButtonByText('Install Fees') ||
       findButtonByText('Custom Products') ||
+      findButtonByText('Install Fees') ||
+      findButtonByText('NZ Availability') ||
       findButtonByText('Scan') ||
       findButtonByText('Family')
     );
@@ -470,13 +470,14 @@
     const button = document.createElement('button');
     button.id = BUTTON_ID;
     button.type = 'button';
+    button.className = anchor.className || '';
     button.textContent = 'Custom Comments';
     button.style.background = '#05cabe';
     button.style.color = '#fff';
     button.style.border = '1px solid #05cabe';
     button.style.borderRadius = '4px';
-    button.style.padding = '0 16px';
-    button.style.height = `${Math.max(38, anchor.getBoundingClientRect().height || 38)}px`;
+    button.style.padding = window.getComputedStyle(anchor).padding || '0 16px';
+    button.style.height = window.getComputedStyle(anchor).height || 'auto';
     button.style.font = '700 14px Arial, sans-serif';
     button.style.cursor = 'pointer';
     button.style.whiteSpace = 'nowrap';
