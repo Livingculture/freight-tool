@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Custom Comments
 // @namespace    livingculture-cin7
-// @version      1.4
+// @version      1.5
 // @description  Builds custom pergola comments and fills both the sale Comments box and quote line comment in Cin7.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
@@ -643,15 +643,15 @@
               </select>
             </label>
             <label>
-              Height
+              Height (mm)
               <input id="lc-cc-height" inputmode="numeric" />
             </label>
             <label>
-              Length
+              Length (mm)
               <input id="lc-cc-length" inputmode="numeric" />
             </label>
             <label>
-              Width
+              Width (mm)
               <input id="lc-cc-width" inputmode="numeric" />
             </label>
             <label>
