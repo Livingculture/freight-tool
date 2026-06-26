@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Custom Comments
 // @namespace    livingculture-cin7
-// @version      1.6
+// @version      1.7
 // @description  Builds custom pergola comments and fills both the sale Comments box and quote line comment in Cin7.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
@@ -357,7 +357,7 @@
       `Louvre Colour:${louvreColour}`
     ];
 
-    if (notes) lines.push(`Notes: ${notes}`);
+    if (notes) lines.push(notes);
 
     return lines.join('\n');
   }
