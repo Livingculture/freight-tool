@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Custom Comments
 // @namespace    livingculture-cin7
-// @version      1.5
+// @version      1.6
 // @description  Builds custom pergola comments and fills both the sale Comments box and quote line comment in Cin7.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
@@ -346,15 +346,20 @@
     const width = clean(data.width);
     const frameColour = clean(data.frameColour);
     const louvreColour = clean(data.louvreColour);
+    const notes = clean(data.notes);
 
-    return [
+    const lines = [
       typeLabel,
       `Height:${height}mm`,
       `Lenght:${length}mm`,
       `Width:${width}mm`,
       `Frame Colour: ${frameColour}`,
       `Louvre Colour:${louvreColour}`
-    ].join('\n');
+    ];
+
+    if (notes) lines.push(`Notes: ${notes}`);
+
+    return lines.join('\n');
   }
 
   function getFormData() {
@@ -368,7 +373,8 @@
       length: shadow.getElementById('lc-cc-length')?.value || '',
       width: shadow.getElementById('lc-cc-width')?.value || '',
       frameColour: shadow.getElementById('lc-cc-frame-colour')?.value || '',
-      louvreColour: shadow.getElementById('lc-cc-louvre-colour')?.value || ''
+      louvreColour: shadow.getElementById('lc-cc-louvre-colour')?.value || '',
+      notes: shadow.getElementById('lc-cc-notes')?.value || ''
     };
   }
 
@@ -661,6 +667,10 @@
             <label>
               Louvre colour
               <input id="lc-cc-louvre-colour" />
+            </label>
+            <label>
+              Additional notes
+              <input id="lc-cc-notes" />
             </label>
             <div id="lc-cc-status"></div>
             <div class="actions">
