@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Custom Product Helper
 // @namespace    livingculture-cin7
-// @version      1.9
+// @version      2.0
 // @description  Shows Living Culture customised pergola/product SKUs inside Cin7 and fills the product code into the quote line.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
@@ -22,49 +22,64 @@
 
   const REMOTE_DATA_URL = 'https://docs.google.com/document/d/1Vm28Nvi7hLqbdHKqe15WdpG1zKfK3Y7M/edit';
 
-  const CACHE_KEY = 'lc-custom-product-data-v15';
-  const CACHE_TIME_KEY = 'lc-custom-product-data-time-v15';
+  const CACHE_KEY = 'lc-custom-product-data-v16';
+  const CACHE_TIME_KEY = 'lc-custom-product-data-time-v16';
 
   const RAW_DATA = `
 Name,CS code,Price/per m2,Memo
-Baltic Manual Pergola,SK-00067,$799,"The MOQ is 9 m2. If the size is less than 9 m2, quote based on 9 m2."
-Baltic Motorised Pergola,SK-00072,$880,"Standard colour is black, charcoal, white and frame charcoal + louvre white. Custom colours increase 15%."
-Caspian Manual Pergola,SK-00888,$750,"MOQ 9 m2. Length ≤7800mm, width ≤3600mm. Manual Caspian pergolas do not include LED strip lighting. Standard colour black and white. Custom colours increase 15%."
-Caspian Motorised Pergola,SK-00887,$850,"MOQ 9 m2. Length ≤7800mm, width ≤3600mm. Standard colour black and white. Custom colours increase 15%."
-Tasman Pergola,SK-00071,$1075,"Post ≥3m charge applies. Length ≤8000mm, width ≤4000mm. MOQ 12 m2. Standard colour: Black / White / Charcoal. Custom colours increase 20%."
-Pacific Pergola,SK-00075,$1455,"Post ≥3m charge applies. Length ≤6000mm no middle post needed. MOQ 9 m2. Standard colour: Black / White / Charcoal. Custom colours increase 20%."
-Mediterranean PRO-MAX Pergola,SK-00073,$3165,"MOQ 9 m2. Standard colour black, charcoal, white and frame charcoal + louvre white. Custom colours increase 20%."
-Mediterranean-SKY Motorised,SK-00390,$1840,"MOQ 12 m2. Standard colour: White / Charcoal. Custom colours increase 15%."
-Dover Motorised PVC Pergola,SK-00492,$690,"MOQ 12 m2. Dark grey aluminium frame with white PVC fabric. Custom colours increase 15%."
-Aluminium Shutter Sliding Door,SK-00391,$590,"1500mm ≤ width ≤ 3800mm. Height ≤2700mm. Standard colour: Black / White / Charcoal."
-Aluminium Shutter Wall,SK-00392,$550,"Width ≤1280mm. Height ≤2700mm. Standard colour: Black / White / Charcoal."
-Patterned Privacy Panel,SK-00393,$350,"Width ≤900mm. Height ≤2700mm. Standard colour: Black / White / Charcoal."
-Slatted Privacy Wall,SK-00394,$230,"Width ≤2400mm. Height ≤2700mm. Standard colour: Black / White / Charcoal."
-Tongue and Groove Privacy Screen,SK-00395,$270,"Width ≤2400mm. Height ≤2700mm. Standard colour: Black / White / Charcoal."
-Glass Sliding Door,SK-00076,$590,"If changing handle to lock, charge $80 each. Height ≤2700mm."
-Bifold Shutter Wall,SK-00078,$829,"Width ≤5600mm. Height ≤2700mm. Slide and fold."
-Bifold Glass Door,SK-00077,$700,"Width ≤5600mm. Height ≤2700mm. Slide and fold."
-Manual Blind,SK-00079,$259,"950mm < width ≤4000mm. Height ≤2700mm."
-Motorised Blind,SK-00140,$389,"1500mm ≤ width ≤6000mm. Height ≤2900mm."
-Olympus Motorised Roof Shade,SK-00638,$460,"MOQ 8 m2."
-City Window Door Awning,SK-00080,$330,"Width ≤2m. MOQ 3 m2."
-Country Window Door Awning,SK-00085,$330,"Width ≤2m. MOQ 3 m2."
-Coastal Patio Cover,SK-00081,$379,"Width ≤4m. MOQ 1 m2."
-Urban Patio Cover,SK-00082,$269,"MOQ 9 m2."
-Country Patio Cover,SK-00083,$269,"MOQ 9 m2."
-Carport,SK-00084,$275,"MOQ 12 m2. Single carport width ≤2.8m."
-Tasman Side Post Black,CS20954,$329.99,"3M leg post."
-Tasman Side Post White,CS20955,$329.99,"3M leg post."
-Tasman Side Post Charcoal,CS20956,$329.99,"3M leg post."
-Tasman Middle Post Black,CS23434,$329.99,"3M leg post."
-Tasman Middle Post White,CS23435,$329.99,"3M leg post."
-Tasman Middle Post Charcoal,CS23436,$329.99,"3M leg post."
-Baltic Side Post Black,CS22824,$299.99,"3M leg post."
-Baltic Side Post White,CS22825,$299.99,"3M leg post."
-Baltic Side Post Charcoal,CS22826,$299.99,"3M leg post."
-Baltic Middle Post Black,CS22827,$299.99,"3M leg post."
-Baltic Middle Post White,CS22828,$299.99,"3M leg post."
-Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
+Baltic Manual Pergola,SK-00067,$799,The MOQ is 9 m2. If the size less than 9 m2，please quote based on 9 m2
+Baltic Motorised Pergola,SK-00072,$880,"Standard colour is black, charcoal, white and frame charcoal+louvre white. Custom colours need increase 15%"
+Atlantic Pergola,SK-00918,$779,"Custom Atlantic Manual Pergola (LC150) per m2 The Length ≤5858.2mm, the width≤3000mm The MOQ is 4㎡ Standard Colors: Black / White / Charcoal. Custom colors are not available."
+Caspian Motorised Pergola,SK-00887,$880,"Custom Caspian Motorised Pergola (LC150) per m2 The Length ≤7800mm, the width≤3600mm The MOQ is 4㎡ Standard Colors: Black / White / Charcoal. Custom colors are not available."
+Tasman Pergola,SK-00071,$1075,"If the post ≥3m, one post need charge $89 if the post over 3m, suggest pre-embedded The Length ≤8000mm, the width≤4000mm The length ≤6000mm, no need middle post The MOQ is 12 m2， If the area is below the minimum square meters, the quote must be based on the minimum square meters. Standard colour: Black / White / Charcoal. Custom colours need increase 20%"
+Pacific Pergola,SK-00075,"$1,459","If the post ≥3m, one post need charge $99 if the post over 3m, suggest pre-embedded The length ≤6000mm, no need middle post The MOQ is 9 m2 Standard colour: Black / White / Charcoal. Custom colours need increase 20%"
+Mediterranean PRO-MAX Pergola,SK-00073,$3165,"Standard colour is black, charcoal, white and frame charcoal+louvre white. Custom colours need increase 20% The MOQ is 9 m2. If the size less than 9㎡，please quote based on 9 m2. Standard colour is black, charcoal, white and frame charcoal+louvre white. Custom colours need increase 20%."
+Mediterranean-SKY Motorised,SK-00390,"$1,840",The MOQ is 12 m2. If the size less than 12 m2 please quote based on 12 m2. Standard colour: White / Charcoal. Custom colours need increase 15%
+Dover Motorised PVC Pergola,SK-00492,$690,"1.The MOQ is 12 m2.If the size less than 12 m2,please quote based on 12 m2 2.Standard colour is Dark grey aluminium frame with white PVC Fabric. Custom colours need increase 15% (Frame colour cannot be customized, fabric colour options: white, beige, grey) 3.Maximum dimensions without additional posts: 5m(Length)* 6.0m (Projection) = 4 post for Freestanding model and 2 posts for wall-mounted model 4.Maximum dimensions with additional posts: 9m(Length)* 6.0m Projection) = 6 post for freestanding model & 3 posts for wall Mounted model"
+Aluminium Shutter Sliding Door,SK-00391,$590,"1500mm≤width ≤3800mm，Height≤2700mm Aluminium Frame Standard colour: Black / White / Charcoal, cannot customised colour"
+Aluminium Shutter Wall,SK-00392,$550,"width ≤1280mm，Height≤2700mm Aluminium Frame Standard colour: Black / White / Charcoal, cannot customised colour"
+Patterned Privacy Panel,SK-00393,$350,"width ≤900mm，Height≤2700mm Aluminium Frame Standard colour: Black / White / Charcoal, cannot customised colour"
+Slatted Privacy Wall,SK-00394,$230,"width ≤2400mm，Height≤2700mm Aluminium Frame Standard colour: Black / White / Charcoal, cannot customised colour"
+Tongue and Groove Privacy Screen,SK-00395,$270,"width ≤2400mm，Height≤2700mm Aluminium Frame Standard colour: Black / White / Charcoal, cannot customised colour"
+Glass Sliding Door,SK-00076,$590,"if change handle to lock need charge $80 for each one Height≤2700mm Aluminium Frame Standard colour: Black / White / Charcoal, cannot customised colour"
+Bifold Shutter Wall,SK-00078,$829,"width ≤5600mm, Height≤2700mm Folding method: Slide and fold to one side Bifold doors opening from the middle to both sides Aluminium Frame Standard colour: Black / White / Charcoal / Wood"
+Bifold Glass Door,SK-00077,$700,"width ≤5600mm, Height≤2700mm Folding method: Slide and fold to one side Bifold doors opening from the middle to both sides Aluminium Frame Standard colour: Black / White / Charcoal"
+Manual Blind,SK-00079,$259,"size range: 800mm＜ width ≤4000mm, Height≤2800mm Fabric with 0% openness, width ≤ 3200 mm. Frame Standard colour: Black / White / Charcoal Fabric colour: Black / White / Light Grey / Dark Grey"
+Motorised Blind,SK-00140,$389,"size range: 1100mm＜width≤1500mm， Height≤2700mm 1500mm＜width≤4000mm， Height≤3600mm 4000mm＜width≤6000mm， Height≤2900mm Fabric with 0% openness, width ≤ 5000mm,height ≤2700mm Frame Standard colour: Black / White / Charcoal Fabric colour: Black / White / Light Grey / Dark Grey"
+PVC manual Blind,SK-01076,$679,"size range: 950mm＜ width ≤4000mm , Height≤2700mm Frame Standard color: Black / White / Charcoal Fabric color: Clear"
+PVC Motor Blind,SK-01077,$689,"size range: 950mm＜ width ≤6000mm , Height≤3000mm Frame Standard color: Black / White / Charcoal Fabric color: Clear"
+Olympus Motorised Roof Shade,SK-00638,$460,The MOQ is 8 m2
+City Window door awning,SK-00080,$330,The width ≤2m MOQ 3 m2 Aluminium Frame Colour Option: White / Grey / Champagne / Coffee Roof panel Colour Option: Clear / Blue / Bronze / Light Grey / Mid Grey / Dark Grey/ Others colour cannot be customised
+Country Window door awning,SK-00085,$330,The width ≤2m MOQ 3 m2 Aluminium Frame Colour Option: White / Grey / Champagne / Coffee Roof panel Colour Option: Clear / Blue / Bronze / Light Grey / Mid Grey / Dark Grey/ Others colour cannot be customised
+Coastal patio cover,SK-00081,$379,the width ≤4m MOQ 1 m2 Aluminium Frame Colour Option: White / Black / Grey Roof panel Colour Option: Clear / Matte / Light Grey / Dark Grey Others colour cannot be customised
+Urban patio cover,SK-00082,$269,"The MOQ is 9 m2 If the area is below the minimum square meters, the quote must be based on the minimum square meters. Aluminium Frame Colour Option: White / Grey / Champagne / Coffee Roof panel Colour Option: Clear / Blue / Bronze / Light Grey / Mid Grey / Dark Grey/ Others colour cannot be customised"
+Country patio cover,SK-00083,$269,"The MOQ is 9 m2 If the area is below the minimum square meters, the quote must be based on the minimum square meters. Aluminium Frame Colour Option: White / Grey / Champagne / Coffee Roof panel Colour Option: Clear / Blue / Bronze / Light Grey / Mid Grey / Dark Grey/ Others colour cannot be customised"
+Carport,SK-00084,$275,"The MOQ is 12 m2 If the area is below the minimum square meters, the quote must be based on the minimum square meters. Single carport's width ≤3m The post height over 2.7m, need pre-embedded Aluminium Frame Colour Option: White / Grey / Champagne / Coffee Roof panel Colour Option: Clear / Blue / Bronze / Light Grey / Mid Grey / Dark Grey/ Others colour cannot be customised"
+Fuji Manual,SK-00396,$145,1. Max. Size: 5m(Width) * 3.0m (Projection) 2. Width >=Projections + 0.5m The MOQ is 6㎡. If the size less than 6㎡，please quote based on ㎡. Only white Frame Outperform Acrylic Fabric（Made in China） Standard size，but Custom colours need increase 15%
+Etna Half Cassette,SK-00397,$260,1. Max. Size: 6m(Width) * 3.0m (Projection) 2. Width >=Projections + 0.5m The MOQ is 8㎡. If the size less than 8㎡，please quote based on 8㎡ White or Dark grey Frame Outperform Acrylic Fabric（Made in China） Standard size ，but Custom colours need increase 15%
+Rainier Full Cassette,SK-00399,$340,1. Max. Size: 5m(Width) * 3.0m (Projection) 2. Width >=Projections + 0.8m The MOQ is 8㎡. If the size less than 8㎡，please quote based on 8㎡. White or Dark grey Frame Dickson®Acrylic Fabric（Made in France） Standard size，but Custom colours need increase 15%
+Rainier Pro Full Cassette,SK-00401,$350,1. Max. Size: 7m(Length) * 4.0m (Projection) 2. Width >=Projections + 0.8m The MOQ is 10㎡. If the size less than 10㎡，please quote based on 10㎡. White or Dark grey Frame Dickson®Acrylic Fabric（Made in France） Standard size，but Custom colours need increase 15%
+Solar Window Awning,SK-00551,$245,"1.Max. Size: 4m(Width)* 2.5m (Projection) 2.The MOQ is 6m. lf the size less than 6m, please quote based or 6m 3.White or Dark grey Frame4.0utperform Acrylic Fabric (Made in China) 5.Standard size, but Custom colours need increase 15%"
+Etna Half Cassette >10m2,SK-00398,$230,Etna Half Cassette price tier for areas over 10m2.
+Rainier Full Cassette >10m2,SK-00400,$300,Rainier Full Cassette price tier for areas over 10m2.
+Tasman Side Post Black,CS20954,$329.99,3M leg post.
+Tasman Side Post White,CS20955,$329.99,3M leg post.
+Tasman Side Post Charcoal,CS20956,$329.99,3M leg post.
+Tasman Middle Post Black,CS23434,$329.99,3M leg post.
+Tasman Middle Post White,CS23435,$329.99,3M leg post.
+Tasman Middle Post Charcoal,CS23436,$329.99,3M leg post.
+Baltic Side Post Black,CS22824,$299.99,3M leg post.
+Baltic Side Post White,CS22825,$299.99,3M leg post.
+Baltic Side Post Charcoal,CS22826,$299.99,3M leg post.
+Baltic Middle Post Black,CS22827,$299.99,3M leg post.
+Baltic Middle Post White,CS22828,$299.99,3M leg post.
+Baltic Middle Post Charcoal,CS22829,$299.99,3M leg post.
+Atlantic Side Post Black,CS22253,$329.99,3M leg post.
+Atlantic Side Post White,CS22254,$329.99,3M leg post.
+Atlantic Side Post Charcoal,CS22255,$329.99,3M leg post.
+Caspian Middle Post Black,CS22250,$329.99,"3M leg post. If longer than 3M, quote steel posts individually. Prefer to keep under 4M height."
+Caspian Middle Post White,CS22251,$329.99,"3M leg post. If longer than 3M, quote steel posts individually. Prefer to keep under 4M height."
+Caspian Middle Post Charcoal,CS22252,$329.99,"3M leg post. If longer than 3M, quote steel posts individually. Prefer to keep under 4M height."
 `;
 
   let dataSourceLabel = 'Built-in backup data';
@@ -118,6 +133,106 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
     return clean(value).toLowerCase().replace(/[^a-z0-9]+/g, '');
   }
 
+  function looksLikeProductCode(value) {
+    return /^(?:SK|CS)-?\d{5}$/i.test(clean(value));
+  }
+
+  function looksLikeProductPrice(value) {
+    return /^\$?\s*\d[\d,]*(?:\.\d+)?\s*$/.test(clean(value));
+  }
+
+  function looksLikeVerticalProductName(value) {
+    const text = clean(value);
+    if (!text || looksLikeProductCode(text) || looksLikeProductPrice(text)) return false;
+
+    return !/[.。:,，;；()（）]|≤|>=|MOQ|colour|color|width|height|size|charge|frame|fabric|projection|maximum|dimensions|post|length|quote|standard|custom|need|m2|㎡|mm|^The |^If |^Only |^Outperform|^Dickson|roof panel|folding method|bifold doors|^Fabric colour|^Fabric color|^Frame Standard|^\d\./i.test(text);
+  }
+
+  function parseVerticalData(raw) {
+    const lines = String(raw || '')
+      .split(/\r?\n/)
+      .map(line => clean(line))
+      .filter(Boolean);
+
+    const headerText = lines.slice(0, 4).map(normaliseHeader).join('|');
+    if (headerText !== 'name|cscode|priceperm2|memo') return [];
+
+    function startsNextProduct(index) {
+      if (
+        index + 1 < lines.length &&
+        looksLikeVerticalProductName(lines[index]) &&
+        looksLikeProductCode(lines[index + 1])
+      ) {
+        return true;
+      }
+
+      if (
+        index + 2 < lines.length &&
+        looksLikeVerticalProductName(lines[index]) &&
+        looksLikeVerticalProductName(lines[index + 1]) &&
+        looksLikeProductCode(lines[index + 2])
+      ) {
+        return true;
+      }
+
+      return false;
+    }
+
+    const rows = [];
+    let index = 4;
+
+    while (index < lines.length) {
+      const nameParts = [];
+      while (index < lines.length && !looksLikeProductCode(lines[index])) {
+        nameParts.push(lines[index]);
+        index += 1;
+      }
+
+      if (index >= lines.length) break;
+
+      const code = lines[index];
+      index += 1;
+
+      const beforePrice = [];
+      while (
+        index < lines.length &&
+        !looksLikeProductPrice(lines[index]) &&
+        !looksLikeProductCode(lines[index])
+      ) {
+        beforePrice.push(lines[index]);
+        index += 1;
+      }
+
+      let price = '';
+      if (index < lines.length && looksLikeProductPrice(lines[index])) {
+        price = lines[index];
+        index += 1;
+      }
+
+      const memoParts = [];
+      while (
+        index < lines.length &&
+        !looksLikeProductCode(lines[index]) &&
+        !startsNextProduct(index)
+      ) {
+        memoParts.push(lines[index]);
+        index += 1;
+      }
+
+      const name = clean(nameParts.concat(beforePrice).join(' '));
+      if (name && code) {
+        rows.push({
+          name,
+          code,
+          price: clean(price),
+          memo: clean(memoParts.join(' '))
+        });
+      }
+    }
+
+    return rows.filter(item => item.name && item.code);
+  }
+
   function parseData(raw) {
     const text = String(raw || '').trim();
 
@@ -131,6 +246,9 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
     const delimiter = lines[0].includes('\t') ? '\t' : ',';
     const headers = delimiter === '\t' ? lines[0].split('\t') : parseCsvLine(lines[0]);
     const normalisedHeaders = headers.map(normaliseHeader);
+
+    const verticalItems = parseVerticalData(text);
+    if (verticalItems.length) return verticalItems;
 
     function col(...names) {
       const wanted = names.map(normaliseHeader);
