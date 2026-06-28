@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      8.2-hosted
+// @version      8.3-hosted
 // @description  Living Culture freight panel for Cin7 using the hosted freight service.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -1348,6 +1348,38 @@
     });
   }
 
+  function openContainersPopup() {
+    const popupWidth = 1500;
+    const popupHeight = 900;
+    const left = Math.max(0, Math.round((window.screen.width - popupWidth) / 2));
+    const top = Math.max(0, Math.round((window.screen.height - popupHeight) / 2));
+    const features = [
+      `width=${popupWidth}`,
+      `height=${popupHeight}`,
+      `left=${left}`,
+      `top=${top}`,
+      'resizable=yes',
+      'scrollbars=yes',
+      'toolbar=no',
+      'menubar=no',
+      'location=yes',
+      'status=no'
+    ].join(',');
+
+    const popup = window.open(
+      CONTAINER_DASHBOARD_URL,
+      'LivingCultureContainersPopup',
+      features
+    );
+
+    if (!popup) {
+      alert('Chrome blocked the LC Containers popup. Please allow popups for Cin7, then click again.');
+      return;
+    }
+
+    popup.focus();
+  }
+
   function watchCin7QuoteChanges() {
     if (window.__lcFreightObserverStarted) return;
 
@@ -1811,7 +1843,7 @@
     });
 
     containerButton.addEventListener('click', () => {
-      window.open(CONTAINER_DASHBOARD_URL, '_blank', 'noopener,noreferrer');
+      openContainersPopup();
     });
 
     panel.querySelector('#lc-panel-close').addEventListener('click', () => {
