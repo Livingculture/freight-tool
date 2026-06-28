@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      8.0-hosted
+// @version      8.1-hosted
 // @description  Living Culture freight panel for Cin7 using the hosted freight service.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -1165,22 +1165,62 @@
       document.getElementById('lc-quote-memo-toggle');
   }
 
+  function findButtonByText(pattern) {
+    return Array.from(document.querySelectorAll('button, [role="button"], a'))
+      .find(element => isVisible(element) && pattern.test(clean(element.textContent || element.getAttribute('aria-label') || '')));
+  }
+
+  function placeContainerButtonNextToWarehouse() {
+    const containerButton = document.getElementById('lc-containers-open');
+    if (!containerButton) return false;
+
+    const anchor = findButtonByText(/foshan\s+warehouse/i) ||
+      findButtonByText(/nz\s+availability/i) ||
+      findButtonByText(/install\s+fees/i) ||
+      findButtonByText(/custom\s+products/i);
+
+    if (!anchor) {
+      containerButton.style.display = 'none';
+      return false;
+    }
+
+    const parent = anchor.parentElement || anchor.closest?.('div, section, fieldset') || document.body;
+    const parentStyle = window.getComputedStyle(parent);
+
+    if (parentStyle.position === 'static') {
+      parent.style.position = 'relative';
+    }
+
+    if (containerButton.parentElement !== parent) {
+      parent.appendChild(containerButton);
+    }
+
+    const anchorRect = anchor.getBoundingClientRect();
+    const parentRect = parent.getBoundingClientRect();
+
+    containerButton.style.display = 'block';
+    containerButton.style.position = 'absolute';
+    containerButton.style.left = `${anchorRect.right - parentRect.left + 8}px`;
+    containerButton.style.top = `${anchorRect.top - parentRect.top}px`;
+    containerButton.style.width = 'auto';
+    containerButton.style.height = `${Math.max(34, anchorRect.height || 34)}px`;
+    containerButton.style.zIndex = '51';
+    return true;
+  }
+
   function placeFreightButtonNextToMemo() {
     const freightButton = document.getElementById('lc-freight-toggle');
     const containerButton = document.getElementById('lc-containers-open');
     if (!freightButton) return;
 
+    placeContainerButtonNextToWarehouse();
+
     const memoButton = findQuoteMemoButton();
 
     if (!memoButton || !isVisible(memoButton)) {
       freightButton.style.display = 'none';
-      if (containerButton) {
-        containerButton.style.display = 'block';
-        containerButton.style.position = 'fixed';
-        containerButton.style.top = '74px';
-        containerButton.style.right = '16px';
-        containerButton.style.height = '34px';
-        containerButton.style.zIndex = '2147483646';
+      if (containerButton && !findButtonByText(/foshan\s+warehouse|nz\s+availability|install\s+fees|custom\s+products/i)) {
+        containerButton.style.display = 'none';
       }
       return;
     }
@@ -1197,10 +1237,6 @@
       parent.appendChild(freightButton);
     }
 
-    if (containerButton && containerButton.parentElement !== parent) {
-      parent.appendChild(containerButton);
-    }
-
     const parentRect = parent.getBoundingClientRect();
     const buttonHeight = Math.max(34, memoRect.height || 34);
 
@@ -1211,15 +1247,7 @@
     freightButton.style.height = `${buttonHeight}px`;
     freightButton.style.zIndex = '51';
 
-    if (containerButton) {
-      const freightWidth = freightButton.getBoundingClientRect().width || 120;
-      containerButton.style.display = 'block';
-      containerButton.style.position = 'absolute';
-      containerButton.style.left = `${memoRect.right - parentRect.left + freightWidth + 16}px`;
-      containerButton.style.top = `${memoRect.top - parentRect.top}px`;
-      containerButton.style.height = `${buttonHeight}px`;
-      containerButton.style.zIndex = '51';
-    }
+    placeContainerButtonNextToWarehouse();
   }
 
   function styleFreightInlineButton(button) {
@@ -1255,9 +1283,9 @@
     button.style.minWidth = '132px';
     button.style.minHeight = '34px';
     button.style.padding = '0 14px';
-    button.style.background = '#2d5c4e';
+    button.style.background = '#05cabe';
     button.style.color = '#fff';
-    button.style.border = '1px solid #2d5c4e';
+    button.style.border = '1px solid #05cabe';
     button.style.borderRadius = '4px';
     button.style.boxShadow = 'none';
     button.style.font = '800 14px Arial, sans-serif';
@@ -1268,13 +1296,13 @@
     button.style.display = 'none';
 
     button.addEventListener('mouseenter', () => {
-      button.style.background = '#244c41';
-      button.style.borderColor = '#244c41';
+      button.style.background = '#04b5aa';
+      button.style.borderColor = '#04b5aa';
     });
 
     button.addEventListener('mouseleave', () => {
-      button.style.background = '#2d5c4e';
-      button.style.borderColor = '#2d5c4e';
+      button.style.background = '#05cabe';
+      button.style.borderColor = '#05cabe';
     });
   }
 
