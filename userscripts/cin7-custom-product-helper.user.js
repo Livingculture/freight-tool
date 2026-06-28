@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Custom Product Helper
 // @namespace    livingculture-cin7
-// @version      1.8
+// @version      1.9
 // @description  Shows Living Culture customised pergola/product SKUs inside Cin7 and fills the product code into the quote line.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
@@ -20,7 +20,7 @@
 (function () {
   'use strict';
 
-  const REMOTE_DATA_URL = 'https://drive.google.com/file/d/13_8VBumN4EsU2obB-dllv7AyvVHGBt5Q/view?usp=sharing';
+  const REMOTE_DATA_URL = 'https://docs.google.com/document/d/1Vm28Nvi7hLqbdHKqe15WdpG1zKfK3Y7M/edit';
 
   const CACHE_KEY = 'lc-custom-product-data-v15';
   const CACHE_TIME_KEY = 'lc-custom-product-data-time-v15';
@@ -184,6 +184,11 @@ Baltic Middle Post Charcoal,CS22829,$299.99,"3M leg post."
     if (sheetMatch) {
       const gid = value.match(/[?&]gid=(\d+)/i)?.[1] || value.match(/#gid=(\d+)/i)?.[1] || '0';
       return `https://docs.google.com/spreadsheets/d/${sheetMatch[1]}/export?format=csv&gid=${gid}`;
+    }
+
+    const docMatch = value.match(/docs\.google\.com\/document\/d\/([^/]+)/i);
+    if (docMatch) {
+      return `https://docs.google.com/document/d/${docMatch[1]}/export?format=txt`;
     }
 
     const driveFileMatch = value.match(/drive\.google\.com\/file\/d\/([^/]+)/i);
