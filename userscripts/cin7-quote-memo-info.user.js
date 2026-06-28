@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Quote Memo Info
 // @namespace    livingculture
-// @version      2.5
+// @version      2.6
 // @description  Quote Memo Info panel with copy and auto-fill into Cin7 Quote Memo only.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -378,12 +378,12 @@ Extra charges may be incurred for extra work required in materials and labour ou
     return candidates[0]?.el || null;
   }
 
-  function placeButtonBesidePlus(button, plusButton) {
-    const plusRect = plusButton.getBoundingClientRect();
+  function placeButtonAboveQuoteMemo(button, field) {
+    const fieldRect = field.getBoundingClientRect();
 
     const parent =
-      plusButton.parentElement ||
-      plusButton.closest?.('div, section, fieldset') ||
+      field.parentElement ||
+      field.closest?.('div, section, fieldset') ||
       document.body;
 
     const parentStyle = window.getComputedStyle(parent);
@@ -397,20 +397,21 @@ Extra charges may be incurred for extra work required in materials and labour ou
     }
 
     const parentRect = parent.getBoundingClientRect();
+    const buttonHeight = 34;
 
     button.style.position = 'absolute';
-    button.style.left = `${plusRect.right - parentRect.left + 10}px`;
-    button.style.top = `${plusRect.top - parentRect.top}px`;
-    button.style.height = `${Math.max(34, plusRect.height || 34)}px`;
+    button.style.left = `${fieldRect.left - parentRect.left}px`;
+    button.style.top = `${fieldRect.top - parentRect.top - buttonHeight - 8}px`;
+    button.style.height = `${buttonHeight}px`;
     button.style.zIndex = '50';
     button.style.display = 'block';
   }
 
   function insertQuoteMemoButtonNextToAdditionalPlus() {
     let button = document.getElementById('lc-quote-memo-inline-button');
-    const plusButton = findAdditionalChargesPlusButton();
+    const field = findQuoteMemoField();
 
-    if (!plusButton) {
+    if (!field) {
       button?.remove();
       return;
     }
@@ -448,7 +449,7 @@ Extra charges may be incurred for extra work required in materials and labour ou
       button.addEventListener('click', openQuoteMemoPanel);
     }
 
-    placeButtonBesidePlus(button, plusButton);
+    placeButtonAboveQuoteMemo(button, field);
   }
 
   function createPanel() {

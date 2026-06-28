@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight
 // @namespace    livingculture
-// @version      8.1-hosted
+// @version      8.2-hosted
 // @description  Living Culture freight panel for Cin7 using the hosted freight service.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -1165,6 +1165,48 @@
       document.getElementById('lc-quote-memo-toggle');
   }
 
+  function getAllVisiblePageElements() {
+    return Array.from(document.querySelectorAll('body *')).filter(element => {
+      if (!isVisible(element)) return false;
+      if (isInjectedPanelElement(element)) return false;
+      if (element.id === 'lc-freight-toggle' || element.id === 'lc-containers-open') return false;
+      return true;
+    });
+  }
+
+  function findAdditionalChargesHeading() {
+    return getAllVisiblePageElements().find(element => (
+      clean(element.innerText || element.textContent).toLowerCase() === 'additional charges and services'
+    ));
+  }
+
+  function findAdditionalChargesPlusButton() {
+    const heading = findAdditionalChargesHeading();
+    if (!heading) return null;
+
+    const headingRect = heading.getBoundingClientRect();
+    return getAllVisiblePageElements()
+      .filter(element => {
+        const rect = element.getBoundingClientRect();
+        const text = clean(element.innerText || element.textContent);
+        const isBelowHeading = rect.top >= headingRect.bottom - 5 && rect.top <= headingRect.bottom + 160;
+        const isNearLeft = rect.left >= headingRect.left - 20 && rect.left <= headingRect.left + 130;
+        const isButtonSized = rect.width >= 28 && rect.width <= 90 && rect.height >= 28 && rect.height <= 80;
+        const tagLooksClickable = ['BUTTON', 'A'].includes(element.tagName) ||
+          element.getAttribute('role') === 'button' ||
+          element.onclick ||
+          window.getComputedStyle(element).cursor === 'pointer';
+        const textLooksPlus = text === '+' || text.includes('+');
+        const hasSvgOrIcon = !!element.querySelector?.('svg, i, .fa, .icon, [class*="icon"], [class*="plus"]');
+        return isBelowHeading && isNearLeft && isButtonSized && (tagLooksClickable || textLooksPlus || hasSvgOrIcon);
+      })
+      .map(element => ({ element, rect: element.getBoundingClientRect() }))
+      .sort((a, b) => (
+        Math.abs(a.rect.top - headingRect.bottom) + Math.abs(a.rect.left - headingRect.left) -
+        (Math.abs(b.rect.top - headingRect.bottom) + Math.abs(b.rect.left - headingRect.left))
+      ))[0]?.element || null;
+  }
+
   function findButtonByText(pattern) {
     return Array.from(document.querySelectorAll('button, [role="button"], a'))
       .find(element => isVisible(element) && pattern.test(clean(element.textContent || element.getAttribute('aria-label') || '')));
@@ -1215,9 +1257,9 @@
 
     placeContainerButtonNextToWarehouse();
 
-    const memoButton = findQuoteMemoButton();
+    const plusButton = findAdditionalChargesPlusButton();
 
-    if (!memoButton || !isVisible(memoButton)) {
+    if (!plusButton || !isVisible(plusButton)) {
       freightButton.style.display = 'none';
       if (containerButton && !findButtonByText(/foshan\s+warehouse|nz\s+availability|install\s+fees|custom\s+products/i)) {
         containerButton.style.display = 'none';
@@ -1225,8 +1267,8 @@
       return;
     }
 
-    const memoRect = memoButton.getBoundingClientRect();
-    const parent = memoButton.parentElement || memoButton.closest?.('div, section, fieldset') || document.body;
+    const plusRect = plusButton.getBoundingClientRect();
+    const parent = plusButton.parentElement || plusButton.closest?.('div, section, fieldset') || document.body;
     const parentStyle = window.getComputedStyle(parent);
 
     if (parentStyle.position === 'static') {
@@ -1238,12 +1280,12 @@
     }
 
     const parentRect = parent.getBoundingClientRect();
-    const buttonHeight = Math.max(34, memoRect.height || 34);
+    const buttonHeight = Math.max(34, plusRect.height || 34);
 
     freightButton.style.display = 'block';
     freightButton.style.position = 'absolute';
-    freightButton.style.left = `${memoRect.right - parentRect.left + 8}px`;
-    freightButton.style.top = `${memoRect.top - parentRect.top}px`;
+    freightButton.style.left = `${plusRect.right - parentRect.left + 10}px`;
+    freightButton.style.top = `${plusRect.top - parentRect.top}px`;
     freightButton.style.height = `${buttonHeight}px`;
     freightButton.style.zIndex = '51';
 
