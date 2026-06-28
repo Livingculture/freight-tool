@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 HubSpot Deal TEST
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.0
+// @version      0.2.0
 // @description  Adds a separate HubSpot Deal TEST button that sends to the Workflow test branch.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -11,8 +11,8 @@
 // @connect      *.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-hubspot-deal-test.user.js?v=0.1.0
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-hubspot-deal-test.user.js?v=0.1.0
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-hubspot-deal-test.user.js?v=0.2.0
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-hubspot-deal-test.user.js?v=0.2.0
 // ==/UserScript==
 
 (function () {
@@ -29,7 +29,7 @@
   const QUOTE_REVIEW_API_URL = 'https://living-culture-workflow.vercel.app/api/quote-reviews';
   const WORKFLOW_PLANNER_URL = 'https://living-culture-workflow.vercel.app/';
   const LIVE_HUBSPOT_BUTTON_ID = 'lc-hubspot-deal-inline-button-v1';
-  const HUBSPOT_TEST_API_URL_STORAGE_KEY = 'lcHubSpotDealTestApiUrl';
+  const HUBSPOT_API_URL = 'https://living-culture-workflow.vercel.app/api/hubspot/create-deal-test';
   const API_KEY = '';
   const STATUSES = ['To be confirmed', 'Site Visit Confirmed', 'Completed', 'Hold'];
   const POPUP_STATUSES = ['To be confirmed', 'Site Visit Confirmed'];
@@ -66,27 +66,6 @@
 
   function clean(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
-  }
-
-  function normaliseHubSpotTestApiUrl(value) {
-    const raw = clean(value).replace(/\/+$/, '');
-    if (!raw) return '';
-    if (/\/api\/hubspot\/create-deal$/i.test(raw)) return raw;
-    return `${raw}/api/hubspot/create-deal`;
-  }
-
-  function getHubSpotTestApiUrl() {
-    const saved = normaliseHubSpotTestApiUrl(window.localStorage?.getItem(HUBSPOT_TEST_API_URL_STORAGE_KEY));
-    if (saved) return saved;
-
-    const entered = window.prompt(
-      'Paste the Vercel Preview URL for the Workflow HubSpot test branch.\n\nYou can paste either the preview home page URL or the full /api/hubspot/create-deal URL.'
-    );
-    const url = normaliseHubSpotTestApiUrl(entered);
-    if (url) {
-      window.localStorage?.setItem(HUBSPOT_TEST_API_URL_STORAGE_KEY, url);
-    }
-    return url;
   }
 
   function cleanMultiline(value) {
@@ -1324,19 +1303,13 @@
       return;
     }
 
-    const hubspotApiUrl = getHubSpotTestApiUrl();
-    if (!hubspotApiUrl) {
-      window.alert('HubSpot TEST was cancelled because no Workflow preview URL was provided.');
-      return;
-    }
-
     const originalText = button.textContent;
     button.disabled = true;
     button.textContent = 'Sending...';
 
     GM_xmlhttpRequest({
       method: 'POST',
-      url: hubspotApiUrl,
+      url: HUBSPOT_API_URL,
       headers: { 'Content-Type': 'application/json' },
       data: JSON.stringify(payload),
       onload: (response) => {
