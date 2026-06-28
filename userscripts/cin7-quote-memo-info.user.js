@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Quote Memo Info
 // @namespace    livingculture
-// @version      2.8
+// @version      2.9
 // @description  Quote Memo Info panel with copy and auto-fill into Cin7 Quote Memo only.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -173,7 +173,7 @@ Extra charges may be incurred for extra work required in materials and labour ou
   function findQuoteMemoLabel() {
     return Array.from(document.querySelectorAll('label, legend, div, span, p'))
       .filter(isVisible)
-      .find(el => clean(el.innerText || el.textContent).toLowerCase() === 'quote memo');
+      .find(el => clean((el.innerText || el.textContent).replace(/Quote Memo Info/g, '')).toLowerCase() === 'quote memo');
   }
 
   function findQuoteMemoField() {
@@ -380,20 +380,24 @@ Extra charges may be incurred for extra work required in materials and labour ou
 
   function placeButtonAboveQuoteMemo(button, field) {
     document.getElementById('lc-quote-memo-button-row')?.remove();
+    const label = findQuoteMemoLabel();
+    const target = label || field.closest?.('fieldset')?.querySelector?.('legend') || field.parentElement || document.body;
 
-    if (button.parentElement !== document.body) {
-      document.body.appendChild(button);
+    if (button.parentElement !== target) {
+      target.appendChild(button);
     }
 
-    const rect = field.getBoundingClientRect();
-    const top = Math.max(0, window.scrollY + rect.top - 42);
-
-    button.style.position = 'absolute';
-    button.style.left = `${window.scrollX + rect.left}px`;
-    button.style.top = `${top}px`;
-    button.style.height = '34px';
-    button.style.zIndex = '2147483646';
-    button.style.display = 'block';
+    button.style.position = 'static';
+    button.style.display = 'inline-flex';
+    button.style.alignItems = 'center';
+    button.style.justifyContent = 'center';
+    button.style.height = '28px';
+    button.style.minHeight = '28px';
+    button.style.margin = '0 0 0 10px';
+    button.style.padding = '0 10px';
+    button.style.font = '700 12px Arial, sans-serif';
+    button.style.verticalAlign = 'middle';
+    button.style.zIndex = 'auto';
   }
 
   function insertQuoteMemoButtonNextToAdditionalPlus() {
