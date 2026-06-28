@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Quote Memo Info
 // @namespace    livingculture
-// @version      2.7
+// @version      2.8
 // @description  Quote Memo Info panel with copy and auto-fill into Cin7 Quote Memo only.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -379,36 +379,20 @@ Extra charges may be incurred for extra work required in materials and labour ou
   }
 
   function placeButtonAboveQuoteMemo(button, field) {
-    const fieldShell = field.closest?.('fieldset, .form-group, .field, [class*="field"], [class*="FormField"]') ||
-      field.parentElement;
-    const parent = fieldShell?.parentElement || field.parentElement || document.body;
-    let row = document.getElementById('lc-quote-memo-button-row');
+    document.getElementById('lc-quote-memo-button-row')?.remove();
 
-    if (!row) {
-      row = document.createElement('div');
-      row.id = 'lc-quote-memo-button-row';
+    if (button.parentElement !== document.body) {
+      document.body.appendChild(button);
     }
 
-    if (row.parentElement !== parent) {
-      parent.insertBefore(row, fieldShell || field);
-    } else if (fieldShell && row.nextElementSibling !== fieldShell) {
-      parent.insertBefore(row, fieldShell);
-    }
+    const rect = field.getBoundingClientRect();
+    const top = Math.max(0, window.scrollY + rect.top - 42);
 
-    if (button.parentElement !== row) {
-      row.appendChild(button);
-    }
-
-    row.style.display = 'flex';
-    row.style.alignItems = 'center';
-    row.style.justifyContent = 'flex-start';
-    row.style.margin = '0 0 8px 0';
-    row.style.padding = '0';
-    row.style.width = '100%';
-
-    button.style.position = 'static';
+    button.style.position = 'absolute';
+    button.style.left = `${window.scrollX + rect.left}px`;
+    button.style.top = `${top}px`;
     button.style.height = '34px';
-    button.style.zIndex = '50';
+    button.style.zIndex = '2147483646';
     button.style.display = 'block';
   }
 
