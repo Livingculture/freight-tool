@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 WeCom Payment Message Sender
 // @namespace    livingculture
-// @version      4.2
+// @version      4.3
 // @description  Sends a WeCom payment message from Cin7 invoice/payment screen only.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -25,6 +25,7 @@
   const STATUS_ID = 'lc-wecom-payment-status';
   const WRAPPER_ID = 'lc-wecom-payment-wrapper';
   const SPACER_ID = 'lc-wecom-payment-spacer';
+  const CONFIRM_OVERLAY_ID = 'lc-wecom-payment-confirm-overlay';
 
   const WECOM_WEBHOOK_URL = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=f875dc80-5d4e-4bb4-8a8d-cd66193dc7e5';
 
@@ -538,6 +539,162 @@
     });
   }
 
+  function closeConfirmDialog() {
+    document.getElementById(CONFIRM_OVERLAY_ID)?.remove();
+  }
+
+  function showConfirmDialog(message) {
+    closeConfirmDialog();
+
+    const overlay = document.createElement('div');
+    overlay.id = CONFIRM_OVERLAY_ID;
+    overlay.style.position = 'fixed';
+    overlay.style.inset = '0';
+    overlay.style.zIndex = '2147483647';
+    overlay.style.display = 'flex';
+    overlay.style.alignItems = 'center';
+    overlay.style.justifyContent = 'center';
+    overlay.style.padding = '24px';
+    overlay.style.background = 'rgba(23, 32, 42, 0.42)';
+
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    dialog.style.width = 'min(560px, calc(100vw - 32px))';
+    dialog.style.background = '#fff';
+    dialog.style.border = '1px solid #d8e3e8';
+    dialog.style.borderRadius = '8px';
+    dialog.style.boxShadow = '0 18px 48px rgba(23, 32, 42, 0.26)';
+    dialog.style.color = CIN7_TEXT_GREY;
+    dialog.style.font = '14px ' + CIN7_FONT;
+    dialog.style.overflow = 'hidden';
+
+    const header = document.createElement('div');
+    header.style.display = 'flex';
+    header.style.alignItems = 'center';
+    header.style.justifyContent = 'space-between';
+    header.style.gap = '12px';
+    header.style.padding = '16px 18px';
+    header.style.borderBottom = '1px solid #e6edf1';
+
+    const title = document.createElement('strong');
+    title.textContent = 'Send Payment Message';
+    title.style.font = '700 18px ' + CIN7_FONT;
+
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.textContent = 'x';
+    close.title = 'Cancel';
+    close.style.border = '0';
+    close.style.background = 'transparent';
+    close.style.color = CIN7_MUTED_GREY;
+    close.style.cursor = 'pointer';
+    close.style.font = '700 18px ' + CIN7_FONT;
+    close.addEventListener('click', closeConfirmDialog);
+
+    header.appendChild(title);
+    header.appendChild(close);
+
+    const body = document.createElement('div');
+    body.style.padding = '16px 18px';
+
+    const groupText = document.createElement('p');
+    groupText.textContent = 'This will send to the NZ Payment Notification WeCom group.';
+    groupText.style.margin = '0 0 12px';
+    groupText.style.color = CIN7_MUTED_GREY;
+    groupText.style.font = '700 13px ' + CIN7_FONT;
+
+    const label = document.createElement('label');
+    label.textContent = 'Review or edit the message before sending:';
+    label.style.display = 'block';
+    label.style.marginBottom = '8px';
+    label.style.font = '700 13px ' + CIN7_FONT;
+
+    const textarea = document.createElement('textarea');
+    textarea.value = message;
+    textarea.rows = 4;
+    textarea.style.width = '100%';
+    textarea.style.minHeight = '108px';
+    textarea.style.padding = '12px';
+    textarea.style.border = '1px solid #cbd9e2';
+    textarea.style.borderRadius = '6px';
+    textarea.style.color = CIN7_TEXT_GREY;
+    textarea.style.font = '700 15px ' + CIN7_FONT;
+    textarea.style.resize = 'vertical';
+    textarea.style.boxSizing = 'border-box';
+
+    body.appendChild(groupText);
+    body.appendChild(label);
+    body.appendChild(textarea);
+
+    const footer = document.createElement('div');
+    footer.style.display = 'flex';
+    footer.style.justifyContent = 'flex-end';
+    footer.style.gap = '10px';
+    footer.style.padding = '14px 18px 16px';
+    footer.style.borderTop = '1px solid #e6edf1';
+
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.textContent = 'Cancel';
+    cancel.style.minHeight = '38px';
+    cancel.style.padding = '8px 14px';
+    cancel.style.border = '1px solid #cbd9e2';
+    cancel.style.borderRadius = '6px';
+    cancel.style.background = '#fff';
+    cancel.style.color = CIN7_TEXT_GREY;
+    cancel.style.cursor = 'pointer';
+    cancel.style.font = '700 14px ' + CIN7_FONT;
+    cancel.addEventListener('click', closeConfirmDialog);
+
+    const send = document.createElement('button');
+    send.type = 'button';
+    send.textContent = 'Send to WeCom';
+    send.style.minHeight = '38px';
+    send.style.padding = '8px 14px';
+    send.style.border = '1px solid #05cabe';
+    send.style.borderRadius = '6px';
+    send.style.background = '#05cabe';
+    send.style.color = '#fff';
+    send.style.cursor = 'pointer';
+    send.style.font = '700 14px ' + CIN7_FONT;
+    send.addEventListener('click', () => {
+      const editedMessage = clean(textarea.value);
+
+      if (!editedMessage) {
+        textarea.focus();
+        return;
+      }
+
+      closeConfirmDialog();
+      sendMessageToWeCom(editedMessage);
+    });
+
+    footer.appendChild(cancel);
+    footer.appendChild(send);
+
+    dialog.appendChild(header);
+    dialog.appendChild(body);
+    dialog.appendChild(footer);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    overlay.addEventListener('click', event => {
+      if (event.target === overlay) closeConfirmDialog();
+    });
+
+    const onKeyDown = event => {
+      if (event.key === 'Escape') {
+        closeConfirmDialog();
+        document.removeEventListener('keydown', onKeyDown);
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+
+    textarea.focus();
+    textarea.select();
+  }
+
   function sendToWeComAsPerson(rep) {
     if (!rep) {
       setStatus('Select a person first.', true);
@@ -547,7 +704,7 @@
     const senderDetails = formatRep(rep);
     const message = buildMessage(senderDetails);
 
-    sendMessageToWeCom(message);
+    showConfirmDialog(message);
 
     const menu = document.getElementById(SEND_AS_MENU_ID);
     if (menu) menu.style.display = 'none';
