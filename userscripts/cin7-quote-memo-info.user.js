@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Quote Memo Info
 // @namespace    livingculture
-// @version      2.6
+// @version      2.7
 // @description  Quote Memo Info panel with copy and auto-fill into Cin7 Quote Memo only.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -379,30 +379,35 @@ Extra charges may be incurred for extra work required in materials and labour ou
   }
 
   function placeButtonAboveQuoteMemo(button, field) {
-    const fieldRect = field.getBoundingClientRect();
+    const fieldShell = field.closest?.('fieldset, .form-group, .field, [class*="field"], [class*="FormField"]') ||
+      field.parentElement;
+    const parent = fieldShell?.parentElement || field.parentElement || document.body;
+    let row = document.getElementById('lc-quote-memo-button-row');
 
-    const parent =
-      field.parentElement ||
-      field.closest?.('div, section, fieldset') ||
-      document.body;
-
-    const parentStyle = window.getComputedStyle(parent);
-
-    if (parentStyle.position === 'static') {
-      parent.style.position = 'relative';
+    if (!row) {
+      row = document.createElement('div');
+      row.id = 'lc-quote-memo-button-row';
     }
 
-    if (button.parentElement !== parent) {
-      parent.appendChild(button);
+    if (row.parentElement !== parent) {
+      parent.insertBefore(row, fieldShell || field);
+    } else if (fieldShell && row.nextElementSibling !== fieldShell) {
+      parent.insertBefore(row, fieldShell);
     }
 
-    const parentRect = parent.getBoundingClientRect();
-    const buttonHeight = 34;
+    if (button.parentElement !== row) {
+      row.appendChild(button);
+    }
 
-    button.style.position = 'absolute';
-    button.style.left = `${fieldRect.left - parentRect.left}px`;
-    button.style.top = `${fieldRect.top - parentRect.top - buttonHeight - 8}px`;
-    button.style.height = `${buttonHeight}px`;
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.justifyContent = 'flex-start';
+    row.style.margin = '0 0 8px 0';
+    row.style.padding = '0';
+    row.style.width = '100%';
+
+    button.style.position = 'static';
+    button.style.height = '34px';
     button.style.zIndex = '50';
     button.style.display = 'block';
   }
