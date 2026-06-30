@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Quote Line Review
 // @namespace    livingculture-cin7
-// @version      1.0
+// @version      1.1
 // @description  Adds a read-only Sale List button that reviews visible Cin7 quotes with customer, quote number, line items, and discounts.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
@@ -10,7 +10,8 @@
 // @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-quote-line-review.user.js
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
-// @grant        none
+// @grant        GM_xmlhttpRequest
+// @connect      living-culture-workflow.vercel.app
 // ==/UserScript==
 
 (function () {
@@ -19,6 +20,7 @@
   const ROOT_ID = 'lc-quote-line-review-root';
   const BUTTON_ID = 'lc-quote-line-review-button';
   const FRAME_ID = 'lc-quote-line-review-frame';
+  const WORKFLOW_SALES_API_URL = 'https://living-culture-workflow.vercel.app/api/cin7/sales';
   const DOCUMENT_RE = /\b[A-Z]{2,8}(?:SO|SQ|QT|QO)?-\d{3,}\b/i;
   const MONEY_RE = /^-?\$?\d{1,3}(?:,\d{3})*(?:\.\d{2})?$|^-?\$?\d+(?:\.\d{2})?$/;
 
@@ -64,6 +66,52 @@
     } catch (error) {
       return '';
     }
+  }
+
+  function requestJson(url) {
+    return new Promise((resolve, reject) => {
+      if (typeof GM_xmlhttpRequest === 'function') {
+        GM_xmlhttpRequest({
+          method: 'GET',
+          url,
+          headers: { Accept: 'application/json' },
+          withCredentials: true,
+          onload: response => {
+            let data = {};
+            try {
+              data = JSON.parse(response.responseText || '{}');
+            } catch (error) {
+              reject(new Error('Workflow returned a response that was not JSON.'));
+              return;
+            }
+
+            if (response.status >= 200 && response.status < 300) {
+              resolve(data);
+              return;
+            }
+
+            reject(new Error(data.error || `Workflow returned HTTP ${response.status}.`));
+          },
+          onerror: () => reject(new Error('Could not connect to Workflow.'))
+        });
+        return;
+      }
+
+      fetch(url, { credentials: 'include', cache: 'no-store' })
+        .then(async response => {
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(data.error || `Workflow returned HTTP ${response.status}.`);
+          return data;
+        })
+        .then(resolve)
+        .catch(reject);
+    });
+  }
+
+  function workflowSalesUrl(documentNumber) {
+    const url = new URL(WORKFLOW_SALES_API_URL);
+    url.searchParams.set('search', documentNumber);
+    return url.toString();
   }
 
   function findButtonByText(label) {
@@ -278,6 +326,35 @@
     return values.length ? values.join(', ') : 'No discount found';
   }
 
+  function normalizeWorkflowLine(line) {
+    return {
+      sku: clean(line?.sku),
+      product: clean(line?.product),
+      qty: clean(line?.qty),
+      price: clean(line?.price),
+      discount: clean(line?.discount),
+      total: clean(line?.total)
+    };
+  }
+
+  async function loadWorkflowQuoteDetails(quote) {
+    const data = await requestJson(workflowSalesUrl(quote.documentNumber));
+    if (!data?.sale) throw new Error('Workflow did not find this quote in Cin7 Core.');
+
+    const lineItems = Array.isArray(data.sale.lineItems)
+      ? data.sale.lineItems.map(normalizeWorkflowLine).filter(line => line.product || line.sku)
+      : [];
+
+    quote.customer = clean(data.sale.customer) || quote.customer;
+    quote.status = clean(data.sale.status) || quote.status;
+    quote.total = data.sale.invoiceAmount !== null && data.sale.invoiceAmount !== undefined
+      ? String(data.sale.invoiceAmount)
+      : quote.total;
+    quote.url = quote.url || (data.sale.id ? `https://inventory.dearsystems.com/Sale#${data.sale.id}` : '');
+
+    return lineItems;
+  }
+
   async function fetchDetailDocument(url) {
     const response = await fetch(url, { credentials: 'include', cache: 'no-store' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -332,24 +409,24 @@
 
     for (let index = 0; index < quotes.length; index += 1) {
       const quote = quotes[index];
-      if (!quote.url) {
-        quote.loadStatus = 'No detail link found';
-        renderQuotes();
-        continue;
-      }
-
       quote.loadStatus = `Loading ${index + 1} of ${quotes.length}`;
       renderQuotes();
 
       try {
-        let result = await fetchDetailDocument(quote.url);
-        if (!result.lines.length) result = await frameDetailDocument(quote.url);
+        let lines = await loadWorkflowQuoteDetails(quote);
 
-        quote.lines = result.lines;
-        quote.discountSummary = summarizeDiscount(result.lines);
-        quote.loadStatus = result.lines.length ? 'Loaded' : 'No line items found';
+        if (!lines.length && quote.url) {
+          let result = await fetchDetailDocument(quote.url);
+          if (!result.lines.length) result = await frameDetailDocument(quote.url);
+          lines = result.lines;
+        }
+
+        quote.lines = lines;
+        quote.discountSummary = summarizeDiscount(lines);
+        quote.loadStatus = lines.length ? 'Loaded from Cin7 Core' : 'No line items found';
       } catch (error) {
         try {
+          if (!quote.url) throw error;
           const result = await frameDetailDocument(quote.url);
           quote.lines = result.lines;
           quote.discountSummary = summarizeDiscount(result.lines);
