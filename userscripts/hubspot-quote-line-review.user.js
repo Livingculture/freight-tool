@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HubSpot Living Culture Quote Line Review
 // @namespace    livingculture-hubspot
-// @version      1.4
+// @version      1.5
 // @description  Reviews visible HubSpot quote deals by stage, with customer, quote number, line items, and Cin7 discounts.
 // @match        https://app.hubspot.com/*
 // @match        https://*.hubspot.com/*
@@ -104,6 +104,34 @@
       .filter(Boolean);
   }
 
+  function headerTexts() {
+    return Array.from(document.querySelectorAll('[role="columnheader"], th'))
+      .filter(isVisible)
+      .map(textOf)
+      .filter(Boolean);
+  }
+
+  function compact(value) {
+    return clean(value).toLowerCase().replace(/[^a-z0-9]+/g, '');
+  }
+
+  function valueByHeader(cells, headers, patterns) {
+    const index = headers.findIndex(header => {
+      const normalized = compact(header);
+      return patterns.some(pattern => pattern.test(normalized));
+    });
+
+    return index >= 0 ? clean(cells[index]) : '';
+  }
+
+  function usefulNote(value) {
+    const note = clean(value);
+    if (!note || note === '--') return '';
+    if (QUOTE_RE.test(note)) return '';
+    if (/^\d+\s*records?$/i.test(note)) return '';
+    return note;
+  }
+
   function findDealUrl(row) {
     const link = Array.from(row.querySelectorAll('a[href]'))
       .find(anchor => /\/contacts\/\d+\/(?:record\/)?deal\//i.test(anchor.href) || /\/deal\//i.test(anchor.href));
@@ -124,28 +152,41 @@
     }) || '';
   }
 
-  function dealFromCells(cells, row) {
+  function dealFromCells(cells, row, headers) {
     const stageIndex = cells.findIndex(cell => INCLUDED_STAGE_RE.test(cell));
     if (stageIndex < 0) return null;
 
-    const dealName = findDealName(row, cells);
+    const dealName = valueByHeader(cells, headers, [/^dealname$/]) || findDealName(row, cells);
     if (!dealName || /deal name/i.test(dealName)) return null;
 
-    const quoteNumber = extractQuoteNumber(cells.join(' '));
+    const orderName = valueByHeader(cells, headers, [
+      /cin7.*order/,
+      /order.*name/,
+      /cin7.*sale/,
+      /dear/,
+      /quote.*number/,
+      /order.*number/,
+    ]);
+    const quoteNumber = extractQuoteNumber(orderName) || extractQuoteNumber(cells.join(' '));
     const dealNameIndex = Math.max(0, cells.findIndex(cell => cell === dealName));
     const contactIndex = Math.min(dealNameIndex + 1, cells.length - 1);
     const lineItemIndex = cells.findIndex((cell, index) => index > dealNameIndex && (/records?$/i.test(cell) || (index < stageIndex && index > contactIndex + 1)));
     const statusIndex = cells.findIndex(cell => /phoned|emailed|texted|called|--/i.test(cell));
+    const quotedDate = valueByHeader(cells, headers, [/quote.*date/, /quoted.*date/, /^createdate$/, /^created$/]);
+    const salesNote = usefulNote(valueByHeader(cells, headers, [/^salesrepdeal$/, /^salesrep$/])) ||
+      usefulNote(cells.find((cell, index) => index > contactIndex && index < stageIndex && !/records?$/i.test(cell)) || '');
 
     return {
       id: quoteNumber || dealName,
       quoteNumber,
       dealName,
-      customer: cells[contactIndex] || '',
-      hubspotLineItems: lineItemIndex >= 0 ? cells[lineItemIndex] : '',
-      salesNote: cells.find((cell, index) => index > contactIndex && index < stageIndex && !/records?$/i.test(cell)) || '',
-      status: statusIndex >= 0 ? cells[statusIndex] : '',
+      orderName,
+      customer: valueByHeader(cells, headers, [/contacts?$/]) || cells[contactIndex] || '',
+      hubspotLineItems: valueByHeader(cells, headers, [/lineitems?$/]) || (lineItemIndex >= 0 ? cells[lineItemIndex] : ''),
+      salesNote,
+      status: valueByHeader(cells, headers, [/^status$/]) || (statusIndex >= 0 ? cells[statusIndex] : ''),
       stage: cells[stageIndex],
+      quotedDate,
       lastActivity: cells[stageIndex + 1] || '',
       url: findDealUrl(row),
       cin7Lines: [],
@@ -158,6 +199,7 @@
     const rows = Array.from(document.querySelectorAll('[role="row"], tr'))
       .filter(isVisible)
       .filter(row => !row.closest(`#${ROOT_ID}`));
+    const headers = headerTexts();
     const seen = new Set();
     const found = [];
 
@@ -165,7 +207,7 @@
       const cells = cellTexts(row);
       if (!cells.length || !cells.some(cell => INCLUDED_STAGE_RE.test(cell))) return;
 
-      const deal = dealFromCells(cells, row);
+      const deal = dealFromCells(cells, row, headers);
       if (!deal || seen.has(deal.id)) return;
 
       seen.add(deal.id);
@@ -225,6 +267,7 @@
           : [];
 
         deal.customer = clean(sale.customer) || deal.customer;
+        deal.quotedDate = clean(sale.orderDate) || deal.quotedDate;
         deal.cin7Lines = lines;
         deal.discountSummary = summarizeDiscount(lines);
         deal.loadStatus = lines.length ? 'Loaded from Cin7 Core' : 'No Cin7 line items found';
@@ -299,13 +342,14 @@
               <span>${escapeHtml(deal.customer || 'Customer not found')}</span>
             </div>
             <div class="meta">
+              ${deal.quotedDate ? `<span>Quoted: ${escapeHtml(deal.quotedDate)}</span>` : ''}
               <span>${escapeHtml(deal.stage)}</span>
               <span>${escapeHtml(deal.status)}</span>
               <span>${escapeHtml(deal.discountSummary || deal.loadStatus)}</span>
               ${deal.url ? `<a href="${escapeHtml(deal.url)}" target="_blank" rel="noopener noreferrer">Open</a>` : ''}
             </div>
           </div>
-          ${deal.salesNote ? `<div class="note">${escapeHtml(deal.salesNote)}</div>` : ''}
+          ${deal.salesNote ? `<div class="note"><strong>Sales note:</strong> ${escapeHtml(deal.salesNote)}</div>` : ''}
           <table>
             <thead>
               <tr>
@@ -336,15 +380,16 @@
   }
 
   function buildCsv() {
-    const rows = [['Quote Number', 'Deal Name', 'Customer', 'Stage', 'Status', 'HubSpot Line Items', 'SKU', 'Line Item', 'Qty', 'Price', 'Discount', 'Total', 'Deal URL']];
+    const rows = [['Quote Number', 'Quoted Date', 'Customer', 'Sales Note', 'Stage', 'Status', 'HubSpot Line Items', 'SKU', 'Line Item', 'Qty', 'Price', 'Discount', 'Total', 'Deal URL']];
 
     filteredDeals().forEach(deal => {
       const lines = deal.cin7Lines.length ? deal.cin7Lines : [{ sku: '', product: deal.hubspotLineItems || deal.loadStatus, qty: '', price: '', discount: '', total: '' }];
       lines.forEach(line => {
         rows.push([
           deal.quoteNumber,
-          deal.dealName,
+          deal.quotedDate,
           deal.customer,
+          deal.salesNote,
           deal.stage,
           deal.status,
           deal.hubspotLineItems,
@@ -384,8 +429,8 @@
       return `
         <section class="deal">
           <h2>${escapeHtml(deal.quoteNumber || deal.dealName)} <span>${escapeHtml(deal.customer)}</span></h2>
-          <div class="meta">${escapeHtml(deal.stage)} | ${escapeHtml(deal.status)} | ${escapeHtml(deal.discountSummary || deal.loadStatus)}</div>
-          ${deal.salesNote ? `<p>${escapeHtml(deal.salesNote)}</p>` : ''}
+          <div class="meta">${deal.quotedDate ? `Quoted: ${escapeHtml(deal.quotedDate)} | ` : ''}${escapeHtml(deal.stage)} | ${escapeHtml(deal.status)} | ${escapeHtml(deal.discountSummary || deal.loadStatus)}</div>
+          ${deal.salesNote ? `<p><strong>Sales note:</strong> ${escapeHtml(deal.salesNote)}</p>` : ''}
           <table>
             <thead><tr><th>SKU</th><th>Line item</th><th>Qty</th><th>Price</th><th>Discount</th><th>Total</th></tr></thead>
             <tbody>${lineRows}</tbody>
