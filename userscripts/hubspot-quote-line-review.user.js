@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HubSpot Living Culture Quote Line Review
 // @namespace    livingculture-hubspot
-// @version      1.6
+// @version      1.7
 // @description  Reviews visible HubSpot quote deals by stage, with customer, quote number, line items, and Cin7 discounts.
 // @match        https://app.hubspot.com/*
 // @match        https://app-*.hubspot.com/*
@@ -86,6 +86,14 @@
     const url = new URL(WORKFLOW_SALES_API_URL);
     url.searchParams.set('search', quoteNumber);
     return url.toString();
+  }
+
+  function cin7QuoteUrl(quoteNumber, saleId = '') {
+    const id = clean(saleId);
+    if (id) return `https://inventory.dearsystems.com/Sale#${encodeURIComponent(id)}`;
+
+    const quote = clean(quoteNumber);
+    return quote ? `https://inventory.dearsystems.com/SaleList?search=${encodeURIComponent(quote)}` : '';
   }
 
   function extractQuoteNumber(value) {
@@ -194,6 +202,7 @@
       quotedDate,
       lastActivity: cells[stageIndex + 1] || '',
       url: findDealUrl(row),
+      cin7Url: cin7QuoteUrl(quoteNumber),
       cin7Lines: [],
       discountSummary: '',
       loadStatus: quoteNumber ? 'Waiting' : 'No quote number'
@@ -273,6 +282,7 @@
 
         deal.customer = clean(sale.customer) || deal.customer;
         deal.quotedDate = clean(sale.orderDate) || deal.quotedDate;
+        deal.cin7Url = cin7QuoteUrl(deal.quoteNumber, sale.id);
         deal.cin7Lines = lines;
         deal.discountSummary = summarizeDiscount(lines);
         deal.loadStatus = lines.length ? 'Loaded from Cin7 Core' : 'No Cin7 line items found';
@@ -326,6 +336,9 @@
     }
 
     list.innerHTML = shown.map(deal => {
+      const titleHtml = deal.cin7Url
+        ? `<a class="quote-link" href="${escapeHtml(deal.cin7Url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(deal.quoteNumber || deal.dealName)}</a>`
+        : escapeHtml(deal.quoteNumber || deal.dealName);
       const lines = deal.cin7Lines.length
         ? deal.cin7Lines.map(line => `
           <tr>
@@ -343,7 +356,7 @@
         <article class="deal">
           <div class="deal-head">
             <div>
-              <strong>${escapeHtml(deal.quoteNumber || deal.dealName)}</strong>
+              <strong>${titleHtml}</strong>
               <span>${escapeHtml(deal.customer || 'Customer not found')}</span>
             </div>
             <div class="meta">
@@ -676,6 +689,8 @@
           border-bottom: 1px solid #e4ebf1;
         }
         .deal-head strong { display: inline-block; min-width: 110px; color: #24323d; font-size: 14px; }
+        .quote-link { color: #087d76; text-decoration: none; }
+        .quote-link:hover { text-decoration: underline; }
         .deal-head span, .meta span { color: #4f5c68; font-size: 13px; }
         .meta { display: flex; flex-wrap: wrap; gap: 10px; text-align: left; }
         .meta a { color: #087d76; font-weight: 700; text-decoration: none; }
