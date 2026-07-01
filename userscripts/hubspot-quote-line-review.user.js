@@ -1,9 +1,10 @@
 // ==UserScript==
 // @name         HubSpot Living Culture Quote Line Review
 // @namespace    livingculture-hubspot
-// @version      1.0
+// @version      1.1
 // @description  Reviews visible HubSpot quote deals by stage, with customer, quote number, line items, and Cin7 discounts.
 // @match        https://app.hubspot.com/*
+// @match        https://*.hubspot.com/*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/hubspot-quote-line-review.user.js
 // @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/hubspot-quote-line-review.user.js
 // @supportURL   https://github.com/Livingculture/freight-tool
@@ -351,16 +352,35 @@
     document.getElementById(ROOT_ID)?.shadowRoot?.getElementById('lc-hs-modal')?.classList.remove('open');
   }
 
-  function ensureButton() {
-    if (!/app\.hubspot\.com$/i.test(window.location.hostname)) return;
-    if (document.getElementById(BUTTON_ID)) return;
+  function findHubSpotToolbarAnchor() {
+    const buttons = Array.from(document.querySelectorAll('button, a, [role="button"]')).filter(isVisible);
+    return buttons.find(button => /add deals?/i.test(textOf(button))) ||
+      buttons.find(button => /export/i.test(textOf(button)));
+  }
 
-    const button = document.createElement('button');
-    button.id = BUTTON_ID;
-    button.type = 'button';
-    button.textContent = 'LC Quote Review';
-    button.addEventListener('click', openPanel);
-    document.body.appendChild(button);
+  function ensureButton() {
+    if (!/hubspot\.com$/i.test(window.location.hostname)) return;
+
+    let button = document.getElementById(BUTTON_ID);
+    if (!button) {
+      button = document.createElement('button');
+      button.id = BUTTON_ID;
+      button.type = 'button';
+      button.textContent = 'LC Quote Review';
+      button.addEventListener('click', openPanel);
+    }
+
+    const anchor = findHubSpotToolbarAnchor();
+    if (anchor?.parentElement && button.parentElement !== anchor.parentElement) {
+      button.classList.add('lc-hs-toolbar-button');
+      anchor.insertAdjacentElement(/export/i.test(textOf(anchor)) ? 'beforebegin' : 'beforebegin', button);
+      return;
+    }
+
+    if (!button.parentElement) {
+      button.classList.remove('lc-hs-toolbar-button');
+      document.body.appendChild(button);
+    }
   }
 
   function ensureRoot() {
@@ -546,8 +566,8 @@
     style.textContent = `
       #${BUTTON_ID} {
         position: fixed;
-        right: 24px;
-        bottom: 24px;
+        right: 128px;
+        top: 82px;
         z-index: 2147483646;
         height: 42px;
         border: 1px solid #05cabe;
@@ -558,6 +578,13 @@
         font: 700 13px Arial, sans-serif;
         box-shadow: 0 8px 24px rgba(22, 30, 36, .18);
         cursor: pointer;
+        white-space: nowrap;
+      }
+      #${BUTTON_ID}.lc-hs-toolbar-button {
+        position: static;
+        height: 34px;
+        margin-right: 8px;
+        box-shadow: none;
       }
     `;
     document.head.appendChild(style);
@@ -575,7 +602,7 @@
   setTimeout(boot, 1500);
   setTimeout(boot, 3000);
 
-  new MutationObserver(ensureButton).observe(document.documentElement, {
+  new MutationObserver(boot).observe(document.documentElement, {
     childList: true,
     subtree: true
   });
