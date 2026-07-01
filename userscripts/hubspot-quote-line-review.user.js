@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HubSpot Living Culture Quote Line Review
 // @namespace    livingculture-hubspot
-// @version      1.8
+// @version      1.9
 // @description  Reviews visible HubSpot quote deals by stage, with customer, quote number, line items, and Cin7 discounts.
 // @match        https://app.hubspot.com/*
 // @match        https://*.hubspot.com/*
@@ -264,6 +264,15 @@
     return deal.cin7Lines.length > 0 && !deal.cin7Lines.some(line => hasDiscount(line.discount));
   }
 
+  function dealFirstLineMentionsCustom(deal) {
+    const firstCin7Line = deal.cin7Lines[0];
+    const firstLineText = firstCin7Line
+      ? [firstCin7Line.sku, firstCin7Line.product].join(' ')
+      : deal.hubspotLineItems;
+
+    return /\bcustom\b/i.test(clean(firstLineText));
+  }
+
   async function loadDealLines() {
     if (loading) return;
     loading = true;
@@ -309,6 +318,7 @@
     const shadow = document.getElementById(ROOT_ID)?.shadowRoot;
     const query = clean(shadow?.getElementById('lc-hs-search')?.value).toLowerCase();
     const noDiscountOnly = Boolean(shadow?.getElementById('lc-hs-no-discount-only')?.checked);
+    const hideFirstCustom = Boolean(shadow?.getElementById('lc-hs-hide-first-custom')?.checked);
 
     return deals.filter(deal => {
       const haystack = [
@@ -325,6 +335,7 @@
 
       if (query && !haystack.includes(query)) return false;
       if (noDiscountOnly && !dealHasLoadedNoDiscount(deal)) return false;
+      if (hideFirstCustom && dealFirstLineMentionsCustom(deal)) return false;
       return true;
     });
   }
@@ -746,6 +757,7 @@
               <button type="button" class="action" id="lc-hs-pdf">Export PDF</button>
               <input id="lc-hs-search" type="search" placeholder="Search quote, customer, SKU" />
               <label><input id="lc-hs-no-discount-only" type="checkbox" /> No discount only</label>
+              <label><input id="lc-hs-hide-first-custom" type="checkbox" /> Hide first custom</label>
               <div id="lc-hs-count"></div>
             </div>
             <div id="lc-hs-status"></div>
@@ -766,6 +778,7 @@
     shadow.getElementById('lc-hs-pdf').addEventListener('click', exportPdf);
     shadow.getElementById('lc-hs-search').addEventListener('input', renderDeals);
     shadow.getElementById('lc-hs-no-discount-only').addEventListener('change', renderDeals);
+    shadow.getElementById('lc-hs-hide-first-custom').addEventListener('change', renderDeals);
 
     return root;
   }
