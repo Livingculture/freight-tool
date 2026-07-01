@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HubSpot Living Culture Quote Line Review
 // @namespace    livingculture-hubspot
-// @version      1.9
+// @version      2.0
 // @description  Reviews visible HubSpot quote deals by stage, with customer, quote number, line items, and Cin7 discounts.
 // @match        https://app.hubspot.com/*
 // @match        https://*.hubspot.com/*
@@ -22,6 +22,8 @@
   const QUOTE_RE = /\bNZSO[-\s]?\d+\b/i;
   const INCLUDED_STAGE_RE = /quote\s*[-–]\s*quote sent|quote sent|followed up|follow\s*up|waiting on customer/i;
   const HUBSPOT_APP_HOST_RE = /^(?:app|app-[a-z0-9-]+)\.hubspot\.com$/i;
+  const CACHE_PREFIX = 'lc-hs-quote-review-v1:';
+  const CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 
   let deals = [];
   let loading = false;
@@ -102,6 +104,58 @@
 
     const quote = clean(quoteNumber);
     return quote ? `https://inventory.dearsystems.com/SaleList?search=${encodeURIComponent(quote)}` : '';
+  }
+
+  function cacheKey(quoteNumber) {
+    return `${CACHE_PREFIX}${clean(quoteNumber).toUpperCase()}`;
+  }
+
+  function readCachedQuote(quoteNumber) {
+    if (!quoteNumber) return null;
+
+    try {
+      const raw = localStorage.getItem(cacheKey(quoteNumber));
+      if (!raw) return null;
+
+      const cached = JSON.parse(raw);
+      if (!cached || Date.now() - Number(cached.cachedAt || 0) > CACHE_TTL_MS) {
+        localStorage.removeItem(cacheKey(quoteNumber));
+        return null;
+      }
+
+      return cached;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  function writeCachedQuote(quoteNumber, payload) {
+    if (!quoteNumber) return;
+
+    try {
+      localStorage.setItem(
+        cacheKey(quoteNumber),
+        JSON.stringify({
+          ...payload,
+          cachedAt: Date.now()
+        })
+      );
+    } catch (_error) {
+      // Ignore storage quota/private mode failures; live loading still works.
+    }
+  }
+
+  function applyCachedQuote(deal, cached) {
+    if (!cached) return false;
+
+    deal.customer = clean(cached.customer) || deal.customer;
+    deal.quotedDate = clean(cached.quotedDate) || deal.quotedDate;
+    deal.cin7Url = cached.cin7Url || deal.cin7Url;
+    deal.cin7Lines = Array.isArray(cached.cin7Lines) ? cached.cin7Lines.map(normalizeWorkflowLine) : [];
+    deal.discountSummary = clean(cached.discountSummary) || summarizeDiscount(deal.cin7Lines);
+    deal.loadStatus = deal.cin7Lines.length ? 'Loaded from cache' : 'No cached line items found';
+    deal.cacheLoaded = true;
+    return true;
   }
 
   function extractQuoteNumber(value) {
@@ -197,7 +251,7 @@
     const salesNote = usefulNote(valueByHeader(cells, headers, [/^salesrepdeal$/, /^salesrep$/])) ||
       usefulNote(cells.find((cell, index) => index > contactIndex && index < stageIndex && !/records?$/i.test(cell)) || '');
 
-    return {
+    const deal = {
       id: quoteNumber || dealName,
       quoteNumber,
       dealName,
@@ -215,6 +269,9 @@
       discountSummary: '',
       loadStatus: quoteNumber ? 'Waiting' : 'No quote number'
     };
+
+    applyCachedQuote(deal, readCachedQuote(quoteNumber));
+    return deal;
   }
 
   function readVisibleHubSpotDeals() {
@@ -287,6 +344,11 @@
         continue;
       }
 
+      if (applyCachedQuote(deal, readCachedQuote(deal.quoteNumber))) {
+        renderDeals();
+        continue;
+      }
+
       deal.loadStatus = `Loading ${index + 1} of ${deals.length}`;
       renderDeals();
 
@@ -303,6 +365,13 @@
         deal.cin7Lines = lines;
         deal.discountSummary = summarizeDiscount(lines);
         deal.loadStatus = lines.length ? 'Loaded from Cin7 Core' : 'No Cin7 line items found';
+        writeCachedQuote(deal.quoteNumber, {
+          customer: deal.customer,
+          quotedDate: deal.quotedDate,
+          cin7Url: deal.cin7Url,
+          cin7Lines: deal.cin7Lines,
+          discountSummary: deal.discountSummary
+        });
       } catch (error) {
         deal.loadStatus = error?.message || 'Could not load Cin7 lines';
       }
@@ -311,7 +380,7 @@
     }
 
     loading = false;
-    setStatus(`Loaded ${deals.filter(deal => deal.cin7Lines.length).length} of ${deals.length} shown HubSpot deals.`);
+    setStatus(`Loaded ${deals.filter(deal => deal.cin7Lines.length).length} of ${deals.length} shown HubSpot deals. Cached quotes are reused for 12 hours.`);
   }
 
   function filteredDeals() {
@@ -412,7 +481,8 @@
 
   function scanDeals() {
     deals = readVisibleHubSpotDeals();
-    setStatus(`${deals.length} visible HubSpot deals matched the quote/follow-up stages.`);
+    const cachedCount = deals.filter(deal => deal.cacheLoaded).length;
+    setStatus(`${deals.length} visible HubSpot deals matched the quote/follow-up stages.${cachedCount ? ` ${cachedCount} loaded from cache.` : ''}`);
     renderDeals();
   }
 
