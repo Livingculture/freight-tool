@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         HubSpot Living Culture Quote Line Review
 // @namespace    livingculture-hubspot
-// @version      1.7
+// @version      1.8
 // @description  Reviews visible HubSpot quote deals by stage, with customer, quote number, line items, and Cin7 discounts.
 // @match        https://app.hubspot.com/*
-// @match        https://app-*.hubspot.com/*
+// @match        https://*.hubspot.com/*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/hubspot-quote-line-review.user.js
 // @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/hubspot-quote-line-review.user.js
 // @supportURL   https://github.com/Livingculture/freight-tool
@@ -30,8 +30,16 @@
     return String(value || '').replace(/\s+/g, ' ').trim();
   }
 
+  function isTopWindow() {
+    try {
+      return window.top === window.self;
+    } catch (_error) {
+      return false;
+    }
+  }
+
   function isHubSpotAppPage() {
-    return HUBSPOT_APP_HOST_RE.test(window.location.hostname) && /\/contacts\//i.test(window.location.pathname);
+    return isTopWindow() && HUBSPOT_APP_HOST_RE.test(window.location.hostname);
   }
 
   function isVisible(element) {
