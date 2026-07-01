@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HubSpot Living Culture Quote Line Review
 // @namespace    livingculture-hubspot
-// @version      1.1
+// @version      1.2
 // @description  Reviews visible HubSpot quote deals by stage, with customer, quote number, line items, and Cin7 discounts.
 // @match        https://app.hubspot.com/*
 // @match        https://*.hubspot.com/*
@@ -342,14 +342,93 @@
     setStatus('Copied the shown HubSpot quote deals as CSV.');
   }
 
+  function buildPrintHtml() {
+    const rows = filteredDeals().map(deal => {
+      const lineRows = (deal.cin7Lines.length ? deal.cin7Lines : [{ sku: '', product: deal.hubspotLineItems || deal.loadStatus, qty: '', price: '', discount: '', total: '' }])
+        .map(line => `
+          <tr>
+            <td>${escapeHtml(line.sku)}</td>
+            <td>${escapeHtml(line.product)}</td>
+            <td>${escapeHtml(line.qty)}</td>
+            <td>${escapeHtml(line.price)}</td>
+            <td>${escapeHtml(line.discount)}</td>
+            <td>${escapeHtml(line.total)}</td>
+          </tr>
+        `).join('');
+
+      return `
+        <section class="deal">
+          <h2>${escapeHtml(deal.quoteNumber || deal.dealName)} <span>${escapeHtml(deal.customer)}</span></h2>
+          <div class="meta">${escapeHtml(deal.stage)} | ${escapeHtml(deal.status)} | ${escapeHtml(deal.discountSummary || deal.loadStatus)}</div>
+          ${deal.salesNote ? `<p>${escapeHtml(deal.salesNote)}</p>` : ''}
+          <table>
+            <thead><tr><th>SKU</th><th>Line item</th><th>Qty</th><th>Price</th><th>Discount</th><th>Total</th></tr></thead>
+            <tbody>${lineRows}</tbody>
+          </table>
+        </section>
+      `;
+    }).join('');
+
+    return `<!doctype html>
+      <html>
+        <head>
+          <title>HubSpot Quote Review</title>
+          <style>
+            body { font-family: Arial, sans-serif; color: #24323d; margin: 24px; }
+            h1 { font-size: 20px; margin: 0 0 6px; }
+            .summary { color: #5f6f7f; font-size: 12px; margin-bottom: 18px; }
+            .deal { break-inside: avoid; border-top: 1px solid #cfd9e3; padding: 12px 0; }
+            h2 { display: flex; justify-content: space-between; gap: 18px; font-size: 15px; margin: 0 0 4px; }
+            h2 span { font-weight: 400; color: #526170; }
+            .meta, p { color: #526170; font-size: 12px; margin: 0 0 8px; }
+            table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 11px; }
+            th, td { border-bottom: 1px solid #e4ebf1; padding: 6px; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+            th { background: #f4f7fa; color: #5f6f7f; }
+            th:nth-child(1), td:nth-child(1) { width: 90px; }
+            th:nth-child(3), td:nth-child(3) { width: 45px; }
+            th:nth-child(4), td:nth-child(4),
+            th:nth-child(5), td:nth-child(5),
+            th:nth-child(6), td:nth-child(6) { width: 72px; }
+            @page { margin: 14mm; }
+          </style>
+        </head>
+        <body>
+          <h1>HubSpot Quote Review</h1>
+          <div class="summary">${filteredDeals().length} deals exported ${new Date().toLocaleString()}</div>
+          ${rows || '<p>No deals to export.</p>'}
+          <script>window.addEventListener('load', () => window.setTimeout(() => window.print(), 150));</script>
+        </body>
+      </html>`;
+  }
+
+  function exportPdf() {
+    const printWindow = window.open('', '_blank', 'width=1100,height=800');
+    if (!printWindow) {
+      setStatus('Allow popups for HubSpot, then try Export PDF again.');
+      return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(buildPrintHtml());
+    printWindow.document.close();
+    setStatus('Opened print view. Choose Save as PDF.');
+  }
+
   function openPanel() {
     ensureRoot();
-    document.getElementById(ROOT_ID).shadowRoot.getElementById('lc-hs-modal').classList.add('open');
+    const modal = document.getElementById(ROOT_ID).shadowRoot.getElementById('lc-hs-modal');
+    modal.classList.add('open');
+    modal.classList.remove('minimized');
     scanDeals();
   }
 
   function closePanel() {
     document.getElementById(ROOT_ID)?.shadowRoot?.getElementById('lc-hs-modal')?.classList.remove('open');
+  }
+
+  function toggleMinimized() {
+    const modal = document.getElementById(ROOT_ID)?.shadowRoot?.getElementById('lc-hs-modal');
+    modal?.classList.toggle('minimized');
   }
 
   function findHubSpotToolbarAnchor() {
@@ -399,34 +478,57 @@
           position: fixed;
           inset: 0;
           display: none;
-          background: rgba(24, 34, 42, .35);
+          background: transparent;
           z-index: 2147483647;
           color: #2f3742;
+          pointer-events: none;
         }
         #lc-hs-modal.open { display: block; }
         .panel {
           position: absolute;
-          inset: 42px;
+          top: 72px;
+          right: 16px;
+          bottom: 18px;
+          width: min(680px, calc(100vw - 36px));
           display: grid;
           grid-template-rows: auto 1fr;
-          min-width: 760px;
+          min-width: 0;
           background: #fff;
           border: 1px solid #c8d3df;
           border-radius: 8px;
-          box-shadow: 0 24px 70px rgba(22, 30, 36, .24);
+          box-shadow: 0 18px 48px rgba(22, 30, 36, .22);
           overflow: hidden;
+          pointer-events: auto;
+        }
+        #lc-hs-modal.minimized .panel {
+          top: auto;
+          right: 18px;
+          bottom: 18px;
+          width: 260px;
+          height: auto;
+          display: block;
+        }
+        #lc-hs-modal.minimized .toolbar,
+        #lc-hs-modal.minimized #lc-hs-status,
+        #lc-hs-modal.minimized #lc-hs-list,
+        #lc-hs-modal.minimized .sub {
+          display: none;
         }
         .header {
           display: flex;
           justify-content: space-between;
           gap: 14px;
-          padding: 14px 16px;
+          padding: 12px 14px;
           background: #0f6f78;
           color: #fff;
         }
-        h2 { margin: 0; font-size: 18px; line-height: 1.2; letter-spacing: 0; }
+        h2 { margin: 0; font-size: 16px; line-height: 1.2; letter-spacing: 0; }
         .sub { margin-top: 4px; font-size: 12px; color: rgba(255,255,255,.82); }
-        .close {
+        .header-actions {
+          display: flex;
+          gap: 6px;
+        }
+        .icon-button {
           width: 32px;
           height: 32px;
           border: 0;
@@ -439,13 +541,14 @@
         .toolbar {
           display: flex;
           align-items: center;
+          flex-wrap: wrap;
           gap: 8px;
-          padding: 12px 16px;
+          padding: 10px 12px;
           border-bottom: 1px solid #dde5ed;
           background: #f7fafc;
         }
         input[type="search"] {
-          width: 280px;
+          width: 210px;
           height: 36px;
           border: 1px solid #b9c7d6;
           border-radius: 4px;
@@ -478,7 +581,7 @@
           color: #2d5c4e;
           font: 700 12px Arial, sans-serif;
         }
-        #lc-hs-list { overflow: auto; padding: 14px 16px 18px; background: #eef3f7; }
+        #lc-hs-list { overflow: auto; padding: 12px; background: #eef3f7; }
         .deal {
           background: #fff;
           border: 1px solid #d9e2ea;
@@ -487,15 +590,15 @@
           overflow: hidden;
         }
         .deal-head {
-          display: flex;
-          justify-content: space-between;
+          display: grid;
+          grid-template-columns: 1fr;
           gap: 14px;
           padding: 10px 12px;
           border-bottom: 1px solid #e4ebf1;
         }
         .deal-head strong { display: inline-block; min-width: 110px; color: #24323d; font-size: 14px; }
         .deal-head span, .meta span { color: #4f5c68; font-size: 13px; }
-        .meta { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; text-align: right; }
+        .meta { display: flex; flex-wrap: wrap; gap: 10px; text-align: left; }
         .meta a { color: #087d76; font-weight: 700; text-decoration: none; }
         .note { padding: 8px 12px; border-bottom: 1px solid #eef2f5; color: #4f5c68; font-size: 12px; }
         table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
@@ -507,11 +610,11 @@
           overflow-wrap: anywhere;
         }
         th { color: #667384; background: #fbfcfd; font-weight: 700; }
-        th:nth-child(1), td:nth-child(1) { width: 120px; }
-        th:nth-child(3), td:nth-child(3) { width: 70px; }
+        th:nth-child(1), td:nth-child(1) { width: 92px; }
+        th:nth-child(3), td:nth-child(3) { width: 48px; }
         th:nth-child(4), td:nth-child(4),
         th:nth-child(5), td:nth-child(5),
-        th:nth-child(6), td:nth-child(6) { width: 100px; }
+        th:nth-child(6), td:nth-child(6) { width: 74px; }
         .discount { color: #a43d20; font-weight: 700; }
         .muted, .empty { color: #6c7884; font-weight: 700; }
         .empty {
@@ -529,12 +632,16 @@
                 <h2 id="lc-hs-title">HubSpot Quote Review</h2>
                 <div class="sub">Visible deals in Quote sent, Followed up, or Waiting on customer stages.</div>
               </div>
-              <button type="button" class="close" id="lc-hs-close" aria-label="Close">x</button>
+              <div class="header-actions">
+                <button type="button" class="icon-button" id="lc-hs-minimize" aria-label="Minimise">-</button>
+                <button type="button" class="icon-button" id="lc-hs-close" aria-label="Close">x</button>
+              </div>
             </div>
             <div class="toolbar">
               <button type="button" class="action" id="lc-hs-rescan">Rescan HubSpot</button>
               <button type="button" class="action primary" id="lc-hs-load">Load Cin7 discounts</button>
               <button type="button" class="action" id="lc-hs-copy">Copy CSV</button>
+              <button type="button" class="action" id="lc-hs-pdf">Export PDF</button>
               <input id="lc-hs-search" type="search" placeholder="Search quote, customer, SKU" />
               <label><input id="lc-hs-discounts-only" type="checkbox" /> Discounts only</label>
               <div id="lc-hs-count"></div>
@@ -547,12 +654,14 @@
     `;
 
     shadow.getElementById('lc-hs-close').addEventListener('click', closePanel);
+    shadow.getElementById('lc-hs-minimize').addEventListener('click', toggleMinimized);
     shadow.getElementById('lc-hs-modal').addEventListener('click', event => {
       if (event.target?.id === 'lc-hs-modal') closePanel();
     });
     shadow.getElementById('lc-hs-rescan').addEventListener('click', scanDeals);
     shadow.getElementById('lc-hs-load').addEventListener('click', loadDealLines);
     shadow.getElementById('lc-hs-copy').addEventListener('click', copyCsv);
+    shadow.getElementById('lc-hs-pdf').addEventListener('click', exportPdf);
     shadow.getElementById('lc-hs-search').addEventListener('input', renderDeals);
     shadow.getElementById('lc-hs-discounts-only').addEventListener('change', renderDeals);
 
