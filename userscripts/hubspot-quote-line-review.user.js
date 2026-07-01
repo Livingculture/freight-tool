@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         HubSpot Living Culture Quote Line Review
 // @namespace    livingculture-hubspot
-// @version      1.5
+// @version      1.6
 // @description  Reviews visible HubSpot quote deals by stage, with customer, quote number, line items, and Cin7 discounts.
 // @match        https://app.hubspot.com/*
-// @match        https://*.hubspot.com/*
+// @match        https://app-*.hubspot.com/*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/hubspot-quote-line-review.user.js
 // @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/hubspot-quote-line-review.user.js
 // @supportURL   https://github.com/Livingculture/freight-tool
@@ -21,12 +21,17 @@
   const WORKFLOW_SALES_API_URL = 'https://living-culture-workflow.vercel.app/api/cin7/sales';
   const QUOTE_RE = /\bNZSO[-\s]?\d+\b/i;
   const INCLUDED_STAGE_RE = /quote\s*[-–]\s*quote sent|quote sent|followed up|follow\s*up|waiting on customer/i;
+  const HUBSPOT_APP_HOST_RE = /^(?:app|app-[a-z0-9-]+)\.hubspot\.com$/i;
 
   let deals = [];
   let loading = false;
 
   function clean(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function isHubSpotAppPage() {
+    return HUBSPOT_APP_HOST_RE.test(window.location.hostname) && /\/contacts\//i.test(window.location.pathname);
   }
 
   function isVisible(element) {
@@ -508,7 +513,11 @@
   }
 
   function ensureButton() {
-    if (!/hubspot\.com$/i.test(window.location.hostname)) return;
+    if (!isHubSpotAppPage()) {
+      document.getElementById(BUTTON_ID)?.remove();
+      document.getElementById(ROOT_ID)?.remove();
+      return;
+    }
 
     let button = document.getElementById(BUTTON_ID);
     if (!button) {
@@ -771,6 +780,11 @@
 
   function boot() {
     if (!document.body) return;
+    if (!isHubSpotAppPage()) {
+      document.getElementById(BUTTON_ID)?.remove();
+      document.getElementById(ROOT_ID)?.remove();
+      return;
+    }
     ensureStyles();
     ensureRoot();
     ensureButton();
