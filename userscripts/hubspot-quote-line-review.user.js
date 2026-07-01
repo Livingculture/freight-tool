@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HubSpot Living Culture Quote Line Review
 // @namespace    livingculture-hubspot
-// @version      1.2
+// @version      1.3
 // @description  Reviews visible HubSpot quote deals by stage, with customer, quote number, line items, and Cin7 discounts.
 // @match        https://app.hubspot.com/*
 // @match        https://*.hubspot.com/*
@@ -175,6 +175,10 @@
     return values.length ? values.join(', ') : 'No discount found';
   }
 
+  function dealHasLoadedNoDiscount(deal) {
+    return deal.cin7Lines.length > 0 && !deal.cin7Lines.some(line => hasDiscount(line.discount));
+  }
+
   async function loadDealLines() {
     if (loading) return;
     loading = true;
@@ -217,7 +221,7 @@
   function filteredDeals() {
     const shadow = document.getElementById(ROOT_ID)?.shadowRoot;
     const query = clean(shadow?.getElementById('lc-hs-search')?.value).toLowerCase();
-    const discountsOnly = Boolean(shadow?.getElementById('lc-hs-discounts-only')?.checked);
+    const noDiscountOnly = Boolean(shadow?.getElementById('lc-hs-no-discount-only')?.checked);
 
     return deals.filter(deal => {
       const haystack = [
@@ -233,7 +237,7 @@
       ].join(' ').toLowerCase();
 
       if (query && !haystack.includes(query)) return false;
-      if (discountsOnly && !deal.cin7Lines.some(line => hasDiscount(line.discount))) return false;
+      if (noDiscountOnly && !dealHasLoadedNoDiscount(deal)) return false;
       return true;
     });
   }
@@ -643,7 +647,7 @@
               <button type="button" class="action" id="lc-hs-copy">Copy CSV</button>
               <button type="button" class="action" id="lc-hs-pdf">Export PDF</button>
               <input id="lc-hs-search" type="search" placeholder="Search quote, customer, SKU" />
-              <label><input id="lc-hs-discounts-only" type="checkbox" /> Discounts only</label>
+              <label><input id="lc-hs-no-discount-only" type="checkbox" /> No discount only</label>
               <div id="lc-hs-count"></div>
             </div>
             <div id="lc-hs-status"></div>
@@ -663,7 +667,7 @@
     shadow.getElementById('lc-hs-copy').addEventListener('click', copyCsv);
     shadow.getElementById('lc-hs-pdf').addEventListener('click', exportPdf);
     shadow.getElementById('lc-hs-search').addEventListener('input', renderDeals);
-    shadow.getElementById('lc-hs-discounts-only').addEventListener('change', renderDeals);
+    shadow.getElementById('lc-hs-no-discount-only').addEventListener('change', renderDeals);
 
     return root;
   }
