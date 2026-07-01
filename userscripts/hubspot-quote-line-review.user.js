@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HubSpot Living Culture Quote Line Review
 // @namespace    livingculture-hubspot
-// @version      1.3
+// @version      1.4
 // @description  Reviews visible HubSpot quote deals by stage, with customer, quote number, line items, and Cin7 discounts.
 // @match        https://app.hubspot.com/*
 // @match        https://*.hubspot.com/*
@@ -19,7 +19,7 @@
   const ROOT_ID = 'lc-hs-quote-review-root';
   const BUTTON_ID = 'lc-hs-quote-review-button';
   const WORKFLOW_SALES_API_URL = 'https://living-culture-workflow.vercel.app/api/cin7/sales';
-  const QUOTE_RE = /\bNZSO-\d+\b/i;
+  const QUOTE_RE = /\bNZSO[-\s]?\d+\b/i;
   const INCLUDED_STAGE_RE = /quote\s*[-–]\s*quote sent|quote sent|followed up|follow\s*up|waiting on customer/i;
 
   let deals = [];
@@ -83,6 +83,13 @@
     return url.toString();
   }
 
+  function extractQuoteNumber(value) {
+    const match = clean(value).match(QUOTE_RE);
+    if (!match) return '';
+    const digits = match[0].match(/\d+/)?.[0] || '';
+    return digits ? `NZSO-${digits}` : match[0].toUpperCase();
+  }
+
   function cellTexts(row) {
     const cells = Array.from(row.querySelectorAll('[role="cell"], [role="gridcell"], td, th'))
       .filter(isVisible)
@@ -103,15 +110,29 @@
     return link?.href || '';
   }
 
+  function findDealName(row, cells) {
+    const dealLink = Array.from(row.querySelectorAll('a[href]'))
+      .filter(isVisible)
+      .find(anchor => /\/contacts\/\d+\/(?:record\/)?deal\//i.test(anchor.href) || /\/deal\//i.test(anchor.href));
+    const linkText = clean(dealLink?.innerText || dealLink?.textContent);
+    if (linkText) return linkText;
+
+    return cells.find(cell => {
+      if (/deal name|deal stage|records?$/i.test(cell)) return false;
+      if (INCLUDED_STAGE_RE.test(cell)) return false;
+      return true;
+    }) || '';
+  }
+
   function dealFromCells(cells, row) {
-    const dealNameIndex = cells.findIndex(cell => QUOTE_RE.test(cell) || /deal name/i.test(cell));
     const stageIndex = cells.findIndex(cell => INCLUDED_STAGE_RE.test(cell));
-    if (dealNameIndex < 0 || stageIndex < 0) return null;
+    if (stageIndex < 0) return null;
 
-    const dealName = cells[dealNameIndex];
-    if (/deal name/i.test(dealName)) return null;
+    const dealName = findDealName(row, cells);
+    if (!dealName || /deal name/i.test(dealName)) return null;
 
-    const quoteNumber = dealName.match(QUOTE_RE)?.[0]?.toUpperCase() || '';
+    const quoteNumber = extractQuoteNumber(cells.join(' '));
+    const dealNameIndex = Math.max(0, cells.findIndex(cell => cell === dealName));
     const contactIndex = Math.min(dealNameIndex + 1, cells.length - 1);
     const lineItemIndex = cells.findIndex((cell, index) => index > dealNameIndex && (/records?$/i.test(cell) || (index < stageIndex && index > contactIndex + 1)));
     const statusIndex = cells.findIndex(cell => /phoned|emailed|texted|called|--/i.test(cell));
