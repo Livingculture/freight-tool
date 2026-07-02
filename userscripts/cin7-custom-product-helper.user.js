@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Custom Product Helper
 // @namespace    livingculture-cin7
-// @version      2.0
+// @version      2.1
 // @description  Shows Living Culture customised pergola/product SKUs inside Cin7 and fills the product code into the quote line.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
@@ -83,7 +83,7 @@ Caspian Middle Post Charcoal,CS22252,$329.99,"3M leg post. If longer than 3M, qu
 `;
 
   let dataSourceLabel = 'Built-in backup data';
-  let items = parseData(readCachedRawData() || RAW_DATA);
+  let items = [];
   let filteredItems = items;
 
   function clean(value) {
@@ -233,6 +233,56 @@ Caspian Middle Post Charcoal,CS22252,$329.99,"3M leg post. If longer than 3M, qu
     return rows.filter(item => item.name && item.code);
   }
 
+  function knownProductName(code) {
+    const names = {
+      'SK-00396': 'Fuji Manual',
+      'SK-00397': 'Etna Half Cassette',
+      'SK-00398': 'Etna Half Cassette >10m2',
+      'SK-00399': 'Rainier Full Cassette',
+      'SK-00400': 'Rainier Full Cassette >10m2',
+      'SK-00401': 'Rainier Pro Full Cassette',
+      CS20954: 'Tasman Side Post Black',
+      CS20955: 'Tasman Side Post White',
+      CS20956: 'Tasman Side Post Charcoal',
+      CS23434: 'Tasman Middle Post Black',
+      CS23435: 'Tasman Middle Post White',
+      CS23436: 'Tasman Middle Post Charcoal',
+      CS22824: 'Baltic Side Post Black',
+      CS22825: 'Baltic Side Post White',
+      CS22826: 'Baltic Side Post Charcoal',
+      CS22827: 'Baltic Middle Post Black',
+      CS22828: 'Baltic Middle Post White',
+      CS22829: 'Baltic Middle Post Charcoal',
+      CS22253: 'Atlantic Side Post Black',
+      CS22254: 'Atlantic Side Post White',
+      CS22255: 'Atlantic Side Post Charcoal',
+      CS22250: 'Caspian Middle Post Black',
+      CS22251: 'Caspian Middle Post White',
+      CS22252: 'Caspian Middle Post Charcoal'
+    };
+
+    return names[clean(code).toUpperCase()] || '';
+  }
+
+  function needsKnownProductName(name) {
+    const text = clean(name).toLowerCase();
+    return (
+      !text ||
+      /^(?:black|white|charcoal|>\s*10\s*m2|>\s*10m2|>\s*10\s*m²)$/i.test(text) ||
+      !/(pergola|cassette|manual|awning|post|tasman|baltic|atlantic|caspian|rainier|etna|fuji)/i.test(text)
+    );
+  }
+
+  function enrichKnownProduct(item) {
+    const name = knownProductName(item.code);
+    if (!name || !needsKnownProductName(item.name)) return item;
+
+    return {
+      ...item,
+      name
+    };
+  }
+
   function parseData(raw) {
     const text = String(raw || '').trim();
 
@@ -248,7 +298,7 @@ Caspian Middle Post Charcoal,CS22252,$329.99,"3M leg post. If longer than 3M, qu
     const normalisedHeaders = headers.map(normaliseHeader);
 
     const verticalItems = parseVerticalData(text);
-    if (verticalItems.length) return verticalItems;
+    if (verticalItems.length) return verticalItems.map(enrichKnownProduct);
 
     function col(...names) {
       const wanted = names.map(normaliseHeader);
@@ -263,14 +313,17 @@ Caspian Middle Post Charcoal,CS22252,$329.99,"3M leg post. If longer than 3M, qu
     return lines.slice(1).map(line => {
       const parts = delimiter === '\t' ? line.split('\t') : parseCsvLine(line);
 
-      return {
+      return enrichKnownProduct({
         name: clean(parts[colName >= 0 ? colName : 0]),
         code: clean(parts[colCode >= 0 ? colCode : 1]),
         price: clean(parts[colPrice >= 0 ? colPrice : 2]),
         memo: clean(parts[colMemo >= 0 ? colMemo : 3])
-      };
+      });
     }).filter(item => item.name && item.code);
   }
+
+  items = parseData(readCachedRawData() || RAW_DATA);
+  filteredItems = items;
 
   function readCachedRawData() {
     try {
@@ -800,8 +853,10 @@ Caspian Middle Post Charcoal,CS22252,$329.99,"3M leg post. If longer than 3M, qu
   }
 
   function getProductGroup(item) {
+    const labelText = `${item.code} ${item.name}`.toLowerCase();
     const text = `${item.code} ${item.name} ${item.memo}`.toLowerCase();
 
+    if (labelText.includes('post')) return '08_POSTS';
     if (text.includes('baltic')) return '01_PERGOLAS / BALTIC';
     if (text.includes('caspian')) return '02_PERGOLAS / CASPIAN';
     if (text.includes('tasman')) return '03_PERGOLAS / TASMAN';
@@ -809,7 +864,6 @@ Caspian Middle Post Charcoal,CS22252,$329.99,"3M leg post. If longer than 3M, qu
     if (text.includes('mediterranean')) return '05_PERGOLAS / MEDITERRANEAN';
     if (text.includes('dover')) return '06_PERGOLAS / DOVER PVC';
     if (text.includes('pergola')) return '07_PERGOLAS / OTHER';
-    if (text.includes('post')) return '08_POSTS';
 
     if (
       text.includes('shutter') ||
