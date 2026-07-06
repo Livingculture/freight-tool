@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 WeCom Payment Message Sender
 // @namespace    livingculture
-// @version      4.5
+// @version      4.6
 // @description  Sends a WeCom payment message from Cin7 invoice/payment screen only.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -9,8 +9,8 @@
 // @match        *://*.cin7core.com/*
 // @match        *://*.dearsystems.com/*
 // @match        https://inventory.dearsystems.com/*
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-wecom-payment-message.user.js
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-wecom-payment-message.user.js
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/refs/heads/main/userscripts/cin7-wecom-payment-message.user.js
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/refs/heads/main/userscripts/cin7-wecom-payment-message.user.js
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
