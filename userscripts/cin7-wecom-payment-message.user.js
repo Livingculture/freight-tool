@@ -37,7 +37,7 @@
     'AKL-Blair',
     'AKL-Daniel',
     'AKL-Jaine',
-    'AKL-Pakiira',
+    'AKL-Pakjira',
     'PEN-Steve',
     'AKL-Vitalii',
     'CHCH-Bronwyn',
