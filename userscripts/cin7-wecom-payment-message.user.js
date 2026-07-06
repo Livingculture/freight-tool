@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 WeCom Payment Message Sender
 // @namespace    livingculture
-// @version      4.3
+// @version      4.4
 // @description  Sends a WeCom payment message from Cin7 invoice/payment screen only.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -9,8 +9,8 @@
 // @match        *://*.cin7core.com/*
 // @match        *://*.dearsystems.com/*
 // @match        https://inventory.dearsystems.com/*
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-wecom-payment-message.user.js?v=4.3
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-wecom-payment-message.user.js?v=4.3
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-wecom-payment-message.user.js?v=4.4
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-wecom-payment-message.user.js?v=4.4
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
@@ -32,6 +32,7 @@
   const CIN7_TEXT_GREY = '#3f454d';
   const CIN7_MUTED_GREY = '#6f7786';
   const CIN7_FONT = 'inherit';
+  const USER_POINTER_WINDOW_MS = 1500;
 
   const SEND_AS_REPS = [
     'AKL-Blair',
@@ -55,6 +56,22 @@
 
   function clean(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function markUserPointerActivation(el) {
+    if (!el) return;
+    el.dataset.lcLastUserPointerAt = String(Date.now());
+  }
+
+  function hasRecentUserPointerActivation(el) {
+    if (!el) return false;
+
+    const lastUserPointerAt = Number(el.dataset.lcLastUserPointerAt || 0);
+    return lastUserPointerAt > 0 && Date.now() - lastUserPointerAt <= USER_POINTER_WINDOW_MS;
+  }
+
+  function isTrustedUserClick(event, el) {
+    return Boolean(event?.isTrusted && hasRecentUserPointerActivation(el));
   }
 
   function isVisible(el) {
@@ -658,7 +675,18 @@
     send.style.color = '#fff';
     send.style.cursor = 'pointer';
     send.style.font = '700 14px ' + CIN7_FONT;
-    send.addEventListener('click', () => {
+    send.addEventListener('pointerdown', event => {
+      if (event.isTrusted) markUserPointerActivation(send);
+    });
+    send.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (!isTrustedUserClick(event, send)) {
+        setStatus('Ignored WeCom send because it was not a direct user click.', true);
+        return;
+      }
+
       const editedMessage = clean(textarea.value);
 
       if (!editedMessage) {
@@ -778,7 +806,18 @@
         item.style.background = '#fff';
       });
 
-      item.addEventListener('click', () => {
+      item.addEventListener('pointerdown', event => {
+        if (event.isTrusted) markUserPointerActivation(item);
+      });
+      item.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (!isTrustedUserClick(event, item)) {
+          setStatus('Ignored WeCom sender selection because it was not a direct user click.', true);
+          return;
+        }
+
         sendToWeComAsPerson(rep);
       });
 
@@ -807,9 +846,17 @@
 
     const sendAsMenu = makeSendAsMenu();
 
+    sendAsButton.addEventListener('pointerdown', event => {
+      if (event.isTrusted) markUserPointerActivation(sendAsButton);
+    });
     sendAsButton.addEventListener('click', event => {
       event.preventDefault();
       event.stopPropagation();
+
+      if (!isTrustedUserClick(event, sendAsButton)) {
+        setStatus('Ignored WeCom menu open because it was not a direct user click.', true);
+        return;
+      }
 
       const isOpen = sendAsMenu.style.display === 'block';
       sendAsMenu.style.display = isOpen ? 'none' : 'block';
