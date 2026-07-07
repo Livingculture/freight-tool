@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.12.30
+// @version      1.12.31
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.30
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.30
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.31
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.31
 // ==/UserScript==
 
 (function () {
@@ -1316,6 +1316,71 @@
     if (overlay) overlay.remove();
   }
 
+  function closeHubSpotModal() {
+    const overlay = document.getElementById('lc-hs-modal-overlay');
+    if (overlay) overlay.remove();
+  }
+
+  function hubSpotModal(title, lines, options = {}) {
+    ensureStyles();
+    closeHubSpotModal();
+    const lineItems = Array.isArray(lines)
+      ? lines
+      : String(lines || '').split('\n');
+    const primaryText = options.primaryText || 'OK';
+    const cancelText = options.cancelText || '';
+    const primaryClass = options.intent === 'danger' ? 'lc-hs-modal-danger' : 'lc-hs-modal-primary';
+
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.id = 'lc-hs-modal-overlay';
+      overlay.innerHTML = `
+        <div class="lc-hs-modal-panel">
+          <h3>${escapeHtml(title)}</h3>
+          <div class="lc-hs-modal-body">
+            ${lineItems.map((line) => {
+              const text = String(line || '');
+              return text
+                ? `<p>${escapeHtml(text)}</p>`
+                : '<div class="lc-hs-modal-gap"></div>';
+            }).join('')}
+          </div>
+          <div class="lc-hs-lead-source-actions">
+            ${cancelText ? `<button type="button" class="lc-hs-lead-source-cancel" id="lcHsModalCancel">${escapeHtml(cancelText)}</button>` : ''}
+            <button type="button" class="${primaryClass}" id="lcHsModalPrimary">${escapeHtml(primaryText)}</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+
+      const finish = (value) => {
+        closeHubSpotModal();
+        resolve(value);
+      };
+      document.getElementById('lcHsModalPrimary').addEventListener('click', () => finish(true));
+      const cancel = document.getElementById('lcHsModalCancel');
+      if (cancel) cancel.addEventListener('click', () => finish(false));
+      overlay.addEventListener('click', event => {
+        if (event.target === overlay) finish(!cancelText);
+      });
+      document.getElementById('lcHsModalPrimary').focus();
+    });
+  }
+
+  function hubSpotMessage(title, lines, options = {}) {
+    return hubSpotModal(title, lines, {
+      ...options,
+      primaryText: options.primaryText || 'OK'
+    });
+  }
+
+  function hubSpotConfirm(title, lines) {
+    return hubSpotModal(title, lines, {
+      primaryText: 'Create Deal',
+      cancelText: 'Cancel'
+    });
+  }
+
   function chooseHubSpotLeadSource() {
     ensureStyles();
     return fetchHubSpotLeadSourceOptions().then(({ label, options }) => {
@@ -1369,7 +1434,7 @@
     const payload = hubspotDraft();
 
     if (!payload.customerName && !payload.email && !payload.phone) {
-      window.alert('Customer name, email, or phone is required before creating a HubSpot deal.');
+      await hubSpotMessage('HubSpot Deal', ['Customer name, email, or phone is required before creating a HubSpot deal.'], { intent: 'danger' });
       return;
     }
 
@@ -1377,7 +1442,7 @@
     try {
       leadSource = await chooseHubSpotLeadSource();
     } catch (error) {
-      window.alert(error.message || 'Could not load HubSpot lead sources.');
+      await hubSpotMessage('HubSpot Deal', [error.message || 'Could not load HubSpot lead sources.'], { intent: 'danger' });
       return;
     }
     if (!leadSource) return;
@@ -1394,7 +1459,8 @@
       lineItemDetails
     ].filter(Boolean).join('\n');
 
-    if (!window.confirm(`Create HubSpot deal?\n\n${summary || 'Cin7 sale details will be sent to HubSpot.'}`)) {
+    const confirmed = await hubSpotConfirm('Create HubSpot Deal?', summary || 'Cin7 sale details will be sent to HubSpot.');
+    if (!confirmed) {
       return;
     }
 
@@ -1436,9 +1502,18 @@
             const orderLineItemStatus = orderLineItems
               ? `DEAR line items: ${orderLineItems.created || 0} added, ${orderLineItems.skipped || 0} already there${orderLineItems.errors?.length ? `, ${orderLineItems.errors.length} error(s): ${orderLineItems.errors[0]}` : ''}.`
               : '';
-            window.alert(`${message}\n\n${linkStatus}${lineItemStatus ? `\n${lineItemStatus}` : ''}${orderLineItemStatus ? `\n${orderLineItemStatus}` : ''}\n\nHubSpot link copied:\n${data.hubspotUrl}`);
+            hubSpotMessage(data.duplicate ? 'HubSpot Deal Exists' : 'HubSpot Deal Created', [
+              message,
+              '',
+              linkStatus,
+              lineItemStatus,
+              orderLineItemStatus,
+              '',
+              'HubSpot link copied:',
+              data.hubspotUrl
+            ].filter((line, index, list) => line || (list[index - 1] && list[index + 1])));
           } else {
-            window.alert(message);
+            hubSpotMessage(data.duplicate ? 'HubSpot Deal Exists' : 'HubSpot Deal Created', [message]);
           }
           window.setTimeout(() => {
             button.disabled = false;
@@ -1449,12 +1524,12 @@
 
         button.disabled = false;
         button.textContent = originalText;
-        window.alert(data.error || `HubSpot deal failed (${response.status}).`);
+        hubSpotMessage('HubSpot Deal Failed', [data.error || `HubSpot deal failed (${response.status}).`], { intent: 'danger' });
       },
       onerror: () => {
         button.disabled = false;
         button.textContent = originalText;
-        window.alert('Could not connect to the HubSpot workflow API.');
+        hubSpotMessage('HubSpot Deal Failed', ['Could not connect to the HubSpot workflow API.'], { intent: 'danger' });
       }
     });
   }
@@ -1568,6 +1643,14 @@
       .lc-hs-lead-source-actions button{border:1px solid #b6c8c5;border-radius:8px;padding:9px 12px;font-weight:800;cursor:pointer}
       .lc-hs-lead-source-primary{background:#ff5c35;border-color:#ff5c35;color:#fff}
       .lc-hs-lead-source-cancel{background:#fff;color:#305f58}
+      #lc-hs-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.38);z-index:2147483646;display:flex;align-items:center;justify-content:center;font-family:Arial,sans-serif}
+      .lc-hs-modal-panel{width:min(520px,92vw);max-height:82vh;overflow:auto;background:#fff;border:1px solid #d3dedb;border-radius:10px;box-shadow:0 18px 44px rgba(0,0,0,.28);padding:18px;display:grid;gap:14px}
+      .lc-hs-modal-panel h3{margin:0;color:#253b36;font-size:22px;line-height:1.2}
+      .lc-hs-modal-body{display:grid;gap:6px;color:#2e3f3b;font-size:15px;line-height:1.35}
+      .lc-hs-modal-body p{margin:0;overflow-wrap:anywhere}
+      .lc-hs-modal-gap{height:8px}
+      .lc-hs-modal-primary{background:#ff5c35;border-color:#ff5c35!important;color:#fff}
+      .lc-hs-modal-danger{background:#b42318;border-color:#b42318!important;color:#fff}
       @media (max-width:680px){.lc-sv-grid{grid-template-columns:1fr}}
     `;
     document.head.appendChild(style);
