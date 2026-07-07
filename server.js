@@ -963,9 +963,12 @@ async function getHubSpotDealOrderPropertyNames() {
     return hubspotDealOrderPropertyCache.names;
   }
 
-  const knownNames = [
+  const configuredNames = [
     HUBSPOT_CIN7_SALE_PROPERTY,
-    HUBSPOT_CIN7_ORDER_NAME_PROPERTY,
+    HUBSPOT_CIN7_ORDER_NAME_PROPERTY
+  ].map(cleanTextValue).filter(Boolean);
+
+  const likelyNames = [
     'copy_order_deal_name',
     'dear_sale_id',
     'cin7_sale_number',
@@ -985,6 +988,9 @@ async function getHubSpotDealOrderPropertyNames() {
 
   try {
     const payload = await hubspotRequest('/crm/v3/properties/deals?archived=false');
+    const propertyNames = new Set((Array.isArray(payload.results) ? payload.results : [])
+      .map((property) => cleanTextValue(property.name))
+      .filter(Boolean));
     const discovered = (Array.isArray(payload.results) ? payload.results : [])
       .filter((property) => {
         const haystack = `${property.name || ''} ${property.label || ''} ${property.description || ''}`.toLowerCase();
@@ -995,13 +1001,17 @@ async function getHubSpotDealOrderPropertyNames() {
 
     hubspotDealOrderPropertyCache = {
       loadedAt: now,
-      names: Array.from(new Set([...knownNames, ...discovered]))
+      names: Array.from(new Set([
+        ...configuredNames.filter((name) => propertyNames.has(name)),
+        ...likelyNames.filter((name) => propertyNames.has(name)),
+        ...discovered
+      ]))
     };
   } catch (error) {
     console.error('HubSpot deal property discovery failed:', error.message);
     hubspotDealOrderPropertyCache = {
       loadedAt: now,
-      names: Array.from(new Set(knownNames))
+      names: Array.from(new Set(configuredNames))
     };
   }
 
@@ -1109,6 +1119,40 @@ async function createHubSpotCin7OrderDeal(saleNumber, sale = {}) {
   return hubspotRequest('/crm/v3/objects/deals', {
     method: 'POST',
     body: { properties }
+  });
+}
+
+async function buildHubSpotOrderDealProperties(saleNumber, sale = {}) {
+  const orderDealName = getCin7OrderDealName(saleNumber);
+  if (!orderDealName) return {};
+
+  const propertyNames = await getHubSpotDealOrderPropertyNames();
+  const properties = {};
+  const orderNameProperty = [
+    HUBSPOT_CIN7_ORDER_NAME_PROPERTY,
+    HUBSPOT_CIN7_SALE_PROPERTY,
+    'copy_order_deal_name'
+  ].map(cleanTextValue).find((name) => name && propertyNames.includes(name));
+  if (orderNameProperty) properties[orderNameProperty] = orderDealName;
+
+  const amount = parseMoneyValue(sale.amount || sale.total);
+  const amountProperty = [
+    HUBSPOT_CIN7_ORDER_AMOUNT_PROPERTY,
+    'cin7_order_amount'
+  ].map(cleanTextValue).find((name) => name && propertyNames.includes(name));
+  if (amountProperty && amount) properties[amountProperty] = amount;
+
+  return properties;
+}
+
+async function updateHubSpotCin7OrderDealDetails(orderDealId, saleNumber, sale = {}) {
+  const properties = await buildHubSpotOrderDealProperties(saleNumber, sale).catch((error) => {
+    console.error('HubSpot order deal property build failed:', error.message);
+    return {};
+  });
+  return updateHubSpotDealProperties(orderDealId, properties).catch((error) => {
+    console.error('HubSpot order deal property update failed:', error.message);
+    return null;
   });
 }
 
@@ -1271,6 +1315,12 @@ async function associateCin7OrderDealIfAvailable(customerDealId, saleNumber, sal
     return { associated: false, skipped: true, reason: 'same_deal', orderDealId: orderDeal.id, orderDealName, orderDealAmount };
   }
 
+  await updateHubSpotCin7OrderDealDetails(orderDeal.id, saleNumber, sale);
+  const orderDealLineItems = await createHubSpotLineItemsForDeal(orderDeal.id, sale.lineItems).catch((error) => {
+    console.error('HubSpot order deal line item creation failed:', error.message);
+    return { created: 0, skipped: 0, errors: [error.message] };
+  });
+
   const customerAssociatedDealIds = await getAssociatedHubSpotDealIds(dealId);
   const orderAssociatedDealIds = await getAssociatedHubSpotDealIds(orderDeal.id);
   const customerToOrderLinked = customerAssociatedDealIds.includes(String(orderDeal.id));
@@ -1297,6 +1347,7 @@ async function associateCin7OrderDealIfAvailable(customerDealId, saleNumber, sal
     orderDealName,
     orderDealAmount,
     orderDealCreated,
+    orderDealLineItems,
     customerToOrderAssociated: customerToOrderLinked || customerToOrderAssociated,
     orderToCustomerAssociated: orderToCustomerLinked || orderToCustomerAssociated
   };

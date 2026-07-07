@@ -1432,7 +1432,11 @@
             const lineItemStatus = data.lineItems
               ? `Line items: ${data.lineItems.created || 0} added, ${data.lineItems.skipped || 0} already there${data.lineItems.errors?.length ? `, ${data.lineItems.errors.length} error(s): ${data.lineItems.errors[0]}` : ''}.`
               : '';
-            window.alert(`${message}\n\n${linkStatus}${lineItemStatus ? `\n${lineItemStatus}` : ''}\n\nHubSpot link copied:\n${data.hubspotUrl}`);
+            const orderLineItems = data.orderDealAssociation?.orderDealLineItems;
+            const orderLineItemStatus = orderLineItems
+              ? `DEAR line items: ${orderLineItems.created || 0} added, ${orderLineItems.skipped || 0} already there${orderLineItems.errors?.length ? `, ${orderLineItems.errors.length} error(s): ${orderLineItems.errors[0]}` : ''}.`
+              : '';
+            window.alert(`${message}\n\n${linkStatus}${lineItemStatus ? `\n${lineItemStatus}` : ''}${orderLineItemStatus ? `\n${orderLineItemStatus}` : ''}\n\nHubSpot link copied:\n${data.hubspotUrl}`);
           } else {
             window.alert(message);
           }
