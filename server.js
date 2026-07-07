@@ -39,7 +39,7 @@ const HUBSPOT_ACCESS_TOKEN = process.env.HUBSPOT_ACCESS_TOKEN ||
   process.env.HUBSPOT_API_KEY;
 const HUBSPOT_DEAL_PIPELINE = process.env.HUBSPOT_DEAL_PIPELINE || process.env.HUBSPOT_PIPELINE || '';
 const HUBSPOT_DEAL_STAGE = process.env.HUBSPOT_DEAL_STAGE || process.env.HUBSPOT_DEALSTAGE || '';
-const HUBSPOT_CIN7_SALE_PROPERTY = process.env.HUBSPOT_CIN7_SALE_PROPERTY || 'cin7_order_name';
+const HUBSPOT_CIN7_SALE_PROPERTY = process.env.HUBSPOT_CIN7_SALE_PROPERTY || '';
 const HUBSPOT_CIN7_ORDER_NAME_PROPERTY = process.env.HUBSPOT_CIN7_ORDER_NAME_PROPERTY || 'cin7_order_name';
 const HUBSPOT_CIN7_ORDER_AMOUNT_PROPERTY = process.env.HUBSPOT_CIN7_ORDER_AMOUNT_PROPERTY || 'cin7_order_amount';
 const HUBSPOT_CIN7_SALE_URL_PROPERTY = process.env.HUBSPOT_CIN7_SALE_URL_PROPERTY || 'cin7_sale_url';
@@ -912,11 +912,12 @@ async function findExistingHubSpotDeal(dealNames, saleNumber) {
     for (const value of saleSearchValues) {
       const existingBySaleId = await searchHubSpotObject('deals', [
         { propertyName: HUBSPOT_CIN7_SALE_PROPERTY, operator: 'EQ', value }
-      ], ['dealname', 'amount', HUBSPOT_CIN7_SALE_PROPERTY]);
+      ], ['dealname', 'amount', HUBSPOT_CIN7_SALE_PROPERTY]).catch(error => {
+        console.error(`HubSpot deal search by ${HUBSPOT_CIN7_SALE_PROPERTY} failed:`, error.message);
+        return null;
+      });
       if (existingBySaleId?.id) return existingBySaleId;
     }
-
-    return null;
   }
 
   for (const dealName of Array.from(new Set(dealNames.map(cleanTextValue).filter(Boolean)))) {
