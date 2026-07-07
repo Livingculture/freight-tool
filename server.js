@@ -43,6 +43,18 @@ const HUBSPOT_CIN7_SALE_PROPERTY = process.env.HUBSPOT_CIN7_SALE_PROPERTY || '';
 const HUBSPOT_CIN7_ORDER_NAME_PROPERTY = process.env.HUBSPOT_CIN7_ORDER_NAME_PROPERTY || '';
 const HUBSPOT_CIN7_ORDER_AMOUNT_PROPERTY = process.env.HUBSPOT_CIN7_ORDER_AMOUNT_PROPERTY || '';
 const HUBSPOT_CIN7_SALE_URL_PROPERTY = process.env.HUBSPOT_CIN7_SALE_URL_PROPERTY || '';
+const HUBSPOT_LEAD_SOURCE_PROPERTY = process.env.HUBSPOT_LEAD_SOURCE_PROPERTY || 'leads_source';
+const HUBSPOT_LEAD_SOURCE_PROPERTY_LABEL = process.env.HUBSPOT_LEAD_SOURCE_PROPERTY_LABEL || 'Leads Source';
+const HUBSPOT_LEAD_SOURCE_FALLBACK_OPTIONS = [
+  'Email',
+  'Ticket',
+  'Repeat customer',
+  'Referral customer',
+  'AKL Homeshow',
+  'Waikato Homeshow',
+  'Canterbury Homeshow',
+  'Fieldays Exhibition'
+];
 const HUBSPOT_ASSOCIATE_CIN7_ORDER_DEAL = process.env.HUBSPOT_ASSOCIATE_CIN7_ORDER_DEAL !== 'false';
 const HUBSPOT_OWNER_BY_REP_JSON = process.env.HUBSPOT_OWNER_BY_REP_JSON || '';
 const HUBSPOT_DEFAULT_OWNER_ID = process.env.HUBSPOT_DEFAULT_OWNER_ID || '';
@@ -98,6 +110,7 @@ let sharedBrowserPromise = null;
 let sharedContext = null;
 let sharedPage = null;
 let automationQueue = Promise.resolve();
+let hubspotLeadSourcePropertyCache = { at: 0, property: null };
 const ADDRESS_INPUT_SELECTORS = [
   '#shipping-address1:visible',
   'input[name="address1"]:visible',
@@ -627,6 +640,105 @@ async function getHubSpotOwnerIdForSale(sale) {
   return '';
 }
 
+function normaliseHubSpotPropertyLabel(value) {
+  return cleanTextValue(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function isHubSpotLeadSourcePropertyCandidate(property) {
+  if (!property || property.archived) return false;
+  const name = cleanTextValue(property.name).toLowerCase();
+  const label = normaliseHubSpotPropertyLabel(property.label);
+  const configuredLabel = normaliseHubSpotPropertyLabel(HUBSPOT_LEAD_SOURCE_PROPERTY_LABEL);
+  return label === configuredLabel ||
+    label === 'leads source' ||
+    label === 'lead source' ||
+    name === 'leads_source' ||
+    name === 'leadssource' ||
+    name === 'lead_source' ||
+    name === 'leadsource' ||
+    name === 'deal_source';
+}
+
+async function listHubSpotDealProperties() {
+  const payload = await hubspotRequest('/crm/v3/properties/deals');
+  return Array.isArray(payload.results) ? payload.results : [];
+}
+
+async function resolveHubSpotLeadSourceProperty() {
+  const cacheAge = Date.now() - hubspotLeadSourcePropertyCache.at;
+  if (hubspotLeadSourcePropertyCache.property && cacheAge < 10 * 60 * 1000) {
+    return hubspotLeadSourcePropertyCache.property;
+  }
+
+  let property = null;
+  if (HUBSPOT_LEAD_SOURCE_PROPERTY) {
+    property = await hubspotRequest(`/crm/v3/properties/deals/${encodeURIComponent(HUBSPOT_LEAD_SOURCE_PROPERTY)}`);
+  } else {
+    const properties = await listHubSpotDealProperties();
+    property = properties.find(isHubSpotLeadSourcePropertyCandidate) || null;
+  }
+
+  if (!property?.name) {
+    throw new Error('HubSpot lead source property was not found. Set HUBSPOT_LEAD_SOURCE_PROPERTY to the internal deal property name.');
+  }
+
+  hubspotLeadSourcePropertyCache = { at: Date.now(), property };
+  return property;
+}
+
+async function getHubSpotLeadSourceOptions() {
+  let property = null;
+  try {
+    property = await resolveHubSpotLeadSourceProperty();
+  } catch (error) {
+    console.error('HubSpot lead source property lookup failed; using configured fallback options:', error.message);
+    return {
+      propertyName: HUBSPOT_LEAD_SOURCE_PROPERTY,
+      label: HUBSPOT_LEAD_SOURCE_PROPERTY_LABEL,
+      options: HUBSPOT_LEAD_SOURCE_FALLBACK_OPTIONS.map(option => ({ label: option, value: option })),
+      fallback: true
+    };
+  }
+
+  const options = Array.isArray(property.options)
+    ? property.options
+      .filter(option => !option.hidden && cleanTextValue(option.value))
+      .map(option => ({
+        label: cleanTextValue(option.label) || cleanTextValue(option.value),
+        value: cleanTextValue(option.value)
+      }))
+    : [];
+
+  if (!options.length) {
+    console.error(`HubSpot property "${property.label || property.name}" has no readable options; using configured fallback options.`);
+    return {
+      propertyName: property.name,
+      label: property.label || property.name,
+      options: HUBSPOT_LEAD_SOURCE_FALLBACK_OPTIONS.map(option => ({ label: option, value: option })),
+      fallback: true
+    };
+  }
+
+  return {
+    propertyName: property.name,
+    label: property.label || property.name,
+    options
+  };
+}
+
+async function buildHubSpotLeadSourceProperties(sale) {
+  const selectedValue = cleanTextValue(sale.leadSource || sale.hubspotLeadSource);
+  if (!selectedValue) return {};
+
+  const { propertyName, options } = await getHubSpotLeadSourceOptions();
+  const matchingOption = options.find(option => option.value === selectedValue || option.label === selectedValue);
+  if (!matchingOption) {
+    throw new Error('Selected lead source is not a valid HubSpot option.');
+  }
+
+  return { [propertyName]: matchingOption.value };
+}
+
 function buildHubSpotDealNames(sale) {
   const saleNumber = cleanTextValue(sale.orderId || sale.saleNumber || sale.reference);
   const customerName = cleanTextValue(sale.customerName);
@@ -831,6 +943,7 @@ async function createHubSpotDeal(sale, contactId) {
   const { saleNumber, dealName } = buildHubSpotDealNames(sale);
   const amount = parseMoneyValue(sale.amount || sale.total);
   const ownerId = await getHubSpotOwnerIdForSale(sale);
+  const leadSourceProperties = await buildHubSpotLeadSourceProperties(sale);
 
   const properties = cleanHubSpotProperties({
     dealname: dealName,
@@ -839,6 +952,7 @@ async function createHubSpotDeal(sale, contactId) {
     amount,
     hubspot_owner_id: ownerId
   });
+  Object.assign(properties, leadSourceProperties);
 
   if (HUBSPOT_CIN7_SALE_PROPERTY && saleNumber) {
     properties[HUBSPOT_CIN7_SALE_PROPERTY] = HUBSPOT_CIN7_SALE_PROPERTY === HUBSPOT_CIN7_ORDER_NAME_PROPERTY
@@ -4268,6 +4382,23 @@ app.get('/api/containers', async (req, res) => {
   }
 });
 
+app.get('/api/hubspot/lead-source-options', async (req, res) => {
+  if (!isHubSpotConfigured()) {
+    return res.status(503).json({
+      error: 'HubSpot is not configured. Set HUBSPOT_ACCESS_TOKEN and HUBSPOT_DEAL_STAGE on the server.'
+    });
+  }
+
+  try {
+    const payload = await getHubSpotLeadSourceOptions();
+    res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
+    return res.json({ ok: true, ...payload });
+  } catch (error) {
+    console.error('HubSpot lead source option lookup failed:', error);
+    return res.status(502).json({ error: error.message || 'Could not load HubSpot lead sources.' });
+  }
+});
+
 app.post('/api/hubspot/create-deal', async (req, res) => {
   if (!isHubSpotConfigured()) {
     return res.status(503).json({
@@ -4295,6 +4426,7 @@ app.post('/api/hubspot/create-deal', async (req, res) => {
 
     if (existingDeal?.id) {
       const ownerId = await getHubSpotOwnerIdForSale(sale);
+      const leadSourceProperties = await buildHubSpotLeadSourceProperties(sale);
       const orderDealAssociation = await associateCin7OrderDealIfAvailable(existingDeal.id, saleNumber).catch(error => {
         console.error('HubSpot existing Cin7 order deal association failed:', error.message);
         return { associated: false, skipped: false, reason: 'error', error: error.message };
@@ -4304,7 +4436,8 @@ app.post('/api/hubspot/create-deal', async (req, res) => {
         hubspot_owner_id: ownerId,
         dealstage: HUBSPOT_DEAL_STAGE,
         pipeline: HUBSPOT_DEAL_PIPELINE,
-        amount
+        amount,
+        ...leadSourceProperties
       }).catch(error => {
         console.error('HubSpot existing deal update failed:', error.message);
         return null;

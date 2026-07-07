@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.12.29
+// @version      1.12.30
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.29
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.29
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.30
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.30
 // ==/UserScript==
 
 (function () {
@@ -27,6 +27,7 @@
   const QUOTE_REVIEW_API_URL = 'https://living-culture-workflow.vercel.app/api/quote-reviews';
   const WORKFLOW_PLANNER_URL = 'https://living-culture-workflow.vercel.app/';
   const HUBSPOT_API_URL = 'https://living-culture-workflow.vercel.app/api/hubspot/create-deal';
+  const HUBSPOT_LEAD_SOURCE_OPTIONS_URL = 'https://living-culture-workflow.vercel.app/api/hubspot/lead-source-options';
   const API_KEY = '';
   const STATUSES = ['To be confirmed', 'Site Visit Confirmed', 'Completed', 'Hold'];
   const POPUP_STATUSES = ['To be confirmed', 'Site Visit Confirmed'];
@@ -1279,22 +1280,119 @@
     }).join('\n');
   }
 
-  function submitHubSpotDeal(button) {
+  function fetchHubSpotLeadSourceOptions() {
+    return new Promise((resolve, reject) => {
+      GM_xmlhttpRequest({
+        method: 'GET',
+        url: HUBSPOT_LEAD_SOURCE_OPTIONS_URL,
+        onload: (response) => {
+          try {
+            const data = JSON.parse(response.responseText || '{}');
+            if (response.status >= 200 && response.status < 300 && data.ok) {
+              const options = Array.isArray(data.options) ? data.options : [];
+              resolve({
+                label: clean(data.label) || 'Lead Source',
+                options: options
+                  .map(option => ({
+                    label: clean(option.label) || clean(option.value),
+                    value: clean(option.value)
+                  }))
+                  .filter(option => option.value)
+              });
+              return;
+            }
+            reject(new Error(data.error || `Lead source lookup failed (${response.status}).`));
+          } catch (error) {
+            reject(error);
+          }
+        },
+        onerror: () => reject(new Error('Could not load HubSpot lead sources.'))
+      });
+    });
+  }
+
+  function closeHubSpotLeadSourceModal() {
+    const overlay = document.getElementById('lc-hs-lead-source-overlay');
+    if (overlay) overlay.remove();
+  }
+
+  function chooseHubSpotLeadSource() {
+    ensureStyles();
+    return fetchHubSpotLeadSourceOptions().then(({ label, options }) => {
+      if (!options.length) {
+        throw new Error('No HubSpot lead source options are available.');
+      }
+
+      return new Promise((resolve) => {
+        closeHubSpotLeadSourceModal();
+        const overlay = document.createElement('div');
+        overlay.id = 'lc-hs-lead-source-overlay';
+        overlay.innerHTML = `
+          <div class="lc-hs-lead-source-panel">
+            <h3>Create HubSpot Deal</h3>
+            <label for="lcHsLeadSourceSelect">${escapeHtml(label)}</label>
+            <select id="lcHsLeadSourceSelect">
+              <option value="">Choose lead source...</option>
+              ${options.map(option => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`).join('')}
+            </select>
+            <div class="lc-hs-lead-source-actions">
+              <button type="button" class="lc-hs-lead-source-primary" id="lcHsLeadSourceContinue">Continue</button>
+              <button type="button" class="lc-hs-lead-source-cancel" id="lcHsLeadSourceCancel">Cancel</button>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(overlay);
+
+        const select = document.getElementById('lcHsLeadSourceSelect');
+        const finish = (selection) => {
+          closeHubSpotLeadSourceModal();
+          resolve(selection);
+        };
+        document.getElementById('lcHsLeadSourceContinue').addEventListener('click', () => {
+          const selected = options.find(option => option.value === clean(select.value));
+          if (!selected) {
+            window.alert('Choose a lead source before continuing.');
+            return;
+          }
+          finish(selected);
+        });
+        document.getElementById('lcHsLeadSourceCancel').addEventListener('click', () => finish(null));
+        overlay.addEventListener('click', event => {
+          if (event.target === overlay) finish(null);
+        });
+        select.focus();
+      });
+    });
+  }
+
+  async function submitHubSpotDeal(button) {
     const payload = hubspotDraft();
-    const lineItemDetails = hubspotLineItemSummary(payload.lineItems);
-    const summary = [
-      payload.orderId ? `Sale: ${payload.orderId}` : '',
-      payload.customerName ? `Customer: ${payload.customerName}` : '',
-      payload.phone ? `Phone: ${payload.phone}` : '',
-      payload.amount ? `Amount: ${payload.amount}` : '',
-      payload.lineItems?.length ? `Line items: ${payload.lineItems.length}` : '',
-      lineItemDetails
-    ].filter(Boolean).join('\n');
 
     if (!payload.customerName && !payload.email && !payload.phone) {
       window.alert('Customer name, email, or phone is required before creating a HubSpot deal.');
       return;
     }
+
+    let leadSource = null;
+    try {
+      leadSource = await chooseHubSpotLeadSource();
+    } catch (error) {
+      window.alert(error.message || 'Could not load HubSpot lead sources.');
+      return;
+    }
+    if (!leadSource) return;
+    payload.leadSource = leadSource.value;
+
+    const lineItemDetails = hubspotLineItemSummary(payload.lineItems);
+    const summary = [
+      payload.orderId ? `Sale: ${payload.orderId}` : '',
+      payload.customerName ? `Customer: ${payload.customerName}` : '',
+      payload.phone ? `Phone: ${payload.phone}` : '',
+      leadSource.label ? `Lead Source: ${leadSource.label}` : '',
+      payload.amount ? `Amount: ${payload.amount}` : '',
+      payload.lineItems?.length ? `Line items: ${payload.lineItems.length}` : '',
+      lineItemDetails
+    ].filter(Boolean).join('\n');
 
     if (!window.confirm(`Create HubSpot deal?\n\n${summary || 'Cin7 sale details will be sent to HubSpot.'}`)) {
       return;
@@ -1457,6 +1555,15 @@
       .lc-sv-msg{font-size:12px;font-weight:700;min-height:16px}
       .lc-sv-msg.error{color:#9b2d25}
       .lc-sv-msg.ok{color:#2d7a45}
+      #lc-hs-lead-source-overlay{position:fixed;inset:0;background:rgba(0,0,0,.38);z-index:2147483646;display:flex;align-items:center;justify-content:center;font-family:Arial,sans-serif}
+      .lc-hs-lead-source-panel{width:min(420px,92vw);background:#fff;border:1px solid #d3dedb;border-radius:10px;box-shadow:0 18px 44px rgba(0,0,0,.28);padding:18px;display:grid;gap:12px}
+      .lc-hs-lead-source-panel h3{margin:0;color:#253b36;font-size:22px;line-height:1.2}
+      .lc-hs-lead-source-panel label{font-size:12px;font-weight:800;color:#365f59}
+      .lc-hs-lead-source-panel select{border:1px solid #b9c8c5;border-radius:8px;padding:10px;font-size:14px;color:#2e2e2e;background:#fff}
+      .lc-hs-lead-source-actions{display:flex;gap:10px;justify-content:flex-end}
+      .lc-hs-lead-source-actions button{border:1px solid #b6c8c5;border-radius:8px;padding:9px 12px;font-weight:800;cursor:pointer}
+      .lc-hs-lead-source-primary{background:#ff5c35;border-color:#ff5c35;color:#fff}
+      .lc-hs-lead-source-cancel{background:#fff;color:#305f58}
       @media (max-width:680px){.lc-sv-grid{grid-template-columns:1fr}}
     `;
     document.head.appendChild(style);
