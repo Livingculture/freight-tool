@@ -4390,15 +4390,15 @@ function makePartialStreetAddressQueries(addressText) {
 }
 
 function getManualAddressFallback(addressText) {
-  const address = formatCin7CheckoutAddress(addressText) ||
-    normaliseSuggestion(String(addressText || ''));
-  if (!address.includes(',') || !/\bnew zealand\b/i.test(address)) return [];
+  const formattedAddress = formatCin7CheckoutAddress(addressText);
+  const address = formattedAddress || normaliseSuggestion(String(addressText || ''));
+  if (!address.includes(',') || !/\bnew zealand\b/i.test(address) || !parseNewZealandAddress(address)) return [];
   return [address];
 }
 
 function parseNewZealandAddress(addressText) {
   const address = normaliseSuggestion(String(addressText || ''));
-  const withoutCountry = address.replace(/,\s*New Zealand$/i, '');
+  const withoutCountry = address.replace(/(?:,\s*|\s+)New Zealand$/i, '');
   if (withoutCountry === address) return null;
 
   const parts = withoutCountry.split(',').map(part => part.trim()).filter(Boolean);
@@ -4433,12 +4433,14 @@ function inferNewZealandRegion(city, postcode) {
     ['blenheim', 'Marlborough'],
     ['christchurch', 'Canterbury'],
     ['dunedin', 'Otago'],
-    ['invercargill', 'Southland']
+    ['invercargill', 'Southland'],
+    ['coopers beach', 'Northland']
   ]);
   const cityRegion = cityRegions.get(String(city || '').toLowerCase());
   if (cityRegion) return cityRegion;
 
   const postalNumber = Number.parseInt(postcode, 10);
+  if (postalNumber >= 100 && postalNumber <= 599) return 'Northland';
   if (postalNumber >= 600 && postalNumber <= 2699) return 'Auckland';
   if (postalNumber >= 3000 && postalNumber <= 3199) return 'Bay of Plenty';
   if (postalNumber >= 3200 && postalNumber <= 3999) return 'Waikato';
@@ -4482,6 +4484,16 @@ async function fillManualCheckoutAddress(page, addressText) {
 
 function formatCin7CheckoutAddress(addressText) {
   const address = normaliseSuggestion(String(addressText || ''));
+  const regionOnlyMatch = address.match(
+    /^(.*?\b(?:road|rd|street|st|avenue|ave|drive|dr|place|pl|crescent|cres|lane|ln|parade|terrace|tce|close|court|ct|way|highway|hwy))\s*,\s*(.+?)\s+region\s+(\d{4})\s+new zealand$/i
+  );
+
+  if (regionOnlyMatch) {
+    const [, street, cityAndRegion, postcode] = regionOnlyMatch;
+    const city = stripTrailingNewZealandRegion(cityAndRegion);
+    return `${street}, ${city} ${postcode}, New Zealand`;
+  }
+
   const regionMatch = address.match(
     /^(.*?\b(?:road|rd|street|st|avenue|ave|drive|dr|place|pl|crescent|cres|lane|ln|parade|terrace|tce|close|court|ct|way|highway|hwy))\s+([^,]+),\s*(.+?)\s+([a-z][a-z -]+?)\s+region\s+(\d{4})\s+new zealand$/i
   );
@@ -4500,6 +4512,36 @@ function formatCin7CheckoutAddress(addressText) {
   const [, street, suburb, cityText, postcode] = cin7Match;
   const city = normaliseRepeatedAddressWords(cityText);
   return `${street}, ${suburb}, ${city} ${postcode}, New Zealand`;
+}
+
+function stripTrailingNewZealandRegion(text) {
+  const value = normaliseSuggestion(String(text || ''));
+  const regions = [
+    'Bay of Plenty',
+    'Hawke’s Bay',
+    'Hawkes Bay',
+    'Manawatū-Whanganui',
+    'Manawatu-Whanganui',
+    'Northland',
+    'Auckland',
+    'Waikato',
+    'Gisborne',
+    'Taranaki',
+    'Wellington',
+    'Nelson',
+    'Marlborough',
+    'Canterbury',
+    'Otago',
+    'Southland'
+  ];
+
+  for (const region of regions) {
+    const pattern = new RegExp(`\\s+${region.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+    const stripped = value.replace(pattern, '').trim();
+    if (stripped && stripped !== value) return stripped;
+  }
+
+  return value;
 }
 
 function normaliseRepeatedAddressWords(text) {
