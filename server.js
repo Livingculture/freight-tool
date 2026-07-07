@@ -1128,6 +1128,7 @@ async function buildHubSpotOrderDealProperties(saleNumber, sale = {}) {
 
   const propertyNames = await getHubSpotDealOrderPropertyNames();
   const properties = {};
+  Object.assign(properties, await buildHubSpotLeadSourceProperties(sale));
   const orderNameProperty = [
     HUBSPOT_CIN7_ORDER_NAME_PROPERTY,
     HUBSPOT_CIN7_SALE_PROPERTY,
