@@ -12,6 +12,7 @@
     "start": "electron .",
     "dev": "electron .",
     "start:web": "node server.js",
+    "vercel-build": "node --check server.js && node --check api/index.js",
     "prepare-browser:mac": "node scripts/prepare-bundled-browser.js darwin",
     "prepare-browser:win": "node scripts/prepare-bundled-browser.js win32",
     "package:mac": "npm run prepare-browser:mac && electron-builder --mac",
