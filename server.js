@@ -4510,32 +4510,6 @@ app.get('/api/hubspot/lead-source-options', async (req, res) => {
   }
 });
 
-app.get('/api/hubspot/pipeline-stages', async (req, res) => {
-  if (!isHubSpotConfigured()) {
-    return res.status(503).json({ error: 'HubSpot is not configured.' });
-  }
-
-  try {
-    const payload = await hubspotRequest('/crm/v3/pipelines/deals');
-    return res.json({
-      ok: true,
-      currentPipeline: HUBSPOT_DEAL_PIPELINE,
-      currentStage: HUBSPOT_DEAL_STAGE,
-      pipelines: (Array.isArray(payload.results) ? payload.results : []).map(pipeline => ({
-        id: pipeline.id,
-        label: pipeline.label,
-        stages: (Array.isArray(pipeline.stages) ? pipeline.stages : []).map(stage => ({
-          id: stage.id,
-          label: stage.label
-        }))
-      }))
-    });
-  } catch (error) {
-    console.error('HubSpot pipeline stage lookup failed:', error);
-    return res.status(502).json({ error: error.message || 'Could not load HubSpot pipeline stages.' });
-  }
-});
-
 app.post('/api/hubspot/create-deal', async (req, res) => {
   if (!isHubSpotConfigured()) {
     return res.status(503).json({
