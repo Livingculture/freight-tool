@@ -39,6 +39,8 @@ const HUBSPOT_ACCESS_TOKEN = process.env.HUBSPOT_ACCESS_TOKEN ||
   process.env.HUBSPOT_API_KEY;
 const HUBSPOT_DEAL_PIPELINE = process.env.HUBSPOT_DEAL_PIPELINE || process.env.HUBSPOT_PIPELINE || '';
 const HUBSPOT_DEAL_STAGE = process.env.HUBSPOT_DEAL_STAGE || process.env.HUBSPOT_DEALSTAGE || '';
+const HUBSPOT_ORDER_DEAL_PIPELINE = process.env.HUBSPOT_ORDER_DEAL_PIPELINE || '790272560';
+const HUBSPOT_ORDER_DEAL_STAGE = process.env.HUBSPOT_ORDER_DEAL_STAGE || '2688209343';
 const HUBSPOT_CIN7_SALE_PROPERTY = process.env.HUBSPOT_CIN7_SALE_PROPERTY || '';
 const HUBSPOT_CIN7_ORDER_NAME_PROPERTY = process.env.HUBSPOT_CIN7_ORDER_NAME_PROPERTY || '';
 const HUBSPOT_CIN7_ORDER_AMOUNT_PROPERTY = process.env.HUBSPOT_CIN7_ORDER_AMOUNT_PROPERTY || '';
@@ -1090,6 +1092,26 @@ function getCin7OrderDealName(saleNumber) {
   return saleId ? `${saleId} (DEAR)` : '';
 }
 
+async function createHubSpotCin7OrderDeal(saleNumber, sale = {}) {
+  const orderDealName = getCin7OrderDealName(saleNumber);
+  if (!orderDealName) return null;
+
+  const amount = parseMoneyValue(sale.amount || sale.total);
+  const ownerId = await getHubSpotOwnerIdForSale(sale);
+  const properties = cleanHubSpotProperties({
+    dealname: orderDealName,
+    pipeline: HUBSPOT_ORDER_DEAL_PIPELINE,
+    dealstage: HUBSPOT_ORDER_DEAL_STAGE,
+    amount,
+    hubspot_owner_id: ownerId
+  });
+
+  return hubspotRequest('/crm/v3/objects/deals', {
+    method: 'POST',
+    body: { properties }
+  });
+}
+
 async function createHubSpotDeal(sale, contactId) {
   const { saleNumber, dealName } = buildHubSpotDealNames(sale);
   const amount = parseMoneyValue(sale.amount || sale.total);
@@ -1221,20 +1243,28 @@ async function associateCin7OrderDealIfAvailable(customerDealId, saleNumber, sal
     return { associated: false, skipped: true, reason: 'missing_order_number' };
   }
 
-  const orderDeal = await findHubSpotDealByName(orderDealName, ['amount'])
+  let orderDeal = await findHubSpotDealByName(orderDealName, ['amount'])
     || await findHubSpotDealByOrderNumber(saleNumber, ['amount'], {
       customerName: sale.customerName,
       excludeDealId: dealId
     });
+  let orderDealCreated = false;
   if (!orderDeal?.id) {
-    const searchedProperties = await getHubSpotDealOrderPropertyNames().catch(() => []);
-    return {
-      associated: false,
-      skipped: true,
-      reason: 'order_deal_not_found',
-      orderDealName,
-      searchedProperties: searchedProperties.slice(0, 20)
-    };
+    orderDeal = await createHubSpotCin7OrderDeal(saleNumber, sale).catch((error) => {
+      console.error('HubSpot Cin7 order deal creation failed:', error.message);
+      return null;
+    });
+    orderDealCreated = Boolean(orderDeal?.id);
+    if (!orderDeal?.id) {
+      const searchedProperties = await getHubSpotDealOrderPropertyNames().catch(() => []);
+      return {
+        associated: false,
+        skipped: true,
+        reason: 'order_deal_not_found',
+        orderDealName,
+        searchedProperties: searchedProperties.slice(0, 20)
+      };
+    }
   }
   const orderDealAmount = parseMoneyValue(orderDeal.properties?.amount);
   if (String(orderDeal.id) === String(dealId)) {
@@ -1266,6 +1296,7 @@ async function associateCin7OrderDealIfAvailable(customerDealId, saleNumber, sal
     orderDealId: orderDeal.id,
     orderDealName,
     orderDealAmount,
+    orderDealCreated,
     customerToOrderAssociated: customerToOrderLinked || customerToOrderAssociated,
     orderToCustomerAssociated: orderToCustomerLinked || orderToCustomerAssociated
   };
