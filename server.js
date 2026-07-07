@@ -39,10 +39,10 @@ const HUBSPOT_ACCESS_TOKEN = process.env.HUBSPOT_ACCESS_TOKEN ||
   process.env.HUBSPOT_API_KEY;
 const HUBSPOT_DEAL_PIPELINE = process.env.HUBSPOT_DEAL_PIPELINE || process.env.HUBSPOT_PIPELINE || '';
 const HUBSPOT_DEAL_STAGE = process.env.HUBSPOT_DEAL_STAGE || process.env.HUBSPOT_DEALSTAGE || '';
-const HUBSPOT_CIN7_SALE_PROPERTY = process.env.HUBSPOT_CIN7_SALE_PROPERTY || '';
-const HUBSPOT_CIN7_ORDER_NAME_PROPERTY = process.env.HUBSPOT_CIN7_ORDER_NAME_PROPERTY || '';
-const HUBSPOT_CIN7_ORDER_AMOUNT_PROPERTY = process.env.HUBSPOT_CIN7_ORDER_AMOUNT_PROPERTY || '';
-const HUBSPOT_CIN7_SALE_URL_PROPERTY = process.env.HUBSPOT_CIN7_SALE_URL_PROPERTY || '';
+const HUBSPOT_CIN7_SALE_PROPERTY = process.env.HUBSPOT_CIN7_SALE_PROPERTY || 'cin7_order_name';
+const HUBSPOT_CIN7_ORDER_NAME_PROPERTY = process.env.HUBSPOT_CIN7_ORDER_NAME_PROPERTY || 'cin7_order_name';
+const HUBSPOT_CIN7_ORDER_AMOUNT_PROPERTY = process.env.HUBSPOT_CIN7_ORDER_AMOUNT_PROPERTY || 'cin7_order_amount';
+const HUBSPOT_CIN7_SALE_URL_PROPERTY = process.env.HUBSPOT_CIN7_SALE_URL_PROPERTY || 'cin7_sale_url';
 const HUBSPOT_LEAD_SOURCE_PROPERTY = process.env.HUBSPOT_LEAD_SOURCE_PROPERTY || 'leads_source';
 const HUBSPOT_LEAD_SOURCE_PROPERTY_LABEL = process.env.HUBSPOT_LEAD_SOURCE_PROPERTY_LABEL || 'Leads Source';
 const HUBSPOT_LEAD_SOURCE_FALLBACK_OPTIONS = [
@@ -742,8 +742,12 @@ async function buildHubSpotLeadSourceProperties(sale) {
 function buildHubSpotDealNames(sale) {
   const saleNumber = cleanTextValue(sale.orderId || sale.saleNumber || sale.reference);
   const customerName = cleanTextValue(sale.customerName);
+  const phone = cleanTextValue(sale.phone);
   const dateFallback = new Date().toISOString().slice(0, 10);
-  const baseName = customerName || saleNumber || dateFallback;
+  const baseName = [saleNumber, customerName, phone].filter(Boolean).join(' - ') ||
+    customerName ||
+    saleNumber ||
+    dateFallback;
   const dealName = cleanTextValue(sale.dealName) || baseName || 'Cin7 Sale';
   const legacyName = saleNumber || customerName
     ? `Cin7 Sale ${saleNumber || dateFallback} - ${customerName || 'Cin7 customer'}`
@@ -1076,6 +1080,113 @@ async function associateCin7OrderDealIfAvailable(customerDealId, saleNumber) {
 
   await associateHubSpotDealToDeal(dealId, orderDeal.id);
   return { associated: true, skipped: false, orderDealId: orderDeal.id, orderDealName, orderDealAmount };
+}
+
+function normaliseHubSpotLineItem(item) {
+  const name = cleanTextValue(item?.name || item?.description || item?.product);
+  if (!name) return null;
+  const quantity = Number(cleanTextValue(item?.quantity || item?.qty || 1).replace(/,/g, ''));
+  const price = parseMoneyValue(item?.price || item?.unitPrice || item?.total);
+  const total = parseMoneyValue(item?.total || item?.amount);
+  return {
+    name,
+    quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : 1,
+    price: price || (total && quantity ? total / quantity : 0),
+    sku: cleanTextValue(item?.sku)
+  };
+}
+
+async function getAssociatedHubSpotLineItems(dealId) {
+  const id = cleanTextValue(dealId);
+  if (!id) return [];
+
+  const query = new URLSearchParams({ limit: '100' });
+  const payload = await hubspotRequest(`/crm/v4/objects/deals/${id}/associations/line_items?${query.toString()}`);
+  const ids = (Array.isArray(payload.results) ? payload.results : [])
+    .map(result => cleanTextValue(result.toObjectId || result.id))
+    .filter(Boolean);
+  if (!ids.length) return [];
+
+  const batch = await hubspotRequest('/crm/v3/objects/line_items/batch/read', {
+    method: 'POST',
+    body: {
+      properties: ['name', 'quantity', 'price', 'hs_sku'],
+      inputs: ids.map(lineItemId => ({ id: lineItemId }))
+    }
+  });
+  return Array.isArray(batch.results) ? batch.results : [];
+}
+
+function hubSpotLineItemKeyFromProperties(properties) {
+  return [
+    cleanTextValue(properties?.hs_sku).toLowerCase(),
+    cleanTextValue(properties?.name).toLowerCase()
+  ].filter(Boolean).join('|');
+}
+
+function hubSpotLineItemKey(item) {
+  return [
+    cleanTextValue(item?.sku).toLowerCase(),
+    cleanTextValue(item?.name).toLowerCase()
+  ].filter(Boolean).join('|');
+}
+
+async function associateHubSpotLineItemToDeal(lineItemId, dealId) {
+  const itemId = cleanTextValue(lineItemId);
+  const id = cleanTextValue(dealId);
+  if (!itemId || !id) return false;
+
+  await hubspotRequest(`/crm/v4/objects/line_items/${itemId}/associations/default/deals/${id}`, {
+    method: 'PUT'
+  });
+  return true;
+}
+
+async function createHubSpotLineItemsForDeal(dealId, lineItems) {
+  const id = cleanTextValue(dealId);
+  const items = Array.isArray(lineItems)
+    ? lineItems.map(normaliseHubSpotLineItem).filter(Boolean).slice(0, 50)
+    : [];
+  if (!id || !items.length) return { created: 0, skipped: 0, errors: [] };
+
+  let existingKeys = new Set();
+  try {
+    const existingItems = await getAssociatedHubSpotLineItems(id);
+    existingKeys = new Set(existingItems.map(item => hubSpotLineItemKeyFromProperties(item.properties || {})).filter(Boolean));
+  } catch (error) {
+    console.error('HubSpot existing line item lookup failed:', error.message);
+  }
+
+  const result = { created: 0, skipped: 0, errors: [] };
+  for (const item of items) {
+    const key = hubSpotLineItemKey(item);
+    if (key && existingKeys.has(key)) {
+      result.skipped += 1;
+      continue;
+    }
+
+    try {
+      const lineItem = await hubspotRequest('/crm/v3/objects/line_items', {
+        method: 'POST',
+        body: {
+          properties: cleanHubSpotProperties({
+            name: item.name,
+            quantity: item.quantity,
+            price: item.price,
+            hs_sku: item.sku
+          })
+        }
+      });
+      await associateHubSpotLineItemToDeal(lineItem.id, id);
+      result.created += 1;
+      if (key) existingKeys.add(key);
+    } catch (error) {
+      console.error('HubSpot line item creation failed:', error.message);
+      result.errors.push(error.message);
+    }
+  }
+
+  return result;
 }
 
 function getCachedCin7Availability(sku) {
@@ -4448,6 +4559,10 @@ app.post('/api/hubspot/create-deal', async (req, res) => {
           return false;
         })
         : false;
+      const lineItems = await createHubSpotLineItemsForDeal(existingDeal.id, sale.lineItems).catch(error => {
+        console.error('HubSpot existing deal line item creation failed:', error.message);
+        return { created: 0, skipped: 0, errors: [error.message] };
+      });
 
       return res.json({
         ok: true,
@@ -4457,6 +4572,7 @@ app.post('/api/hubspot/create-deal', async (req, res) => {
         contactAssociated,
         orderDealAssociated: Boolean(orderDealAssociation.associated),
         orderDealAssociation,
+        lineItems,
         contactCreated,
         contactId: contact?.id || '',
         dealId: existingDeal.id,
@@ -4482,12 +4598,17 @@ app.post('/api/hubspot/create-deal', async (req, res) => {
         return false;
       })
       : false;
+    const lineItems = await createHubSpotLineItemsForDeal(deal.id, sale.lineItems).catch(error => {
+      console.error('HubSpot new deal line item creation failed:', error.message);
+      return { created: 0, skipped: 0, errors: [error.message] };
+    });
     return res.status(201).json({
       ok: true,
       duplicate: false,
       contactAssociated,
       orderDealAssociated: Boolean(orderDealAssociation.associated),
       orderDealAssociation,
+      lineItems,
       amountUpdated: orderDealAmountUpdated,
       contactCreated,
       contactId: contact?.id || '',
