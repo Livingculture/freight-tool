@@ -9,6 +9,12 @@
       "excludeFiles": "{main.js,preload.js,renderer/**,scripts/**,userscripts/**,STAFF_SETUP*,README.md,inspect_cart.js,product_cart_inspect*.js}"
     }
   },
+  "crons": [
+    {
+      "path": "/api/hubspot/link-pending-orders",
+      "schedule": "0 * * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/(.*)",

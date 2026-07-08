@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.12.31
+// @version      1.12.32
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.31
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.31
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.32
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.32
 // ==/UserScript==
 
 (function () {
@@ -1492,7 +1492,9 @@
             copyTextToClipboard(data.hubspotUrl);
             const linkStatus = data.orderDealAssociated
               ? 'DEAR deal linked.'
-              : data.orderDealAssociation?.reason
+              : data.orderDealAssociation?.reason === 'order_deal_pending'
+                ? `DEAR deal not linked yet: waiting for Cin7 sync to create ${data.orderDealAssociation.orderDealName || 'the Order Deal'}.`
+                : data.orderDealAssociation?.reason
                 ? `DEAR deal not linked: ${data.orderDealAssociation.reason}.`
                 : 'DEAR deal not linked.';
             const lineItemStatus = data.lineItems

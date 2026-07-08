@@ -64,6 +64,7 @@ const HUBSPOT_DEFAULT_OWNER_EMAIL = process.env.HUBSPOT_DEFAULT_OWNER_EMAIL || '
 const HUBSPOT_DEFAULT_OWNER_NAME = process.env.HUBSPOT_DEFAULT_OWNER_NAME || '';
 const HUBSPOT_CREATE_MISSING_CONTACTS = process.env.HUBSPOT_CREATE_MISSING_CONTACTS === 'true';
 const HUBSPOT_PORTAL_ID = process.env.HUBSPOT_PORTAL_ID || process.env.HUBSPOT_ACCOUNT_ID || '';
+const CRON_SECRET = process.env.CRON_SECRET || '';
 const HUBSPOT_DEAL_TO_CONTACT_ASSOCIATION_TYPE_ID = Number(
   process.env.HUBSPOT_DEAL_TO_CONTACT_ASSOCIATION_TYPE_ID || 3
 );
@@ -1029,10 +1030,13 @@ function pickHubSpotOrderDealCandidate(deals, saleId, excludeDealId = '') {
   const candidates = (Array.isArray(deals) ? deals : [])
     .filter((deal) => cleanTextValue(deal?.id) !== excludedId)
     .filter((deal) => hubSpotDealContainsSaleId(deal, saleId));
+  const orderDealCandidates = candidates.filter((deal) =>
+    /\(DEAR\)/i.test(cleanTextValue(deal.properties?.dealname)) ||
+    (HUBSPOT_ORDER_DEAL_PIPELINE && cleanTextValue(deal.properties?.pipeline) === HUBSPOT_ORDER_DEAL_PIPELINE)
+  );
 
-  return candidates.find((deal) => /\(DEAR\)/i.test(cleanTextValue(deal.properties?.dealname)))
-    || candidates.find((deal) => /\(DEAR\)/i.test(cleanTextValue(deal.properties?.copy_order_deal_name)))
-    || candidates[0]
+  return orderDealCandidates.find((deal) => /\(DEAR\)/i.test(cleanTextValue(deal.properties?.dealname)))
+    || orderDealCandidates[0]
     || null;
 }
 
@@ -1044,7 +1048,7 @@ async function findHubSpotDealByOrderNumber(saleNumber, properties = [], options
   const excludeDealId = cleanTextValue(options.excludeDealId);
   const propertyNames = await getHubSpotDealOrderPropertyNames();
   const searchValues = Array.from(new Set([saleId, `${saleId} (DEAR)`]));
-  const returnProperties = Array.from(new Set(['dealname', 'amount', ...propertyNames, ...properties]));
+  const returnProperties = Array.from(new Set(['dealname', 'amount', 'pipeline', 'dealstage', ...propertyNames, ...properties]));
   const priorityProperties = propertyNames.slice(0, 12);
 
   for (let index = 0; index < priorityProperties.length; index += 5) {
@@ -1102,24 +1106,21 @@ function getCin7OrderDealName(saleNumber) {
   return saleId ? `${saleId} (DEAR)` : '';
 }
 
-async function createHubSpotCin7OrderDeal(saleNumber, sale = {}) {
+async function getHubSpotOrderDealNameProperty() {
+  const propertyNames = await getHubSpotDealOrderPropertyNames();
+  return [
+    HUBSPOT_CIN7_ORDER_NAME_PROPERTY,
+    HUBSPOT_CIN7_SALE_PROPERTY,
+    'copy_order_deal_name'
+  ].map(cleanTextValue).find((name) => name && propertyNames.includes(name));
+}
+
+async function buildHubSpotPendingOrderLinkProperties(saleNumber) {
   const orderDealName = getCin7OrderDealName(saleNumber);
-  if (!orderDealName) return null;
+  if (!orderDealName) return {};
 
-  const amount = parseMoneyValue(sale.amount || sale.total);
-  const ownerId = await getHubSpotOwnerIdForSale(sale);
-  const properties = cleanHubSpotProperties({
-    dealname: orderDealName,
-    pipeline: HUBSPOT_ORDER_DEAL_PIPELINE,
-    dealstage: HUBSPOT_ORDER_DEAL_STAGE,
-    amount,
-    hubspot_owner_id: ownerId
-  });
-
-  return hubspotRequest('/crm/v3/objects/deals', {
-    method: 'POST',
-    body: { properties }
-  });
+  const orderNameProperty = await getHubSpotOrderDealNameProperty();
+  return orderNameProperty ? { [orderNameProperty]: orderDealName } : {};
 }
 
 async function buildHubSpotOrderDealProperties(saleNumber, sale = {}) {
@@ -1129,11 +1130,7 @@ async function buildHubSpotOrderDealProperties(saleNumber, sale = {}) {
   const propertyNames = await getHubSpotDealOrderPropertyNames();
   const properties = {};
   Object.assign(properties, await buildHubSpotLeadSourceProperties(sale));
-  const orderNameProperty = [
-    HUBSPOT_CIN7_ORDER_NAME_PROPERTY,
-    HUBSPOT_CIN7_SALE_PROPERTY,
-    'copy_order_deal_name'
-  ].map(cleanTextValue).find((name) => name && propertyNames.includes(name));
+  const orderNameProperty = await getHubSpotOrderDealNameProperty();
   if (orderNameProperty) properties[orderNameProperty] = orderDealName;
 
   const amount = parseMoneyValue(sale.amount || sale.total);
@@ -1162,6 +1159,7 @@ async function createHubSpotDeal(sale, contactId) {
   const amount = parseMoneyValue(sale.amount || sale.total);
   const ownerId = await getHubSpotOwnerIdForSale(sale);
   const leadSourceProperties = await buildHubSpotLeadSourceProperties(sale);
+  const pendingOrderLinkProperties = await buildHubSpotPendingOrderLinkProperties(saleNumber);
 
   const properties = cleanHubSpotProperties({
     dealname: dealName,
@@ -1171,6 +1169,7 @@ async function createHubSpotDeal(sale, contactId) {
     hubspot_owner_id: ownerId
   });
   Object.assign(properties, leadSourceProperties);
+  Object.assign(properties, pendingOrderLinkProperties);
 
   if (HUBSPOT_CIN7_SALE_PROPERTY && saleNumber) {
     properties[HUBSPOT_CIN7_SALE_PROPERTY] = HUBSPOT_CIN7_SALE_PROPERTY === HUBSPOT_CIN7_ORDER_NAME_PROPERTY
@@ -1293,23 +1292,21 @@ async function associateCin7OrderDealIfAvailable(customerDealId, saleNumber, sal
       customerName: sale.customerName,
       excludeDealId: dealId
     });
-  let orderDealCreated = false;
   if (!orderDeal?.id) {
-    orderDeal = await createHubSpotCin7OrderDeal(saleNumber, sale).catch((error) => {
-      console.error('HubSpot Cin7 order deal creation failed:', error.message);
+    const pendingProperties = await buildHubSpotPendingOrderLinkProperties(saleNumber).catch(() => ({}));
+    await updateHubSpotDealProperties(dealId, pendingProperties).catch((error) => {
+      console.error('HubSpot pending order link marker update failed:', error.message);
       return null;
     });
-    orderDealCreated = Boolean(orderDeal?.id);
-    if (!orderDeal?.id) {
-      const searchedProperties = await getHubSpotDealOrderPropertyNames().catch(() => []);
-      return {
-        associated: false,
-        skipped: true,
-        reason: 'order_deal_not_found',
-        orderDealName,
-        searchedProperties: searchedProperties.slice(0, 20)
-      };
-    }
+    const searchedProperties = await getHubSpotDealOrderPropertyNames().catch(() => []);
+    return {
+      associated: false,
+      skipped: true,
+      pending: true,
+      reason: 'order_deal_pending',
+      orderDealName,
+      searchedProperties: searchedProperties.slice(0, 20)
+    };
   }
   const orderDealAmount = parseMoneyValue(orderDeal.properties?.amount);
   if (String(orderDeal.id) === String(dealId)) {
@@ -1347,10 +1344,99 @@ async function associateCin7OrderDealIfAvailable(customerDealId, saleNumber, sal
     orderDealId: orderDeal.id,
     orderDealName,
     orderDealAmount,
-    orderDealCreated,
+    orderDealCreated: false,
     orderDealLineItems,
     customerToOrderAssociated: customerToOrderLinked || customerToOrderAssociated,
     orderToCustomerAssociated: orderToCustomerLinked || orderToCustomerAssociated
+  };
+}
+
+function extractSaleNumberFromOrderDealName(value) {
+  const match = cleanTextValue(value).match(/\bNZSO-\d+\b/i);
+  return match ? match[0].toUpperCase() : '';
+}
+
+function isAuthorizedCronRequest(req) {
+  if (!CRON_SECRET) return true;
+  const headerValue = cleanTextValue(req.headers.authorization);
+  const bearerToken = headerValue.replace(/^Bearer\s+/i, '');
+  const querySecret = cleanTextValue(req.query?.secret);
+  const headerSecret = cleanTextValue(req.headers['x-cron-secret']);
+  return bearerToken === CRON_SECRET || querySecret === CRON_SECRET || headerSecret === CRON_SECRET;
+}
+
+async function findPendingHubSpotOrderLinks(limit = 100) {
+  const orderNameProperty = await getHubSpotOrderDealNameProperty();
+  if (!orderNameProperty) {
+    return { orderNameProperty: '', deals: [] };
+  }
+
+  const filters = [
+    { propertyName: orderNameProperty, operator: 'HAS_PROPERTY' }
+  ];
+  if (HUBSPOT_DEAL_PIPELINE) {
+    filters.push({ propertyName: 'pipeline', operator: 'EQ', value: HUBSPOT_DEAL_PIPELINE });
+  }
+
+  const payload = await hubspotRequest('/crm/v3/objects/deals/search', {
+    method: 'POST',
+    body: {
+      filterGroups: [{ filters }],
+      properties: ['dealname', 'amount', 'pipeline', 'dealstage', 'leads_source', orderNameProperty],
+      limit
+    }
+  });
+
+  return {
+    orderNameProperty,
+    deals: Array.isArray(payload.results) ? payload.results : []
+  };
+}
+
+async function linkPendingHubSpotOrderDeals({ limit = 100 } = {}) {
+  const { orderNameProperty, deals } = await findPendingHubSpotOrderLinks(limit);
+  const results = [];
+
+  for (const deal of deals) {
+    const saleNumber = extractSaleNumberFromOrderDealName(deal.properties?.[orderNameProperty]) ||
+      extractSaleNumberFromOrderDealName(deal.properties?.dealname);
+    if (!saleNumber) {
+      results.push({ dealId: deal.id, associated: false, skipped: true, reason: 'missing_order_number' });
+      continue;
+    }
+
+    const existingAssociatedDealIds = await getAssociatedHubSpotDealIds(deal.id).catch(() => []);
+    const alreadyLinked = Boolean(existingAssociatedDealIds.length);
+    if (alreadyLinked) {
+      results.push({ dealId: deal.id, saleNumber, associated: false, skipped: true, reason: 'already_has_deal_association' });
+      continue;
+    }
+
+    const association = await associateCin7OrderDealIfAvailable(deal.id, saleNumber, {
+      amount: deal.properties?.amount,
+      total: deal.properties?.amount,
+      leadSource: deal.properties?.leads_source
+    }).catch((error) => ({
+      associated: false,
+      skipped: false,
+      reason: 'error',
+      error: error.message
+    }));
+
+    results.push({
+      dealId: deal.id,
+      dealName: deal.properties?.dealname || '',
+      saleNumber,
+      ...association
+    });
+  }
+
+  return {
+    checked: deals.length,
+    linked: results.filter((result) => result.associated && !result.skipped).length,
+    alreadyLinked: results.filter((result) => result.reason === 'already_has_deal_association' || result.reason === 'already_associated').length,
+    pending: results.filter((result) => result.reason === 'order_deal_pending').length,
+    results
   };
 }
 
@@ -4824,6 +4910,27 @@ app.get('/api/hubspot/lead-source-options', async (req, res) => {
   }
 });
 
+app.all('/api/hubspot/link-pending-orders', async (req, res) => {
+  if (!isAuthorizedCronRequest(req)) {
+    return res.status(401).json({ ok: false, error: 'Unauthorized.' });
+  }
+  if (!isHubSpotConfigured()) {
+    return res.status(503).json({
+      ok: false,
+      error: 'HubSpot is not configured. Set HUBSPOT_ACCESS_TOKEN and HUBSPOT_DEAL_STAGE on the server.'
+    });
+  }
+
+  try {
+    const limit = Math.max(1, Math.min(100, Number(req.query?.limit || req.body?.limit || 100) || 100));
+    const result = await linkPendingHubSpotOrderDeals({ limit });
+    return res.json({ ok: true, ...result });
+  } catch (error) {
+    console.error('HubSpot pending order link failed:', error);
+    return res.status(502).json({ ok: false, error: error.message || 'HubSpot pending order link failed.' });
+  }
+});
+
 app.post('/api/hubspot/create-deal', async (req, res) => {
   if (!isHubSpotConfigured()) {
     return res.status(503).json({
@@ -4852,6 +4959,7 @@ app.post('/api/hubspot/create-deal', async (req, res) => {
     if (existingDeal?.id) {
       const ownerId = await getHubSpotOwnerIdForSale(sale);
       const leadSourceProperties = await buildHubSpotLeadSourceProperties(sale);
+      const pendingOrderLinkProperties = await buildHubSpotPendingOrderLinkProperties(saleNumber);
       const orderDealAssociation = await associateCin7OrderDealIfAvailable(existingDeal.id, saleNumber, sale).catch(error => {
         console.error('HubSpot existing Cin7 order deal association failed:', error.message);
         return { associated: false, skipped: false, reason: 'error', error: error.message };
@@ -4862,7 +4970,8 @@ app.post('/api/hubspot/create-deal', async (req, res) => {
         dealstage: HUBSPOT_DEAL_STAGE,
         pipeline: HUBSPOT_DEAL_PIPELINE,
         amount,
-        ...leadSourceProperties
+        ...leadSourceProperties,
+        ...pendingOrderLinkProperties
       }).catch(error => {
         console.error('HubSpot existing deal update failed:', error.message);
         return null;
