@@ -931,11 +931,13 @@ async function findExistingHubSpotDeal(dealNames, saleNumber) {
     for (const value of saleSearchValues) {
       const existingBySaleId = await searchHubSpotObject('deals', [
         { propertyName: HUBSPOT_CIN7_SALE_PROPERTY, operator: 'EQ', value }
-      ], ['dealname', 'amount', HUBSPOT_CIN7_SALE_PROPERTY]).catch(error => {
+      ], ['dealname', 'amount', 'pipeline', HUBSPOT_CIN7_SALE_PROPERTY]).catch(error => {
         console.error(`HubSpot deal search by ${HUBSPOT_CIN7_SALE_PROPERTY} failed:`, error.message);
         return null;
       });
-      if (existingBySaleId?.id) return existingBySaleId;
+      if (existingBySaleId?.id && (!HUBSPOT_DEAL_PIPELINE || existingBySaleId.properties?.pipeline === HUBSPOT_DEAL_PIPELINE)) {
+        return existingBySaleId;
+      }
     }
   }
 
@@ -1116,11 +1118,27 @@ async function getHubSpotOrderDealNameProperty() {
 }
 
 async function buildHubSpotPendingOrderLinkProperties(saleNumber) {
-  const orderDealName = getCin7OrderDealName(saleNumber);
-  if (!orderDealName) return {};
+  // Do not write pending Cin7/DEAR order fields onto Opp Deals. The native
+  // Cin7 integration may use those fields to decide whether an Order Deal
+  // already exists.
+  return {};
+}
 
-  const orderNameProperty = await getHubSpotOrderDealNameProperty();
-  return orderNameProperty ? { [orderNameProperty]: orderDealName } : {};
+async function clearHubSpotOppDealCin7MarkerProperties(dealId) {
+  const markerPropertyNames = [
+    HUBSPOT_CIN7_SALE_PROPERTY,
+    HUBSPOT_CIN7_ORDER_NAME_PROPERTY,
+    HUBSPOT_CIN7_ORDER_AMOUNT_PROPERTY,
+    HUBSPOT_CIN7_SALE_URL_PROPERTY,
+    'copy_order_deal_name'
+  ].map(cleanTextValue).filter(Boolean);
+  const uniqueNames = Array.from(new Set(markerPropertyNames));
+  if (!uniqueNames.length) return null;
+
+  return patchHubSpotDealProperties(
+    dealId,
+    Object.fromEntries(uniqueNames.map((propertyName) => [propertyName, '']))
+  );
 }
 
 async function buildHubSpotOrderDealProperties(saleNumber, sale = {}) {
@@ -1159,7 +1177,6 @@ async function createHubSpotDeal(sale, contactId) {
   const amount = parseMoneyValue(sale.amount || sale.total);
   const ownerId = await getHubSpotOwnerIdForSale(sale);
   const leadSourceProperties = await buildHubSpotLeadSourceProperties(sale);
-  const pendingOrderLinkProperties = await buildHubSpotPendingOrderLinkProperties(saleNumber);
 
   const properties = cleanHubSpotProperties({
     dealname: dealName,
@@ -1169,22 +1186,6 @@ async function createHubSpotDeal(sale, contactId) {
     hubspot_owner_id: ownerId
   });
   Object.assign(properties, leadSourceProperties);
-  Object.assign(properties, pendingOrderLinkProperties);
-
-  if (HUBSPOT_CIN7_SALE_PROPERTY && saleNumber) {
-    properties[HUBSPOT_CIN7_SALE_PROPERTY] = HUBSPOT_CIN7_SALE_PROPERTY === HUBSPOT_CIN7_ORDER_NAME_PROPERTY
-      ? `${saleNumber} (DEAR)`
-      : saleNumber;
-  }
-  if (HUBSPOT_CIN7_ORDER_NAME_PROPERTY && saleNumber) {
-    properties[HUBSPOT_CIN7_ORDER_NAME_PROPERTY] = `${saleNumber} (DEAR)`;
-  }
-  if (HUBSPOT_CIN7_ORDER_AMOUNT_PROPERTY && amount) {
-    properties[HUBSPOT_CIN7_ORDER_AMOUNT_PROPERTY] = amount;
-  }
-  if (HUBSPOT_CIN7_SALE_URL_PROPERTY && sale.sourceUrl) {
-    properties[HUBSPOT_CIN7_SALE_URL_PROPERTY] = sale.sourceUrl;
-  }
 
   const associations = contactId ? [{
     to: { id: String(contactId) },
@@ -1210,6 +1211,21 @@ async function updateHubSpotDealProperties(dealId, properties) {
   if (!cleanTextValue(dealId) || !Object.keys(cleanedProperties).length) return null;
 
   return hubspotRequest(`/crm/v3/objects/deals/${dealId}`, {
+    method: 'PATCH',
+    body: { properties: cleanedProperties }
+  });
+}
+
+async function patchHubSpotDealProperties(dealId, properties) {
+  const id = cleanTextValue(dealId);
+  const cleanedProperties = Object.fromEntries(
+    Object.entries(properties || {})
+      .map(([key, value]) => [cleanTextValue(key), value == null ? '' : String(value)])
+      .filter(([key]) => key)
+  );
+  if (!id || !Object.keys(cleanedProperties).length) return null;
+
+  return hubspotRequest(`/crm/v3/objects/deals/${id}`, {
     method: 'PATCH',
     body: { properties: cleanedProperties }
   });
@@ -1367,11 +1383,6 @@ async function associateCin7OrderDealIfAvailable(customerDealId, saleNumber, sal
       excludeDealId: dealId
     });
   if (!orderDeal?.id) {
-    const pendingProperties = await buildHubSpotPendingOrderLinkProperties(saleNumber).catch(() => ({}));
-    await updateHubSpotDealProperties(dealId, pendingProperties).catch((error) => {
-      console.error('HubSpot pending order link marker update failed:', error.message);
-      return null;
-    });
     const searchedProperties = await getHubSpotDealOrderPropertyNames().catch(() => []);
     return {
       associated: false,
@@ -1446,12 +1457,9 @@ function isAuthorizedCronRequest(req) {
 
 async function findPendingHubSpotOrderLinks(limit = 100) {
   const orderNameProperty = await getHubSpotOrderDealNameProperty();
-  if (!orderNameProperty) {
-    return { orderNameProperty: '', deals: [] };
-  }
-
+  const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
   const filters = [
-    { propertyName: orderNameProperty, operator: 'HAS_PROPERTY' }
+    { propertyName: 'createdate', operator: 'GTE', value: String(thirtyDaysAgo) }
   ];
   if (HUBSPOT_DEAL_PIPELINE) {
     filters.push({ propertyName: 'pipeline', operator: 'EQ', value: HUBSPOT_DEAL_PIPELINE });
@@ -1461,7 +1469,8 @@ async function findPendingHubSpotOrderLinks(limit = 100) {
     method: 'POST',
     body: {
       filterGroups: [{ filters }],
-      properties: ['dealname', 'amount', 'pipeline', 'dealstage', 'leads_source', orderNameProperty],
+      properties: ['dealname', 'amount', 'pipeline', 'dealstage', 'leads_source', 'createdate', orderNameProperty].filter(Boolean),
+      sorts: [{ propertyName: 'createdate', direction: 'DESCENDING' }],
       limit
     }
   });
@@ -1484,6 +1493,10 @@ async function linkPendingHubSpotOrderDeals({ limit = 100 } = {}) {
       continue;
     }
 
+    const cin7MarkersCleared = await clearHubSpotOppDealCin7MarkerProperties(deal.id).then(() => true).catch((error) => {
+      console.error('HubSpot pending Cin7 marker cleanup failed:', error.message);
+      return false;
+    });
     const association = await associateCin7OrderDealIfAvailable(deal.id, saleNumber, {
       amount: deal.properties?.amount,
       total: deal.properties?.amount,
@@ -1499,6 +1512,7 @@ async function linkPendingHubSpotOrderDeals({ limit = 100 } = {}) {
       dealId: deal.id,
       dealName: deal.properties?.dealname || '',
       saleNumber,
+      cin7MarkersCleared,
       ...association
     });
   }
@@ -5050,7 +5064,6 @@ app.post('/api/hubspot/create-deal', async (req, res) => {
     if (existingDeal?.id) {
       const ownerId = await getHubSpotOwnerIdForSale(sale);
       const leadSourceProperties = await buildHubSpotLeadSourceProperties(sale);
-      const pendingOrderLinkProperties = await buildHubSpotPendingOrderLinkProperties(saleNumber);
       const orderDealAssociation = await associateCin7OrderDealIfAvailable(existingDeal.id, saleNumber, sale).catch(error => {
         console.error('HubSpot existing Cin7 order deal association failed:', error.message);
         return { associated: false, skipped: false, reason: 'error', error: error.message };
@@ -5061,8 +5074,7 @@ app.post('/api/hubspot/create-deal', async (req, res) => {
         dealstage: HUBSPOT_DEAL_STAGE,
         pipeline: HUBSPOT_DEAL_PIPELINE,
         amount,
-        ...leadSourceProperties,
-        ...pendingOrderLinkProperties
+        ...leadSourceProperties
       }).catch(error => {
         console.error('HubSpot existing deal update failed:', error.message);
         return null;
@@ -5076,6 +5088,10 @@ app.post('/api/hubspot/create-deal', async (req, res) => {
       const lineItems = await createHubSpotLineItemsForDeal(existingDeal.id, sale.lineItems).catch(error => {
         console.error('HubSpot existing deal line item creation failed:', error.message);
         return { created: 0, skipped: 0, errors: [error.message] };
+      });
+      const cin7MarkersCleared = await clearHubSpotOppDealCin7MarkerProperties(existingDeal.id).then(() => true).catch(error => {
+        console.error('HubSpot existing deal Cin7 marker cleanup failed:', error.message);
+        return false;
       });
       const timelineActivity = sale.copyContactTimeline && contact?.id
         ? await copyHubSpotContactEmailActivityToDeal(contact.id, existingDeal.id).catch(error => {
@@ -5099,6 +5115,7 @@ app.post('/api/hubspot/create-deal', async (req, res) => {
         orderDealAssociated: Boolean(orderDealAssociation.associated),
         orderDealAssociation,
         lineItems,
+        cin7MarkersCleared,
         timelineActivity,
         contactCreated,
         contactId: contact?.id || '',
