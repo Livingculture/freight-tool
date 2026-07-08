@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.12.34
+// @version      1.12.35
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.34
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.34
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.35
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.35
 // ==/UserScript==
 
 (function () {
@@ -1392,6 +1392,83 @@
     });
   }
 
+  function hubSpotDealReview(payload, leadSource) {
+    ensureStyles();
+    closeHubSpotModal();
+    const lineItems = Array.isArray(payload.lineItems) ? payload.lineItems : [];
+
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.id = 'lc-hs-modal-overlay';
+      overlay.innerHTML = `
+        <div class="lc-hs-modal-panel lc-hs-review-panel">
+          <h3>Create HubSpot Deal?</h3>
+          <div class="lc-hs-modal-body">
+            ${payload.orderId ? `<p>Sale: ${escapeHtml(payload.orderId)}</p>` : ''}
+            ${payload.customerName ? `<p>Customer: ${escapeHtml(payload.customerName)}</p>` : ''}
+            ${payload.phone ? `<p>Phone: ${escapeHtml(payload.phone)}</p>` : ''}
+            ${leadSource?.label ? `<p>Lead Source: ${escapeHtml(leadSource.label)}</p>` : ''}
+            ${payload.amount ? `<p>Amount: ${escapeHtml(payload.amount)}</p>` : ''}
+            <p>Line items: <span id="lcHsSelectedLineItemCount">0</span></p>
+          </div>
+          ${lineItems.length ? `
+            <div class="lc-hs-line-review" aria-label="HubSpot line items">
+              ${lineItems.map((item, index) => {
+                const quantity = clean(item.quantity) || '1';
+                const name = clean(item.name);
+                const price = clean(item.price);
+                const total = clean(item.total);
+                const money = price ? `$${price}` : total ? `total $${total}` : 'price missing';
+                const checked = isHubSpotProductLineItem(item) ? 'checked' : '';
+                return `
+                  <label class="lc-hs-line-review-item">
+                    <input type="checkbox" data-line-index="${index}" ${checked}>
+                    <span>${escapeHtml(`${quantity} x ${name}: ${money}`)}</span>
+                  </label>
+                `;
+              }).join('')}
+            </div>
+          ` : ''}
+          <div class="lc-hs-lead-source-actions">
+            <button type="button" class="lc-hs-lead-source-cancel" id="lcHsModalCancel">Cancel</button>
+            <button type="button" class="lc-hs-modal-primary" id="lcHsModalPrimary">Create Deal</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+
+      const updateCount = () => {
+        const count = Array.from(overlay.querySelectorAll('input[data-line-index]:checked')).length;
+        const countNode = overlay.querySelector('#lcHsSelectedLineItemCount');
+        if (countNode) countNode.textContent = String(count);
+      };
+      updateCount();
+
+      const finish = (value) => {
+        closeHubSpotModal();
+        resolve(value);
+      };
+
+      overlay.querySelectorAll('input[data-line-index]').forEach(input => {
+        input.addEventListener('change', updateCount);
+      });
+      document.getElementById('lcHsModalPrimary').addEventListener('click', () => {
+        const selectedLineItems = Array.from(overlay.querySelectorAll('input[data-line-index]:checked'))
+          .map(input => lineItems[Number(input.getAttribute('data-line-index'))])
+          .filter(Boolean);
+        finish({
+          confirmed: true,
+          lineItems: selectedLineItems
+        });
+      });
+      document.getElementById('lcHsModalCancel').addEventListener('click', () => finish({ confirmed: false }));
+      overlay.addEventListener('click', event => {
+        if (event.target === overlay) finish({ confirmed: false });
+      });
+      document.getElementById('lcHsModalPrimary').focus();
+    });
+  }
+
   function chooseHubSpotLeadSource() {
     ensureStyles();
     return fetchHubSpotLeadSourceOptions().then(({ label, options }) => {
@@ -1459,21 +1536,11 @@
     if (!leadSource) return;
     payload.leadSource = leadSource.value;
 
-    const lineItemDetails = hubspotLineItemSummary(payload.lineItems);
-    const summary = [
-      payload.orderId ? `Sale: ${payload.orderId}` : '',
-      payload.customerName ? `Customer: ${payload.customerName}` : '',
-      payload.phone ? `Phone: ${payload.phone}` : '',
-      leadSource.label ? `Lead Source: ${leadSource.label}` : '',
-      payload.amount ? `Amount: ${payload.amount}` : '',
-      payload.lineItems?.length ? `Line items: ${payload.lineItems.length}` : '',
-      lineItemDetails
-    ].filter(Boolean).join('\n');
-
-    const confirmed = await hubSpotConfirm('Create HubSpot Deal?', summary || 'Cin7 sale details will be sent to HubSpot.');
-    if (!confirmed) {
+    const review = await hubSpotDealReview(payload, leadSource);
+    if (!review?.confirmed) {
       return;
     }
+    payload.lineItems = Array.isArray(review.lineItems) ? review.lineItems : [];
 
     const originalText = button.textContent;
     button.disabled = true;
@@ -1662,6 +1729,11 @@
       .lc-hs-modal-body{display:grid;gap:6px;color:#2e3f3b;font-size:15px;line-height:1.35}
       .lc-hs-modal-body p{margin:0;overflow-wrap:anywhere}
       .lc-hs-modal-gap{height:8px}
+      .lc-hs-review-panel{width:min(650px,94vw)}
+      .lc-hs-line-review{display:grid;gap:8px;max-height:340px;overflow:auto;border:1px solid #dbe5e2;border-radius:8px;padding:10px;background:#fbfdfc}
+      .lc-hs-line-review-item{display:grid;grid-template-columns:22px 1fr;gap:8px;align-items:start;color:#2e3f3b;font-size:15px;line-height:1.3}
+      .lc-hs-line-review-item input{margin-top:2px;width:16px;height:16px;accent-color:#ff5c35}
+      .lc-hs-line-review-item span{overflow-wrap:anywhere}
       .lc-hs-modal-primary{background:#ff5c35;border-color:#ff5c35!important;color:#fff}
       .lc-hs-modal-danger{background:#b42318;border-color:#b42318!important;color:#fff}
       @media (max-width:680px){.lc-sv-grid{grid-template-columns:1fr}}
