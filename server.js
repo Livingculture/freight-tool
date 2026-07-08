@@ -1314,10 +1314,15 @@ async function associateCin7OrderDealIfAvailable(customerDealId, saleNumber, sal
   }
 
   await updateHubSpotCin7OrderDealDetails(orderDeal.id, saleNumber, sale);
-  const orderDealLineItems = await createHubSpotLineItemsForDeal(orderDeal.id, sale.lineItems).catch((error) => {
-    console.error('HubSpot order deal line item creation failed:', error.message);
-    return { created: 0, skipped: 0, errors: [error.message] };
-  });
+  const orderDealLineItems = Array.isArray(sale.lineItems) && sale.lineItems.length
+    ? await createHubSpotLineItemsForDeal(orderDeal.id, sale.lineItems).catch((error) => {
+      console.error('HubSpot order deal line item creation failed:', error.message);
+      return { created: 0, skipped: 0, errors: [error.message] };
+    })
+    : await copyHubSpotLineItemsBetweenDeals(dealId, orderDeal.id).catch((error) => {
+      console.error('HubSpot order deal line item copy failed:', error.message);
+      return { created: 0, skipped: 0, errors: [error.message] };
+    });
 
   const customerAssociatedDealIds = await getAssociatedHubSpotDealIds(dealId);
   const orderAssociatedDealIds = await getAssociatedHubSpotDealIds(orderDeal.id);
@@ -1405,13 +1410,6 @@ async function linkPendingHubSpotOrderDeals({ limit = 100 } = {}) {
       continue;
     }
 
-    const existingAssociatedDealIds = await getAssociatedHubSpotDealIds(deal.id).catch(() => []);
-    const alreadyLinked = Boolean(existingAssociatedDealIds.length);
-    if (alreadyLinked) {
-      results.push({ dealId: deal.id, saleNumber, associated: false, skipped: true, reason: 'already_has_deal_association' });
-      continue;
-    }
-
     const association = await associateCin7OrderDealIfAvailable(deal.id, saleNumber, {
       amount: deal.properties?.amount,
       total: deal.properties?.amount,
@@ -1454,6 +1452,17 @@ function normaliseHubSpotLineItem(item) {
   };
 }
 
+function hubSpotLineItemFromProperties(properties = {}) {
+  const name = cleanTextValue(properties.name);
+  if (!name) return null;
+  return {
+    name,
+    quantity: cleanTextValue(properties.quantity) || '1',
+    price: parseMoneyValue(properties.price),
+    sku: cleanTextValue(properties.hs_sku)
+  };
+}
+
 async function getAssociatedHubSpotLineItems(dealId) {
   const id = cleanTextValue(dealId);
   if (!id) return [];
@@ -1473,6 +1482,14 @@ async function getAssociatedHubSpotLineItems(dealId) {
     }
   });
   return Array.isArray(batch.results) ? batch.results : [];
+}
+
+async function copyHubSpotLineItemsBetweenDeals(sourceDealId, targetDealId) {
+  const sourceItems = await getAssociatedHubSpotLineItems(sourceDealId);
+  const lineItems = sourceItems
+    .map(item => hubSpotLineItemFromProperties(item.properties || {}))
+    .filter(Boolean);
+  return createHubSpotLineItemsForDeal(targetDealId, lineItems);
 }
 
 function hubSpotLineItemKeyFromProperties(properties) {
