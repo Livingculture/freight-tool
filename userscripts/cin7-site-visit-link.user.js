@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.12.32
+// @version      1.12.33
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.32
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.32
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.33
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.33
 // ==/UserScript==
 
 (function () {
@@ -263,7 +263,7 @@
 
     for (const table of tables) {
       const headers = tableHeaderMap(table);
-      const productIndex = indexForHeader(headers, ['product', 'description']);
+      const productIndex = indexForHeader(headers, ['product']);
       const quantityIndex = indexForHeader(headers, ['quantity', 'qty']);
       const priceIndex = indexForHeader(headers, ['price', 'unit price']);
       const totalIndex = indexForHeader(headers, ['total', 'amount']);
