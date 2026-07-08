@@ -1232,6 +1232,80 @@ async function associateHubSpotDealToContact(dealId, contactId) {
   return true;
 }
 
+async function getAssociatedHubSpotObjectIds(fromType, fromId, toType, limit = 100) {
+  const sourceType = cleanTextValue(fromType);
+  const sourceId = cleanTextValue(fromId);
+  const targetType = cleanTextValue(toType);
+  if (!sourceType || !sourceId || !targetType) return [];
+
+  const ids = [];
+  let after = '';
+  do {
+    const query = new URLSearchParams({ limit: String(limit) });
+    if (after) query.set('after', after);
+    const payload = await hubspotRequest(`/crm/v4/objects/${sourceType}/${sourceId}/associations/${targetType}?${query.toString()}`);
+    for (const result of Array.isArray(payload.results) ? payload.results : []) {
+      const associatedId = cleanTextValue(result.toObjectId || result.id);
+      if (associatedId) ids.push(associatedId);
+    }
+    after = cleanTextValue(payload.paging?.next?.after);
+  } while (after && ids.length < limit);
+
+  return Array.from(new Set(ids)).slice(0, limit);
+}
+
+async function associateHubSpotObjectDefault(fromType, fromId, toType, toId) {
+  const sourceType = cleanTextValue(fromType);
+  const sourceId = cleanTextValue(fromId);
+  const targetType = cleanTextValue(toType);
+  const targetId = cleanTextValue(toId);
+  if (!sourceType || !sourceId || !targetType || !targetId) return false;
+
+  await hubspotRequest(`/crm/v4/objects/${sourceType}/${sourceId}/associations/default/${targetType}/${targetId}`, {
+    method: 'PUT'
+  });
+  return true;
+}
+
+async function copyHubSpotContactEmailActivityToDeal(contactId, dealId, { limit = 100 } = {}) {
+  const result = { requested: true, found: 0, associated: 0, skipped: 0, errors: [] };
+  const contact = cleanTextValue(contactId);
+  const deal = cleanTextValue(dealId);
+  if (!contact || !deal) {
+    result.errors.push('missing_contact_or_deal');
+    return result;
+  }
+
+  const contactEmailIds = await getAssociatedHubSpotObjectIds('contacts', contact, 'emails', limit);
+  result.found = contactEmailIds.length;
+  if (!contactEmailIds.length) return result;
+
+  const existingDealEmailIds = new Set(
+    await getAssociatedHubSpotObjectIds('deals', deal, 'emails', limit).catch((error) => {
+      console.error('HubSpot existing deal email activity lookup failed:', error.message);
+      return [];
+    })
+  );
+
+  for (const emailId of contactEmailIds) {
+    if (existingDealEmailIds.has(String(emailId))) {
+      result.skipped += 1;
+      continue;
+    }
+
+    try {
+      await associateHubSpotObjectDefault('emails', emailId, 'deals', deal);
+      existingDealEmailIds.add(String(emailId));
+      result.associated += 1;
+    } catch (error) {
+      console.error('HubSpot email activity deal association failed:', error.message);
+      result.errors.push(error.message);
+    }
+  }
+
+  return result;
+}
+
 async function getAssociatedHubSpotDealIds(dealId) {
   const id = cleanTextValue(dealId);
   if (!id) return [];
@@ -5003,6 +5077,18 @@ app.post('/api/hubspot/create-deal', async (req, res) => {
         console.error('HubSpot existing deal line item creation failed:', error.message);
         return { created: 0, skipped: 0, errors: [error.message] };
       });
+      const timelineActivity = sale.copyContactTimeline && contact?.id
+        ? await copyHubSpotContactEmailActivityToDeal(contact.id, existingDeal.id).catch(error => {
+          console.error('HubSpot existing deal email activity copy failed:', error.message);
+          return { requested: true, found: 0, associated: 0, skipped: 0, errors: [error.message] };
+        })
+        : null;
+      if (sale.copyContactTimeline && contact?.id && orderDealAssociation.orderDealId) {
+        orderDealAssociation.orderDealTimelineActivity = await copyHubSpotContactEmailActivityToDeal(contact.id, orderDealAssociation.orderDealId).catch(error => {
+          console.error('HubSpot existing order deal email activity copy failed:', error.message);
+          return { requested: true, found: 0, associated: 0, skipped: 0, errors: [error.message] };
+        });
+      }
 
       return res.json({
         ok: true,
@@ -5013,6 +5099,7 @@ app.post('/api/hubspot/create-deal', async (req, res) => {
         orderDealAssociated: Boolean(orderDealAssociation.associated),
         orderDealAssociation,
         lineItems,
+        timelineActivity,
         contactCreated,
         contactId: contact?.id || '',
         dealId: existingDeal.id,
@@ -5042,6 +5129,18 @@ app.post('/api/hubspot/create-deal', async (req, res) => {
       console.error('HubSpot new deal line item creation failed:', error.message);
       return { created: 0, skipped: 0, errors: [error.message] };
     });
+    const timelineActivity = sale.copyContactTimeline && contact?.id
+      ? await copyHubSpotContactEmailActivityToDeal(contact.id, deal.id).catch(error => {
+        console.error('HubSpot new deal email activity copy failed:', error.message);
+        return { requested: true, found: 0, associated: 0, skipped: 0, errors: [error.message] };
+      })
+      : null;
+    if (sale.copyContactTimeline && contact?.id && orderDealAssociation.orderDealId) {
+      orderDealAssociation.orderDealTimelineActivity = await copyHubSpotContactEmailActivityToDeal(contact.id, orderDealAssociation.orderDealId).catch(error => {
+        console.error('HubSpot new order deal email activity copy failed:', error.message);
+        return { requested: true, found: 0, associated: 0, skipped: 0, errors: [error.message] };
+      });
+    }
     return res.status(201).json({
       ok: true,
       duplicate: false,
@@ -5049,6 +5148,7 @@ app.post('/api/hubspot/create-deal', async (req, res) => {
       orderDealAssociated: Boolean(orderDealAssociation.associated),
       orderDealAssociation,
       lineItems,
+      timelineActivity,
       amountUpdated: orderDealAmountUpdated,
       contactCreated,
       contactId: contact?.id || '',

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.12.35
+// @version      1.12.36
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.35
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.35
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.36
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.36
 // ==/UserScript==
 
 (function () {
@@ -1411,6 +1411,10 @@
             ${payload.amount ? `<p>Amount: ${escapeHtml(payload.amount)}</p>` : ''}
             <p>Line items: <span id="lcHsSelectedLineItemCount">0</span></p>
           </div>
+          <label class="lc-hs-option-check">
+            <input type="checkbox" id="lcHsCopyContactTimeline" checked>
+            <span>Add existing contact email activity to this deal</span>
+          </label>
           ${lineItems.length ? `
             <div class="lc-hs-line-review" aria-label="HubSpot line items">
               ${lineItems.map((item, index) => {
@@ -1458,7 +1462,8 @@
           .filter(Boolean);
         finish({
           confirmed: true,
-          lineItems: selectedLineItems
+          lineItems: selectedLineItems,
+          copyContactTimeline: Boolean(overlay.querySelector('#lcHsCopyContactTimeline')?.checked)
         });
       });
       document.getElementById('lcHsModalCancel').addEventListener('click', () => finish({ confirmed: false }));
@@ -1541,6 +1546,7 @@
       return;
     }
     payload.lineItems = Array.isArray(review.lineItems) ? review.lineItems : [];
+    payload.copyContactTimeline = Boolean(review.copyContactTimeline);
 
     const originalText = button.textContent;
     button.disabled = true;
@@ -1582,12 +1588,21 @@
             const orderLineItemStatus = orderLineItems
               ? `DEAR line items: ${orderLineItems.created || 0} added, ${orderLineItems.skipped || 0} already there${orderLineItems.errors?.length ? `, ${orderLineItems.errors.length} error(s): ${orderLineItems.errors[0]}` : ''}.`
               : '';
+            const timelineStatus = data.timelineActivity
+              ? `Email activity: ${data.timelineActivity.associated || 0} added, ${data.timelineActivity.skipped || 0} already there${data.timelineActivity.errors?.length ? `, ${data.timelineActivity.errors.length} error(s): ${data.timelineActivity.errors[0]}` : ''}.`
+              : '';
+            const orderTimeline = data.orderDealAssociation?.orderDealTimelineActivity;
+            const orderTimelineStatus = orderTimeline
+              ? `DEAR email activity: ${orderTimeline.associated || 0} added, ${orderTimeline.skipped || 0} already there${orderTimeline.errors?.length ? `, ${orderTimeline.errors.length} error(s): ${orderTimeline.errors[0]}` : ''}.`
+              : '';
             hubSpotMessage(data.duplicate ? 'HubSpot Deal Exists' : 'HubSpot Deal Created', [
               message,
               '',
               linkStatus,
               lineItemStatus,
               orderLineItemStatus,
+              timelineStatus,
+              orderTimelineStatus,
               '',
               'HubSpot link copied:',
               data.hubspotUrl
@@ -1730,6 +1745,8 @@
       .lc-hs-modal-body p{margin:0;overflow-wrap:anywhere}
       .lc-hs-modal-gap{height:8px}
       .lc-hs-review-panel{width:min(650px,94vw)}
+      .lc-hs-option-check{display:grid;grid-template-columns:22px 1fr;gap:8px;align-items:start;border:1px solid #dbe5e2;border-radius:8px;padding:10px;background:#fbfdfc;color:#2e3f3b;font-size:14px;line-height:1.3}
+      .lc-hs-option-check input{margin-top:1px;width:16px;height:16px;accent-color:#ff5c35}
       .lc-hs-line-review{display:grid;gap:8px;max-height:340px;overflow:auto;border:1px solid #dbe5e2;border-radius:8px;padding:10px;background:#fbfdfc}
       .lc-hs-line-review-item{display:grid;grid-template-columns:22px 1fr;gap:8px;align-items:start;color:#2e3f3b;font-size:15px;line-height:1.3}
       .lc-hs-line-review-item input{margin-top:2px;width:16px;height:16px;accent-color:#ff5c35}
