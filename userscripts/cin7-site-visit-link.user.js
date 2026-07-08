@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.12.33
+// @version      1.12.34
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.33
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.33
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.34
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.34
 // ==/UserScript==
 
 (function () {
@@ -197,20 +197,29 @@
     ].filter(Boolean).join('|');
   }
 
+  function isHubSpotProductLineItem(item) {
+    const name = clean(item?.name);
+    if (!name) return false;
+    if (/^shipping\b/i.test(name)) return false;
+    if (/\b(freight|delivery|courier|install(?:ation)?\s*(?:team|fee|service)?|additional charges?|service charge)\b/i.test(name)) return false;
+    return true;
+  }
+
   function enrichLineItemsFromApi(items) {
-    if (!apiLineItemCache.length) return items;
-    if (items.length && items.every((item) => !clean(item.price) && !clean(item.total)) && apiLineItemCache.length === items.length) {
-      return apiLineItemCache;
+    const apiProductItems = apiLineItemCache.filter(isHubSpotProductLineItem);
+    if (!apiProductItems.length) return items;
+    if (items.length && items.every((item) => !clean(item.price) && !clean(item.total)) && apiProductItems.length === items.length) {
+      return apiProductItems;
     }
 
     const apiByKey = new Map();
-    apiLineItemCache.forEach((item) => {
+    apiProductItems.forEach((item) => {
       const key = lineItemCompareKey(item);
       if (key) apiByKey.set(key, item);
     });
 
     return items.map((item, index) => {
-      const apiItem = apiByKey.get(lineItemCompareKey(item)) || apiLineItemCache[index] || {};
+      const apiItem = apiByKey.get(lineItemCompareKey(item)) || apiProductItems[index] || {};
       return {
         ...item,
         price: clean(item.price) || clean(apiItem.price),
@@ -294,6 +303,7 @@
 
         if (!name || !quantity) continue;
         if (/tax|discount|subtotal|total/i.test(name) && name.length < 30) continue;
+        if (!isHubSpotProductLineItem({ name, sku })) continue;
 
         items.push({
           name,
@@ -305,7 +315,7 @@
       }
     }
 
-    const enrichedItems = items.length ? enrichLineItemsFromApi(items) : apiLineItemCache;
+    const enrichedItems = items.length ? enrichLineItemsFromApi(items) : apiLineItemCache.filter(isHubSpotProductLineItem);
 
     const unique = [];
     const seen = new Set();
@@ -331,6 +341,7 @@
       const rawName = quantityMatch ? quantityMatch[2] : line;
       const name = cleanProductLine(rawName);
       if (!name) continue;
+      if (!isHubSpotProductLineItem({ name, sku: skuFromText(line) })) continue;
       items.push({
         name,
         sku: skuFromText(line),
@@ -344,7 +355,7 @@
     const seen = new Set();
     for (const item of items) {
       const key = [item.sku, item.name, item.quantity].map(clean).join('|').toLowerCase();
-      if (!key || seen.has(key)) continue;
+      if (!key || seen.has(key) || !isHubSpotProductLineItem(item)) continue;
       seen.add(key);
       unique.push(item);
     }
@@ -1268,7 +1279,7 @@
   }
 
   function hubspotLineItemSummary(lineItems) {
-    const items = Array.isArray(lineItems) ? lineItems : [];
+    const items = Array.isArray(lineItems) ? lineItems.filter(isHubSpotProductLineItem) : [];
     if (!items.length) return '';
     return items.slice(0, 6).map((item) => {
       const quantity = clean(item.quantity) || '1';
