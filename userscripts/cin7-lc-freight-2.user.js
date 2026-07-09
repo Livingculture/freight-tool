@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight 2
 // @namespace    livingculture
-// @version      4.0
+// @version      4.1
 // @description  Living Culture freight panel test version 2 Lite for Cin7. Browser-side Shopify freight price first with mixed stock handling.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -374,6 +374,10 @@
     return /^\d{4}$/.test(clean(value));
   }
 
+  function extractPostcode(value) {
+    return clean(value).match(/\b(\d{4})\b/)?.[1] || '';
+  }
+
   function getPostcodeByLabel(labelText) {
     const labelPattern = new RegExp(labelText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
 
@@ -463,8 +467,7 @@
 
   function getItemsFromCin7() {
     const rawItems = [];
-    const skuPattern = /\b([A-Z]{2,6}\d{3,}(?:-\d+)?(?:\([A-Z0-9-]+\))?)/i;
-    const skuAtStartPattern = /^([A-Z]{2,6}\d{3,}(?:-\d+)?(?:\([A-Z0-9-]+\))?)\s*:/i;
+    const skuAtStartPattern = /^\s*([A-Z]{2,6}\d{3,}(?:-\d+)?(?:\([A-Z0-9-]+\))?)\s*:/i;
     const hasFreightItems = () => rawItems.some(item => isFreightSku(item.sku));
 
     const skuLinks = Array.from(document.querySelectorAll('a'))
@@ -473,7 +476,7 @@
       .map(anchor => {
         const text = clean(anchor.textContent || '');
         const lineText = getLineContextText(anchor);
-        const match = text.match(skuAtStartPattern) || text.match(skuPattern);
+        const match = text.match(skuAtStartPattern);
 
         if (!match || isExcludedLineDescription(lineText || text)) return null;
 
@@ -503,7 +506,11 @@
 
       for (const row of rows) {
         const rowText = clean(row.textContent || '');
-        const skuMatch = rowText.match(skuPattern);
+        const productLinkText = Array.from(row.querySelectorAll('a'))
+          .filter(isVisible)
+          .map(link => clean(link.textContent || ''))
+          .find(text => skuAtStartPattern.test(text));
+        const skuMatch = (productLinkText || rowText).match(skuAtStartPattern);
         if (!skuMatch || isExcludedLineDescription(rowText)) continue;
 
         const cells = Array.from(row.querySelectorAll('td,th'));
@@ -524,7 +531,7 @@
       for (const line of lines) {
         if (isExcludedLineDescription(line)) continue;
 
-        const match = line.match(skuPattern);
+        const match = line.match(skuAtStartPattern);
         if (!match) continue;
 
         rawItems.push({
@@ -555,7 +562,8 @@
     const line2 = getAddressLineByLabel('Shipping address line 2') || getFieldValueByLabel('Shipping address line 2');
     const postcode = getPostcodeFromCin7();
 
-    return clean([line1, line2, postcode].filter(isAddressLike).join(', '));
+    const address = clean([line1, line2, postcode].filter(isAddressLike).join(', '));
+    return postcode || extractPostcode(address) || address;
   }
 
   function getAddressSearchFromCin7() {
@@ -565,7 +573,7 @@
       getAddressFromCin7()
     );
 
-    return isAddressLike(address) ? address : '';
+    return extractPostcode(address) || (isAddressLike(address) ? address : '');
   }
 
   function setStatus(message, isError = false) {
@@ -1434,7 +1442,7 @@
         : '-';
     }
 
-    const selectedAddress = clean(address || searchAddress);
+    const selectedAddress = extractPostcode(address || searchAddress) || clean(address || searchAddress);
 
     if (addressBox) {
       addressBox.textContent = selectedAddress || '-';
