@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight 2
 // @namespace    livingculture
-// @version      3.9
+// @version      4.0
 // @description  Living Culture freight panel test version 2 Lite for Cin7. Browser-side Shopify freight price first with mixed stock handling.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -40,8 +40,8 @@
     freightCache: new Map(),
     lookupSeq: 0
   };
-  const IGNORED_SKU_PREFIXES = new Set(['AS']);
-  const EXCLUDED_LINE_DESCRIPTION_RE = /\b(?:additional charges?(?: and services)?|services?|assembly|delivery charge|delivery fee|freight charge|shipping charge|shipping fee)\b/i;
+  const IGNORED_SKU_PREFIXES = new Set(['AS', 'INCOME']);
+  const EXCLUDED_LINE_DESCRIPTION_RE = /\b(?:additional charges?(?: and services)?|services?|assembly|delivery|freight|shipping)\b/i;
   const FREIGHT_TIMEOUT_MS = 45000;
 
   async function postJson(path, payload, options = {}) {
