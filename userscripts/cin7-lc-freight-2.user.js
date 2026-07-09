@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight 2
 // @namespace    livingculture
-// @version      3.6
+// @version      3.9
 // @description  Living Culture freight panel test version 2 Lite for Cin7. Browser-side Shopify freight price first with mixed stock handling.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -41,6 +41,7 @@
     lookupSeq: 0
   };
   const IGNORED_SKU_PREFIXES = new Set(['AS']);
+  const EXCLUDED_LINE_DESCRIPTION_RE = /\b(?:additional charges?(?: and services)?|services?|assembly|delivery charge|delivery fee|freight charge|shipping charge|shipping fee)\b/i;
   const FREIGHT_TIMEOUT_MS = 45000;
 
   async function postJson(path, payload, options = {}) {
@@ -170,6 +171,16 @@
     const address = clean(addressText);
     const withoutCountry = address.replace(/,?\s*New Zealand$/i, '').trim();
     const postcode = withoutCountry.match(/\b(\d{4})\b/)?.[1] || '';
+    if (postcode && isPostcodeOnly(withoutCountry)) {
+      return {
+        address1: '',
+        address2: '',
+        city: '',
+        postcode,
+        region: inferNewZealandRegion('', postcode)
+      };
+    }
+
     const beforePostcode = postcode
       ? withoutCountry.slice(0, withoutCountry.lastIndexOf(postcode)).trim()
       : withoutCountry;
@@ -285,6 +296,20 @@
     return Boolean(sku) && !IGNORED_SKU_PREFIXES.has(prefix);
   }
 
+  function isExcludedLineDescription(value) {
+    return EXCLUDED_LINE_DESCRIPTION_RE.test(clean(value));
+  }
+
+  function getLineContextText(element) {
+    const context = element?.closest?.('tr, [role="row"], [data-testid*="row" i], [class*="row" i]');
+    if (context && isVisible(context) && !isInjectedPanelElement(context)) {
+      return clean(context.innerText || context.textContent);
+    }
+
+    const parent = element?.parentElement;
+    return clean(parent?.innerText || parent?.textContent || element?.textContent || '');
+  }
+
   function isVisible(element) {
     if (!element) return false;
     const rect = element.getBoundingClientRect();
@@ -338,11 +363,53 @@
 
   function isAddressLike(value) {
     const text = clean(value);
-    return text.length >= 5 &&
+    return (text.length >= 5 || isPostcodeOnly(text)) &&
       !/^(?:on|off|yes|no|\+|-)$/i.test(text) &&
       !/^(?:on|off|yes|no)(?:\s*,\s*(?:on|off|yes|no))*$/i.test(text) &&
       !/^Shipping address line/i.test(text) &&
       /[a-z0-9]/i.test(text);
+  }
+
+  function isPostcodeOnly(value) {
+    return /^\d{4}$/.test(clean(value));
+  }
+
+  function getPostcodeByLabel(labelText) {
+    const labelPattern = new RegExp(labelText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+
+    const labelled = Array.from(document.querySelectorAll('label, legend, span, div'))
+      .filter(isVisible)
+      .filter(element => !isInjectedPanelElement(element))
+      .find(element => labelPattern.test(clean(element.textContent)));
+
+    if (labelled) {
+      const container = labelled.closest('fieldset, .form-group, .field, div') || labelled.parentElement;
+      const fields = Array.from(container?.querySelectorAll('input, textarea, [contenteditable="true"], div, span') || [])
+        .filter(isVisible)
+        .filter(element => element !== labelled)
+        .map(element => clean(element.value || element.textContent))
+        .filter(isPostcodeOnly);
+
+      if (fields.length) return fields[0];
+    }
+
+    const lines = (document.body.innerText || '').split('\n').map(clean).filter(Boolean);
+    const index = lines.findIndex(line => labelPattern.test(line));
+    if (index >= 0) {
+      return lines.slice(index + 1, index + 5).find(isPostcodeOnly) || '';
+    }
+
+    return '';
+  }
+
+  function getPostcodeFromCin7() {
+    return (
+      getPostcodeByLabel('Shipping postcode') ||
+      getPostcodeByLabel('Shipping postal code') ||
+      getPostcodeByLabel('Postcode') ||
+      getPostcodeByLabel('Postal code') ||
+      getPostcodeByLabel('Zip')
+    );
   }
 
   function getAddressLineByLabel(labelText) {
@@ -405,13 +472,15 @@
       .filter(anchor => !isInjectedPanelElement(anchor))
       .map(anchor => {
         const text = clean(anchor.textContent || '');
+        const lineText = getLineContextText(anchor);
         const match = text.match(skuAtStartPattern) || text.match(skuPattern);
 
-        if (!match) return null;
+        if (!match || isExcludedLineDescription(lineText || text)) return null;
 
         return {
           sku: match[1].toUpperCase(),
           quantity: 1,
+          lineText,
           top: anchor.getBoundingClientRect().top
         };
       })
@@ -421,7 +490,8 @@
     for (const item of skuLinks) {
       rawItems.push({
         sku: item.sku,
-        quantity: normaliseQuantity(item.quantity)
+        quantity: normaliseQuantity(item.quantity),
+        lineText: item.lineText
       });
     }
 
@@ -434,7 +504,7 @@
       for (const row of rows) {
         const rowText = clean(row.textContent || '');
         const skuMatch = rowText.match(skuPattern);
-        if (!skuMatch) continue;
+        if (!skuMatch || isExcludedLineDescription(rowText)) continue;
 
         const cells = Array.from(row.querySelectorAll('td,th'));
         const qtyCell = cells.find(cell => /^\d+$/.test(clean(cell.textContent || '')));
@@ -442,18 +512,25 @@
 
         rawItems.push({
           sku: skuMatch[1].toUpperCase(),
-          quantity: qty
+          quantity: qty,
+          lineText: rowText
         });
       }
     }
 
     if (!hasFreightItems()) {
-      const matches = Array.from((document.body.innerText || '').matchAll(/\b([A-Z]{2,6}\d{3,}(?:-\d+)?(?:\([A-Z0-9-]+\))?)/gi));
+      const lines = (document.body.innerText || '').split('\n').map(clean).filter(Boolean);
 
-      for (const match of matches) {
+      for (const line of lines) {
+        if (isExcludedLineDescription(line)) continue;
+
+        const match = line.match(skuPattern);
+        if (!match) continue;
+
         rawItems.push({
           sku: match[1].toUpperCase(),
-          quantity: 1
+          quantity: 1,
+          lineText: line
         });
       }
     }
@@ -462,6 +539,7 @@
 
     for (const item of rawItems) {
       if (!isFreightSku(item.sku)) continue;
+      if (isExcludedLineDescription(item.lineText)) continue;
       const current = grouped.get(item.sku) || 0;
       grouped.set(item.sku, current + normaliseQuantity(item.quantity));
     }
@@ -475,8 +553,9 @@
   function getAddressFromCin7() {
     const line1 = getAddressLineByLabel('Shipping address line 1') || getFieldValueByLabel('Shipping address line 1');
     const line2 = getAddressLineByLabel('Shipping address line 2') || getFieldValueByLabel('Shipping address line 2');
+    const postcode = getPostcodeFromCin7();
 
-    return clean([line1, line2].filter(isAddressLike).join(', '));
+    return clean([line1, line2, postcode].filter(isAddressLike).join(', '));
   }
 
   function getAddressSearchFromCin7() {
@@ -1364,7 +1443,7 @@
     if (!items.length || !selectedAddress) {
       setResult('', '');
       renderProductDetails([], '');
-      setStatus('No freight products selected, or could not detect shipping address.', true);
+      setStatus('No freight products selected, or could not detect shipping postcode/address.', true);
       return;
     }
 
@@ -1403,7 +1482,7 @@
     const address = clean(document.getElementById('lc2-manual-address').value);
 
     if (!items.length || !address) {
-      setStatus('Enter at least one SKU/product URL and address first.', true);
+      setStatus('Enter at least one SKU/product URL and postcode/address first.', true);
       return;
     }
 
@@ -1488,7 +1567,7 @@
     state.selectedAddress = '';
     list.innerHTML = '';
 
-    if (!firstItem || firstItem.sku.length < 2 || address.length < 4) return;
+    if (!firstItem || firstItem.sku.length < 2 || address.length < 4 || isPostcodeOnly(address)) return;
 
     try {
       setStatus('Getting address suggestions...');
@@ -1568,19 +1647,61 @@
       document.getElementById('lc-quote-memo-toggle');
   }
 
+  function getAllVisiblePageElements() {
+    return Array.from(document.querySelectorAll('body *')).filter(element => {
+      if (!isVisible(element)) return false;
+      if (isInjectedPanelElement(element)) return false;
+      if (element.id === 'lc-freight2-toggle') return false;
+      return true;
+    });
+  }
+
+  function findAdditionalChargesHeading() {
+    return getAllVisiblePageElements().find(element => (
+      clean(element.innerText || element.textContent).toLowerCase() === 'additional charges and services'
+    ));
+  }
+
+  function findAdditionalChargesPlusButton() {
+    const heading = findAdditionalChargesHeading();
+    if (!heading) return null;
+
+    const headingRect = heading.getBoundingClientRect();
+    return getAllVisiblePageElements()
+      .filter(element => {
+        const rect = element.getBoundingClientRect();
+        const text = clean(element.innerText || element.textContent);
+        const isBelowHeading = rect.top >= headingRect.bottom - 5 && rect.top <= headingRect.bottom + 160;
+        const isNearLeft = rect.left >= headingRect.left - 20 && rect.left <= headingRect.left + 130;
+        const isButtonSized = rect.width >= 28 && rect.width <= 90 && rect.height >= 28 && rect.height <= 80;
+        const tagLooksClickable = ['BUTTON', 'A'].includes(element.tagName) ||
+          element.getAttribute('role') === 'button' ||
+          element.onclick ||
+          window.getComputedStyle(element).cursor === 'pointer';
+        const textLooksPlus = text === '+' || text.includes('+');
+        const hasSvgOrIcon = !!element.querySelector?.('svg, i, .fa, .icon, [class*="icon"], [class*="plus"]');
+        return isBelowHeading && isNearLeft && isButtonSized && (tagLooksClickable || textLooksPlus || hasSvgOrIcon);
+      })
+      .map(element => ({ element, rect: element.getBoundingClientRect() }))
+      .sort((a, b) => (
+        Math.abs(a.rect.top - headingRect.bottom) + Math.abs(a.rect.left - headingRect.left) -
+        (Math.abs(b.rect.top - headingRect.bottom) + Math.abs(b.rect.left - headingRect.left))
+      ))[0]?.element || null;
+  }
+
   function placeFreightButtonNextToMemo() {
     const freightButton = document.getElementById('lc-freight2-toggle');
     if (!freightButton) return;
 
-    const memoButton = findQuoteMemoButton();
+    const plusButton = findAdditionalChargesPlusButton();
 
-    if (!memoButton || !isVisible(memoButton)) {
+    if (!plusButton || !isVisible(plusButton)) {
       freightButton.style.display = 'none';
       return;
     }
 
-    const memoRect = memoButton.getBoundingClientRect();
-    const parent = memoButton.parentElement || memoButton.closest?.('div, section, fieldset') || document.body;
+    const plusRect = plusButton.getBoundingClientRect();
+    const parent = plusButton.parentElement || plusButton.closest?.('div, section, fieldset') || document.body;
     const parentStyle = window.getComputedStyle(parent);
 
     if (parentStyle.position === 'static') {
@@ -1595,9 +1716,9 @@
 
     freightButton.style.display = 'block';
     freightButton.style.position = 'absolute';
-    freightButton.style.left = `${memoRect.right - parentRect.left + 8}px`;
-    freightButton.style.top = `${memoRect.top - parentRect.top}px`;
-    freightButton.style.height = `${Math.max(34, memoRect.height || 34)}px`;
+    freightButton.style.left = `${plusRect.right - parentRect.left + 10}px`;
+    freightButton.style.top = `${plusRect.top - parentRect.top}px`;
+    freightButton.style.height = `${Math.max(34, plusRect.height || 34)}px`;
     freightButton.style.zIndex = '51';
   }
 
@@ -1700,7 +1821,7 @@
       <div class="lc-block">
         <div class="lc-label">Detected from Cin7</div>
         <div><b>SKU:</b> <span id="lc2-auto-sku">-</span></div>
-        <div><b>Address:</b> <span id="lc2-auto-address">-</span></div>
+        <div><b>Postcode/address:</b> <span id="lc2-auto-address">-</span></div>
         <button type="button" id="lc2-use-cin7">Refresh freight with these quantities</button>
       </div>
 
@@ -1708,7 +1829,7 @@
         <div class="lc-label">Manual lookup</div>
         <div id="lc2-manual-products"></div>
         <button type="button" id="lc2-add-product">Add another product</button>
-        <input id="lc2-manual-address" placeholder="Address" />
+        <input id="lc2-manual-address" placeholder="Postcode or address" />
         <div id="lc2-address-suggestions"></div>
         <button type="button" id="lc2-manual-get">Get freight manually</button>
       </div>

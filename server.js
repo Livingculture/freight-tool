@@ -4589,7 +4589,18 @@ function getManualAddressFallback(addressText) {
 
 function parseNewZealandAddress(addressText) {
   const address = normaliseSuggestion(String(addressText || ''));
-  const withoutCountry = address.replace(/(?:,\s*|\s+)New Zealand$/i, '');
+  const withoutCountry = address.replace(/(?:,\s*|\s+)New Zealand$/i, '').trim();
+
+  if (/^\d{4}$/.test(withoutCountry)) {
+    return {
+      address1: '',
+      address2: '',
+      city: '',
+      postcode: withoutCountry,
+      region: inferNewZealandRegion('', withoutCountry)
+    };
+  }
+
   if (withoutCountry === address) return null;
 
   const parts = withoutCountry.split(',').map(part => part.trim()).filter(Boolean);
