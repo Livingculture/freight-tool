@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight 2
 // @namespace    livingculture
-// @version      4.2
+// @version      4.3
 // @description  Living Culture freight panel test version 2 Lite for Cin7. Browser-side Shopify freight price first with mixed stock handling.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -677,6 +677,12 @@
 
   function getProductAddToCartQuantity(product) {
     const requestedQuantity = getProductRequestedQuantity(product);
+    const cin7AvailableQuantity = getCin7AvailableQuantity(product?.cin7Stock);
+
+    if (cin7AvailableQuantity != null) {
+      return Math.min(requestedQuantity, Math.max(0, cin7AvailableQuantity));
+    }
+
     const preSaleQuantity = normaliseQuantityAllowZero(
       product.preSaleQuantity ??
       (product.addToCartQuantity != null ? requestedQuantity - Number(product.addToCartQuantity) : 0)
@@ -689,6 +695,11 @@
 
   function getProductPreSaleQuantity(product) {
     const requestedQuantity = getProductRequestedQuantity(product);
+    const cin7AvailableQuantity = getCin7AvailableQuantity(product?.cin7Stock);
+
+    if (cin7AvailableQuantity != null) {
+      return Math.max(0, requestedQuantity - Math.max(0, cin7AvailableQuantity));
+    }
 
     return normaliseQuantityAllowZero(
       product.preSaleQuantity ??
@@ -728,7 +739,7 @@
     const cartQuantity = getProductAddToCartQuantity(product);
     const preSaleQuantity = getProductPreSaleQuantity(product);
     if (preSaleQuantity > 0) {
-      return `<div class="lc-product-cart-qty"><strong>Only ${cartQuantity} available</strong></div>`;
+      return `<div class="lc-product-presale-qty"><strong>Pre sale: ${preSaleQuantity}</strong></div>`;
     }
 
     const suffix = cartQuantity !== requestedQuantity ? ` of ${requestedQuantity}` : '';
