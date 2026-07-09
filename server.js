@@ -2812,7 +2812,7 @@ function parseCartonDimensions(descriptionHtml) {
   let inPackageSection = false;
 
   for (const line of lines) {
-    if (/package\s*(?:dimensions?|size)|packaging\s*dimensions?|packing\s*size|carton\s*dimensions?|box\s*dimensions?/i.test(line)) {
+    if (/package\s*(?:dimensions?|size)|packaging\s*dimensions?|packing\s*size|carton\s*dimensions?|box\s*dimensions?|^package\s*\d+\s*:/i.test(line)) {
       inPackageSection = true;
     } else if (inPackageSection && stopPattern.test(line)) {
       inPackageSection = false;
@@ -2830,9 +2830,9 @@ function parseCartonDimensions(descriptionHtml) {
     return cartons;
   }
 
-  const fallbackPattern = /(?:Package\s*(?:Dimensions?|Size|\d+)?|Packaging\s*Dimensions?|Packing\s*Size|Carton\s*\d*|Box)\s*:?\s*[^0-9\n]{0,80}?(\d+(?:\.\d+)?)\s*(?:cm)?\s*[x×*]\s*(\d+(?:\.\d+)?)\s*(?:cm)?\s*[x×*]\s*(\d+(?:\.\d+)?)\s*(?:cm)?/gi;
+  const fallbackPattern = /((?:Package\s*(?:Dimensions?|Size|\d+)?|Packaging\s*Dimensions?|Packing\s*Size|Carton\s*\d*|Box)\s*:?)\s*[^0-9\n]{0,80}?(\d+(?:\.\d+)?)\s*(?:cm)?\s*[x×*]\s*(\d+(?:\.\d+)?)\s*(?:cm)?\s*[x×*]\s*(\d+(?:\.\d+)?)\s*(?:cm)?/gi;
   for (const match of text.matchAll(fallbackPattern)) {
-    addCarton(cartons, seen, match.slice(1, 4).map(Number));
+    addCarton(cartons, seen, match.slice(2, 5).map(Number), match[1]);
   }
 
   return cartons;
