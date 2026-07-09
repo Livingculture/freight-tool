@@ -2152,7 +2152,13 @@ function buildProductFromDetails(details, resolvedUrl, includeMetrics) {
   const canUseWholePageMetrics = !hasSpecificVariantSize || variantPackageTable.cartons.length > 0;
   const tableCartons = metricSpecTableRows.length ? parseSpecCellCartons(metricSpecTableRows, combinedSource) : [];
   const pageCartons = canUseWholePageMetrics ? parseCartonDimensions(pageTextSource) : [];
-  const cartons = variantPackageTable.cartons.length ? variantPackageTable.cartons : tableCartons.length ? tableCartons : pageCartons;
+  const cartons = pageCartons.length > Math.max(variantPackageTable.cartons.length, tableCartons.length)
+    ? pageCartons
+    : variantPackageTable.cartons.length
+      ? variantPackageTable.cartons
+      : tableCartons.length
+        ? tableCartons
+        : pageCartons;
   const tableWeightKg = metricSpecTableRows.length ? parseSpecCellWeight(metricSpecTableRows, combinedSource) : null;
   const wholePageWeightKg = canUseWholePageMetrics
     ? parseSpecCellWeight(details.specTableRows, combinedSource) ||
