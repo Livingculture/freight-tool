@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Freight 2
 // @namespace    livingculture
-// @version      4.3
+// @version      4.4
 // @description  Living Culture freight panel test version 2 Lite for Cin7. Browser-side Shopify freight price first with mixed stock handling.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -732,19 +732,33 @@
       total + normaliseQuantityAllowZero(location.available), 0);
   }
 
+  function productWebsiteSaysPreOrder(product) {
+    const values = [
+      product?.saleState,
+      product?.websiteStatus,
+      product?.availabilityText,
+      product?.buttonText
+    ].map(clean).filter(Boolean);
+
+    return values.some(value =>
+      value.length <= 80 && /\bpre[\s-]?(?:order|sale)\b/i.test(value)
+    );
+  }
+
   function renderCartQuantityLine(product) {
     if (product?.addToCartQuantity == null && product?.preSaleQuantity == null) return '';
 
     const requestedQuantity = getProductRequestedQuantity(product);
-    const cartQuantity = getProductAddToCartQuantity(product);
     const preSaleQuantity = getProductPreSaleQuantity(product);
     if (preSaleQuantity > 0) {
       return `<div class="lc-product-presale-qty"><strong>Pre sale: ${preSaleQuantity}</strong></div>`;
     }
 
-    const suffix = cartQuantity !== requestedQuantity ? ` of ${requestedQuantity}` : '';
+    if (productWebsiteSaysPreOrder(product)) {
+      return `<div class="lc-product-presale-qty"><strong>Pre sale: ${requestedQuantity}</strong></div>`;
+    }
 
-    return `<div class="lc-product-cart-qty"><strong>Cart qty: ${cartQuantity}${suffix}</strong></div>`;
+    return '';
   }
 
   function renderCin7StockLine(stock) {
