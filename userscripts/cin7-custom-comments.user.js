@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Custom Comments
 // @namespace    livingculture-cin7
-// @version      1.7
+// @version      1.8
 // @description  Builds custom pergola comments and fills both the sale Comments box and quote line comment in Cin7.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
@@ -340,7 +340,7 @@
   }
 
   function buildComment(data) {
-    const typeLabel = data.type === 'wall' ? 'Wall Mounted' : 'Freestanding';
+    const typeLabel = clean(data.customType) || (data.type === 'wall' ? 'Wall Mounted' : 'Freestanding');
     const height = clean(data.height);
     const length = clean(data.length);
     const width = clean(data.width);
@@ -368,7 +368,12 @@
     if (!shadow) return null;
 
     return {
-      type: shadow.getElementById('lc-cc-type')?.value || 'freestanding',
+      type: shadow.getElementById('lc-cc-wall')?.checked
+        ? 'wall'
+        : shadow.getElementById('lc-cc-freestanding')?.checked
+          ? 'freestanding'
+          : '',
+      customType: shadow.getElementById('lc-cc-custom-type')?.value || '',
       height: shadow.getElementById('lc-cc-height')?.value || '',
       length: shadow.getElementById('lc-cc-length')?.value || '',
       width: shadow.getElementById('lc-cc-width')?.value || '',
@@ -380,6 +385,7 @@
 
   function validateData(data) {
     const missing = [];
+    if (!clean(data.type) && !clean(data.customType)) missing.push('type or custom type');
     if (!clean(data.height)) missing.push('height');
     if (!clean(data.length)) missing.push('length');
     if (!clean(data.width)) missing.push('width');
@@ -590,6 +596,33 @@
           font-weight: 700;
         }
         label.full { grid-column: 1 / -1; }
+        .type-options {
+          grid-column: 1 / -1;
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 8px;
+        }
+        .type-option {
+          display: grid;
+          grid-template-columns: 18px 1fr;
+          align-items: center;
+          min-height: 38px;
+          border: 1px solid #b9c7d6;
+          border-radius: 4px;
+          padding: 0 10px;
+          color: #2f3742;
+          background: #fff;
+          font-size: 14px;
+          font-weight: 700;
+          box-sizing: border-box;
+        }
+        .type-option input {
+          width: 16px;
+          height: 16px;
+          min-width: 0;
+          padding: 0;
+          accent-color: #05cabe;
+        }
         input, select {
           min-width: 0;
           height: 38px;
@@ -632,6 +665,7 @@
         #lc-cc-status.error { color: #a63a2a; }
         @media (max-width: 520px) {
           form { grid-template-columns: 1fr; }
+          .type-options { grid-template-columns: 1fr; }
         }
       </style>
       <div id="lc-custom-comments-modal" role="dialog" aria-modal="true" aria-labelledby="lc-cc-title">
@@ -643,10 +677,20 @@
           <form id="lc-cc-form">
             <label class="full">
               Type
-              <select id="lc-cc-type">
-                <option value="freestanding">Freestanding</option>
-                <option value="wall">Wall Mounted</option>
-              </select>
+              <span class="type-options" aria-label="Type">
+                <span class="type-option">
+                  <input type="checkbox" id="lc-cc-freestanding" checked />
+                  <span>Freestanding</span>
+                </span>
+                <span class="type-option">
+                  <input type="checkbox" id="lc-cc-wall" />
+                  <span>Wall Mounted</span>
+                </span>
+              </span>
+            </label>
+            <label class="full">
+              Custom type (used if both boxes are unticked)
+              <input id="lc-cc-custom-type" placeholder="Enter another type" />
             </label>
             <label>
               Height (mm)
@@ -685,6 +729,12 @@
     shadow.getElementById('lc-cc-close').addEventListener('click', closePanel);
     shadow.getElementById('lc-custom-comments-modal').addEventListener('click', event => {
       if (event.target?.id === 'lc-custom-comments-modal') closePanel();
+    });
+    shadow.getElementById('lc-cc-freestanding').addEventListener('change', event => {
+      if (event.target.checked) shadow.getElementById('lc-cc-wall').checked = false;
+    });
+    shadow.getElementById('lc-cc-wall').addEventListener('change', event => {
+      if (event.target.checked) shadow.getElementById('lc-cc-freestanding').checked = false;
     });
     shadow.getElementById('lc-cc-copy').addEventListener('click', async () => {
       const data = getFormData();
