@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.12.36
+// @version      1.12.37
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.36
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.36
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.37
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.12.37
 // ==/UserScript==
 
 (function () {
@@ -1159,12 +1159,21 @@
   }
 
   function readPhoneNumber() {
+    const validPhone = (value) => {
+      const text = clean(value);
+      const digits = text.replace(/\D+/g, '');
+      if (digits.length < 8 || digits.length > 12) return '';
+      if (!/^(?:64|0)/.test(digits)) return '';
+      if (/^0+$/.test(digits)) return '';
+      return text;
+    };
     const labelled = readValueNearLabel('Phone') ||
       readValueNearLabel('Phone number') ||
       readValueNearLabel('Mobile') ||
       readValueNearLabel('Customer phone') ||
       readValueNearLabel('Contact phone');
-    if (labelled) return labelled;
+    const labelledPhone = validPhone(labelled);
+    if (labelledPhone) return labelledPhone;
 
     const bodyText = document.body ? document.body.innerText : '';
     const lines = bodyText.split('\n').map(clean).filter(Boolean);
@@ -1173,11 +1182,11 @@
       if (!/^(phone|phone number|mobile|customer phone|contact phone)$/.test(label)) continue;
       const nearby = lines.slice(index, index + 4).join(' ');
       const match = nearby.match(/(?:\+?64|0)\s*(?:\d[\s().-]*){7,11}\d/);
-      if (match) return clean(match[0]);
+      const phone = validPhone(match?.[0]);
+      if (phone) return phone;
     }
 
-    const match = bodyText.match(/(?:\+?64|0)\s*(?:\d[\s().-]*){7,11}\d/);
-    return match ? clean(match[0]) : '';
+    return '';
   }
 
   function cin7Draft() {
