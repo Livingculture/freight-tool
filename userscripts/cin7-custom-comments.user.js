@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Custom Comments
 // @namespace    livingculture-cin7
-// @version      1.8
+// @version      1.9
 // @description  Builds custom pergola comments and fills both the sale Comments box and quote line comment in Cin7.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
@@ -384,14 +384,7 @@
   }
 
   function validateData(data) {
-    const missing = [];
-    if (!clean(data.type) && !clean(data.customType)) missing.push('type or custom type');
-    if (!clean(data.height)) missing.push('height');
-    if (!clean(data.length)) missing.push('length');
-    if (!clean(data.width)) missing.push('width');
-    if (!clean(data.frameColour)) missing.push('frame colour');
-    if (!clean(data.louvreColour)) missing.push('louvre colour');
-    return missing;
+    return [];
   }
 
   async function fillCommentsFromForm() {
