@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Custom Comments
 // @namespace    livingculture-cin7
-// @version      1.9
+// @version      2.0
 // @description  Builds custom pergola comments and fills both the sale Comments box and quote line comment in Cin7.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
@@ -340,7 +340,8 @@
   }
 
   function buildComment(data) {
-    const typeLabel = clean(data.customType) || (data.type === 'wall' ? 'Wall Mounted' : 'Freestanding');
+    const customType = clean(data.customType);
+    const typeLabel = customType || (data.type === 'wall' ? 'Wall Mounted' : 'Freestanding');
     const height = clean(data.height);
     const length = clean(data.length);
     const width = clean(data.width);
@@ -348,15 +349,14 @@
     const louvreColour = clean(data.louvreColour);
     const notes = clean(data.notes);
 
-    const lines = [
-      typeLabel,
-      `Height:${height}mm`,
-      `Lenght:${length}mm`,
-      `Width:${width}mm`,
-      `Frame Colour: ${frameColour}`,
-      `Louvre Colour:${louvreColour}`
-    ];
-
+    const hasEnteredDetails = Boolean(customType || data.type === 'wall' || height || length || width || frameColour || louvreColour || notes);
+    const lines = [];
+    if (hasEnteredDetails) lines.push(typeLabel);
+    if (height) lines.push(`Height:${height}mm`);
+    if (length) lines.push(`Lenght:${length}mm`);
+    if (width) lines.push(`Width:${width}mm`);
+    if (frameColour) lines.push(`Frame Colour: ${frameColour}`);
+    if (louvreColour) lines.push(`Louvre Colour:${louvreColour}`);
     if (notes) lines.push(notes);
 
     return lines.join('\n');
