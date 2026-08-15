@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Promo Summary
 // @namespace    livingculture-cin7
-// @version      2.9
+// @version      3.0
 // @description  Compact grouped Living Culture promo summary inside Cin7 from the Summary tab.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
 // @match        https://inventory.dearsystems.com/*
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=2.9
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=2.9
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.0
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.0
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
@@ -632,7 +632,7 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
     if (!shadow) return;
 
     const searchValue = clean(shadow.getElementById('lc-promo-search')?.value).toLowerCase();
-    const filterValue = shadow.getElementById('lc-promo-filter')?.value || 'date-relevant';
+    const filterValue = shadow.getElementById('lc-promo-filter')?.value || 'current';
     const mergePromos = shadow.getElementById('lc-promo-merge')?.checked ?? true;
 
     let rows = getCycleRows().filter(row => {
@@ -1237,11 +1237,7 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
             <input id="lc-promo-search" type="search" placeholder="Search promo, category, date or note..." />
 
             <select id="lc-promo-filter">
-              <option value="date-relevant">Current + upcoming</option>
-              <option value="current">Current only</option>
-              <option value="upcoming">Upcoming only</option>
-              <option value="past">Past in current cycle</option>
-              <option value="all">All current-cycle promos</option>
+              <option value="current" selected>Current only</option>
             </select>
 
             <label class="merge-label">
