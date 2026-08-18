@@ -1,15 +1,15 @@
 // ==UserScript==
 // @name         Living Culture Cin7 PDF Attachments
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.13
+// @version      0.1.14
 // @description  Adds a PDF Attachments dropdown to attach Google Drive PDFs to Cin7 quote and sale pages.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
 // @grant        GM_xmlhttpRequest
 // @connect      cin7-pdf-attachments.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://cin7-pdf-attachments.vercel.app/userscripts/cin7-pdf-attachments.user.js
-// @updateURL    https://cin7-pdf-attachments.vercel.app/userscripts/cin7-pdf-attachments.user.js
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-pdf-attachments.user.js
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-pdf-attachments.user.js
 // ==/UserScript==
 
 (function () {
