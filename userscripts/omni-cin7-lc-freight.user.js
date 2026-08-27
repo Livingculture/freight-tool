@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.5
+// @version      0.1.6
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -1139,6 +1139,7 @@
       });
 
       setResult(data.price, data.method, data.preSaleFreightEstimate);
+      if (fill) fillOmniFreightAmount(data.price);
       if (adjustments.length) {
         setStatus('');
       } else {
@@ -1288,6 +1289,40 @@
       b.getBoundingClientRect().top - a.getBoundingClientRect().top ||
       a.children.length - b.children.length
     ))[0] || null;
+  }
+
+  function findOmniFreightAmountInput() {
+    const label = findOmniFreightLabel();
+    if (!label) return null;
+
+    const labelRect = label.getBoundingClientRect();
+    return Array.from(document.querySelectorAll('input:not([type="hidden"])'))
+      .filter(isVisible)
+      .filter(input => !isInjectedPanelElement(input))
+      .map(input => ({ input, rect: input.getBoundingClientRect() }))
+      .filter(({ rect }) => (
+        rect.left >= labelRect.right - 8 &&
+        rect.top <= labelRect.bottom + 8 &&
+        rect.bottom >= labelRect.top - 8
+      ))
+      .sort((a, b) => b.rect.left - a.rect.left)[0]?.input || null;
+  }
+
+  function fillOmniFreightAmount(price) {
+    const input = findOmniFreightAmountInput();
+    const amount = Number(moneyToNumber(price));
+    if (!input || !Number.isFinite(amount)) return false;
+
+    const value = amount.toFixed(2);
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+
+    if (valueSetter) valueSetter.call(input, value);
+    else input.value = value;
+
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    input.dispatchEvent(new Event('blur', { bubbles: true }));
+    return true;
   }
 
   function findButtonByText(pattern) {
@@ -1583,6 +1618,13 @@
         border-radius: 14px;
         box-shadow: 0 20px 44px rgba(15, 46, 106, 0.20);
         font: 13px/1.35 Arial, sans-serif;
+      }
+
+      @media (min-width: 1200px) {
+        html.lc-omni-freight-docked body {
+          width: calc(100% - 376px) !important;
+          max-width: none !important;
+        }
       }
 
       #lc-omni-freight-panel.is-open {
@@ -1919,6 +1961,7 @@
 
     button.addEventListener('click', () => {
       panel.classList.toggle('is-open');
+      document.documentElement.classList.toggle('lc-omni-freight-docked', panel.classList.contains('is-open'));
 
       if (panel.classList.contains('is-open')) {
         state.lastAutoKey = '';
@@ -1933,6 +1976,7 @@
 
     panel.querySelector('#lc-omni-panel-close').addEventListener('click', () => {
       panel.classList.remove('is-open');
+      document.documentElement.classList.remove('lc-omni-freight-docked');
     });
 
     panel.querySelector('#lc-omni-use-cin7').addEventListener('click', () => {
