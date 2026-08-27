@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.16
+// @version      0.1.17
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -1498,18 +1498,13 @@
   }
 
   function positionFreightPanelNextToButton() {
-    const button = document.getElementById('lc-omni-freight-toggle');
     const panel = document.getElementById('lc-omni-freight-panel');
-    if (!button || !panel?.classList.contains('is-open')) return;
+    if (!panel?.classList.contains('is-open')) return;
 
-    const buttonRect = button.getBoundingClientRect();
-    const panelRect = panel.getBoundingClientRect();
-    const left = Math.max(16, window.scrollX + buttonRect.left - panelRect.width - 12);
-    const top = Math.max(16, window.scrollY + buttonRect.top - 64);
-
-    panel.style.left = `${left}px`;
-    panel.style.top = `${top}px`;
-    panel.style.right = 'auto';
+    panel.style.position = 'fixed';
+    panel.style.left = 'auto';
+    panel.style.top = '16px';
+    panel.style.right = '12px';
   }
 
   function styleFreightInlineButton(button) {
@@ -1708,15 +1703,15 @@
 
     styles.textContent = `
       #lc-omni-freight-panel {
-        position: absolute;
-        top: 72px;
-        right: auto;
-        left: 16px;
+        position: fixed;
+        top: 16px;
+        right: 12px;
+        left: auto;
         z-index: 2147483647;
         box-sizing: border-box;
-        width: 680px;
+        width: 340px;
         max-width: calc(100vw - 32px);
-        max-height: 300px;
+        max-height: calc(100vh - 32px);
         overflow: auto;
         display: none;
         padding: 0;
@@ -1730,12 +1725,23 @@
 
       #lc-omni-freight-panel.is-open {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        grid-template-columns: minmax(0, 1fr);
         grid-template-areas:
-          "hero hero"
-          "detected products"
-          "status status";
+          "hero"
+          "detected"
+          "products"
+          "status";
         align-items: start;
+      }
+
+      body.lc-omni-freight-sidebar-open {
+        margin-right: 364px !important;
+      }
+
+      @media (max-width: 900px) {
+        body.lc-omni-freight-sidebar-open {
+          margin-right: 0 !important;
+        }
       }
 
       .lc-omni-hero {
@@ -2093,6 +2099,7 @@
 
     button.addEventListener('click', () => {
       panel.classList.toggle('is-open');
+      document.body.classList.toggle('lc-omni-freight-sidebar-open', panel.classList.contains('is-open'));
 
       if (panel.classList.contains('is-open')) {
         state.lastAutoKey = '';
@@ -2108,6 +2115,7 @@
 
     panel.querySelector('#lc-omni-panel-close').addEventListener('click', () => {
       panel.classList.remove('is-open');
+      document.body.classList.remove('lc-omni-freight-sidebar-open');
     });
 
     panel.querySelector('#lc-omni-use-cin7').addEventListener('click', () => {
