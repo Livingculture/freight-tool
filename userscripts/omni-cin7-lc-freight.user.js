@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.7
+// @version      0.1.8
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -1139,7 +1139,7 @@
       });
 
       setResult(data.price, data.method, data.preSaleFreightEstimate);
-      if (fill) fillOmniFreightAmount(data.price);
+      if (fill) fillOmniFreightFields(data.price, data.method);
       if (adjustments.length) {
         setStatus('');
       } else {
@@ -1291,9 +1291,9 @@
     ))[0] || null;
   }
 
-  function findOmniFreightAmountInput() {
+  function findOmniFreightInputs() {
     const label = findOmniFreightLabel();
-    if (!label) return null;
+    if (!label) return [];
 
     const labelRect = label.getBoundingClientRect();
     return Array.from(document.querySelectorAll('input:not([type="hidden"])'))
@@ -1305,23 +1305,34 @@
         rect.top <= labelRect.bottom + 8 &&
         rect.bottom >= labelRect.top - 8
       ))
-      .sort((a, b) => b.rect.left - a.rect.left)[0]?.input || null;
+      .sort((a, b) => a.rect.left - b.rect.left)
+      .map(({ input }) => input);
   }
 
-  function fillOmniFreightAmount(price) {
-    const input = findOmniFreightAmountInput();
-    const amount = Number(moneyToNumber(price));
-    if (!input || !Number.isFinite(amount)) return false;
+  function setOmniInputValue(input, value) {
+    if (!input) return false;
 
-    const value = amount.toFixed(2);
     const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-
     if (valueSetter) valueSetter.call(input, value);
     else input.value = value;
 
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new Event('change', { bubbles: true }));
     input.dispatchEvent(new Event('blur', { bubbles: true }));
+    return true;
+  }
+
+  function fillOmniFreightFields(price, method) {
+    const inputs = findOmniFreightInputs();
+    const descriptionInput = inputs.length > 1 ? inputs[0] : null;
+    const amount = Number(moneyToNumber(price));
+    if (!inputs.length || !Number.isFinite(amount)) return false;
+
+    if (descriptionInput && clean(method)) setOmniInputValue(descriptionInput, clean(method));
+    const refreshedInputs = findOmniFreightInputs();
+    const amountInput = refreshedInputs[refreshedInputs.length - 1] || null;
+    if (!amountInput) return false;
+    setOmniInputValue(amountInput, amount.toFixed(2));
     return true;
   }
 
@@ -1413,11 +1424,8 @@
 
     const buttonRect = button.getBoundingClientRect();
     const panelRect = panel.getBoundingClientRect();
-    const left = Math.max(16, buttonRect.left - panelRect.width - 12);
-    const top = Math.max(16, Math.min(
-      window.innerHeight - panelRect.height - 16,
-      buttonRect.bottom - panelRect.height
-    ));
+    const left = Math.max(16, window.scrollX + buttonRect.left - panelRect.width - 12);
+    const top = Math.max(16, window.scrollY + buttonRect.bottom - panelRect.height);
 
     panel.style.left = `${left}px`;
     panel.style.top = `${top}px`;
@@ -1592,7 +1600,7 @@
         <button type="button" id="lc-omni-panel-close">×</button>
       </div>
 
-      <div class="lc-omni-block">
+      <div class="lc-omni-block" id="lc-omni-detected-block">
         <div class="lc-omni-label">Detected from Cin7</div>
         <div><b>SKU:</b> <span id="lc-omni-auto-sku">-</span></div>
         <div><b>Address:</b> <span id="lc-omni-auto-address">-</span></div>
@@ -1623,13 +1631,15 @@
 
     styles.textContent = `
       #lc-omni-freight-panel {
-        position: fixed;
+        position: absolute;
         top: 72px;
-        right: 16px;
+        right: auto;
+        left: 16px;
         z-index: 2147483647;
         box-sizing: border-box;
-        width: 360px;
-        max-height: calc(100vh - 96px);
+        width: 720px;
+        max-width: calc(100vw - 32px);
+        max-height: 430px;
         overflow: auto;
         display: none;
         padding: 0;
@@ -1642,10 +1652,18 @@
       }
 
       #lc-omni-freight-panel.is-open {
-        display: block;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        grid-template-areas:
+          "hero hero"
+          "detected result"
+          "detected products"
+          "status status";
+        align-items: start;
       }
 
       .lc-omni-hero {
+        grid-area: hero;
         position: relative;
         margin: 10px;
         padding: 14px 14px 12px;
@@ -1656,7 +1674,9 @@
       }
 
       .lc-omni-hero-top {
-        display: block;
+        display: flex;
+        align-items: center;
+        gap: 16px;
         padding-right: 38px;
       }
 
@@ -1664,7 +1684,7 @@
         width: 96px;
         height: auto;
         display: block;
-        margin-bottom: 10px;
+        margin: 0;
       }
 
       .lc-omni-hero strong {
@@ -1676,7 +1696,7 @@
       }
 
       .lc-omni-hero p {
-        margin: 6px 38px 0 0;
+        margin: 4px 38px 0 112px;
         color: rgba(255, 255, 255, 0.92);
         font-size: 12px;
         line-height: 1.5;
@@ -1706,6 +1726,19 @@
         border: 1px solid #b8c9e1;
         border-radius: 12px;
         box-shadow: 0 10px 24px rgba(15, 46, 106, 0.09);
+      }
+
+      #lc-omni-detected-block {
+        grid-area: detected;
+        align-self: stretch;
+      }
+
+      .lc-omni-result-block {
+        grid-area: result;
+      }
+
+      #lc-omni-product-details {
+        grid-area: products;
       }
 
       #lc-omni-manual-lookup-block {
@@ -1851,6 +1884,7 @@
       }
 
       #lc-omni-freight-status {
+        grid-area: status;
         min-height: 20px;
         margin: 8px 10px 12px;
         color: #34577f;
