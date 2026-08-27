@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.1
+// @version      0.1.2
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -324,17 +324,33 @@
 
       if (!headerRow) continue;
 
-      const headers = Array.from(headerRow.querySelectorAll('th,td')).map(cell => normaliseHeader(cell.textContent));
-      const codeIndex = headers.indexOf('code');
-      const quantityIndex = headers.indexOf('qtyordered');
+      const headerCells = Array.from(headerRow.querySelectorAll('th,td'));
+      const codeHeader = headerCells.find(cell => normaliseHeader(cell.textContent) === 'code');
+      const quantityHeader = headerCells.find(cell => normaliseHeader(cell.textContent) === 'qtyordered');
+      if (!codeHeader || !quantityHeader) continue;
+
+      const codeRect = codeHeader.getBoundingClientRect();
+      const quantityRect = quantityHeader.getBoundingClientRect();
       const grouped = new Map();
+
+      const cellUnderHeader = (cells, headerRect) => cells
+        .map(cell => {
+          const rect = cell.getBoundingClientRect();
+          const overlap = Math.max(0, Math.min(rect.right, headerRect.right) - Math.max(rect.left, headerRect.left));
+          return { cell, overlap };
+        })
+        .sort((a, b) => b.overlap - a.overlap)[0];
 
       for (const row of rows.slice(rows.indexOf(headerRow) + 1)) {
         const cells = Array.from(row.querySelectorAll(':scope > td, :scope > th'));
-        if (cells.length <= Math.max(codeIndex, quantityIndex)) continue;
+        if (!cells.length || !isVisible(row)) continue;
 
-        const codeCell = cells[codeIndex];
-        const quantityCell = cells[quantityIndex];
+        const codeMatch = cellUnderHeader(cells, codeRect);
+        const quantityMatch = cellUnderHeader(cells, quantityRect);
+        if (!codeMatch?.overlap || !quantityMatch?.overlap) continue;
+
+        const codeCell = codeMatch.cell;
+        const quantityCell = quantityMatch.cell;
         const sku = clean(codeCell.querySelector('input,select,textarea')?.value || codeCell.textContent).toUpperCase();
         const quantityValue = clean(quantityCell.querySelector('input,select,textarea')?.value || quantityCell.textContent);
 
@@ -351,8 +367,42 @@
     return [];
   }
 
+  function getOmniFieldValue(labelText) {
+    const expected = clean(labelText).toLowerCase();
+    const labels = Array.from(document.querySelectorAll('label, legend, span, div, td, th'))
+      .filter(isVisible)
+      .filter(element => !isInjectedPanelElement(element))
+      .filter(element => clean(element.textContent).toLowerCase() === expected)
+      .sort((a, b) => a.children.length - b.children.length);
+
+    for (const label of labels) {
+      if (label.htmlFor) {
+        const linked = document.getElementById(label.htmlFor);
+        const value = clean(linked?.value || linked?.textContent);
+        if (value) return value;
+      }
+
+      const labelRect = label.getBoundingClientRect();
+      const alignedFields = Array.from(document.querySelectorAll('input:not([type="hidden"]), select, textarea'))
+        .filter(isVisible)
+        .filter(field => !isInjectedPanelElement(field))
+        .map(field => ({ field, rect: field.getBoundingClientRect() }))
+        .filter(({ rect }) => (
+          rect.left >= labelRect.right - 8 &&
+          rect.top <= labelRect.bottom + 6 &&
+          rect.bottom >= labelRect.top - 6
+        ))
+        .sort((a, b) => a.rect.left - b.rect.left);
+
+      const value = clean(alignedFields[0]?.field?.value || alignedFields[0]?.field?.textContent);
+      if (value) return value;
+    }
+
+    return '';
+  }
+
   function getAddressFromCin7() {
-    const field = label => getAddressLineByLabel(label) || getFieldValueByLabel(label);
+    const field = label => getOmniFieldValue(label);
     const line1 = field('Delivery Address 1');
     const line2 = field('Delivery Address 2');
     const city = field('Delivery City');
@@ -1213,28 +1263,10 @@
     });
   }
 
-  function findOmniFreightInput() {
-    const labels = getAllVisiblePageElements().filter(element => (
+  function findOmniFreightLabel() {
+    return getAllVisiblePageElements().filter(element => (
       clean(element.innerText || element.textContent).toLowerCase() === 'freight'
-    ));
-
-    for (const label of labels) {
-      if (label.htmlFor) {
-        const linked = document.getElementById(label.htmlFor);
-        if (linked && isVisible(linked)) return linked;
-      }
-
-      let scope = label.parentElement;
-      for (let depth = 0; scope && depth < 5; depth += 1, scope = scope.parentElement) {
-        const fields = Array.from(scope.querySelectorAll('input:not([type="hidden"]), select, textarea'))
-          .filter(isVisible)
-          .filter(field => !field.closest('#lc-omni-freight-panel'));
-
-        if (fields.length) return fields[fields.length - 1];
-      }
-    }
-
-    return null;
+    )).sort((a, b) => a.children.length - b.children.length)[0] || null;
   }
 
   function findButtonByText(pattern) {
@@ -1287,9 +1319,9 @@
 
     placeContainerButtonNextToWarehouse();
 
-    const freightInput = findOmniFreightInput();
+    const freightLabel = findOmniFreightLabel();
 
-    if (!freightInput || !isVisible(freightInput)) {
+    if (!freightLabel || !isVisible(freightLabel)) {
       freightButton.style.display = 'none';
       if (containerButton && !findButtonByText(/foshan\s+warehouse|nz\s+availability|install\s+fees|custom\s+products/i)) {
         containerButton.style.display = 'none';
@@ -1297,16 +1329,20 @@
       return;
     }
 
-    if (freightButton.previousElementSibling !== freightInput) {
-      freightInput.insertAdjacentElement('afterend', freightButton);
+    if (freightButton.parentElement !== document.body) {
+      document.body.appendChild(freightButton);
     }
 
-    const inputRect = freightInput.getBoundingClientRect();
+    const labelRect = freightLabel.getBoundingClientRect();
     freightButton.style.display = 'inline-flex';
-    freightButton.style.position = 'static';
-    freightButton.style.marginLeft = '8px';
-    freightButton.style.height = `${Math.max(30, inputRect.height || 30)}px`;
+    freightButton.style.position = 'absolute';
+    freightButton.style.marginLeft = '0';
+    freightButton.style.height = `${Math.max(30, labelRect.height + 10)}px`;
     freightButton.style.zIndex = '51';
+
+    const buttonRect = freightButton.getBoundingClientRect();
+    freightButton.style.left = `${window.scrollX + labelRect.left - buttonRect.width - 10}px`;
+    freightButton.style.top = `${window.scrollY + labelRect.top + (labelRect.height - buttonRect.height) / 2}px`;
 
     placeContainerButtonNextToWarehouse();
   }
