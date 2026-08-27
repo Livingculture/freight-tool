@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.10
+// @version      0.1.11
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -1590,7 +1590,6 @@
           <img src="https://livingculture.co.nz/cdn/shop/files/logo_ec2b0c5e-42ca-4695-8c7e-43b344144c58.png?v=1675047511&width=220" alt="Living Culture" />
           <strong>Freight Costing</strong>
         </div>
-        <p>Use Cin7 products and delivery details.</p>
         <button type="button" id="lc-omni-panel-close">×</button>
       </div>
 
