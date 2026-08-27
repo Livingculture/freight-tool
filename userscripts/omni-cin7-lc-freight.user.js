@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.13
+// @version      0.1.14
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -1085,7 +1085,7 @@
 
           return `
             <div class="lc-omni-detected-item" data-sku="${escapeHtml(item.sku)}">
-              <span>${escapeHtml(item.sku)}</span>
+              <span>SKU: ${escapeHtml(item.sku)}</span>
               <label>
                 Qty
                 <input class="lc-omni-detected-qty" type="number" min="0" step="1" value="${escapeHtml(qty)}">
@@ -1168,7 +1168,7 @@
 
   async function getAndApplyFreight({ sku, items, address, fill }) {
     let requestedItems = [];
-    let pendingProductDetails = Promise.resolve({ data: { products: [] } });
+    let pendingProductDetails = null;
     const lookupSeq = state.lookupSeq + 1;
     state.lookupSeq = lookupSeq;
     const isCurrentLookup = () => lookupSeq === state.lookupSeq;
@@ -1241,7 +1241,9 @@
       if (!isCurrentLookup()) return false;
 
       console.error(error);
-      const detailsResult = await pendingProductDetails.catch(() => ({}));
+      const detailsResult = pendingProductDetails
+        ? await pendingProductDetails.catch(() => ({}))
+        : {};
 
       if (!isCurrentLookup()) return false;
 
@@ -1318,7 +1320,7 @@
 
         return `
           <div class="lc-omni-detected-item" data-sku="${escapeHtml(item.sku)}">
-            <span>${escapeHtml(item.sku)}</span>
+            <span>SKU: ${escapeHtml(item.sku)}</span>
             <label>
               Qty
               <input class="lc-omni-detected-qty" type="number" min="0" step="1" value="${escapeHtml(qty)}">
@@ -1681,7 +1683,7 @@
 
       <div class="lc-omni-block" id="lc-omni-detected-block">
         <div class="lc-omni-label">Detected from Cin7</div>
-        <div><b>SKU:</b> <span id="lc-omni-auto-sku">-</span></div>
+        <div><span id="lc-omni-auto-sku">-</span></div>
         <div><b>Address:</b> <span id="lc-omni-auto-address">-</span></div>
         <button type="button" id="lc-omni-use-cin7">Refresh freight with these quantities</button>
       </div>
@@ -1716,7 +1718,7 @@
         left: 16px;
         z-index: 2147483647;
         box-sizing: border-box;
-        width: 580px;
+        width: 680px;
         max-width: calc(100vw - 32px);
         max-height: 300px;
         overflow: auto;
@@ -1736,7 +1738,8 @@
         grid-template-areas:
           "hero hero"
           "detected result"
-          "detected status";
+          "detected products"
+          "status status";
         align-items: start;
       }
 
@@ -1817,7 +1820,6 @@
 
       #lc-omni-product-details {
         grid-area: products;
-        display: none !important;
       }
 
       #lc-omni-manual-lookup-block {
@@ -1834,7 +1836,7 @@
 
       .lc-omni-detected-item {
         display: grid;
-        grid-template-columns: minmax(100px, 1fr) 70px 52px;
+        grid-template-columns: minmax(130px, 1fr) 70px 52px;
         align-items: center;
         gap: 6px;
         padding: 3px 0;
