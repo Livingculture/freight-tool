@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.2
+// @version      0.1.3
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -231,9 +231,10 @@
   }
 
   function getItemsFromCin7() {
-    const omniItems = getItemsFromOmniProductTable();
-    if (omniItems.length) return omniItems;
+    return getItemsFromOmniProductTable();
 
+    // The original Core fallbacks remain below for reference, but are intentionally
+    // unreachable in Omni because page-wide text scanning produces false products.
     const rawItems = [];
     const skuPattern = /\b([A-Z]{2,6}\d{3,}(?:-\d+)?(?:\([A-Z0-9-]+\))?)/i;
     const skuAtStartPattern = /^([A-Z]{2,6}\d{3,}(?:-\d+)?(?:\([A-Z0-9-]+\))?)\s*:/i;
@@ -313,66 +314,91 @@
 
   function getItemsFromOmniProductTable() {
     const normaliseHeader = value => clean(value).toLowerCase().replace(/[^a-z0-9]+/g, '');
-    const tables = Array.from(document.querySelectorAll('table')).filter(isVisible);
+    const allElements = Array.from(document.querySelectorAll('body *'))
+      .filter(isVisible)
+      .filter(element => !isInjectedPanelElement(element));
+    const headerElements = allElements
+      .filter(element => ['code', 'qtyordered'].includes(normaliseHeader(element.textContent)))
+      .sort((a, b) => a.children.length - b.children.length);
+    const codeHeaders = headerElements.filter(element => normaliseHeader(element.textContent) === 'code');
+    const quantityHeaders = headerElements.filter(element => normaliseHeader(element.textContent) === 'qtyordered');
+    let headerPair = null;
 
-    for (const table of tables) {
-      const rows = Array.from(table.querySelectorAll('tr'));
-      const headerRow = rows.find(row => {
-        const headers = Array.from(row.querySelectorAll('th,td')).map(cell => normaliseHeader(cell.textContent));
-        return headers.includes('code') && headers.includes('qtyordered');
-      });
-
-      if (!headerRow) continue;
-
-      const headerCells = Array.from(headerRow.querySelectorAll('th,td'));
-      const codeHeader = headerCells.find(cell => normaliseHeader(cell.textContent) === 'code');
-      const quantityHeader = headerCells.find(cell => normaliseHeader(cell.textContent) === 'qtyordered');
-      if (!codeHeader || !quantityHeader) continue;
-
+    for (const codeHeader of codeHeaders) {
       const codeRect = codeHeader.getBoundingClientRect();
-      const quantityRect = quantityHeader.getBoundingClientRect();
-      const grouped = new Map();
+      const quantityHeader = quantityHeaders
+        .map(element => ({ element, rect: element.getBoundingClientRect() }))
+        .filter(({ rect }) => Math.abs(rect.top - codeRect.top) < 30 && rect.left > codeRect.right)
+        .sort((a, b) => Math.abs(a.rect.top - codeRect.top) - Math.abs(b.rect.top - codeRect.top))[0];
 
-      const cellUnderHeader = (cells, headerRect) => cells
-        .map(cell => {
-          const rect = cell.getBoundingClientRect();
-          const overlap = Math.max(0, Math.min(rect.right, headerRect.right) - Math.max(rect.left, headerRect.left));
-          return { cell, overlap };
-        })
-        .sort((a, b) => b.overlap - a.overlap)[0];
-
-      for (const row of rows.slice(rows.indexOf(headerRow) + 1)) {
-        const cells = Array.from(row.querySelectorAll(':scope > td, :scope > th'));
-        if (!cells.length || !isVisible(row)) continue;
-
-        const codeMatch = cellUnderHeader(cells, codeRect);
-        const quantityMatch = cellUnderHeader(cells, quantityRect);
-        if (!codeMatch?.overlap || !quantityMatch?.overlap) continue;
-
-        const codeCell = codeMatch.cell;
-        const quantityCell = quantityMatch.cell;
-        const sku = clean(codeCell.querySelector('input,select,textarea')?.value || codeCell.textContent).toUpperCase();
-        const quantityValue = clean(quantityCell.querySelector('input,select,textarea')?.value || quantityCell.textContent);
-
-        if (!sku || !isFreightSku(sku)) continue;
-
-        grouped.set(sku, (grouped.get(sku) || 0) + normaliseQuantity(quantityValue));
-      }
-
-      if (grouped.size) {
-        return Array.from(grouped, ([sku, quantity]) => ({ sku, quantity }));
+      if (quantityHeader) {
+        headerPair = { codeHeader, quantityHeader: quantityHeader.element };
+        break;
       }
     }
 
-    return [];
+    if (!headerPair) return [];
+
+    const codeRect = headerPair.codeHeader.getBoundingClientRect();
+    const quantityRect = headerPair.quantityHeader.getBoundingClientRect();
+    const skuPattern = /^[A-Z]{2,6}\d{3,}(?:-\d+)?(?:\([A-Z0-9-]+\))?$/i;
+    const elementValue = element => clean(
+      /^(?:INPUT|SELECT|TEXTAREA)$/i.test(element.tagName) ? element.value : element.textContent
+    );
+    const leafValues = allElements.filter(element => (
+      !Array.from(element.children).some(child => elementValue(child) === elementValue(element))
+    ));
+    const skuElements = leafValues
+      .map(element => ({ element, value: elementValue(element), rect: element.getBoundingClientRect() }))
+      .filter(({ value, rect }) => (
+        skuPattern.test(value) &&
+        rect.top > codeRect.bottom &&
+        rect.left < codeRect.right + 12 &&
+        rect.right > codeRect.left - 12
+      ));
+    const grouped = new Map();
+
+    for (const skuItem of skuElements) {
+      const quantity = leafValues
+        .map(element => ({ value: elementValue(element), rect: element.getBoundingClientRect() }))
+        .filter(({ value, rect }) => (
+          /^\d+(?:\.\d+)?$/.test(value) &&
+          rect.left < quantityRect.right + 12 &&
+          rect.right > quantityRect.left - 12 &&
+          rect.top < skuItem.rect.bottom + 8 &&
+          rect.bottom > skuItem.rect.top - 8
+        ))
+        .sort((a, b) => Math.abs(a.rect.top - skuItem.rect.top) - Math.abs(b.rect.top - skuItem.rect.top))[0];
+
+      if (!quantity) continue;
+
+      const sku = skuItem.value.toUpperCase();
+      grouped.set(sku, (grouped.get(sku) || 0) + normaliseQuantity(quantity.value));
+    }
+
+    return Array.from(grouped, ([sku, quantity]) => ({ sku, quantity }));
   }
 
   function getOmniFieldValue(labelText) {
-    const expected = clean(labelText).toLowerCase();
+    const normaliseLabel = value => clean(value).toLowerCase().replace(/[^a-z0-9]+/g, '');
+    const expected = normaliseLabel(labelText);
+    const aliases = expected === 'deliverypostalcode'
+      ? ['deliverypostalcode', 'deliverypostcode']
+      : [expected];
+    const namedField = Array.from(document.querySelectorAll('input:not([type="hidden"]), select, textarea'))
+      .filter(isVisible)
+      .filter(field => !isInjectedPanelElement(field))
+      .find(field => {
+        const identifier = normaliseLabel(`${field.id || ''} ${field.name || ''}`);
+        return aliases.some(alias => identifier.includes(alias));
+      });
+    const namedValue = clean(namedField?.value || namedField?.textContent);
+    if (namedValue) return namedValue;
+
     const labels = Array.from(document.querySelectorAll('label, legend, span, div, td, th'))
       .filter(isVisible)
       .filter(element => !isInjectedPanelElement(element))
-      .filter(element => clean(element.textContent).toLowerCase() === expected)
+      .filter(element => aliases.includes(normaliseLabel(element.textContent)))
       .sort((a, b) => a.children.length - b.children.length);
 
     for (const label of labels) {
@@ -1266,7 +1292,10 @@
   function findOmniFreightLabel() {
     return getAllVisiblePageElements().filter(element => (
       clean(element.innerText || element.textContent).toLowerCase() === 'freight'
-    )).sort((a, b) => a.children.length - b.children.length)[0] || null;
+    )).sort((a, b) => (
+      b.getBoundingClientRect().top - a.getBoundingClientRect().top ||
+      a.children.length - b.children.length
+    ))[0] || null;
   }
 
   function findButtonByText(pattern) {
@@ -1341,7 +1370,7 @@
     freightButton.style.zIndex = '51';
 
     const buttonRect = freightButton.getBoundingClientRect();
-    freightButton.style.left = `${window.scrollX + labelRect.left - buttonRect.width - 10}px`;
+    freightButton.style.left = `${window.scrollX + labelRect.left - buttonRect.width - 26}px`;
     freightButton.style.top = `${window.scrollY + labelRect.top + (labelRect.height - buttonRect.height) / 2}px`;
 
     placeContainerButtonNextToWarehouse();
@@ -1360,6 +1389,9 @@
     button.style.font = '800 14px Arial, sans-serif';
     button.style.cursor = 'pointer';
     button.style.lineHeight = '1';
+    button.style.alignItems = 'center';
+    button.style.justifyContent = 'center';
+    button.style.textAlign = 'center';
     button.style.whiteSpace = 'nowrap';
     button.style.verticalAlign = 'middle';
     button.style.display = 'none';
@@ -1464,6 +1496,7 @@
 
       window.__lcOmniFreightMutationTimer = setTimeout(() => {
         checkForChanges();
+        placeFreightButtonNextToMemo();
       }, 900);
     });
 
@@ -1487,7 +1520,7 @@
     const button = document.createElement('button');
     button.id = 'lc-omni-freight-toggle';
     button.type = 'button';
-    button.textContent = 'Omni LC Freight';
+    button.textContent = 'Freight Costs';
     styleFreightInlineButton(button);
 
     const containerButton = document.createElement('button');
