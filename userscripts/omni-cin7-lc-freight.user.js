@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.9
+// @version      0.1.10
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -886,7 +886,9 @@
             };
           }),
           address,
-          selectedAddress: address
+          selectedAddress: address,
+          freightPriceOnly: true,
+          quoteAvailableQuantityOnly: false
         })
       });
     } catch (error) {
@@ -1086,7 +1088,7 @@
     const isCurrentLookup = () => lookupSeq === state.lookupSeq;
 
     try {
-      setStatus('Getting freight...');
+      setStatus('Getting freight price (this can take up to 60 seconds)...');
 
       requestedItems = normaliseFreightItems({ sku, items });
 
@@ -1099,16 +1101,8 @@
 
       setResultLoading();
       renderProductDetails(requestedItems, state.method);
-      let pendingDisplayProducts = requestedItems;
-      const applyPendingProducts = products => {
-        if (!isCurrentLookup() || !products?.length) return;
-        pendingDisplayProducts = mergeProductDetails(pendingDisplayProducts, products);
-        renderProductDetails(pendingDisplayProducts, state.method);
-      };
-      pendingProductDetails = requestProductDetailsWithRetry(requestedItems)
-        .then(data => ({ data }))
-        .catch(error => ({ error }));
-      pendingProductDetails.then(result => applyPendingProducts(result?.data?.products || []));
+      // The compact Omni panel only needs the freight quote. Product enrichment is
+      // intentionally skipped here to avoid a second slow network/automation job.
 
       const data = await requestFreight({
         sku,
@@ -1425,7 +1419,7 @@
     const buttonRect = button.getBoundingClientRect();
     const panelRect = panel.getBoundingClientRect();
     const left = Math.max(16, window.scrollX + buttonRect.left - panelRect.width - 12);
-    const top = Math.max(16, window.scrollY + buttonRect.top);
+    const top = Math.max(16, window.scrollY + buttonRect.top - 64);
 
     panel.style.left = `${left}px`;
     panel.style.top = `${top}px`;
