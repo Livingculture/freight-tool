@@ -1,14 +1,15 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.12
+// @version      0.1.13
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
 // @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
-// @grant        none
+// @grant        GM_xmlhttpRequest
+// @connect      livingculture.co.nz
 // ==/UserScript==
 
 (function () {
@@ -16,6 +17,7 @@
 
   const HOSTED_API_BASE = 'https://living-culture-freight.vercel.app';
   const API_BASE = HOSTED_API_BASE || 'http://localhost:3001';
+  const SHOPIFY_BASE = 'https://livingculture.co.nz';
   const CONTAINER_DASHBOARD_URL = `${API_BASE}/containers.html`;
 
   const state = {
@@ -37,6 +39,68 @@
 
   function clean(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function gmRequestJson(url, options = {}) {
+    return new Promise((resolve, reject) => {
+      GM_xmlhttpRequest({
+        method: options.method || 'GET',
+        url,
+        headers: {
+          Accept: 'application/json',
+          ...(options.body ? { 'Content-Type': 'application/json' } : {})
+        },
+        data: options.body ? JSON.stringify(options.body) : undefined,
+        timeout: options.timeoutMs || 25000,
+        anonymous: false,
+        onload(response) {
+          let data = {};
+          try { data = JSON.parse(response.responseText || '{}'); } catch {}
+          resolve({ ok: response.status >= 200 && response.status < 300, status: response.status, data });
+        },
+        ontimeout: () => reject(new Error('Shopify freight request timed out.')),
+        onerror: () => reject(new Error('Shopify freight request failed.'))
+      });
+    });
+  }
+
+  async function requestShopifyPostcodeFreight(freightItems, postcode) {
+    const prepareResponse = await fetch(`${API_BASE}/api/prepare`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: freightItems })
+    });
+    const prepared = await prepareResponse.json().catch(() => ({}));
+    const products = Array.isArray(prepared.products) ? prepared.products : [];
+    const cartItems = products.map(product => {
+      const match = freightItems.find(item => clean(item.sku).toLowerCase() === clean(product.sku).toLowerCase());
+      return { id: product.variantId, quantity: normaliseQuantity(match?.quantity || 1) };
+    }).filter(item => item.id && item.quantity > 0);
+
+    if (!prepareResponse.ok || !cartItems.length) throw new Error(prepared.error || 'No Shopify variants found.');
+
+    const cleared = await gmRequestJson(`${SHOPIFY_BASE}/cart/clear.js`, { method: 'POST' });
+    if (!cleared.ok) throw new Error(`Shopify cart clear failed (${cleared.status}).`);
+
+    for (const item of cartItems) {
+      const added = await gmRequestJson(`${SHOPIFY_BASE}/cart/add.js`, { method: 'POST', body: { items: [item] } });
+      if (!added.ok) throw new Error(added.data.description || `Shopify cart add failed (${added.status}).`);
+    }
+
+    const params = new URLSearchParams();
+    params.set('shipping_address[zip]', postcode);
+    params.set('shipping_address[country]', 'New Zealand');
+    const rates = await gmRequestJson(`${SHOPIFY_BASE}/cart/shipping_rates.json?${params}`, { timeoutMs: 20000 });
+    if (!rates.ok) throw new Error(rates.data.description || `Shopify freight lookup failed (${rates.status}).`);
+    const choices = Array.isArray(rates.data.shipping_rates) ? rates.data.shipping_rates : [];
+    const rate = choices.find(item => /ship|freight|delivery/i.test(clean(item.name || item.title || item.code))) || choices[0];
+    if (!rate) throw new Error('No Shopify freight rates returned for this postcode.');
+
+    return {
+      price: `$${Number(rate.price).toFixed(2)}`,
+      method: clean(rate.name || rate.title || rate.code || 'Shipping'),
+      products
+    };
   }
 
   function moneyToNumber(value) {
@@ -858,6 +922,17 @@
         ...state.freightCache.get(cacheKey),
         fromCache: true
       };
+    }
+
+    const postcode = clean(address).match(/\b\d{4}\b/)?.[0] || '';
+    if (!postcode) throw new Error('Enter a four-digit delivery postcode.');
+
+    try {
+      const shopifyData = await requestShopifyPostcodeFreight(freightItems, postcode);
+      state.freightCache.set(cacheKey, shopifyData);
+      return shopifyData;
+    } catch (shopifyError) {
+      console.error('Direct Shopify postcode freight failed:', shopifyError);
     }
 
     const firstItem = freightItems[0] || {};
