@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.3
+// @version      0.1.4
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -428,15 +428,7 @@
   }
 
   function getAddressFromCin7() {
-    const field = label => getOmniFieldValue(label);
-    const line1 = field('Delivery Address 1');
-    const line2 = field('Delivery Address 2');
-    const city = field('Delivery City');
-    const region = field('Delivery State/Region');
-    const postcode = field('Delivery Postal Code');
-    const country = field('Delivery Country');
-
-    return clean([line1, line2, city, region, postcode, country].filter(isAddressLike).join(', '));
+    return clean(getOmniFieldValue('Delivery Postal Code'));
   }
 
   function getAddressSearchFromCin7() {
@@ -1366,7 +1358,7 @@
     freightButton.style.display = 'inline-flex';
     freightButton.style.position = 'absolute';
     freightButton.style.marginLeft = '0';
-    freightButton.style.height = `${Math.max(30, labelRect.height + 10)}px`;
+    freightButton.style.height = '28px';
     freightButton.style.zIndex = '51';
 
     const buttonRect = freightButton.getBoundingClientRect();
@@ -1378,9 +1370,10 @@
 
   function styleFreightInlineButton(button) {
     button.style.boxSizing = 'border-box';
-    button.style.minWidth = '120px';
-    button.style.minHeight = '34px';
-    button.style.padding = '0 14px';
+    button.style.width = '140px';
+    button.style.minWidth = '140px';
+    button.style.minHeight = '28px';
+    button.style.padding = '0 16px';
     button.style.background = '#05cabe';
     button.style.color = '#fff';
     button.style.border = '1px solid #05cabe';
