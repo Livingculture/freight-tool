@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.14
+// @version      0.1.15
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -1378,14 +1378,14 @@
     if (!label) return [];
 
     const labelRect = label.getBoundingClientRect();
+    const labelCentreY = labelRect.top + labelRect.height / 2;
     return Array.from(document.querySelectorAll('input:not([type="hidden"])'))
       .filter(isVisible)
       .filter(input => !isInjectedPanelElement(input))
       .map(input => ({ input, rect: input.getBoundingClientRect() }))
       .filter(({ rect }) => (
         rect.left >= labelRect.right - 8 &&
-        rect.top <= labelRect.bottom + 8 &&
-        rect.bottom >= labelRect.top - 8
+        Math.abs((rect.top + rect.height / 2) - labelCentreY) <= 6
       ))
       .sort((a, b) => a.rect.left - b.rect.left)
       .map(({ input }) => input);
@@ -1407,13 +1407,11 @@
   function fillOmniFreightFields(price, method) {
     const inputs = findOmniFreightInputs();
     const descriptionInput = inputs.length > 1 ? inputs[0] : null;
+    const amountInput = inputs.length > 1 ? inputs[1] : inputs[0] || null;
     const amount = Number(moneyToNumber(price));
-    if (!inputs.length || !Number.isFinite(amount)) return false;
+    if (!amountInput || !Number.isFinite(amount)) return false;
 
     if (descriptionInput && clean(method)) setOmniInputValue(descriptionInput, clean(method));
-    const refreshedInputs = findOmniFreightInputs();
-    const amountInput = refreshedInputs[refreshedInputs.length - 1] || null;
-    if (!amountInput) return false;
     setOmniInputValue(amountInput, amount.toFixed(2));
     return true;
   }
