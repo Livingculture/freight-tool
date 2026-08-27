@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.20
+// @version      0.1.21
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -32,6 +32,7 @@
     queuedAutoKey: '',
     excludedSkus: new Set(),
     freightCache: new Map(),
+    shopifyQueue: Promise.resolve(),
     lookupSeq: 0
   };
   const IGNORED_SKU_PREFIXES = new Set(['AS']);
@@ -64,7 +65,7 @@
     });
   }
 
-  async function requestShopifyPostcodeFreight(freightItems, postcode) {
+  async function requestShopifyPostcodeFreightNow(freightItems, postcode) {
     const prepareResponse = await fetch(`${API_BASE}/api/prepare`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -101,6 +102,14 @@
       method: clean(rate.name || rate.title || rate.code || 'Shipping'),
       products
     };
+  }
+
+  function requestShopifyPostcodeFreight(freightItems, postcode) {
+    const request = state.shopifyQueue
+      .catch(() => {})
+      .then(() => requestShopifyPostcodeFreightNow(freightItems, postcode));
+    state.shopifyQueue = request.catch(() => {});
+    return request;
   }
 
   function moneyToNumber(value) {
@@ -523,6 +532,7 @@
     const result = document.getElementById('lc-omni-freight-result');
     const methodBlock = document.getElementById('lc-omni-freight-method');
     const preSaleBlock = document.getElementById('lc-omni-presale-freight-estimate');
+    const breakdownBlock = document.getElementById('lc-omni-freight-breakdown');
 
     if (result) {
       result.textContent = price ? `Freight now: ${price}` : 'Freight: -';
@@ -543,6 +553,8 @@
         preSaleBlock.innerHTML = '';
       }
     }
+
+    if (!price && breakdownBlock) breakdownBlock.innerHTML = '';
   }
 
   function setResultLoading() {
@@ -553,6 +565,7 @@
     const result = document.getElementById('lc-omni-freight-result');
     const methodBlock = document.getElementById('lc-omni-freight-method');
     const preSaleBlock = document.getElementById('lc-omni-presale-freight-estimate');
+    const breakdownBlock = document.getElementById('lc-omni-freight-breakdown');
 
     if (result) {
       result.textContent = 'Freight: updating...';
@@ -564,6 +577,40 @@
 
     if (preSaleBlock) {
       preSaleBlock.innerHTML = '';
+    }
+
+
+    if (breakdownBlock) breakdownBlock.innerHTML = '';
+  }
+
+  async function loadFreightBreakdown(items, address, shouldRender = () => true) {
+    const block = document.getElementById('lc-omni-freight-breakdown');
+    const freightItems = normaliseFreightItems({ items });
+    if (!block || !freightItems.length) return;
+
+    block.innerHTML = '<div class="lc-omni-breakdown-title">Product freight breakdown</div><div>Calculating…</div>';
+    const rows = [];
+
+    for (const item of freightItems) {
+      try {
+        const data = await requestFreight({ items: [item], address });
+        rows.push({ item, price: data.price, method: data.method });
+      } catch (error) {
+        console.error(`Freight breakdown failed for ${item.sku}:`, error);
+        rows.push({ item, error: true });
+      }
+
+      if (!shouldRender()) return;
+      block.innerHTML = `
+        <div class="lc-omni-breakdown-title">Product freight breakdown</div>
+        ${rows.map(row => `
+          <div class="lc-omni-breakdown-row">
+            <span>${escapeHtml(row.item.sku)} × ${escapeHtml(row.item.quantity)}</span>
+            <strong>${row.error ? 'Unavailable' : escapeHtml(row.price)}</strong>
+          </div>
+        `).join('')}
+        ${rows.length < freightItems.length ? '<div>Calculating next product…</div>' : ''}
+      `;
     }
   }
 
@@ -1213,6 +1260,7 @@
         pendingProductDetails,
         isCurrentLookup
       );
+      loadFreightBreakdown(quotedItems, address, isCurrentLookup);
 
       return true;
     } catch (error) {
@@ -1650,6 +1698,7 @@
           <div id="lc-omni-freight-result">Freight: -</div>
           <div id="lc-omni-freight-method"></div>
           <div id="lc-omni-presale-freight-estimate"></div>
+          <div id="lc-omni-freight-breakdown"></div>
         </div>
         <button type="button" id="lc-omni-use-cin7">Refresh freight with these quantities</button>
       </div>
@@ -1810,6 +1859,27 @@
         gap: 2px;
         padding-top: 5px;
         border-top: 1px solid #dce5f1;
+      }
+
+      #lc-omni-freight-breakdown {
+        display: grid;
+        gap: 3px;
+        margin-top: 4px;
+        padding-top: 5px;
+        border-top: 1px solid #dce5f1;
+        color: #4c6485;
+        font-size: 11px;
+      }
+
+      .lc-omni-breakdown-title {
+        color: #162947;
+        font-weight: 800;
+      }
+
+      .lc-omni-breakdown-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
       }
 
       #lc-omni-product-details {
