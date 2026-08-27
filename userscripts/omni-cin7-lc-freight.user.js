@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.24
+// @version      0.1.25
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -433,15 +433,7 @@
 
     for (const skuItem of skuElements) {
       const sku = skuItem.value.toUpperCase();
-      const rowHasAssembly = leafValues.some(element => {
-        const value = elementValue(element);
-        const rect = element.getBoundingClientRect();
-        return /\bassembly\b/i.test(value) &&
-          rect.top < skuItem.rect.bottom + 8 &&
-          rect.bottom > skuItem.rect.top - 8;
-      });
-
-      if (rowHasAssembly) continue;
+      if (/^AS/i.test(sku)) continue;
 
       const quantity = leafValues
         .map(element => ({ value: elementValue(element), rect: element.getBoundingClientRect() }))
