@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.6
+// @version      0.1.7
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -1400,7 +1400,28 @@
     freightButton.style.left = `${window.scrollX + labelRect.left - buttonRect.width - 26}px`;
     freightButton.style.top = `${window.scrollY + labelRect.top + (labelRect.height - buttonRect.height) / 2}px`;
 
+    const panel = document.getElementById('lc-omni-freight-panel');
+    if (panel?.classList.contains('is-open')) positionFreightPanelNextToButton();
+
     placeContainerButtonNextToWarehouse();
+  }
+
+  function positionFreightPanelNextToButton() {
+    const button = document.getElementById('lc-omni-freight-toggle');
+    const panel = document.getElementById('lc-omni-freight-panel');
+    if (!button || !panel?.classList.contains('is-open')) return;
+
+    const buttonRect = button.getBoundingClientRect();
+    const panelRect = panel.getBoundingClientRect();
+    const left = Math.max(16, buttonRect.left - panelRect.width - 12);
+    const top = Math.max(16, Math.min(
+      window.innerHeight - panelRect.height - 16,
+      buttonRect.bottom - panelRect.height
+    ));
+
+    panel.style.left = `${left}px`;
+    panel.style.top = `${top}px`;
+    panel.style.right = 'auto';
   }
 
   function styleFreightInlineButton(button) {
@@ -1618,13 +1639,6 @@
         border-radius: 14px;
         box-shadow: 0 20px 44px rgba(15, 46, 106, 0.20);
         font: 13px/1.35 Arial, sans-serif;
-      }
-
-      @media (min-width: 1200px) {
-        html.lc-omni-freight-docked body {
-          width: calc(100% - 376px) !important;
-          max-width: none !important;
-        }
       }
 
       #lc-omni-freight-panel.is-open {
@@ -1961,11 +1975,11 @@
 
     button.addEventListener('click', () => {
       panel.classList.toggle('is-open');
-      document.documentElement.classList.toggle('lc-omni-freight-docked', panel.classList.contains('is-open'));
 
       if (panel.classList.contains('is-open')) {
         state.lastAutoKey = '';
         renderDetectedDetails();
+        requestAnimationFrame(positionFreightPanelNextToButton);
         scheduleAutoCin7Lookup(350);
       }
     });
@@ -1976,7 +1990,6 @@
 
     panel.querySelector('#lc-omni-panel-close').addEventListener('click', () => {
       panel.classList.remove('is-open');
-      document.documentElement.classList.remove('lc-omni-freight-docked');
     });
 
     panel.querySelector('#lc-omni-use-cin7').addEventListener('click', () => {
@@ -2067,6 +2080,8 @@
   boot();
 
   window.addEventListener('load', boot);
+  window.addEventListener('resize', positionFreightPanelNextToButton);
+  window.addEventListener('scroll', positionFreightPanelNextToButton, { passive: true });
   document.addEventListener('DOMContentLoaded', boot);
 
   setInterval(() => {
