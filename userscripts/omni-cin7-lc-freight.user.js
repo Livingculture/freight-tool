@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.11
+// @version      0.1.12
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -866,31 +866,42 @@
     const timeoutId = setTimeout(() => controller.abort(), FREIGHT_TIMEOUT_MS);
 
     let response;
+    let data = {};
 
     try {
-      response = await fetch(`${API_BASE}/get-freight`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
-        body: JSON.stringify({
-          sku: firstIsUrl ? '' : firstItem.sku,
-          productUrl: firstItem.productUrl || (firstIsUrl ? firstItem.sku : ''),
-          quantity: firstItem.quantity || 1,
-          items: freightItems.map(item => {
-            const isUrl = /^https?:\/\/.+\/products\//i.test(item.sku || item.productUrl || '');
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        response = await fetch(`${API_BASE}/get-freight`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({
+            sku: firstIsUrl ? '' : firstItem.sku,
+            productUrl: firstItem.productUrl || (firstIsUrl ? firstItem.sku : ''),
+            quantity: firstItem.quantity || 1,
+            items: freightItems.map(item => {
+              const isUrl = /^https?:\/\/.+\/products\//i.test(item.sku || item.productUrl || '');
 
-            return {
-              sku: isUrl ? '' : item.sku,
-              productUrl: item.productUrl || (isUrl ? item.sku : ''),
-              quantity: item.quantity || 1
-            };
-          }),
-          address,
-          selectedAddress: address,
-          freightPriceOnly: true,
-          quoteAvailableQuantityOnly: false
-        })
-      });
+              return {
+                sku: isUrl ? '' : item.sku,
+                productUrl: item.productUrl || (isUrl ? item.sku : ''),
+                quantity: item.quantity || 1
+              };
+            }),
+            address,
+            selectedAddress: address,
+            freightPriceOnly: true,
+            quoteAvailableQuantityOnly: false,
+            skipBrowserFallback: true
+          })
+        });
+        data = await response.json().catch(() => ({}));
+
+        if (response.status !== 429 || attempt === 2) break;
+
+        const waitSeconds = attempt === 0 ? 8 : 16;
+        setStatus(`Freight service is busy. Retrying in ${waitSeconds} seconds...`);
+        await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000));
+      }
     } catch (error) {
       if (error.name === 'AbortError') {
         throw new Error('Freight lookup is taking too long. Quote manually or try again in a moment.');
@@ -901,10 +912,10 @@
       clearTimeout(timeoutId);
     }
 
-    const data = await response.json().catch(() => ({}));
-
     if (!response.ok || !data.price) {
-      throw new Error(data.error || 'No freight returned');
+      throw new Error(response.status === 429
+        ? 'Freight service is temporarily busy. Please click Refresh freight shortly.'
+        : data.error || 'No freight returned');
     }
 
     state.freightCache.set(cacheKey, data);
@@ -1630,7 +1641,7 @@
         left: 16px;
         z-index: 2147483647;
         box-sizing: border-box;
-        width: 520px;
+        width: 580px;
         max-width: calc(100vw - 32px);
         max-height: 300px;
         overflow: auto;
@@ -1748,9 +1759,9 @@
 
       .lc-omni-detected-item {
         display: grid;
-        grid-template-columns: 1fr 86px 64px;
+        grid-template-columns: minmax(100px, 1fr) 70px 52px;
         align-items: center;
-        gap: 8px;
+        gap: 6px;
         padding: 3px 0;
         border-bottom: 1px solid #dce5f1;
       }
@@ -1761,6 +1772,7 @@
 
       .lc-omni-detected-item span {
         font-weight: 800;
+        white-space: nowrap;
       }
 
       .lc-omni-detected-item label {
