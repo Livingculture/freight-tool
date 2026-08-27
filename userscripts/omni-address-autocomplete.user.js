@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni New Zealand Address Autocomplete
 // @namespace    livingculture-omni
-// @version      0.1.1
+// @version      0.1.2
 // @description  Adds New Zealand address suggestions to Cin7 Omni delivery addresses.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-address-autocomplete.user.js
@@ -231,21 +231,23 @@
 
   function attach() {
     const input = findField('Delivery Address 1');
-    if (!input || input === addressInput) return;
+    if (!input) return;
     addressInput = input;
     input.setAttribute('autocomplete', 'off');
-    input.addEventListener('input', () => {
-      clearTimeout(timer);
-      const query = clean(input.value);
-      if (query.length < MIN_QUERY_LENGTH) {
-        hideSuggestions();
-        return;
-      }
-      timer = setTimeout(() => search(query), 700);
-    });
-    input.addEventListener('keydown', event => {
-      if (event.key === 'Escape') hideSuggestions();
-    });
+  }
+
+  function handleAddressInput(event) {
+    const currentField = findField('Delivery Address 1');
+    if (!currentField || event.target !== currentField) return;
+    addressInput = currentField;
+    addressInput.setAttribute('autocomplete', 'off');
+    clearTimeout(timer);
+    const query = clean(addressInput.value);
+    if (query.length < MIN_QUERY_LENGTH) {
+      hideSuggestions();
+      return;
+    }
+    timer = setTimeout(() => search(query), 700);
   }
 
   const style = document.createElement('style');
@@ -288,6 +290,14 @@
   document.addEventListener('mousedown', event => {
     if (event.target !== addressInput && !event.target.closest('#lc-omni-address-suggestions')) hideSuggestions();
   });
+  document.addEventListener('input', handleAddressInput, true);
+  document.addEventListener('keyup', event => {
+    if (event.key === 'Escape') {
+      hideSuggestions();
+      return;
+    }
+    handleAddressInput(event);
+  }, true);
   window.addEventListener('resize', positionList);
   window.addEventListener('scroll', positionList, { passive: true });
   setInterval(attach, 1200);
