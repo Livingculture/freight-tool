@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.8
+// @version      0.1.9
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -1425,7 +1425,7 @@
     const buttonRect = button.getBoundingClientRect();
     const panelRect = panel.getBoundingClientRect();
     const left = Math.max(16, window.scrollX + buttonRect.left - panelRect.width - 12);
-    const top = Math.max(16, window.scrollY + buttonRect.bottom - panelRect.height);
+    const top = Math.max(16, window.scrollY + buttonRect.top);
 
     panel.style.left = `${left}px`;
     panel.style.top = `${top}px`;
@@ -1637,9 +1637,9 @@
         left: 16px;
         z-index: 2147483647;
         box-sizing: border-box;
-        width: 720px;
+        width: 520px;
         max-width: calc(100vw - 32px);
-        max-height: 430px;
+        max-height: 300px;
         overflow: auto;
         display: none;
         padding: 0;
@@ -1657,31 +1657,30 @@
         grid-template-areas:
           "hero hero"
           "detected result"
-          "detected products"
-          "status status";
+          "detected status";
         align-items: start;
       }
 
       .lc-omni-hero {
         grid-area: hero;
         position: relative;
-        margin: 10px;
-        padding: 14px 14px 12px;
+        margin: 6px;
+        padding: 8px 10px;
         color: #fff;
         background: #13377e;
-        border-radius: 12px;
+        border-radius: 8px;
         box-shadow: 0 12px 28px rgba(15, 46, 106, 0.18);
       }
 
       .lc-omni-hero-top {
         display: flex;
         align-items: center;
-        gap: 16px;
+        gap: 10px;
         padding-right: 38px;
       }
 
       .lc-omni-hero img {
-        width: 96px;
+        width: 68px;
         height: auto;
         display: block;
         margin: 0;
@@ -1689,25 +1688,25 @@
 
       .lc-omni-hero strong {
         display: block;
-        font-size: 22px;
+        font-size: 18px;
         line-height: 1.05;
         font-weight: 700;
         text-align: left;
       }
 
       .lc-omni-hero p {
-        margin: 4px 38px 0 112px;
+        margin: 2px 38px 0 78px;
         color: rgba(255, 255, 255, 0.92);
-        font-size: 12px;
-        line-height: 1.5;
+        font-size: 11px;
+        line-height: 1.3;
       }
 
       #lc-omni-panel-close {
         position: absolute;
-        top: 12px;
-        right: 12px;
-        width: 32px;
-        height: 32px;
+        top: 8px;
+        right: 8px;
+        width: 28px;
+        height: 28px;
         color: #162947;
         background: #e7eef8;
         border: 1px solid #b8c9e1;
@@ -1719,12 +1718,12 @@
 
       .lc-omni-block {
         display: grid;
-        gap: 7px;
-        margin: 10px;
-        padding: 12px;
+        gap: 5px;
+        margin: 6px;
+        padding: 8px;
         background: #fff;
         border: 1px solid #b8c9e1;
-        border-radius: 12px;
+        border-radius: 8px;
         box-shadow: 0 10px 24px rgba(15, 46, 106, 0.09);
       }
 
@@ -1739,6 +1738,7 @@
 
       #lc-omni-product-details {
         grid-area: products;
+        display: none !important;
       }
 
       #lc-omni-manual-lookup-block {
@@ -1758,7 +1758,7 @@
         grid-template-columns: 1fr 86px 64px;
         align-items: center;
         gap: 8px;
-        padding: 5px 0;
+        padding: 3px 0;
         border-bottom: 1px solid #dce5f1;
       }
 
@@ -1809,8 +1809,8 @@
       }
 
       #lc-omni-freight-panel button:not(#lc-omni-panel-close):not(.lc-omni-remove-detected) {
-        min-height: 36px;
-        padding: 8px 10px;
+        min-height: 30px;
+        padding: 5px 8px;
         color: #fff;
         background: #13377e;
         border: 0;
@@ -1886,7 +1886,7 @@
       #lc-omni-freight-status {
         grid-area: status;
         min-height: 20px;
-        margin: 8px 10px 12px;
+        margin: 6px;
         color: #34577f;
       }
 
