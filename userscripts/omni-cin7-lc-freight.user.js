@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.19
+// @version      0.1.20
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -999,25 +999,12 @@
   }
 
   function getEditedCin7Items() {
-    const rows = Array.from(document.querySelectorAll('#lc-omni-auto-sku .lc-omni-detected-item'));
-
-    if (!rows.length) {
-      return getItemsFromCin7()
-        .filter(item => !state.excludedSkus.has(item.sku))
-        .map(item => ({
-          sku: item.sku,
-          quantity: normaliseQuantityAllowZero(item.quantity)
-        }))
-        .filter(item => item.quantity > 0);
-    }
-
-    return rows
-      .map(row => ({
-        sku: clean(row.dataset.sku),
-        quantity: normaliseQuantityAllowZero(row.querySelector('.lc-omni-detected-qty')?.value)
-      }))
-      .filter(item => item.sku)
+    return getItemsFromCin7()
       .filter(item => !state.excludedSkus.has(item.sku))
+      .map(item => ({
+        sku: clean(item.sku),
+        quantity: normaliseQuantityAllowZero(item.quantity)
+      }))
       .filter(item => item.quantity > 0);
   }
 
@@ -1072,23 +1059,14 @@
       const detectedItems = getItemsFromCin7()
         .filter(item => !state.excludedSkus.has(item.sku));
 
-      const existingQty = new Map(
-        Array.from(document.querySelectorAll('#lc-omni-auto-sku .lc-omni-detected-item')).map(row => [
-          clean(row.dataset.sku),
-          normaliseQuantityAllowZero(row.querySelector('.lc-omni-detected-qty')?.value)
-        ])
-      );
-
       skuBox.innerHTML = detectedItems.length
         ? detectedItems.map(item => {
-          const qty = existingQty.has(item.sku) ? existingQty.get(item.sku) : item.quantity;
-
           return `
             <div class="lc-omni-detected-item" data-sku="${escapeHtml(item.sku)}">
               <span>SKU: ${escapeHtml(item.sku)}</span>
               <label>
                 Qty
-                <input class="lc-omni-detected-qty" type="number" min="0" step="1" value="${escapeHtml(qty)}">
+                <input class="lc-omni-detected-qty" type="number" min="0" step="1" value="${escapeHtml(item.quantity)}" readonly>
               </label>
               <button type="button" class="lc-omni-remove-detected" data-sku="${escapeHtml(item.sku)}">Remove</button>
             </div>
@@ -1305,25 +1283,16 @@
 
     if (!skuBox || !addressBox) return;
 
-    const existingQty = new Map(
-      Array.from(document.querySelectorAll('#lc-omni-auto-sku .lc-omni-detected-item')).map(row => [
-        clean(row.dataset.sku),
-        normaliseQuantityAllowZero(row.querySelector('.lc-omni-detected-qty')?.value)
-      ])
-    );
-
     if (!items.length) {
       skuBox.innerHTML = '-';
     } else {
       skuBox.innerHTML = items.map(item => {
-        const qty = existingQty.has(item.sku) ? existingQty.get(item.sku) : item.quantity;
-
         return `
           <div class="lc-omni-detected-item" data-sku="${escapeHtml(item.sku)}">
             <span>SKU: ${escapeHtml(item.sku)}</span>
             <label>
               Qty
-              <input class="lc-omni-detected-qty" type="number" min="0" step="1" value="${escapeHtml(qty)}">
+              <input class="lc-omni-detected-qty" type="number" min="0" step="1" value="${escapeHtml(item.quantity)}" readonly>
             </label>
             <button type="button" class="lc-omni-remove-detected" data-sku="${escapeHtml(item.sku)}">Remove</button>
           </div>
@@ -1613,7 +1582,7 @@
       const rawItems = getItemsFromCin7();
       if (!rawItems.length) return;
 
-      const detectedSkuKey = JSON.stringify(rawItems.map(item => item.sku));
+      const detectedSkuKey = JSON.stringify(rawItems.map(item => [item.sku, item.quantity]));
 
       if (detectedSkuKey !== lastDetectedSkuKey) {
         lastDetectedSkuKey = detectedSkuKey;
