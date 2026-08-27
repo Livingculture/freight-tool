@@ -1,11 +1,9 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.0
+// @version      0.1.1
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
-// @match        *://cin7.com/*
-// @match        *://*.cin7.com/*
-// @match        *://*.cin7.co/*
+// @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
 // @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
 // @supportURL   https://github.com/Livingculture/freight-tool
