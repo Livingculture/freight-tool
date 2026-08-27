@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.17
+// @version      0.1.18
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -1735,12 +1735,29 @@
       }
 
       body.lc-omni-freight-sidebar-open {
+        box-sizing: border-box !important;
+        width: calc(100vw - 364px) !important;
+        min-width: 0 !important;
+        max-width: calc(100vw - 364px) !important;
         margin-right: 364px !important;
+        overflow-x: hidden !important;
+        background: #ededed !important;
+      }
+
+      body.lc-omni-freight-sidebar-open > *:not(#lc-omni-freight-panel):not(#lc-omni-freight-toggle):not(#lc-omni-containers-open) {
+        max-width: calc(100vw - 364px) !important;
       }
 
       @media (max-width: 900px) {
         body.lc-omni-freight-sidebar-open {
+          width: 100vw !important;
+          max-width: 100vw !important;
           margin-right: 0 !important;
+          overflow-x: auto !important;
+        }
+
+        body.lc-omni-freight-sidebar-open > *:not(#lc-omni-freight-panel):not(#lc-omni-freight-toggle):not(#lc-omni-containers-open) {
+          max-width: 100vw !important;
         }
       }
 
