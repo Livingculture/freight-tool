@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.15
+// @version      0.1.16
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -1223,7 +1223,7 @@
       if (adjustments.length) {
         setStatus('');
       } else {
-        setStatus(data.fromCache ? 'Freight loaded from recent lookup.' : 'Freight loaded.');
+        setStatus('');
       }
 
       // Show quote and product summary now; enrich measurements in the background.
@@ -1680,9 +1680,13 @@
       </div>
 
       <div class="lc-omni-block" id="lc-omni-detected-block">
-        <div class="lc-omni-label">Detected from Cin7</div>
         <div><span id="lc-omni-auto-sku">-</span></div>
         <div><b>Address:</b> <span id="lc-omni-auto-address">-</span></div>
+        <div class="lc-omni-inline-result">
+          <div id="lc-omni-freight-result">Freight: -</div>
+          <div id="lc-omni-freight-method"></div>
+          <div id="lc-omni-presale-freight-estimate"></div>
+        </div>
         <button type="button" id="lc-omni-use-cin7">Refresh freight with these quantities</button>
       </div>
 
@@ -1693,12 +1697,6 @@
         <input id="lc-omni-manual-address" placeholder="Address" />
         <div id="lc-omni-address-suggestions"></div>
         <button type="button" id="lc-omni-manual-get">Get freight manually</button>
-      </div>
-
-      <div class="lc-omni-block lc-omni-result-block">
-        <div id="lc-omni-freight-result">Freight: -</div>
-        <div id="lc-omni-freight-method"></div>
-        <div id="lc-omni-presale-freight-estimate"></div>
       </div>
 
       <div id="lc-omni-product-details" class="lc-omni-block"></div>
@@ -1735,7 +1733,6 @@
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
         grid-template-areas:
           "hero hero"
-          "detected result"
           "detected products"
           "status status";
         align-items: start;
@@ -1814,6 +1811,13 @@
 
       .lc-omni-result-block {
         grid-area: result;
+      }
+
+      .lc-omni-inline-result {
+        display: grid;
+        gap: 2px;
+        padding-top: 5px;
+        border-top: 1px solid #dce5f1;
       }
 
       #lc-omni-product-details {
