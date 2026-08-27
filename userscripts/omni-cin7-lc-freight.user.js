@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.4
+// @version      0.1.5
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -446,7 +446,7 @@
     status.textContent = isQueuedUpdate ? '' : message || '';
     status.setAttribute('aria-label', isQueuedUpdate ? message : '');
     status.style.display = message ? '' : 'none';
-    status.style.color = isError ? '#9a2d20' : '#405f54';
+    status.style.color = isError ? '#9a2d20' : '#34577f';
     status.classList.toggle('is-queued-update', isQueuedUpdate);
     status.classList.toggle('is-loading', Boolean(message && !isQueuedUpdate && !isError && /getting|loading|reading|updating/i.test(message)));
   }
@@ -1374,9 +1374,9 @@
     button.style.minWidth = '140px';
     button.style.minHeight = '28px';
     button.style.padding = '0 16px';
-    button.style.background = '#05cabe';
+    button.style.background = '#13377e';
     button.style.color = '#fff';
-    button.style.border = '1px solid #05cabe';
+    button.style.border = '1px solid #13377e';
     button.style.borderRadius = '4px';
     button.style.boxShadow = 'none';
     button.style.font = '800 14px Arial, sans-serif';
@@ -1390,13 +1390,13 @@
     button.style.display = 'none';
 
     button.addEventListener('mouseenter', () => {
-      button.style.background = '#04b5aa';
-      button.style.borderColor = '#04b5aa';
+      button.style.background = '#0f2e6a';
+      button.style.borderColor = '#0f2e6a';
     });
 
     button.addEventListener('mouseleave', () => {
-      button.style.background = '#05cabe';
-      button.style.borderColor = '#05cabe';
+      button.style.background = '#13377e';
+      button.style.borderColor = '#13377e';
     });
   }
 
@@ -1405,9 +1405,9 @@
     button.style.minWidth = '132px';
     button.style.minHeight = '34px';
     button.style.padding = '0 14px';
-    button.style.background = '#05cabe';
+    button.style.background = '#13377e';
     button.style.color = '#fff';
-    button.style.border = '1px solid #05cabe';
+    button.style.border = '1px solid #13377e';
     button.style.borderRadius = '4px';
     button.style.boxShadow = 'none';
     button.style.font = '800 14px Arial, sans-serif';
@@ -1418,13 +1418,13 @@
     button.style.display = 'none';
 
     button.addEventListener('mouseenter', () => {
-      button.style.background = '#04b5aa';
-      button.style.borderColor = '#04b5aa';
+      button.style.background = '#0f2e6a';
+      button.style.borderColor = '#0f2e6a';
     });
 
     button.addEventListener('mouseleave', () => {
-      button.style.background = '#05cabe';
-      button.style.borderColor = '#05cabe';
+      button.style.background = '#13377e';
+      button.style.borderColor = '#13377e';
     });
   }
 
@@ -1577,11 +1577,11 @@
         overflow: auto;
         display: none;
         padding: 0;
-        color: #1f2b24;
-        background: #c5d9d3;
-        border: 1px solid #d9d6cc;
+        color: #162947;
+        background: #dce6f4;
+        border: 1px solid #b8c9e1;
         border-radius: 14px;
-        box-shadow: 0 20px 44px rgba(34, 48, 40, 0.18);
+        box-shadow: 0 20px 44px rgba(15, 46, 106, 0.20);
         font: 13px/1.35 Arial, sans-serif;
       }
 
@@ -1594,9 +1594,9 @@
         margin: 10px;
         padding: 14px 14px 12px;
         color: #fff;
-        background: #2d5c4e;
+        background: #13377e;
         border-radius: 12px;
-        box-shadow: 0 12px 28px rgba(34, 48, 40, 0.14);
+        box-shadow: 0 12px 28px rgba(15, 46, 106, 0.18);
       }
 
       .lc-omni-hero-top {
@@ -1632,9 +1632,9 @@
         right: 12px;
         width: 32px;
         height: 32px;
-        color: #1f2b24;
-        background: #f3f1e8;
-        border: 1px solid #d9d6cc;
+        color: #162947;
+        background: #e7eef8;
+        border: 1px solid #b8c9e1;
         border-radius: 9px;
         font-size: 18px;
         font-weight: 800;
@@ -1646,10 +1646,10 @@
         gap: 7px;
         margin: 10px;
         padding: 12px;
-        background: #fffefb;
-        border: 1px solid #d9d6cc;
+        background: #fff;
+        border: 1px solid #b8c9e1;
         border-radius: 12px;
-        box-shadow: 0 10px 24px rgba(34, 48, 40, 0.08);
+        box-shadow: 0 10px 24px rgba(15, 46, 106, 0.09);
       }
 
       #lc-omni-manual-lookup-block {
@@ -1657,7 +1657,7 @@
       }
 
       .lc-omni-label {
-        color: #637061;
+        color: #4c6485;
         font-weight: 700;
         text-transform: uppercase;
         font-size: 11px;
@@ -1670,7 +1670,7 @@
         align-items: center;
         gap: 8px;
         padding: 5px 0;
-        border-bottom: 1px solid #ebe7dc;
+        border-bottom: 1px solid #dce5f1;
       }
 
       .lc-omni-detected-item:last-child {
@@ -1686,7 +1686,7 @@
         grid-template-columns: 28px 1fr;
         align-items: center;
         gap: 4px;
-        color: #637061;
+        color: #4c6485;
         font-size: 12px;
         font-weight: 800;
       }
@@ -1694,9 +1694,9 @@
       .lc-omni-remove-detected {
         min-height: 28px !important;
         padding: 4px 6px !important;
-        background: #f9f8f2 !important;
-        color: #1f2b24 !important;
-        border: 1px solid #d9d6cc !important;
+        background: #eef3fa !important;
+        color: #162947 !important;
+        border: 1px solid #b8c9e1 !important;
         border-radius: 6px !important;
         font-size: 11px !important;
       }
@@ -1705,9 +1705,9 @@
         width: 100%;
         min-height: 36px;
         padding: 8px 10px;
-        color: #1f2b24;
+        color: #162947;
         background: #fff;
-        border: 1px solid #d9d6cc;
+        border: 1px solid #b8c9e1;
         border-radius: 9px;
         font: inherit;
       }
@@ -1723,11 +1723,15 @@
         min-height: 36px;
         padding: 8px 10px;
         color: #fff;
-        background: #2d5c4e;
+        background: #13377e;
         border: 0;
         border-radius: 9px;
         font-weight: 700;
         cursor: pointer;
+      }
+
+      #lc-omni-freight-panel button:not(#lc-omni-panel-close):not(.lc-omni-remove-detected):hover {
+        background: #0f2e6a;
       }
 
       .lc-omni-manual-product-row {
@@ -1739,9 +1743,9 @@
       .lc-omni-manual-product-row .lc-omni-remove-product {
         min-height: 36px !important;
         padding: 7px 6px !important;
-        color: #1f2b24 !important;
-        background: #f9f8f2 !important;
-        border: 1px solid #d9d6cc !important;
+        color: #162947 !important;
+        background: #eef3fa !important;
+        border: 1px solid #b8c9e1 !important;
         font-size: 12px;
       }
 
@@ -1751,9 +1755,9 @@
       }
 
       #lc-omni-address-suggestions .lc-omni-suggestion {
-        color: #1f2b24 !important;
-        background: #f8f8f5 !important;
-        border: 1px solid #ebe7dc !important;
+        color: #162947 !important;
+        background: #f4f7fb !important;
+        border: 1px solid #dce5f1 !important;
         text-align: left;
         font-weight: 400 !important;
       }
@@ -1772,7 +1776,7 @@
       #lc-omni-presale-freight-estimate {
         display: grid;
         gap: 3px;
-        color: #405f54;
+        color: #34577f;
       }
 
       .lc-omni-freight-note {
@@ -1793,7 +1797,7 @@
       #lc-omni-freight-status {
         min-height: 20px;
         margin: 8px 10px 12px;
-        color: #405f54;
+        color: #34577f;
       }
 
       #lc-omni-freight-status.is-loading {
@@ -1827,8 +1831,8 @@
         height: 13px;
         flex: 0 0 13px;
         box-sizing: border-box;
-        border: 2px solid rgba(45, 92, 78, 0.22);
-        border-top-color: #2d5c4e;
+        border: 2px solid rgba(19, 55, 126, 0.22);
+        border-top-color: #13377e;
         border-radius: 50%;
         animation: lc-omni-spin 0.85s linear infinite;
       }
@@ -1862,7 +1866,7 @@
         grid-template-columns: 60px 1fr;
         gap: 10px;
         padding: 7px 0;
-        border-bottom: 1px solid #ebe7dc;
+        border-bottom: 1px solid #dce5f1;
       }
 
       .lc-omni-product-row:first-child {
@@ -1886,7 +1890,7 @@
       }
 
       .lc-omni-product-row div div {
-        color: #637061;
+        color: #4c6485;
         font-size: 12px;
       }
 
@@ -1895,7 +1899,7 @@
       }
 
       .lc-omni-product-website a {
-        color: #2d5c4e;
+        color: #13377e;
         font-weight: 700;
         text-decoration: underline;
       }
@@ -1906,7 +1910,7 @@
       }
 
       .lc-omni-product-loading {
-        color: #637061;
+        color: #4c6485;
       }
     `;
 
