@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.21
+// @version      0.1.22
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -186,6 +186,7 @@
         quantity: normaliseQuantity(item?.quantity)
       }))
       .filter(item => item.sku || item.productUrl)
+      .filter(item => item.productUrl || isFreightSku(item.sku))
       .filter(item => item.quantity > 0);
   }
 
@@ -432,6 +433,17 @@
     const grouped = new Map();
 
     for (const skuItem of skuElements) {
+      const sku = skuItem.value.toUpperCase();
+      const rowHasAssembly = leafValues.some(element => {
+        const value = elementValue(element);
+        const rect = element.getBoundingClientRect();
+        return /\bassembly\b/i.test(value) &&
+          rect.top < skuItem.rect.bottom + 8 &&
+          rect.bottom > skuItem.rect.top - 8;
+      });
+
+      if (!isFreightSku(sku) || rowHasAssembly) continue;
+
       const quantity = leafValues
         .map(element => ({ value: elementValue(element), rect: element.getBoundingClientRect() }))
         .filter(({ value, rect }) => (
@@ -445,7 +457,6 @@
 
       if (!quantity) continue;
 
-      const sku = skuItem.value.toUpperCase();
       grouped.set(sku, (grouped.get(sku) || 0) + normaliseQuantity(quantity.value));
     }
 
