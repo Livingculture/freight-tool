@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.23
+// @version      0.1.24
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -186,7 +186,6 @@
         quantity: normaliseQuantity(item?.quantity)
       }))
       .filter(item => item.sku || item.productUrl)
-      .filter(item => item.productUrl || isFreightSku(item.sku))
       .filter(item => item.quantity > 0);
   }
 
@@ -442,7 +441,7 @@
           rect.bottom > skuItem.rect.top - 8;
       });
 
-      if (!isFreightSku(sku) || rowHasAssembly) continue;
+      if (rowHasAssembly) continue;
 
       const quantity = leafValues
         .map(element => ({ value: elementValue(element), rect: element.getBoundingClientRect() }))
@@ -512,52 +511,7 @@
   }
 
   function getAddressFromCin7() {
-    const normaliseLabel = value => clean(value).toLowerCase().replace(/[^a-z0-9]+/g, '');
-    const postcodePattern = /^\d{4}$/;
-    const controls = Array.from(document.querySelectorAll('input:not([type="hidden"]), select, textarea'))
-      .filter(field => !isInjectedPanelElement(field));
-
-    const namedField = controls.find(field => {
-      const identifier = normaliseLabel(`${field.id || ''} ${field.name || ''} ${field.getAttribute('aria-label') || ''}`);
-      return identifier.includes('deliverypostalcode') || identifier.includes('deliverypostcode');
-    });
-    const namedPostcode = clean(namedField?.value).match(/\b\d{4}\b/)?.[0];
-    if (namedPostcode) return namedPostcode;
-
-    const labels = Array.from(document.querySelectorAll('label, legend, span, div, td, th'))
-      .filter(element => !isInjectedPanelElement(element))
-      .filter(element => ['deliverypostalcode', 'deliverypostcode'].includes(normaliseLabel(element.textContent)))
-      .sort((a, b) => a.children.length - b.children.length);
-
-    for (const label of labels) {
-      if (label.htmlFor) {
-        const linkedPostcode = clean(document.getElementById(label.htmlFor)?.value);
-        if (postcodePattern.test(linkedPostcode)) return linkedPostcode;
-      }
-
-      let container = label.parentElement;
-      for (let depth = 0; container && depth < 5; depth += 1, container = container.parentElement) {
-        const localPostcodes = Array.from(container.querySelectorAll('input:not([type="hidden"]), select, textarea'))
-          .map(field => clean(field.value))
-          .filter(value => postcodePattern.test(value));
-        if (localPostcodes.length === 1) return localPostcodes[0];
-      }
-
-      const labelRect = label.getBoundingClientRect();
-      const labelCentreY = labelRect.top + labelRect.height / 2;
-      const aligned = controls
-        .map(field => ({ field, value: clean(field.value), rect: field.getBoundingClientRect() }))
-        .filter(({ value, rect }) => postcodePattern.test(value) && rect.left >= labelRect.right - 12)
-        .sort((a, b) => (
-          Math.abs((a.rect.top + a.rect.height / 2) - labelCentreY) -
-          Math.abs((b.rect.top + b.rect.height / 2) - labelCentreY)
-        ));
-      if (aligned[0] && Math.abs((aligned[0].rect.top + aligned[0].rect.height / 2) - labelCentreY) <= 20) {
-        return aligned[0].value;
-      }
-    }
-
-    return clean(getOmniFieldValue('Delivery Postal Code')).match(/\b\d{4}\b/)?.[0] || '';
+    return clean(getOmniFieldValue('Delivery Postal Code'));
   }
 
   function getAddressSearchFromCin7() {
