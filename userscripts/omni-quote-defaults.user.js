@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Quote Defaults
 // @namespace    livingculture-omni
-// @version      0.1.1
+// @version      0.1.2
 // @description  Sets Expected Order Date to 14 days after Created Date and Probability of Winning to 50%.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-defaults.user.js
@@ -70,11 +70,32 @@
   }
 
   function setInput(input, value) {
+    input.focus();
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
     if (setter) setter.call(input, value); else input.value = value;
+    input.setAttribute('value', value);
     input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Tab' }));
     input.dispatchEvent(new Event('change', { bubbles: true }));
     input.dispatchEvent(new Event('blur', { bubbles: true }));
+    if (window.jQuery) window.jQuery(input).val(value).trigger('input').trigger('change').trigger('blur');
+  }
+
+  function dateValue(input) {
+    if (!input) return '';
+    return clean(input.value || input.getAttribute('value') || input.getAttribute('data-value'));
+  }
+
+  function dateFieldNearLabel(text) {
+    const heading = label(text);
+    if (!heading) return null;
+    const headingRect = heading.getBoundingClientRect();
+    return Array.from(document.querySelectorAll('input:not([type="hidden"])'))
+      .filter(visible)
+      .map(field => ({ field, rect: field.getBoundingClientRect() }))
+      .filter(item => item.rect.top >= headingRect.top - 8 && item.rect.top <= headingRect.bottom + 55)
+      .filter(item => item.rect.left >= headingRect.left - 20 && item.rect.left <= headingRect.right + 220)
+      .sort((a, b) => a.rect.left - b.rect.left || a.rect.top - b.rect.top)[0]?.field || null;
   }
 
   function setProbability(select) {
@@ -90,13 +111,14 @@
   }
 
   function applyDefaults() {
-    const created = fieldNearLabel('Created Date', 'input:not([type="hidden"])');
-    const expected = fieldNearLabel('Expected Order Date', 'input:not([type="hidden"])');
-    if (created && expected && !clean(expected.value)) {
-      const createdDate = parseDate(created.value);
+    const created = dateFieldNearLabel('Created Date');
+    const expected = dateFieldNearLabel('Expected Order Date');
+    if (created && expected && !dateValue(expected)) {
+      const createdValue = dateValue(created);
+      const createdDate = parseDate(createdValue);
       if (createdDate && !Number.isNaN(createdDate.getTime())) {
         createdDate.setDate(createdDate.getDate() + 14);
-        setInput(expected, formatDate(createdDate, created.value));
+        setInput(expected, formatDate(createdDate, createdValue));
       }
     }
     setProbability(fieldNearLabel('Probability of Winning', 'select'));
@@ -113,7 +135,7 @@
   applyDefaults();
   new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true });
   document.addEventListener('change', event => {
-    if (event.target === fieldNearLabel('Created Date', 'input:not([type="hidden"])')) schedule();
+    if (event.target === dateFieldNearLabel('Created Date')) schedule();
   }, true);
   setInterval(applyDefaults, 2000);
 })();
