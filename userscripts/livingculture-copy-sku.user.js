@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Living Culture Copy SKU
 // @namespace    livingculture
-// @version      1.8
-// @description  Adds a button to Living Culture product pages to copy the current product SKU.
+// @version      1.9
+// @description  Copies the current product SKU and sends it to an originating Cin7 Omni product line.
 // @match        https://livingculture.co.nz/products/*
 // @match        https://www.livingculture.co.nz/products/*
 // @match        https://livingculture.co.nz/collections/*/products/*
@@ -26,6 +26,12 @@
 
   function clean(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function sendSkuToOmni(sku) {
+    if (!window.opener || window.opener.closed || !window.name.startsWith('lc_omni_')) return false;
+    window.opener.postMessage({ type: 'lc-omni-add-sku', sku }, 'https://go.cin7.com');
+    return true;
   }
 
   function isVisible(element) {
@@ -236,7 +242,9 @@
 
       await copyText(sku);
 
-      button.textContent = 'SKU copied';
+      const sentToOmni = sendSkuToOmni(sku);
+
+      button.textContent = sentToOmni ? 'Adding to Omni…' : 'SKU copied';
 
       setTimeout(() => {
         button.textContent = originalText;
@@ -248,7 +256,8 @@
 
       if (fallbackSku) {
         await copyText(fallbackSku);
-        button.textContent = 'SKU copied';
+        const sentToOmni = sendSkuToOmni(fallbackSku);
+        button.textContent = sentToOmni ? 'Adding to Omni…' : 'SKU copied';
 
         setTimeout(() => {
           button.textContent = originalText;

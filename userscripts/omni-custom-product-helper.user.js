@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Custom Product Helper
 // @namespace    livingculture-omni
-// @version      0.1.3
+// @version      0.1.4
 // @description  Shows Living Culture custom products and adds the selected SKU to the next empty Cin7 Omni product line.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-custom-product-helper.user.js
@@ -64,6 +64,13 @@
   function key(input,key,code){['keydown','keypress','keyup'].forEach(type=>input.dispatchEvent(new KeyboardEvent(type,{bubbles:true,cancelable:true,key,code:key,keyCode:code,which:code})));}
   async function selectResult(input,sku){for(let n=0;n<24;n++){await wait(150);const ir=input.getBoundingClientRect();let candidate=elements('[role="option"],li,a,div,span').filter(e=>clean(e.textContent).toLowerCase().includes(sku.toLowerCase())).filter(e=>{const r=e.getBoundingClientRect();return r.top>=ir.bottom-8&&r.top<ir.bottom+420&&r.right>ir.left-80&&r.left<ir.right+520;}).sort((a,b)=>a.children.length-b.children.length)[0];if(candidate){while(candidate.parentElement&&candidate.parentElement!==document.body){const p=candidate.parentElement,r=p.getBoundingClientRect();if(r.top<ir.bottom-10||r.height>100||!clean(p.textContent).toLowerCase().includes(sku.toLowerCase()))break;candidate=p;}click(candidate);await wait(300);if(document.activeElement===input){key(input,'ArrowDown',40);key(input,'Enter',13);}return;}}key(input,'ArrowDown',40);key(input,'Enter',13);}
   async function add(item){if(!item)return;const cell=emptyCodeCell();if(!cell){status('No empty Omni product line was found.',true);return;}close();click(cell);await wait(350);let input=document.activeElement;if(!(input instanceof HTMLInputElement)){const r=cell.getBoundingClientRect();input=elements('input:not([type="hidden"])').find(e=>{const x=e.getBoundingClientRect();return Math.abs(x.top-r.top)<80&&Math.abs(x.left-r.left)<250;});}if(!input){status('Could not open the Omni Code field.',true);return;}setValue(input,item.code);await selectResult(input,item.code);}
+
+  window.addEventListener('message',event=>{
+    if(event.origin!=='https://livingculture.co.nz'&&event.origin!=='https://www.livingculture.co.nz')return;
+    const sku=clean(event.data?.sku).toUpperCase();
+    if(event.data?.type!=='lc-omni-add-sku'||!sku||!/^[A-Z0-9][A-Z0-9()-]*(?:-[A-Z0-9]+)*$/i.test(sku))return;
+    add({code:sku});
+  });
 
   function close(){document.getElementById(ROOT_ID)?.shadowRoot?.getElementById('modal')?.classList.remove('open');}
   function open(){const s=ensureRoot().shadowRoot;s.getElementById('modal').classList.add('open');s.getElementById('search').focus();load();}
