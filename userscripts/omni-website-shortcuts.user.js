@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Website Shortcuts
 // @namespace    livingculture-omni
-// @version      0.1.16
+// @version      0.1.17
 // @description  Adds Living Culture website shortcuts to the grey space between Cin7 Omni quote sections.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @match        https://livingculture.co.nz/*
@@ -56,6 +56,10 @@
     {
       label: 'Aluminium Sofa',
       url: 'https://livingculture.co.nz/collections/aluminium-lounge'
+    },
+    {
+      label: 'Dining Tables',
+      url: 'https://livingculture.co.nz/collections/dining-tables'
     }
   ];
 
