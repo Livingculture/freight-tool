@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Website Shortcuts
 // @namespace    livingculture-omni
-// @version      0.1.3
+// @version      0.1.4
 // @description  Adds Living Culture website shortcuts to the grey space between Cin7 Omni quote sections.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @match        https://livingculture.co.nz/*
@@ -23,6 +23,7 @@
   }
 
   const BAR_ID = 'lc-omni-website-shortcuts';
+  const SLOT_ID = 'lc-omni-website-shortcut-slot';
   const SHORTCUTS = [
     {
       label: 'Tasman',
@@ -45,44 +46,25 @@
     return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
   }
 
-  function orderCurrencyLabel() {
-    return Array.from(document.querySelectorAll('label, div, span, td, th'))
-      .filter(visible)
-      .filter(element => !element.closest(`#${BAR_ID}`))
-      .filter(element => /^order\s+currency$/i.test(clean(element.textContent)))
-      .sort((a, b) => a.children.length - b.children.length)[0] || null;
-  }
-
-  function currencyCard(label) {
-    const labelRect = label?.getBoundingClientRect();
-    if (!labelRect) return null;
-    let current = label.parentElement;
-    let best = null;
-    while (current && current !== document.body) {
-      const rect = current.getBoundingClientRect();
-      const style = getComputedStyle(current);
-      if (rect.width > window.innerWidth * 0.65 && rect.top < labelRect.top && labelRect.top - rect.top < 100 && /rgb\(255, 255, 255\)|rgba\(255, 255, 255/.test(style.backgroundColor)) best = current;
-      current = current.parentElement;
-    }
-    return best;
-  }
-
   function productTableCard() {
-    const codeHeader = Array.from(document.querySelectorAll('th, td'))
+    const headerRow = Array.from(document.querySelectorAll('tr')).filter(visible).find(row => {
+      const labels = Array.from(row.children).map(cell => clean(cell.textContent).toLowerCase());
+      return labels.some(value => /(?:^|\s)code$/.test(value)) &&
+        labels.some(value => /(?:^|\s)product$/.test(value)) &&
+        labels.some(value => /^option3$/.test(value)) &&
+        labels.some(value => /^comments$/.test(value));
+    });
+    const table = headerRow?.closest('table');
+    if (!table) return null;
+    const addLine = Array.from(document.querySelectorAll('button, input, a, [role="button"]'))
       .filter(visible)
-      .find(element => /(?:^|\s)code$/i.test(clean(element.textContent)));
-    const table = codeHeader?.closest('table');
-    const headerRect = codeHeader?.getBoundingClientRect();
-    if (!table || !headerRect) return null;
+      .find(element => /^add\s+a\s+new\s+line$/i.test(clean(element.value || element.textContent)));
     let current = table.parentElement;
-    let best = null;
     while (current && current !== document.body) {
-      const rect = current.getBoundingClientRect();
-      const style = getComputedStyle(current);
-      if (rect.width > window.innerWidth * 0.65 && rect.top <= headerRect.top && headerRect.top - rect.top < 90 && /rgb\(255, 255, 255\)|rgba\(255, 255, 255/.test(style.backgroundColor)) best = current;
+      if (addLine && current.contains(addLine)) return current;
       current = current.parentElement;
     }
-    return best || table.parentElement;
+    return table.parentElement;
   }
 
   function openShortcut(shortcut) {
@@ -113,17 +95,18 @@
 
   function place() {
     const bar = ensureBar();
-    const label = orderCurrencyLabel();
-    const upperCard = currencyCard(label);
     const card = productTableCard();
-    if (upperCard) upperCard.style.marginTop = '';
-    if (!label || !card) {
+    if (!card || !card.parentElement) {
       bar.style.display = 'none';
       return;
     }
-    card.style.marginTop = '48px';
-    const movedCardRect = card.getBoundingClientRect();
-    bar.style.cssText = `position:absolute;display:flex;align-items:center;gap:7px;left:${window.scrollX + movedCardRect.left + 16}px;top:${window.scrollY + movedCardRect.top - 39}px;z-index:55;height:30px;`;
+    card.style.marginTop = '';
+    let slot = document.getElementById(SLOT_ID);
+    if (!slot) { slot = document.createElement('div'); slot.id = SLOT_ID; }
+    if (slot.nextElementSibling !== card || slot.parentElement !== card.parentElement) card.parentElement.insertBefore(slot, card);
+    slot.style.cssText = 'box-sizing:border-box;display:flex;align-items:center;width:100%;height:48px;padding:9px 16px;background:transparent;';
+    if (bar.parentElement !== slot) slot.appendChild(bar);
+    bar.style.cssText = 'position:static;display:flex;align-items:center;gap:7px;z-index:55;height:30px;';
     for (const button of bar.querySelectorAll('button')) {
       button.style.cssText = 'box-sizing:border-box;height:30px;min-width:92px;padding:0 14px;color:#fff;background:#13377e;border:1px solid #13377e;border-radius:4px;font:700 12px Arial,sans-serif;line-height:28px;text-align:center;cursor:pointer;white-space:nowrap;';
     }
@@ -141,7 +124,7 @@
   new MutationObserver(records => {
     if (records.some(record => {
       const target = record.target instanceof Element ? record.target : record.target.parentElement;
-      return target && !target.closest?.(`#${BAR_ID}`);
+      return target && !target.closest?.(`#${BAR_ID}, #${SLOT_ID}`);
     })) schedulePlace();
   }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
   window.addEventListener('resize', schedulePlace);
