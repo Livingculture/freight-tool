@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.25
+// @version      0.1.26
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -1642,12 +1642,23 @@
       }
     };
 
-    const observer = new MutationObserver(() => {
+    const observer = new MutationObserver(records => {
+      const needsPosition = records.some(record => {
+        const target = record.target instanceof Element ? record.target : record.target.parentElement;
+        return target && !target.closest?.('#lc-omni-freight-panel, #lc-omni-freight-toggle, #lc-omni-containers-open');
+      });
+
+      if (needsPosition && !window.__lcOmniFreightPositionFrame) {
+        window.__lcOmniFreightPositionFrame = requestAnimationFrame(() => {
+          window.__lcOmniFreightPositionFrame = 0;
+          placeFreightButtonNextToMemo();
+        });
+      }
+
       clearTimeout(window.__lcOmniFreightMutationTimer);
 
       window.__lcOmniFreightMutationTimer = setTimeout(() => {
         checkForChanges();
-        placeFreightButtonNextToMemo();
       }, 900);
     });
 
@@ -1656,7 +1667,7 @@
       subtree: true,
       characterData: true,
       attributes: true,
-      attributeFilter: ['value', 'class', 'aria-label', 'title']
+      attributeFilter: ['value', 'class', 'style', 'aria-label', 'title']
     });
 
     setInterval(checkForChanges, 2500);
