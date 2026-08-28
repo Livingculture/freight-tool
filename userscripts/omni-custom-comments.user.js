@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Custom Comments
 // @namespace    livingculture-omni
-// @version      0.1.7
+// @version      0.1.8
 // @description  Builds custom pergola comments and fills Omni internal and product-line comments.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-custom-comments.user.js
@@ -209,6 +209,10 @@
     document.getElementById(ROOT_ID)?.shadowRoot?.getElementById('modal')?.classList.remove('open');
   }
 
+  function setPassthrough(enabled) {
+    document.getElementById(ROOT_ID)?.shadowRoot?.getElementById('modal')?.classList.toggle('working', enabled);
+  }
+
   async function fill() {
     const text = buildComment(formData());
     if (!text) {
@@ -217,8 +221,11 @@
     }
     await copy(text);
     const internalFilled = setValue(findInternalComments(), text);
+    setPassthrough(true);
+    await new Promise(resolve => setTimeout(resolve, 80));
     const lineField = await findLineComment();
     const lineFilled = setValue(lineField, text);
+    setPassthrough(false);
     if (internalFilled && lineFilled) {
       status('Filled Internal Comments and the first product line.');
       setTimeout(close, 500);
@@ -241,6 +248,8 @@
         :host { all: initial; font-family: Arial, sans-serif; }
         #modal { position: fixed; inset: 0; z-index: 2147483647; display: none; align-items: flex-start; justify-content: center; padding-top: 72px; background: rgba(14,30,54,.28); box-sizing: border-box; }
         #modal.open { display: flex; }
+        #modal.working { pointer-events: none; background: transparent; }
+        #modal.working .panel { pointer-events: none; opacity: .96; }
         .panel { width: min(450px, calc(100vw - 28px)); overflow: hidden; color: #162947; background: #fff; border: 1px solid #9db3d2; border-radius: 8px; box-shadow: 0 22px 54px rgba(15,46,106,.25); }
         .head { display: flex; align-items: center; justify-content: space-between; padding: 13px 15px; color: #fff; background: #13377e; }
         h2 { margin: 0; font-size: 18px; }
