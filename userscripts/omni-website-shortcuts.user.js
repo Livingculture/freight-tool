@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Website Shortcuts
 // @namespace    livingculture-omni
-// @version      0.1.1
+// @version      0.1.2
 // @description  Adds Living Culture website shortcuts to the grey space between Cin7 Omni quote sections.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-website-shortcuts.user.js
@@ -55,6 +55,24 @@
     return best;
   }
 
+  function productTableCard() {
+    const codeHeader = Array.from(document.querySelectorAll('th, td'))
+      .filter(visible)
+      .find(element => /(?:^|\s)code$/i.test(clean(element.textContent)));
+    const table = codeHeader?.closest('table');
+    const headerRect = codeHeader?.getBoundingClientRect();
+    if (!table || !headerRect) return null;
+    let current = table.parentElement;
+    let best = null;
+    while (current && current !== document.body) {
+      const rect = current.getBoundingClientRect();
+      const style = getComputedStyle(current);
+      if (rect.width > window.innerWidth * 0.65 && rect.top <= headerRect.top && headerRect.top - rect.top < 90 && /rgb\(255, 255, 255\)|rgba\(255, 255, 255/.test(style.backgroundColor)) best = current;
+      current = current.parentElement;
+    }
+    return best || table.parentElement;
+  }
+
   function openShortcut(shortcut) {
     const width = Math.min(1050, Math.max(760, Math.round(screen.availWidth * 0.68)));
     const height = Math.min(820, Math.max(600, Math.round(screen.availHeight * 0.78)));
@@ -84,7 +102,9 @@
   function place() {
     const bar = ensureBar();
     const label = orderCurrencyLabel();
-    const card = currencyCard(label);
+    const upperCard = currencyCard(label);
+    const card = productTableCard();
+    if (upperCard) upperCard.style.marginTop = '';
     if (!label || !card) {
       bar.style.display = 'none';
       return;
