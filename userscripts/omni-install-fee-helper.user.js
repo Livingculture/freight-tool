@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Installation Fee Helper
 // @namespace    livingculture-omni
-// @version      0.1.6
+// @version      0.1.7
 // @description  Loads Living Culture installation fees and adds the selected SKU and price to Cin7 Omni.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-install-fee-helper.user.js
@@ -185,8 +185,12 @@
   }
   async function chooseDropdown(sku, input) {
     const wanted = sku.toLowerCase();
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-      await new Promise(resolve => setTimeout(resolve, 150));
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 60));
+      if (attempt === 7) {
+        sendKey(input, 'ArrowDown', 40);
+        sendKey(input, 'Enter', 13);
+      }
       const inputRect = input.getBoundingClientRect();
       const option = pageElements('[role="option"], li, a, div, span')
         .filter(element => {
@@ -216,7 +220,7 @@
           const EventType = type === 'pointerdown' && window.PointerEvent ? PointerEvent : MouseEvent;
           target.dispatchEvent(new EventType(type, { bubbles:true, cancelable:true, clientX:x, clientY:y }));
         });
-        await new Promise(resolve => setTimeout(resolve, 250));
+        await new Promise(resolve => setTimeout(resolve, 120));
         if (document.activeElement === input && clean(input.value) === sku) {
           sendKey(input, 'ArrowDown', 40);
           sendKey(input, 'Enter', 13);
@@ -248,18 +252,31 @@
     close();
     const rowY = empty.rect.top + empty.rect.height / 2;
     clickAt(empty.rect.left + empty.rect.width / 2, rowY);
-    await new Promise(resolve => setTimeout(resolve, 350));
-    const codeInput = fieldNear(empty.rect.left + empty.rect.width / 2, rowY);
+    let codeInput = null;
+    for (let attempt = 0; attempt < 10 && !codeInput; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 40));
+      codeInput = fieldNear(empty.rect.left + empty.rect.width / 2, rowY);
+    }
     if (!codeInput) { toast('Could not open the Omni Code search field.', true); return; }
     setValue(codeInput, item.code);
     await chooseDropdown(item.code, codeInput);
-    await new Promise(resolve => setTimeout(resolve, 900));
+    const product = header('Product');
+    for (let attempt = 0; attempt < 15; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 60));
+      if (!product) break;
+      const productCell = document.elementFromPoint(product.left + product.width / 2, rowY)?.closest('td');
+      const value = clean(productCell?.textContent);
+      if (value && !/^search/i.test(value)) break;
+    }
     const price = header('Unit Price') || header('Price');
     if (price) {
       const x = price.left + price.width / 2;
       clickAt(x, rowY);
-      await new Promise(resolve => setTimeout(resolve, 180));
-      const priceInput = fieldNear(x, rowY);
+      let priceInput = null;
+      for (let attempt = 0; attempt < 5 && !priceInput; attempt += 1) {
+        await new Promise(resolve => setTimeout(resolve, 40));
+        priceInput = fieldNear(x, rowY);
+      }
       if (priceInput) setValue(priceInput, String(item.price).replace(/[^\d.]/g, ''));
     }
   }
