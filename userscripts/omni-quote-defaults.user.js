@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Quote Defaults
 // @namespace    livingculture-omni
-// @version      0.1.5
+// @version      0.1.6
 // @description  Sets Expected Order Date to 14 days after Created Date and Probability of Winning to 50%.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-defaults.user.js
@@ -98,6 +98,17 @@
       .sort((a, b) => a.rect.left - b.rect.left || a.rect.top - b.rect.top)[0]?.field || null;
   }
 
+  function expectedDateField(probability) {
+    if (!probability) return dateFieldNearLabel('Expected Order Date');
+    const probabilityRect = probability.getBoundingClientRect();
+    return Array.from(document.querySelectorAll('input:not([type="hidden"])'))
+      .filter(visible)
+      .map(field => ({ field, rect: field.getBoundingClientRect() }))
+      .filter(item => item.rect.top < probabilityRect.bottom + 8 && item.rect.bottom > probabilityRect.top - 8)
+      .filter(item => item.rect.right <= probabilityRect.left && item.rect.left >= probabilityRect.left - 320)
+      .sort((a, b) => a.rect.left - b.rect.left)[0]?.field || dateFieldNearLabel('Expected Order Date');
+  }
+
   function calendarTriggerNearLabel(text, input) {
     const heading = label(text);
     if (!heading || !input) return null;
@@ -170,8 +181,9 @@
   }
 
   function applyDefaults() {
+    const probability = fieldNearLabel('Probability of Winning', 'select');
     const created = dateFieldNearLabel('Created Date');
-    const expected = dateFieldNearLabel('Expected Order Date');
+    const expected = expectedDateField(probability);
     if (created && expected && !parseDate(dateValue(expected))) {
       const createdValue = dateValue(created);
       const createdDate = parseDate(createdValue);
@@ -180,7 +192,7 @@
         setCalendarDate(expected, createdDate, formatDate(createdDate, createdValue));
       }
     }
-    setProbability(fieldNearLabel('Probability of Winning', 'select'));
+    setProbability(probability);
   }
 
   function schedule() {
