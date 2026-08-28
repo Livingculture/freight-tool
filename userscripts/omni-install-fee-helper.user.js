@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Installation Fee Helper
 // @namespace    livingculture-omni
-// @version      0.1.5
+// @version      0.1.6
 // @description  Loads Living Culture installation fees and adds the selected SKU and price to Cin7 Omni.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-install-fee-helper.user.js
@@ -82,16 +82,38 @@
     const number = Number(String(value).replace(/[^\d.-]/g, ''));
     return Number.isFinite(number) ? number.toLocaleString('en-NZ', { maximumFractionDigits: 0 }) : value;
   }
+  function group(item) {
+    const text = `${item.code} ${item.name}`.toLowerCase();
+    if (/call out|assessment|warranty|electrician/.test(text)) return '01_COMMON / CALL OUTS';
+    if (text.includes('atlantic')) return '02_01_PERGOLAS / ATLANTIC';
+    if (text.includes('baltic')) return '02_02_PERGOLAS / BALTIC';
+    if (text.includes('caspian')) return '02_03_PERGOLAS / CASPIAN';
+    if (text.includes('caribbean')) return '02_04_PERGOLAS / CARIBBEAN';
+    if (text.includes('tasman')) return '02_05_PERGOLAS / TASMAN';
+    if (text.includes('pacific')) return '02_06_PERGOLAS / PACIFIC';
+    if (/mediterranean(?:-sky)?/.test(text)) return '02_07_PERGOLAS / MEDITERRANEAN-SKY';
+    if (text.includes('pergola')) return '02_99_PERGOLAS / OTHER';
+    if (/flashing|bracket|timber|concrete|joists|gutter|cutting/.test(text)) return '03_SITE PREP / BRACKETS / FLASHING';
+    if (/blind|privacy|shutter|sliding door|bifold|glass|tongue|slatted/.test(text)) return '04_BLINDS / WALLS / DOORS';
+    if (/window|door cover|awning|patiocover|carport/.test(text)) return '05_AWNINGS / PATIO COVERS / CARPORTS';
+    if (/fence|gate|pool|lincoln|roosevelt/.test(text)) return '06_FENCING / GATES';
+    return '07_OTHER';
+  }
   function filterRows() {
     const shadow = document.getElementById(ROOT_ID)?.shadowRoot;
     if (!shadow) return;
     const query = clean(shadow.getElementById('search')?.value).toLowerCase();
     const filtered = items.filter(item => !query || `${item.code} ${item.name} ${item.price}`.toLowerCase().includes(query));
+    const displayItems = [...filtered].sort((a, b) => group(a).localeCompare(group(b)) || a.name.localeCompare(b.name));
     shadow.getElementById('count').textContent = `${filtered.length} result${filtered.length === 1 ? '' : 's'}`;
-    shadow.getElementById('rows').innerHTML = filtered.map((item, index) => `
-      <tr><td><button type="button" data-index="${index}">Add</button></td><td class="code">${escapeHtml(item.code)}</td><td>${escapeHtml(item.name)}</td><td class="price">$${escapeHtml(money(item.price))}</td></tr>
-    `).join('');
-    shadow.getElementById('rows').querySelectorAll('button').forEach((button, index) => button.addEventListener('click', () => addItem(filtered[index])));
+    let lastGroup = '';
+    shadow.getElementById('rows').innerHTML = displayItems.map(item => {
+      const itemGroup = group(item);
+      const heading = itemGroup !== lastGroup ? `<tr class="group"><td colspan="4">${escapeHtml(itemGroup.replace(/^\d+(?:_\d+)?_/, ''))}</td></tr>` : '';
+      lastGroup = itemGroup;
+      return `${heading}<tr><td><button type="button" data-index="${filtered.indexOf(item)}">Add</button></td><td class="code">${escapeHtml(item.code)}</td><td>${escapeHtml(item.name)}</td><td class="price">$${escapeHtml(money(item.price))}</td></tr>`;
+    }).join('');
+    shadow.getElementById('rows').querySelectorAll('button').forEach(button => button.addEventListener('click', () => addItem(filtered[Number(button.dataset.index)])));
   }
   function exactElement(text) {
     const wanted = clean(text).toLowerCase();
@@ -260,7 +282,7 @@
         #modal.open { display:flex; } .panel { display:flex;flex-direction:column;width:min(680px,92vw);max-height:88vh;overflow:hidden;background:#fff;border:1px solid #9db3d2;border-radius:8px;box-shadow:0 18px 48px rgba(15,46,106,.25); }
         .head { display:flex;justify-content:space-between;align-items:center;padding:12px 14px;color:#fff;background:#13377e; } h2 { margin:0;font-size:18px; } .close { width:30px;height:30px;color:#162947;background:#e7eef8;border:0;border-radius:5px;font-size:20px;cursor:pointer; }
         .tools { display:grid;grid-template-columns:1fr auto;gap:9px;padding:10px 12px;border-bottom:1px solid #dce5f1; } #search { height:36px;padding:0 10px;border:1px solid #9db3d2;border-radius:4px;font:14px Arial; } #count { align-self:center;color:#4c6485;font-size:12px;font-weight:700; }
-        #source { padding:0 12px 8px;color:#34577f;font-size:11px;font-weight:700; } .wrap { overflow:auto; } table { width:100%;border-collapse:collapse;font-size:12px; } th { position:sticky;top:0;padding:7px;background:#eef3fa;color:#162947;text-align:left; } td { padding:6px 7px;border-bottom:1px solid #e1e7ef; } td button { padding:5px 10px;color:#fff;background:#13377e;border:0;border-radius:4px;font-weight:700;cursor:pointer; } .code,.price { white-space:nowrap;font-weight:800; }
+        #source { padding:0 12px 8px;color:#34577f;font-size:11px;font-weight:700; } .wrap { overflow:auto; } table { width:100%;border-collapse:collapse;font-size:12px; } th { position:sticky;top:0;padding:7px;background:#eef3fa;color:#162947;text-align:left; } td { padding:6px 7px;border-bottom:1px solid #e1e7ef; } td button { padding:5px 10px;color:#fff;background:#13377e;border:0;border-radius:4px;font-weight:700;cursor:pointer; } .group td { padding:8px;color:#13377e;background:#e7eef8;font-weight:800;text-transform:uppercase;letter-spacing:.03em; } .code,.price { white-space:nowrap;font-weight:800; }
         #toast { position:fixed;right:24px;bottom:24px;z-index:2147483647;display:none;padding:11px 14px;color:#fff;background:#286d53;border-radius:6px;font:700 13px Arial;box-shadow:0 10px 25px rgba(0,0,0,.2); } #toast.show { display:block; } #toast.error { background:#9a2d20; }
       </style>
       <div id="modal"><div class="panel"><div class="head"><h2>Installation Fees</h2><button class="close" type="button">×</button></div><div class="tools"><input id="search" placeholder="Search code, service or price"><div id="count"></div></div><div id="source"></div><div class="wrap"><table><thead><tr><th></th><th>Code</th><th>Installation service</th><th>Price</th></tr></thead><tbody id="rows"></tbody></table></div></div></div><div id="toast"></div>`;
