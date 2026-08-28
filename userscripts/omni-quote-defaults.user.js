@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Quote Defaults
 // @namespace    livingculture-omni
-// @version      0.1.3
+// @version      0.1.4
 // @description  Sets Expected Order Date to 14 days after Created Date and Probability of Winning to 50%.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-defaults.user.js
@@ -172,7 +172,7 @@
   function applyDefaults() {
     const created = dateFieldNearLabel('Created Date');
     const expected = dateFieldNearLabel('Expected Order Date');
-    if (created && expected && !dateValue(expected)) {
+    if (created && expected && !parseDate(dateValue(expected))) {
       const createdValue = dateValue(created);
       const createdDate = parseDate(createdValue);
       if (createdDate && !Number.isNaN(createdDate.getTime())) {
