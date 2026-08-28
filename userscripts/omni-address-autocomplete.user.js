@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni New Zealand Address Autocomplete
 // @namespace    livingculture-omni
-// @version      0.1.8
+// @version      0.1.9
 // @description  Adds New Zealand address suggestions to Cin7 Omni delivery addresses.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-address-autocomplete.user.js
@@ -21,6 +21,7 @@
   let requestNumber = 0;
   let addressInput = null;
   let currentSuggestions = [];
+  let suppressSearchUntil = 0;
   const attachedInputs = new WeakSet();
 
   function clean(value) {
@@ -125,12 +126,16 @@
   }
 
   function applySuggestion(address) {
+    suppressSearchUntil = Date.now() + 1500;
+    clearTimeout(timer);
+    requestNumber += 1;
     setField(findField('Delivery Address 1'), address.address1);
     setField(findField('Delivery Address 2'), address.address2);
     setField(findField('Delivery City'), address.city);
     setField(findField('Delivery State/Region'), address.region);
     setField(findField('Delivery Postal Code'), address.postcode);
     setField(findField('Delivery Country'), address.country);
+    currentSuggestions = [];
     hideSuggestions();
   }
 
@@ -298,6 +303,7 @@
   }
 
   function handleAddressInput(event) {
+    if (Date.now() < suppressSearchUntil) return;
     const currentField = event.target?.dataset?.lcAddressAutocomplete === 'true'
       ? event.target
       : findField('Delivery Address 1');
