@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Custom Product Helper
 // @namespace    livingculture-omni
-// @version      0.1.0
+// @version      0.1.1
 // @description  Shows Living Culture custom products and adds the selected SKU to the next empty Cin7 Omni product line.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-custom-product-helper.user.js
@@ -71,5 +71,6 @@
   function getButton(){let b=document.getElementById(BUTTON_ID);if(!b){b=document.createElement('button');b.id=BUTTON_ID;b.type='button';b.textContent='Custom Products';b.addEventListener('click',open);document.body.appendChild(b);}return b;}
   function anchor(){return document.getElementById('lc-omni-containers-open')||elements('button,input,a').find(e=>/lc\s*containers/i.test(clean(e.value||e.textContent)))||document.getElementById('lc-omni-install-fee-button');}
   function place(){const b=getButton(),a=anchor();b.style.cssText='position:fixed;left:680px;bottom:20px;z-index:2147483598;height:36px;padding:0 14px;color:#fff;background:#13377e;border:1px solid #13377e;border-radius:4px;font:700 13px Arial;white-space:nowrap;cursor:pointer';if(!a||!visible(a))return;const r=a.getBoundingClientRect();b.style.position=a.style.position==='fixed'?'fixed':'absolute';b.style.left=`${(b.style.position==='fixed'?0:scrollX)+r.right+8}px`;b.style.top=`${(b.style.position==='fixed'?0:scrollY)+r.top}px`;b.style.bottom='auto';b.style.height=`${Math.max(34,r.height)}px`;}
-  ensureRoot();place();setInterval(place,1500);new MutationObserver(place).observe(document.body,{childList:true,subtree:true});addEventListener('resize',place);addEventListener('scroll',place,{passive:true});
+  function schedulePlace(){if(window.__lcOmniCustomProductPositionFrame)return;window.__lcOmniCustomProductPositionFrame=requestAnimationFrame(()=>{window.__lcOmniCustomProductPositionFrame=0;place();});}
+  ensureRoot();place();setInterval(place,5000);new MutationObserver(records=>{if(records.some(record=>{const target=record.target instanceof Element?record.target:record.target.parentElement;return target&&!target.closest?.(`#${ROOT_ID}, #${BUTTON_ID}`);}))schedulePlace();}).observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['style','class']});addEventListener('resize',schedulePlace);addEventListener('scroll',schedulePlace,{passive:true});
 })();
