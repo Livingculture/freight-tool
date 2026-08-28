@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.26
+// @version      0.1.27
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -1444,10 +1444,9 @@
     const containerButton = document.getElementById('lc-omni-containers-open');
     if (!containerButton) return false;
 
-    const anchor = findButtonByText(/foshan\s+warehouse/i) ||
-      findButtonByText(/nz\s+availability/i) ||
-      findButtonByText(/install\s+fees/i) ||
-      findButtonByText(/custom\s+products/i);
+    const anchor = Array.from(document.querySelectorAll('button, [role="button"], a'))
+      .filter(element => isVisible(element) && /^actions\s*$/i.test(clean(element.textContent || element.getAttribute('aria-label') || '')))
+      .sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top)[0] || null;
 
     if (!anchor) {
       containerButton.style.display = 'none';
@@ -1489,7 +1488,7 @@
 
     if (!freightLabel || !isVisible(freightLabel)) {
       freightButton.style.display = 'none';
-      if (containerButton && !findButtonByText(/foshan\s+warehouse|nz\s+availability|install\s+fees|custom\s+products/i)) {
+      if (containerButton && !findButtonByText(/^actions\s*$/i)) {
         containerButton.style.display = 'none';
       }
       return;
