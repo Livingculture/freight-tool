@@ -5001,36 +5001,6 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-app.get('/api/omni-address-search', async (req, res) => {
-  const query = String(req.query.q || '').trim();
-  if (query.length < 4) return res.status(400).json({ error: 'Enter at least four address characters.' });
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
-
-  try {
-    const params = new URLSearchParams({
-      q: `${query}, New Zealand`,
-      limit: '8',
-      bbox: '166,-48,179,-34',
-      lang: 'en'
-    });
-    const response = await fetch(`https://photon.komoot.io/api/?${params}`, {
-      headers: { Accept: 'application/json', 'User-Agent': 'LivingCultureFreight/1.0' },
-      signal: controller.signal
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(`Address provider returned ${response.status}`);
-    res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
-    return res.json({ features: Array.isArray(data.features) ? data.features : [] });
-  } catch (error) {
-    console.error('Omni address search failed:', error);
-    return res.status(502).json({ error: error.name === 'AbortError' ? 'Address lookup timed out.' : 'Address lookup unavailable.' });
-  } finally {
-    clearTimeout(timeout);
-  }
-});
-
 app.get('/api/containers', async (req, res) => {
   try {
     const payload = await getContainerSheetData();
