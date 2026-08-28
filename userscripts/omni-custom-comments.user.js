@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Custom Comments
 // @namespace    livingculture-omni
-// @version      0.1.3
+// @version      0.1.4
 // @description  Builds custom pergola comments and fills Omni internal and product-line comments.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-custom-comments.user.js
@@ -273,7 +273,9 @@
     }
     button.style.cssText = 'position:fixed;left:240px;bottom:20px;z-index:2147483600;box-sizing:border-box;height:36px;padding:0 14px;color:#fff;background:#13377e;border:1px solid #13377e;border-radius:4px;font:700 13px Arial,sans-serif;cursor:pointer;white-space:nowrap;';
 
-    const anchor = exactText('Add a new line', 'body *')[0] ||
+    const anchor = pageElements('input, button, a, [role="button"]')
+      .find(element => /^add\s+a\s+new\s+line$/i.test(clean(element.value || element.textContent))) ||
+      exactText('Add a new line', 'body *')[0] ||
       pageElements('body *').find(element => /^add\s+a\s+new\s+line$/i.test(clean(element.textContent)));
     if (!anchor) return;
     if (button.parentElement !== document.body) document.body.appendChild(button);
