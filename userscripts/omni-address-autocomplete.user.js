@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni New Zealand Address Autocomplete
 // @namespace    livingculture-omni
-// @version      0.1.6
+// @version      0.1.7
 // @description  Adds New Zealand address suggestions to Cin7 Omni delivery addresses.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-address-autocomplete.user.js
@@ -220,7 +220,7 @@
         return;
       }
       clearTimeout(timer);
-      search(query);
+      search(query, true);
     });
     return button;
   }
@@ -243,7 +243,7 @@
     if (list) list.innerHTML = '';
   }
 
-  async function search(query) {
+  async function search(query, useNativePicker = false) {
     const currentRequest = ++requestNumber;
     const list = getList();
     const lookupButton = getLookupButton();
@@ -265,6 +265,28 @@
       currentSuggestions = (Array.isArray(data.features) ? data.features : [])
         .map(photonAddress)
         .filter(address => address.address1 && address.city);
+      if (useNativePicker) {
+        if (!currentSuggestions.length) {
+          window.alert('No matching New Zealand addresses found. Try including the street number and town.');
+          hideSuggestions();
+          return;
+        }
+
+        const choices = currentSuggestions.map((item, index) => `${index + 1}. ${addressLabel(item)}`).join('\n');
+        const selected = window.prompt(`Select delivery address by entering its number:\n\n${choices}`, '1');
+        if (selected == null) {
+          hideSuggestions();
+          return;
+        }
+        const selectedAddress = currentSuggestions[Number.parseInt(selected, 10) - 1];
+        if (!selectedAddress) {
+          window.alert('That address number was not valid. Click Find address to try again.');
+          hideSuggestions();
+          return;
+        }
+        applySuggestion(selectedAddress);
+        return;
+      }
       list.innerHTML = currentSuggestions.length
         ? `<div class="lc-omni-address-title">Select delivery address</div>${currentSuggestions.map((item, index) => `<button type="button" data-index="${index}">${addressLabel(item).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</button>`).join('')}`
         : '<div class="lc-omni-address-title">Select delivery address</div><div class="lc-omni-address-message">No matching New Zealand addresses found. Try including the street number and town.</div>';
@@ -274,6 +296,7 @@
       console.error(error);
       list.innerHTML = `<div class="lc-omni-address-title">Address lookup error</div><div class="lc-omni-address-message is-error">${clean(error.message) || 'Address lookup unavailable.'}</div>`;
       positionList();
+      if (useNativePicker) window.alert(`Address lookup error: ${clean(error.message) || 'Address lookup unavailable.'}`);
     } finally {
       if (currentRequest === requestNumber) {
         lookupButton.textContent = originalButtonText;
