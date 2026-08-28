@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni New Zealand Address Autocomplete
 // @namespace    livingculture-omni
-// @version      0.1.9
+// @version      0.1.10
 // @description  Adds New Zealand address suggestions to Cin7 Omni delivery addresses.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-address-autocomplete.user.js
@@ -209,42 +209,6 @@
     list.style.width = `${width}px`;
   }
 
-  function getLookupButton() {
-    let button = document.getElementById('lc-omni-address-lookup-button');
-    if (button) return button;
-    button = document.createElement('button');
-    button.id = 'lc-omni-address-lookup-button';
-    button.type = 'button';
-    button.textContent = 'Find address';
-    document.body.appendChild(button);
-    button.addEventListener('click', () => {
-      attach();
-      const query = clean(addressInput?.value);
-      if (query.length < MIN_QUERY_LENGTH) {
-        const list = getList();
-        list.innerHTML = '<div class="lc-omni-address-message is-error">Enter at least four characters first.</div>';
-        positionList();
-        return;
-      }
-      clearTimeout(timer);
-      search(query);
-    });
-    return button;
-  }
-
-  function positionLookupButton() {
-    const button = getLookupButton();
-    if (!addressInput || !visible(addressInput)) {
-      button.style.display = 'none';
-      return;
-    }
-    const rect = addressInput.getBoundingClientRect();
-    button.style.display = 'block';
-    button.style.left = `${window.scrollX + rect.right + 6}px`;
-    button.style.top = `${window.scrollY + rect.top}px`;
-    button.style.height = `${rect.height}px`;
-  }
-
   function hideSuggestions() {
     const list = document.getElementById('lc-omni-delivery-address-suggestions');
     if (list) list.innerHTML = '';
@@ -253,10 +217,6 @@
   async function search(query) {
     const currentRequest = ++requestNumber;
     const list = getList();
-    const lookupButton = getLookupButton();
-    const originalButtonText = lookupButton.textContent;
-    lookupButton.textContent = 'Searching…';
-    lookupButton.disabled = true;
     list.innerHTML = '<div class="lc-omni-address-title">Select delivery address</div><div class="lc-omni-address-message">Finding addresses…</div>';
     positionList();
 
@@ -281,11 +241,6 @@
       console.error(error);
       list.innerHTML = `<div class="lc-omni-address-title">Address lookup error</div><div class="lc-omni-address-message is-error">${clean(error.message) || 'Address lookup unavailable.'}</div>`;
       positionList();
-    } finally {
-      if (currentRequest === requestNumber) {
-        lookupButton.textContent = originalButtonText;
-        lookupButton.disabled = false;
-      }
     }
   }
 
@@ -295,7 +250,6 @@
     addressInput = input;
     input.setAttribute('autocomplete', 'off');
     input.dataset.lcAddressAutocomplete = 'true';
-    positionLookupButton();
     if (attachedInputs.has(input)) return;
     attachedInputs.add(input);
     input.addEventListener('input', event => handleAddressInput(event), true);
@@ -333,20 +287,6 @@
       box-shadow: 0 12px 28px rgba(15, 46, 106, .22);
       font: 13px/1.35 Arial, sans-serif;
     }
-    #lc-omni-address-lookup-button {
-      position: absolute;
-      z-index: 2147483645;
-      box-sizing: border-box;
-      min-width: 92px;
-      padding: 0 10px;
-      color: #fff;
-      background: #13377e;
-      border: 1px solid #13377e;
-      border-radius: 4px;
-      font: 700 12px Arial, sans-serif;
-      cursor: pointer;
-    }
-    #lc-omni-address-lookup-button:hover { background: #0f2e6a; }
     #lc-omni-delivery-address-suggestions:empty { display: none; }
     #lc-omni-delivery-address-suggestions button {
       padding: 9px 11px;
@@ -389,8 +329,9 @@
     }
     handleAddressInput(event);
   }, true);
-  window.addEventListener('resize', () => { positionList(); positionLookupButton(); });
-  window.addEventListener('scroll', () => { positionList(); positionLookupButton(); }, { passive: true });
+  document.getElementById('lc-omni-address-lookup-button')?.remove();
+  window.addEventListener('resize', positionList);
+  window.addEventListener('scroll', positionList, { passive: true });
   setInterval(attach, 1200);
   attach();
 })();
