@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Installation Fee Helper
 // @namespace    livingculture-omni
-// @version      0.1.2
+// @version      0.1.3
 // @description  Loads Living Culture installation fees and adds the selected SKU and price to Cin7 Omni.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-install-fee-helper.user.js
@@ -177,17 +177,40 @@
         })
         .sort((a, b) => a.children.length - b.children.length || a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0];
       if (option) {
-        option.scrollIntoView({ block: 'nearest' });
-        const rect = option.getBoundingClientRect();
-        option.dispatchEvent(new PointerEvent('pointerdown', { bubbles:true, cancelable:true, pointerId:1, pointerType:'mouse', clientX:rect.left + 12, clientY:rect.top + rect.height / 2 }));
-        option.dispatchEvent(new MouseEvent('mousedown', { bubbles:true, cancelable:true, clientX:rect.left + 12, clientY:rect.top + rect.height / 2 }));
-        option.click();
+        let target = option;
+        while (target.parentElement && target.parentElement !== document.body) {
+          const parent = target.parentElement;
+          const rect = target.getBoundingClientRect();
+          const parentRect = parent.getBoundingClientRect();
+          if (parentRect.top < inputRect.bottom - 10 || parentRect.top > inputRect.bottom + 420 || parentRect.height > 100) break;
+          if (parentRect.width >= Math.max(inputRect.width, rect.width) && clean(parent.textContent).toLowerCase().includes(wanted)) target = parent;
+          else break;
+        }
+        target.scrollIntoView({ block: 'nearest' });
+        const rect = target.getBoundingClientRect();
+        const x = rect.left + Math.min(28, rect.width / 2);
+        const y = rect.top + Math.min(18, rect.height / 2);
+        ['pointerdown', 'mousedown', 'mouseup', 'click'].forEach(type => {
+          const EventType = type === 'pointerdown' && window.PointerEvent ? PointerEvent : MouseEvent;
+          target.dispatchEvent(new EventType(type, { bubbles:true, cancelable:true, clientX:x, clientY:y }));
+        });
+        await new Promise(resolve => setTimeout(resolve, 250));
+        if (document.activeElement === input && clean(input.value) === sku) {
+          sendKey(input, 'ArrowDown', 40);
+          sendKey(input, 'Enter', 13);
+        }
         return true;
       }
     }
-    input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'ArrowDown' }));
-    input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }));
+    sendKey(input, 'ArrowDown', 40);
+    sendKey(input, 'Enter', 13);
     return false;
+  }
+  function sendKey(input, key, code) {
+    input.focus();
+    ['keydown', 'keypress', 'keyup'].forEach(type => input.dispatchEvent(new KeyboardEvent(type, {
+      bubbles:true, cancelable:true, key, code:key, keyCode:code, which:code, charCode:type === 'keypress' ? code : 0
+    })));
   }
   function toast(message, error = false) {
     const element = document.getElementById(ROOT_ID)?.shadowRoot?.getElementById('toast');
