@@ -1,9 +1,10 @@
 // ==UserScript==
 // @name         Omni Living Culture Website Shortcuts
 // @namespace    livingculture-omni
-// @version      0.1.2
+// @version      0.1.3
 // @description  Adds Living Culture website shortcuts to the grey space between Cin7 Omni quote sections.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
+// @match        https://livingculture.co.nz/*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-website-shortcuts.user.js
 // @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-website-shortcuts.user.js
 // @supportURL   https://github.com/Livingculture/freight-tool
@@ -14,11 +15,22 @@
 (function () {
   'use strict';
 
+  if (location.hostname === 'livingculture.co.nz') {
+    if (window.name.startsWith('lc_omni_')) {
+      document.documentElement.style.zoom = '0.8';
+    }
+    return;
+  }
+
   const BAR_ID = 'lc-omni-website-shortcuts';
   const SHORTCUTS = [
     {
       label: 'Tasman',
       url: 'https://livingculture.co.nz/collections/tasman-pergola/products/lc150-premium-custom-freestanding-louvre-roof'
+    },
+    {
+      label: 'Atlantic',
+      url: 'https://livingculture.co.nz/collections/atlantic-pergola/products/atlantic-manual-freestanding-louvre-roof'
     }
   ];
 
@@ -74,12 +86,12 @@
   }
 
   function openShortcut(shortcut) {
-    const width = Math.min(1050, Math.max(760, Math.round(screen.availWidth * 0.68)));
-    const height = Math.min(820, Math.max(600, Math.round(screen.availHeight * 0.78)));
+    const width = Math.min(820, Math.max(680, Math.round(screen.availWidth * 0.52)));
+    const height = Math.min(680, Math.max(520, Math.round(screen.availHeight * 0.65)));
     const left = Math.max(0, Math.round((screen.availWidth - width) / 2));
     const top = Math.max(0, Math.round((screen.availHeight - height) / 2));
     const popup = window.open(shortcut.url, `lc_omni_${shortcut.label.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`, `popup=yes,width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`);
-    if (!popup) window.alert('Chrome blocked the Tasman popup. Please allow popups for Cin7 Omni and try again.');
+    if (!popup) window.alert(`Chrome blocked the ${shortcut.label} popup. Please allow popups for Cin7 Omni and try again.`);
     else popup.focus();
   }
 
