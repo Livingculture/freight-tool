@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Custom Comments
 // @namespace    livingculture-omni
-// @version      0.1.6
+// @version      0.1.7
 // @description  Builds custom pergola comments and fills Omni internal and product-line comments.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-custom-comments.user.js
@@ -56,6 +56,12 @@
     field.dispatchEvent(new Event('input', { bubbles: true }));
     field.dispatchEvent(new Event('change', { bubbles: true }));
     field.dispatchEvent(new Event('blur', { bubbles: true }));
+    if (field instanceof HTMLTextAreaElement) {
+      field.style.height = 'auto';
+      field.style.minHeight = '34px';
+      field.style.height = `${Math.max(34, field.scrollHeight + 4)}px`;
+      field.style.overflowY = 'hidden';
+    }
     return true;
   }
 
@@ -138,8 +144,19 @@
     for (const type of ['pointerdown', 'mousedown', 'mouseup', 'click']) {
       target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y }));
     }
-    await new Promise(resolve => setTimeout(resolve, 250));
-    return editableNear(x, y);
+    target.click?.();
+    target.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, clientX: x, clientY: y, detail: 2 }));
+    for (const delay of [120, 250, 450]) {
+      await new Promise(resolve => setTimeout(resolve, delay));
+      field = commentCell.querySelector('textarea, input:not([type="hidden"]), [contenteditable="true"]') || editableNear(x, y);
+      if (field) return field;
+      const active = document.activeElement;
+      if (active && (/^(INPUT|TEXTAREA)$/i.test(active.tagName) || active.isContentEditable)) {
+        const activeRect = active.getBoundingClientRect();
+        if (Math.abs(activeRect.top + activeRect.height / 2 - y) < 100) return active;
+      }
+    }
+    return null;
   }
 
   function buildComment(data) {
