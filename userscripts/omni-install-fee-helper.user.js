@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Installation Fee Helper
 // @namespace    livingculture-omni
-// @version      0.1.3
+// @version      0.1.4
 // @description  Loads Living Culture installation fees and adds the selected SKU and price to Cin7 Omni.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-install-fee-helper.user.js
@@ -240,7 +240,6 @@
       const priceInput = fieldNear(x, rowY);
       if (priceInput) setValue(priceInput, String(item.price).replace(/[^\d.]/g, ''));
     }
-    toast(`Added ${item.code} at $${money(item.price)}`);
   }
   function close() { document.getElementById(ROOT_ID)?.shadowRoot?.getElementById('modal')?.classList.remove('open'); }
   function open() {
