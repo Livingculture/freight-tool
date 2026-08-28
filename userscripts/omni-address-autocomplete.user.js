@@ -1,21 +1,20 @@
 // ==UserScript==
 // @name         Omni New Zealand Address Autocomplete
 // @namespace    livingculture-omni
-// @version      0.1.3
+// @version      0.1.4
 // @description  Adds New Zealand address suggestions to Cin7 Omni delivery addresses.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-address-autocomplete.user.js
 // @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-address-autocomplete.user.js
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
-// @grant        GM_xmlhttpRequest
-// @connect      photon.komoot.io
+// @grant        none
 // ==/UserScript==
 
 (function () {
   'use strict';
 
-  const API_URL = 'https://photon.komoot.io/api/';
+  const API_URL = 'https://living-culture-freight.vercel.app/api/omni-address-search';
   const MIN_QUERY_LENGTH = 4;
   let timer = null;
   let requestNumber = 0;
@@ -156,27 +155,6 @@
       .join(', ');
   }
 
-  function requestJson(url) {
-    return new Promise((resolve, reject) => {
-      GM_xmlhttpRequest({
-        method: 'GET',
-        url,
-        headers: { Accept: 'application/json' },
-        timeout: 15000,
-        onload(response) {
-          if (response.status < 200 || response.status >= 300) {
-            reject(new Error(`Address lookup failed (${response.status})`));
-            return;
-          }
-          try { resolve(JSON.parse(response.responseText || '{}')); }
-          catch { reject(new Error('Address lookup returned invalid data')); }
-        },
-        ontimeout: () => reject(new Error('Address lookup timed out')),
-        onerror: () => reject(new Error('Address lookup failed'))
-      });
-    });
-  }
-
   function getList() {
     let list = document.getElementById('lc-omni-address-suggestions');
     if (list) return list;
@@ -239,18 +217,18 @@
   async function search(query) {
     const currentRequest = ++requestNumber;
     const list = getList();
+    const lookupButton = getLookupButton();
+    const originalButtonText = lookupButton.textContent;
+    lookupButton.textContent = 'Searching…';
+    lookupButton.disabled = true;
     list.innerHTML = '<div class="lc-omni-address-message">Finding addresses…</div>';
     positionList();
 
     try {
-      const params = new URLSearchParams({
-        q: `${query}, New Zealand`,
-        limit: '8',
-        bbox: '166,-48,179,-34',
-        lang: 'en'
-      });
-      const data = await requestJson(`${API_URL}?${params}`);
+      const response = await fetch(`${API_URL}?${new URLSearchParams({ q: query })}`);
+      const data = await response.json().catch(() => ({}));
       if (currentRequest !== requestNumber) return;
+      if (!response.ok) throw new Error(data.error || `Address lookup failed (${response.status})`);
       currentSuggestions = (Array.isArray(data.features) ? data.features : [])
         .map(photonAddress)
         .filter(address => address.address1 && address.city);
@@ -263,6 +241,11 @@
       console.error(error);
       list.innerHTML = '<div class="lc-omni-address-message is-error">Address lookup unavailable. Continue entering the address manually.</div>';
       positionList();
+    } finally {
+      if (currentRequest === requestNumber) {
+        lookupButton.textContent = originalButtonText;
+        lookupButton.disabled = false;
+      }
     }
   }
 
