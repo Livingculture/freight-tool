@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Website Shortcuts
 // @namespace    livingculture-omni
-// @version      0.1.20
+// @version      0.1.21
 // @description  Adds Living Culture website shortcuts to the grey space between Cin7 Omni quote sections.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @match        https://livingculture.co.nz/*
@@ -118,12 +118,14 @@
   }
 
   function openShortcut(shortcut) {
-    const width = Math.min(820, Math.max(680, Math.round(screen.availWidth * 0.52)));
-    const height = Math.min(680, Math.max(520, Math.round(screen.availHeight * 0.65)));
-    const screenLeft = Number(screen.availLeft) || 0;
-    const screenTop = Number(screen.availTop) || 0;
-    const left = Math.max(screenLeft, Math.round(screenLeft + screen.availWidth - width - 18));
-    const top = Math.max(screenTop, Math.round(screenTop + 44));
+    const browserWidth = window.outerWidth || window.innerWidth;
+    const browserHeight = window.outerHeight || window.innerHeight;
+    const browserLeft = Number.isFinite(window.screenX) ? window.screenX : window.screenLeft;
+    const browserTop = Number.isFinite(window.screenY) ? window.screenY : window.screenTop;
+    const width = Math.min(820, Math.max(680, Math.round(browserWidth * 0.4)));
+    const height = Math.min(680, Math.max(520, Math.round(browserHeight * 0.6)));
+    const left = Math.round(browserLeft + browserWidth - width - 18);
+    const top = Math.round(browserTop + 44);
     const popup = window.open(shortcut.url, `lc_omni_${shortcut.label.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`, `popup=yes,width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`);
     if (!popup) window.alert(`Chrome blocked the ${shortcut.label} popup. Please allow popups for Cin7 Omni and try again.`);
     else {
