@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Quote Defaults
 // @namespace    livingculture-omni
-// @version      0.1.7
+// @version      0.1.8
 // @description  Sets Expected Order Date to 14 days after Created Date and Probability of Winning to 50%.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-defaults.user.js
@@ -92,8 +92,13 @@
 
   function setInput(input, value) {
     input.focus();
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-    if (setter) setter.call(input, value); else input.value = value;
+    const prototype = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype
+      : input instanceof HTMLSelectElement ? HTMLSelectElement.prototype
+        : input instanceof HTMLInputElement ? HTMLInputElement.prototype : null;
+    const setter = prototype ? Object.getOwnPropertyDescriptor(prototype, 'value')?.set : null;
+    if (setter) setter.call(input, value);
+    else if ('value' in input) input.value = value;
+    else input.textContent = value;
     input.setAttribute('value', value);
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Tab' }));
@@ -104,14 +109,18 @@
 
   function dateValue(input) {
     if (!input) return '';
-    return clean(input.value || input.getAttribute('value') || input.getAttribute('data-value'));
+    return clean(input.value || input.getAttribute?.('value') || input.getAttribute?.('data-value') || input.textContent);
+  }
+
+  function dateControls() {
+    return Array.from(document.querySelectorAll('input:not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="image"]), select, textarea, [contenteditable="true"]'));
   }
 
   function dateFieldNearLabel(text) {
     const heading = label(text);
     if (!heading) return null;
     const headingRect = heading.getBoundingClientRect();
-    return Array.from(document.querySelectorAll('input:not([type="hidden"])'))
+    return dateControls()
       .filter(visible)
       .map(field => ({ field, rect: field.getBoundingClientRect() }))
       .filter(item => item.rect.top >= headingRect.top - 8 && item.rect.top <= headingRect.bottom + 55)
@@ -122,12 +131,26 @@
   function expectedDateField(probability) {
     if (!probability) return dateFieldNearLabel('Expected Order Date');
     const probabilityRect = probability.getBoundingClientRect();
-    return Array.from(document.querySelectorAll('input:not([type="hidden"])'))
+    return dateControls()
       .filter(visible)
       .map(field => ({ field, rect: field.getBoundingClientRect() }))
       .filter(item => item.rect.top < probabilityRect.bottom + 8 && item.rect.bottom > probabilityRect.top - 8)
       .filter(item => item.rect.right <= probabilityRect.left && item.rect.left >= probabilityRect.left - 320)
       .sort((a, b) => a.rect.left - b.rect.left)[0]?.field || dateFieldNearLabel('Expected Order Date');
+  }
+
+  function displayedDateNearLabel(text) {
+    const heading = label(text);
+    if (!heading) return '';
+    const headingRect = heading.getBoundingClientRect();
+    const candidates = Array.from(document.querySelectorAll('input, select, textarea, span, div, td'))
+      .filter(visible)
+      .map(element => ({ element, rect: element.getBoundingClientRect(), value: dateValue(element) }))
+      .filter(item => item.rect.top < headingRect.bottom + 55 && item.rect.bottom > headingRect.top - 8)
+      .filter(item => item.rect.left >= headingRect.left - 20 && item.rect.left <= headingRect.right + 260)
+      .filter(item => parseDate(item.value))
+      .sort((a, b) => a.rect.left - b.rect.left);
+    return candidates[0]?.value || '';
   }
 
   function calendarTriggerNearLabel(text, input) {
@@ -205,11 +228,11 @@
     const probability = fieldNearLabel('Probability of Winning', 'select');
     const created = dateFieldNearLabel('Created Date');
     const expected = expectedDateField(probability);
-    if (!created || !expected) {
-      showDiagnostic(`Quote date diagnostic — Created control: ${fieldDescription(created)} | Expected control: ${fieldDescription(expected)}`);
+    const createdValue = dateValue(created) || displayedDateNearLabel('Created Date');
+    if (!createdValue || !expected) {
+      showDiagnostic(`Quote date diagnostic — Created value: "${createdValue || 'not found'}" (${fieldDescription(created)}) | Expected control: ${fieldDescription(expected)}`);
     }
-    if (created && expected && !parseDate(dateValue(expected))) {
-      const createdValue = dateValue(created);
+    if (createdValue && expected && !parseDate(dateValue(expected))) {
       const createdDate = parseDate(createdValue);
       if (createdDate && !Number.isNaN(createdDate.getTime())) {
         createdDate.setDate(createdDate.getDate() + 14);
