@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Installation Fee Helper
 // @namespace    livingculture-omni
-// @version      0.1.1
+// @version      0.1.2
 // @description  Loads Living Culture installation fees and adds the selected SKU and price to Cin7 Omni.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-install-fee-helper.user.js
@@ -135,6 +135,21 @@
   function emptyCodeField() {
     const code = header('Code');
     if (!code) return null;
+    const codeHeader = exactElement('Code');
+    const headerCell = codeHeader?.closest('th,td');
+    const headerRow = headerCell?.closest('tr');
+    const table = headerRow?.closest('table');
+    if (headerCell && headerRow && table) {
+      const columnIndex = Array.from(headerRow.children).indexOf(headerCell);
+      const cells = Array.from(table.querySelectorAll('tr')).slice(1)
+        .map(row => row.children[columnIndex])
+        .filter(cell => cell && visible(cell));
+      const emptyCell = cells.find(cell => {
+        const value = clean(cell.querySelector('input,textarea')?.value || cell.textContent);
+        return !value || /^search\.{0,3}$/i.test(value);
+      });
+      if (emptyCell) return { field: emptyCell, value: clean(emptyCell.textContent), placeholder: '', rect: emptyCell.getBoundingClientRect() };
+    }
     return pageElements('body *')
       .map(field => ({
         field,
@@ -147,15 +162,32 @@
       .sort((a, b) => a.rect.top - b.rect.top || a.field.children.length - b.field.children.length)[0] || null;
   }
   async function chooseDropdown(sku, input) {
-    await new Promise(resolve => setTimeout(resolve, 900));
-    const inputRect = input.getBoundingClientRect();
-    const option = pageElements('[role="option"], li, div, span')
-      .filter(element => clean(element.textContent).toLowerCase().includes(sku.toLowerCase()))
-      .filter(element => { const rect = element.getBoundingClientRect(); return rect.top >= inputRect.bottom - 5 && rect.top < inputRect.bottom + 360; })
-      .sort((a, b) => a.children.length - b.children.length || a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0];
-    if (option) { const rect = option.getBoundingClientRect(); clickAt(rect.left + Math.min(rect.width / 2, 150), rect.top + rect.height / 2); return; }
+    const wanted = sku.toLowerCase();
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 150));
+      const inputRect = input.getBoundingClientRect();
+      const option = pageElements('[role="option"], li, a, div, span')
+        .filter(element => {
+          const value = clean(element.textContent).toLowerCase();
+          return value === wanted || value.startsWith(`${wanted} `) || value.startsWith(`${wanted}-`) || value.startsWith(`${wanted}\n`);
+        })
+        .filter(element => {
+          const rect = element.getBoundingClientRect();
+          return rect.top >= inputRect.bottom - 8 && rect.top < inputRect.bottom + 420 && rect.right > inputRect.left - 80 && rect.left < inputRect.right + 520;
+        })
+        .sort((a, b) => a.children.length - b.children.length || a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0];
+      if (option) {
+        option.scrollIntoView({ block: 'nearest' });
+        const rect = option.getBoundingClientRect();
+        option.dispatchEvent(new PointerEvent('pointerdown', { bubbles:true, cancelable:true, pointerId:1, pointerType:'mouse', clientX:rect.left + 12, clientY:rect.top + rect.height / 2 }));
+        option.dispatchEvent(new MouseEvent('mousedown', { bubbles:true, cancelable:true, clientX:rect.left + 12, clientY:rect.top + rect.height / 2 }));
+        option.click();
+        return true;
+      }
+    }
     input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'ArrowDown' }));
     input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }));
+    return false;
   }
   function toast(message, error = false) {
     const element = document.getElementById(ROOT_ID)?.shadowRoot?.getElementById('toast');
