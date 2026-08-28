@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Website Shortcuts
 // @namespace    livingculture-omni
-// @version      0.1.6
+// @version      0.1.7
 // @description  Adds Living Culture website shortcuts to the grey space between Cin7 Omni quote sections.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @match        https://livingculture.co.nz/*
@@ -108,7 +108,7 @@
     let slot = document.getElementById(SLOT_ID);
     if (!slot) { slot = document.createElement('div'); slot.id = SLOT_ID; }
     if (slot.nextElementSibling !== card || slot.parentElement !== card.parentElement) card.parentElement.insertBefore(slot, card);
-    slot.style.cssText = 'box-sizing:border-box;display:flex;align-items:center;width:100%;height:48px;padding:9px 16px;background:transparent;';
+    slot.style.cssText = 'box-sizing:border-box;display:flex;align-items:center;justify-content:center;width:100%;height:48px;padding:9px 16px;background:transparent;';
     if (bar.parentElement !== slot) slot.appendChild(bar);
     bar.style.cssText = 'position:static;display:flex;align-items:center;gap:7px;z-index:55;height:30px;';
     for (const button of bar.querySelectorAll('button')) {
