@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Custom Comments
 // @namespace    livingculture-omni
-// @version      0.1.4
+// @version      0.1.5
 // @description  Builds custom pergola comments and fills Omni internal and product-line comments.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-custom-comments.user.js
@@ -61,15 +61,23 @@
 
   function findInternalComments() {
     const controls = pageElements('textarea, input:not([type="hidden"]), [contenteditable="true"]');
-    const named = controls.find(field => /internal.*comments/i.test(`${field.id || ''} ${field.name || ''} ${field.getAttribute('aria-label') || ''}`));
-    if (named) return named;
-    const label = exactText('Internal Comments')[0];
-    if (!label) return null;
-    const rect = label.getBoundingClientRect();
-    return controls
-      .map(field => ({ field, rect: field.getBoundingClientRect() }))
-      .filter(item => item.rect.left >= rect.left - 10 && item.rect.top >= rect.bottom - 8 && item.rect.top <= rect.bottom + 80)
-      .sort((a, b) => a.rect.top - b.rect.top || b.rect.width - a.rect.width)[0]?.field || null;
+    const labels = exactText('Internal Comments');
+    for (const label of labels) {
+      const linked = label.htmlFor && document.getElementById(label.htmlFor);
+      if (linked && controls.includes(linked)) return linked;
+      const nested = label.parentElement?.querySelector('textarea, input:not([type="hidden"]), [contenteditable="true"]');
+      if (nested && visible(nested)) return nested;
+    }
+    const candidates = labels.flatMap(label => {
+      const rect = label.getBoundingClientRect();
+      return controls.map(field => {
+        const fieldRect = field.getBoundingClientRect();
+        const vertical = Math.abs(fieldRect.top - rect.bottom);
+        const horizontal = Math.abs(fieldRect.left - rect.left);
+        return { field, fieldRect, score: vertical * 5 + horizontal };
+      }).filter(item => item.fieldRect.top >= rect.top - 8 && item.fieldRect.top <= rect.bottom + 55 && item.fieldRect.right > rect.left);
+    });
+    return candidates.sort((a, b) => a.score - b.score)[0]?.field || null;
   }
 
   function findHeader(text) {
@@ -107,10 +115,23 @@
   }
 
   async function findLineComment() {
-    const header = findHeader('Comments') || findHeader('Comment');
-    const y = firstProductRowY();
-    if (!header || !y) return null;
-    const x = header.rect.left + Math.max(20, Math.min(header.rect.width / 2, 100));
+    const commentsLabel = exactText('Comments', 'th, td, div, span')[0] || exactText('Comment', 'th, td, div, span')[0];
+    const commentsHeader = commentsLabel?.closest('th,td');
+    const headerRow = commentsHeader?.closest('tr');
+    const table = headerRow?.closest('table');
+    if (!commentsHeader || !headerRow || !table) return null;
+    const headers = Array.from(headerRow.children);
+    const commentsIndex = headers.indexOf(commentsHeader);
+    const codeIndex = headers.findIndex(cell => /^code$/i.test(clean(cell.textContent)));
+    const productRow = Array.from(table.querySelectorAll('tr')).slice(1).find(row => {
+      const code = clean(row.children[codeIndex]?.querySelector('input,textarea')?.value || row.children[codeIndex]?.textContent);
+      return code && !/^search/i.test(code);
+    });
+    const commentCell = productRow?.children[commentsIndex];
+    if (!commentCell) return null;
+    const cellRect = commentCell.getBoundingClientRect();
+    const x = cellRect.left + Math.max(20, Math.min(cellRect.width / 2, 100));
+    const y = cellRect.top + cellRect.height / 2;
     let field = editableNear(x, y);
     if (field) return field;
     const target = document.elementFromPoint(x, y);
