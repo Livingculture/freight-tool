@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Website Shortcuts
 // @namespace    livingculture-omni
-// @version      0.1.0
+// @version      0.1.1
 // @description  Adds Living Culture website shortcuts to the grey space between Cin7 Omni quote sections.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-website-shortcuts.user.js
@@ -89,10 +89,11 @@
       bar.style.display = 'none';
       return;
     }
-    const cardRect = card.getBoundingClientRect();
-    bar.style.cssText = `position:absolute;display:flex;align-items:center;gap:6px;left:${window.scrollX + cardRect.left + 16}px;top:${window.scrollY + cardRect.top - 29}px;z-index:55;height:25px;`;
+    card.style.marginTop = '48px';
+    const movedCardRect = card.getBoundingClientRect();
+    bar.style.cssText = `position:absolute;display:flex;align-items:center;gap:7px;left:${window.scrollX + movedCardRect.left + 16}px;top:${window.scrollY + movedCardRect.top - 39}px;z-index:55;height:30px;`;
     for (const button of bar.querySelectorAll('button')) {
-      button.style.cssText = 'box-sizing:border-box;height:25px;min-width:82px;padding:0 12px;color:#fff;background:#13377e;border:1px solid #13377e;border-radius:4px;font:700 12px Arial,sans-serif;line-height:23px;text-align:center;cursor:pointer;white-space:nowrap;';
+      button.style.cssText = 'box-sizing:border-box;height:30px;min-width:92px;padding:0 14px;color:#fff;background:#13377e;border:1px solid #13377e;border-radius:4px;font:700 12px Arial,sans-serif;line-height:28px;text-align:center;cursor:pointer;white-space:nowrap;';
     }
   }
 
