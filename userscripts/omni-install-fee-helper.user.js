@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Installation Fee Helper
 // @namespace    livingculture-omni
-// @version      0.1.0
+// @version      0.1.1
 // @description  Loads Living Culture installation fees and adds the selected SKU and price to Cin7 Omni.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-install-fee-helper.user.js
@@ -135,10 +135,16 @@
   function emptyCodeField() {
     const code = header('Code');
     if (!code) return null;
-    return pageElements('input:not([type="hidden"]), textarea, [contenteditable="true"]')
-      .map(field => ({ field, value: clean(field.value || field.textContent), placeholder: clean(field.placeholder), rect: field.getBoundingClientRect() }))
-      .filter(item => item.rect.top > code.bottom && item.rect.left < code.right + 20 && item.rect.right > code.left - 20 && (!item.value || /search/i.test(item.placeholder)))
-      .sort((a, b) => a.rect.top - b.rect.top)[0] || null;
+    return pageElements('body *')
+      .map(field => ({
+        field,
+        value: clean(field.value || field.textContent),
+        placeholder: clean(field.placeholder),
+        rect: field.getBoundingClientRect()
+      }))
+      .filter(item => item.rect.top > code.bottom && item.rect.left < code.right + 20 && item.rect.right > code.left - 20)
+      .filter(item => /^search\.{0,3}$/i.test(item.value) || /search/i.test(item.placeholder))
+      .sort((a, b) => a.rect.top - b.rect.top || a.field.children.length - b.field.children.length)[0] || null;
   }
   async function chooseDropdown(sku, input) {
     await new Promise(resolve => setTimeout(resolve, 900));
@@ -165,8 +171,9 @@
     close();
     const rowY = empty.rect.top + empty.rect.height / 2;
     clickAt(empty.rect.left + empty.rect.width / 2, rowY);
-    await new Promise(resolve => setTimeout(resolve, 200));
-    const codeInput = fieldNear(empty.rect.left + empty.rect.width / 2, rowY) || empty.field;
+    await new Promise(resolve => setTimeout(resolve, 350));
+    const codeInput = fieldNear(empty.rect.left + empty.rect.width / 2, rowY);
+    if (!codeInput) { toast('Could not open the Omni Code search field.', true); return; }
     setValue(codeInput, item.code);
     await chooseDropdown(item.code, codeInput);
     await new Promise(resolve => setTimeout(resolve, 900));
