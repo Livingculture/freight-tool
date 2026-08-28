@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni New Zealand Address Autocomplete
 // @namespace    livingculture-omni
-// @version      0.1.5
+// @version      0.1.6
 // @description  Adds New Zealand address suggestions to Cin7 Omni delivery addresses.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-address-autocomplete.user.js
@@ -137,8 +137,8 @@
   function photonAddress(feature) {
     const properties = feature?.properties || {};
     const address1 = clean([properties.housenumber, properties.street || properties.name].filter(Boolean).join(' '));
-    const city = clean(properties.city || properties.town || properties.village || properties.locality || properties.county);
-    const district = clean(properties.district || properties.suburb || properties.locality);
+    const city = clean(properties.district || properties.city || properties.town || properties.village || properties.county);
+    const district = clean(properties.suburb || properties.locality);
     return {
       address1,
       address2: district && normalise(district) !== normalise(city) ? district : '',
@@ -197,10 +197,9 @@
   function positionList() {
     const list = getList();
     if (!addressInput || !visible(addressInput) || !list.children.length) return;
-    const rect = addressInput.getBoundingClientRect();
-    list.style.left = `${rect.left}px`;
-    list.style.top = `${rect.bottom + 4}px`;
-    list.style.width = `${Math.max(360, rect.width)}px`;
+    list.style.left = '50%';
+    list.style.top = '120px';
+    list.style.width = 'min(560px, calc(100vw - 32px))';
   }
 
   function getLookupButton() {
@@ -251,7 +250,7 @@
     const originalButtonText = lookupButton.textContent;
     lookupButton.textContent = 'Searching…';
     lookupButton.disabled = true;
-    list.innerHTML = '<div class="lc-omni-address-message">Finding addresses…</div>';
+    list.innerHTML = '<div class="lc-omni-address-title">Select delivery address</div><div class="lc-omni-address-message">Finding addresses…</div>';
     positionList();
 
     try {
@@ -267,13 +266,13 @@
         .map(photonAddress)
         .filter(address => address.address1 && address.city);
       list.innerHTML = currentSuggestions.length
-        ? currentSuggestions.map((item, index) => `<button type="button" data-index="${index}">${addressLabel(item).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</button>`).join('')
-        : '<div class="lc-omni-address-message">No matching addresses found.</div>';
+        ? `<div class="lc-omni-address-title">Select delivery address</div>${currentSuggestions.map((item, index) => `<button type="button" data-index="${index}">${addressLabel(item).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</button>`).join('')}`
+        : '<div class="lc-omni-address-title">Select delivery address</div><div class="lc-omni-address-message">No matching New Zealand addresses found. Try including the street number and town.</div>';
       positionList();
     } catch (error) {
       if (currentRequest !== requestNumber) return;
       console.error(error);
-      list.innerHTML = '<div class="lc-omni-address-message is-error">Address lookup unavailable. Continue entering the address manually.</div>';
+      list.innerHTML = `<div class="lc-omni-address-title">Address lookup error</div><div class="lc-omni-address-message is-error">${clean(error.message) || 'Address lookup unavailable.'}</div>`;
       positionList();
     } finally {
       if (currentRequest === requestNumber) {
@@ -318,6 +317,7 @@
       position: fixed;
       z-index: 2147483646;
       display: grid;
+      transform: translateX(-50%);
       max-height: 280px;
       overflow: auto;
       background: #fff;
@@ -351,6 +351,14 @@
       cursor: pointer;
     }
     #lc-omni-address-suggestions button:hover { color: #fff; background: #13377e; }
+    .lc-omni-address-title {
+      position: sticky;
+      top: 0;
+      padding: 10px 12px;
+      color: #fff;
+      background: #13377e;
+      font-weight: 800;
+    }
     .lc-omni-address-message { padding: 10px 11px; color: #4c6485; }
     .lc-omni-address-message.is-error { color: #9a2d20; }
   `;
