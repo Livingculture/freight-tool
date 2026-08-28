@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni New Zealand Address Autocomplete
 // @namespace    livingculture-omni
-// @version      0.1.7
+// @version      0.1.8
 // @description  Adds New Zealand address suggestions to Cin7 Omni delivery addresses.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-address-autocomplete.user.js
@@ -40,7 +40,7 @@
 
   function allControls() {
     return Array.from(document.querySelectorAll('input:not([type="hidden"]), textarea, select'))
-      .filter(control => !control.closest('#lc-omni-address-suggestions'));
+      .filter(control => !control.closest('#lc-omni-delivery-address-suggestions'));
   }
 
   function findField(labelText) {
@@ -186,10 +186,10 @@
   }
 
   function getList() {
-    let list = document.getElementById('lc-omni-address-suggestions');
+    let list = document.getElementById('lc-omni-delivery-address-suggestions');
     if (list) return list;
     list = document.createElement('div');
-    list.id = 'lc-omni-address-suggestions';
+    list.id = 'lc-omni-delivery-address-suggestions';
     document.body.appendChild(list);
     return list;
   }
@@ -197,9 +197,11 @@
   function positionList() {
     const list = getList();
     if (!addressInput || !visible(addressInput) || !list.children.length) return;
-    list.style.left = '50%';
-    list.style.top = '120px';
-    list.style.width = 'min(560px, calc(100vw - 32px))';
+    const rect = addressInput.getBoundingClientRect();
+    const width = Math.min(Math.max(480, rect.width), window.innerWidth - 32);
+    list.style.left = `${Math.max(16, Math.min(rect.left, window.innerWidth - width - 16))}px`;
+    list.style.top = `${rect.bottom + 4}px`;
+    list.style.width = `${width}px`;
   }
 
   function getLookupButton() {
@@ -220,7 +222,7 @@
         return;
       }
       clearTimeout(timer);
-      search(query, true);
+      search(query);
     });
     return button;
   }
@@ -239,11 +241,11 @@
   }
 
   function hideSuggestions() {
-    const list = document.getElementById('lc-omni-address-suggestions');
+    const list = document.getElementById('lc-omni-delivery-address-suggestions');
     if (list) list.innerHTML = '';
   }
 
-  async function search(query, useNativePicker = false) {
+  async function search(query) {
     const currentRequest = ++requestNumber;
     const list = getList();
     const lookupButton = getLookupButton();
@@ -265,28 +267,6 @@
       currentSuggestions = (Array.isArray(data.features) ? data.features : [])
         .map(photonAddress)
         .filter(address => address.address1 && address.city);
-      if (useNativePicker) {
-        if (!currentSuggestions.length) {
-          window.alert('No matching New Zealand addresses found. Try including the street number and town.');
-          hideSuggestions();
-          return;
-        }
-
-        const choices = currentSuggestions.map((item, index) => `${index + 1}. ${addressLabel(item)}`).join('\n');
-        const selected = window.prompt(`Select delivery address by entering its number:\n\n${choices}`, '1');
-        if (selected == null) {
-          hideSuggestions();
-          return;
-        }
-        const selectedAddress = currentSuggestions[Number.parseInt(selected, 10) - 1];
-        if (!selectedAddress) {
-          window.alert('That address number was not valid. Click Find address to try again.');
-          hideSuggestions();
-          return;
-        }
-        applySuggestion(selectedAddress);
-        return;
-      }
       list.innerHTML = currentSuggestions.length
         ? `<div class="lc-omni-address-title">Select delivery address</div>${currentSuggestions.map((item, index) => `<button type="button" data-index="${index}">${addressLabel(item).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</button>`).join('')}`
         : '<div class="lc-omni-address-title">Select delivery address</div><div class="lc-omni-address-message">No matching New Zealand addresses found. Try including the street number and town.</div>';
@@ -296,7 +276,6 @@
       console.error(error);
       list.innerHTML = `<div class="lc-omni-address-title">Address lookup error</div><div class="lc-omni-address-message is-error">${clean(error.message) || 'Address lookup unavailable.'}</div>`;
       positionList();
-      if (useNativePicker) window.alert(`Address lookup error: ${clean(error.message) || 'Address lookup unavailable.'}`);
     } finally {
       if (currentRequest === requestNumber) {
         lookupButton.textContent = originalButtonText;
@@ -336,11 +315,10 @@
 
   const style = document.createElement('style');
   style.textContent = `
-    #lc-omni-address-suggestions {
+    #lc-omni-delivery-address-suggestions {
       position: fixed;
       z-index: 2147483646;
       display: grid;
-      transform: translateX(-50%);
       max-height: 280px;
       overflow: auto;
       background: #fff;
@@ -363,8 +341,8 @@
       cursor: pointer;
     }
     #lc-omni-address-lookup-button:hover { background: #0f2e6a; }
-    #lc-omni-address-suggestions:empty { display: none; }
-    #lc-omni-address-suggestions button {
+    #lc-omni-delivery-address-suggestions:empty { display: none; }
+    #lc-omni-delivery-address-suggestions button {
       padding: 9px 11px;
       color: #162947;
       background: #fff;
@@ -373,7 +351,7 @@
       text-align: left;
       cursor: pointer;
     }
-    #lc-omni-address-suggestions button:hover { color: #fff; background: #13377e; }
+    #lc-omni-delivery-address-suggestions button:hover { color: #fff; background: #13377e; }
     .lc-omni-address-title {
       position: sticky;
       top: 0;
@@ -395,7 +373,7 @@
     if (suggestion) applySuggestion(suggestion);
   });
   document.addEventListener('mousedown', event => {
-    if (event.target !== addressInput && !event.target.closest('#lc-omni-address-suggestions')) hideSuggestions();
+    if (event.target !== addressInput && !event.target.closest('#lc-omni-delivery-address-suggestions')) hideSuggestions();
   });
   document.addEventListener('input', handleAddressInput, true);
   document.addEventListener('keyup', event => {
