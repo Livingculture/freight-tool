@@ -1,16 +1,16 @@
 :root {
-  --green: #285c4b;
-  --green-dark: #163b31;
-  --mint: #e3f0ea;
+  --green: #13377e;
+  --green-dark: #0f2e6a;
+  --mint: #e7eef8;
   --blue: #255f85;
   --amber: #a96d16;
   --red: #a43f34;
-  --ink: #1d2d28;
-  --muted: #61736c;
-  --paper: #fffefb;
-  --surface: #f4f6f3;
-  --line: #d8e1db;
-  --shadow: 0 14px 30px rgba(22, 48, 40, 0.08);
+  --ink: #162947;
+  --muted: #536987;
+  --paper: #ffffff;
+  --surface: #eef2f7;
+  --line: #cdd9e9;
+  --shadow: 0 14px 30px rgba(15, 46, 106, 0.10);
 }
 
 * { box-sizing: border-box; }
@@ -122,7 +122,7 @@ select {
 input:focus,
 select:focus {
   border-color: var(--green);
-  outline: 3px solid rgba(40, 92, 75, 0.14);
+  outline: 3px solid rgba(19, 55, 126, 0.16);
 }
 
 .metrics {
@@ -137,7 +137,7 @@ select:focus {
   display: grid;
   gap: 6px;
   padding: 18px 24px;
-  background: #f9fbf8;
+  background: #f4f7fb;
 }
 
 .metric span {
@@ -235,7 +235,7 @@ select:focus {
   border: 1px solid var(--line);
   border-left: 5px solid var(--green);
   border-radius: 8px;
-  background: #fffefb;
+  background: #fff;
   box-shadow: var(--shadow);
 }
 
@@ -311,11 +311,11 @@ select:focus {
   padding: 8px 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fbfcfa;
+  background: #f7f9fc;
 }
 
 .step.is-done {
-  border-color: rgba(40, 92, 75, 0.42);
+  border-color: rgba(19, 55, 126, 0.42);
   background: var(--mint);
 }
 
@@ -374,7 +374,7 @@ th {
   position: sticky;
   top: 0;
   z-index: 1;
-  background: #f7faf6;
+  background: #eef3fa;
   color: var(--muted);
   font-size: 0.78rem;
   text-transform: uppercase;
@@ -429,7 +429,7 @@ td span {
   border: 1px dashed var(--line);
   border-radius: 8px;
   color: var(--muted);
-  background: #fbfcfa;
+  background: #f7f9fc;
 }
 
 @media (max-width: 900px) {
