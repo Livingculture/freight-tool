@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Website Shortcuts
 // @namespace    livingculture-omni
-// @version      0.1.10
+// @version      0.1.11
 // @description  Adds Living Culture website shortcuts to the grey space between Cin7 Omni quote sections.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @match        https://livingculture.co.nz/*
@@ -71,6 +71,24 @@
     return table.parentElement;
   }
 
+  function orderCurrencyCard() {
+    const label = Array.from(document.querySelectorAll('label, div, span, td, th'))
+      .filter(visible)
+      .filter(element => /^order\s+currency$/i.test(clean(element.textContent)))
+      .sort((a, b) => a.children.length - b.children.length)[0];
+    if (!label) return null;
+    const labelRect = label.getBoundingClientRect();
+    let current = label.parentElement;
+    let best = null;
+    while (current && current !== document.body) {
+      const rect = current.getBoundingClientRect();
+      const colour = getComputedStyle(current).backgroundColor;
+      if (rect.width > window.innerWidth * 0.65 && rect.top <= labelRect.top && labelRect.top - rect.top < 120 && /rgb\(255, 255, 255\)|rgba\(255, 255, 255/.test(colour)) best = current;
+      current = current.parentElement;
+    }
+    return best;
+  }
+
   function openShortcut(shortcut) {
     const width = Math.min(820, Math.max(680, Math.round(screen.availWidth * 0.52)));
     const height = Math.min(680, Math.max(520, Math.round(screen.availHeight * 0.65)));
@@ -111,7 +129,7 @@
     slot.style.cssText = 'box-sizing:border-box;display:block;width:100%;height:48px;padding:0;background:transparent;';
     if (bar.parentElement !== document.body) document.body.appendChild(bar);
     const cardRect = card.getBoundingClientRect();
-    const upperRect = slot.previousElementSibling?.getBoundingClientRect();
+    const upperRect = orderCurrencyCard()?.getBoundingClientRect();
     const gapTop = upperRect?.bottom ?? (cardRect.top - 48);
     const top = gapTop + Math.max(0, (cardRect.top - gapTop - 30) / 2);
     bar.style.cssText = `position:absolute;display:flex;align-items:center;gap:7px;left:${window.scrollX + cardRect.left}px;top:${window.scrollY + top}px;z-index:55;height:30px;`;
