@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Custom Comments
 // @namespace    livingculture-omni
-// @version      0.1.10
+// @version      0.1.11
 // @description  Builds custom pergola comments and fills Omni internal and product-line comments.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-custom-comments.user.js
@@ -336,7 +336,8 @@
     }
     if (paymentSection && paymentSection !== document.body) {
       paymentSection.style.boxSizing = 'border-box';
-      paymentSection.style.paddingTop = '38px';
+      paymentSection.style.position = 'relative';
+      paymentSection.style.top = '42px';
     }
     if (button.parentElement !== document.body) document.body.appendChild(button);
     const rect = anchor.getBoundingClientRect();
