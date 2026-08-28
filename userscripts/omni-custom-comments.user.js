@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Custom Comments
 // @namespace    livingculture-omni
-// @version      0.1.8
+// @version      0.1.9
 // @description  Builds custom pergola comments and fills Omni internal and product-line comments.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-custom-comments.user.js
@@ -324,6 +324,7 @@
       exactText('Add a new line', 'body *')[0] ||
       pageElements('body *').find(element => /^add\s+a\s+new\s+line$/i.test(clean(element.textContent)));
     if (!anchor) return;
+    anchor.style.marginBottom = '24px';
     if (button.parentElement !== document.body) document.body.appendChild(button);
     const rect = anchor.getBoundingClientRect();
     button.style.cssText = `position:absolute;left:${window.scrollX + rect.right + 8}px;top:${window.scrollY + rect.top}px;z-index:60;box-sizing:border-box;height:${Math.max(34, rect.height)}px;padding:0 14px;color:#fff;background:#13377e;border:1px solid #13377e;border-radius:4px;font:700 13px Arial,sans-serif;cursor:pointer;white-space:nowrap;`;

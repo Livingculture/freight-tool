@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Installation Fee Helper
 // @namespace    livingculture-omni
-// @version      0.1.4
+// @version      0.1.5
 // @description  Loads Living Culture installation fees and adds the selected SKU and price to Cin7 Omni.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-install-fee-helper.user.js
@@ -280,6 +280,8 @@
   function placeButton() {
     const button = getButton();
     const anchor = anchorElement();
+    const addLine = pageElements('input,button,a,[role="button"]').find(element => /^add\s+a\s+new\s+line$/i.test(clean(element.value || element.textContent)));
+    if (addLine) addLine.style.marginBottom = '24px';
     button.style.cssText = 'position:fixed;left:390px;bottom:20px;z-index:2147483599;height:36px;padding:0 14px;color:#fff;background:#13377e;border:1px solid #13377e;border-radius:4px;font:700 13px Arial,sans-serif;cursor:pointer;white-space:nowrap;';
     if (!anchor || !visible(anchor)) return;
     const rect = anchor.getBoundingClientRect();
