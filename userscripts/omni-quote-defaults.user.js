@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Quote Defaults
 // @namespace    livingculture-omni
-// @version      0.1.0
+// @version      0.1.1
 // @description  Sets Expected Order Date to 14 days after Created Date and Probability of Winning to 50%.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-defaults.user.js
@@ -27,8 +27,12 @@
     const wanted = text.toLowerCase();
     return Array.from(document.querySelectorAll('label, div, span, td, th'))
       .filter(visible)
-      .filter(element => clean(element.textContent).replace(/^\d+\s*/, '').replace(/\*$/, '').trim().toLowerCase() === wanted)
-      .sort((a, b) => a.children.length - b.children.length)[0] || null;
+      .map(element => ({
+        element,
+        value: clean(element.textContent).replace(/^\d+\s*/, '').replace(/\*$/, '').trim().toLowerCase()
+      }))
+      .filter(item => item.value === wanted || item.value.endsWith(wanted))
+      .sort((a, b) => a.value.length - b.value.length || a.element.children.length - b.element.children.length)[0]?.element || null;
   }
 
   function fieldNearLabel(text, selector) {
@@ -40,7 +44,11 @@
       .map(field => ({ field, rect: field.getBoundingClientRect() }))
       .filter(item => item.rect.top < headingRect.bottom + 65 && item.rect.bottom > headingRect.top - 12)
       .filter(item => item.rect.left >= headingRect.left - 45 && item.rect.left < headingRect.right + 280)
-      .sort((a, b) => Math.abs(a.rect.top - headingRect.bottom) - Math.abs(b.rect.top - headingRect.bottom) || a.rect.left - b.rect.left)[0]?.field || null;
+      .sort((a, b) => {
+        const aHorizontal = Math.abs(a.rect.left - headingRect.left);
+        const bHorizontal = Math.abs(b.rect.left - headingRect.left);
+        return aHorizontal - bHorizontal || Math.abs(a.rect.top - headingRect.bottom) - Math.abs(b.rect.top - headingRect.bottom);
+      })[0]?.field || null;
   }
 
   function parseDate(value) {
@@ -70,10 +78,11 @@
   }
 
   function setProbability(select) {
-    if (!select || clean(select.value)) return;
+    if (!select) return;
     const option = Array.from(select.options || []).find(item => /^50\s*%?$/.test(clean(item.textContent))) ||
       Array.from(select.options || []).find(item => /(?:^|\D)50(?:\D|$)/.test(clean(item.textContent)));
     if (!option) return;
+    if (select.value === option.value && /^50\s*%?$/.test(clean(select.selectedOptions?.[0]?.textContent))) return;
     const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
     if (setter) setter.call(select, option.value); else select.value = option.value;
     select.dispatchEvent(new Event('input', { bubbles: true }));
