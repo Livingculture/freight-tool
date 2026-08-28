@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Quote Defaults
 // @namespace    livingculture-omni
-// @version      0.1.4
+// @version      0.1.5
 // @description  Sets Expected Order Date to 14 days after Created Date and Probability of Winning to 50%.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-defaults.user.js
@@ -94,7 +94,7 @@
       .filter(visible)
       .map(field => ({ field, rect: field.getBoundingClientRect() }))
       .filter(item => item.rect.top >= headingRect.top - 8 && item.rect.top <= headingRect.bottom + 55)
-      .filter(item => item.rect.left >= headingRect.left - 20 && item.rect.left <= headingRect.right + 220)
+      .filter(item => item.rect.left >= headingRect.left - 65 && item.rect.left <= headingRect.right + 220)
       .sort((a, b) => a.rect.left - b.rect.left || a.rect.top - b.rect.top)[0]?.field || null;
   }
 
