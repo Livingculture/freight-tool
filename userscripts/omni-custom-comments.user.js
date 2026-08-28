@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Custom Comments
 // @namespace    livingculture-omni
-// @version      0.1.1
+// @version      0.1.2
 // @description  Builds custom pergola comments and fills Omni internal and product-line comments.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-custom-comments.user.js
@@ -262,9 +262,6 @@
   }
 
   function placeButton() {
-    const anchor = pageElements('button, a, [role="button"]')
-      .find(element => /^add a new line$/i.test(clean(element.textContent)));
-    if (!anchor) return;
     let button = document.getElementById(BUTTON_ID);
     if (!button) {
       button = document.createElement('button');
@@ -272,7 +269,13 @@
       button.type = 'button';
       button.textContent = 'Custom Comments';
       button.addEventListener('click', open);
+      document.body.appendChild(button);
     }
+    button.style.cssText = 'position:fixed;left:240px;bottom:20px;z-index:2147483600;box-sizing:border-box;height:36px;padding:0 14px;color:#fff;background:#13377e;border:1px solid #13377e;border-radius:4px;font:700 13px Arial,sans-serif;cursor:pointer;white-space:nowrap;';
+
+    const anchor = pageElements('button, a, [role="button"]')
+      .find(element => /add\s+a\s+new\s+line/i.test(clean(element.textContent)));
+    if (!anchor) return;
     if (button.parentElement !== document.body) document.body.appendChild(button);
     const rect = anchor.getBoundingClientRect();
     button.style.cssText = `position:absolute;left:${window.scrollX + rect.right + 8}px;top:${window.scrollY + rect.top}px;z-index:60;box-sizing:border-box;height:${Math.max(34, rect.height)}px;padding:0 14px;color:#fff;background:#13377e;border:1px solid #13377e;border-radius:4px;font:700 13px Arial,sans-serif;cursor:pointer;white-space:nowrap;`;
