@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Quote Defaults
 // @namespace    livingculture-omni
-// @version      0.1.2
+// @version      0.1.3
 // @description  Sets Expected Order Date to 14 days after Created Date and Probability of Winning to 50%.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-defaults.user.js
@@ -98,6 +98,65 @@
       .sort((a, b) => a.rect.left - b.rect.left || a.rect.top - b.rect.top)[0]?.field || null;
   }
 
+  function calendarTriggerNearLabel(text, input) {
+    const heading = label(text);
+    if (!heading || !input) return null;
+    const headingRect = heading.getBoundingClientRect();
+    const inputRect = input.getBoundingClientRect();
+    return Array.from(document.querySelectorAll('button, a, img, input[type="button"], input[type="image"]'))
+      .filter(visible)
+      .map(element => ({ element, rect: element.getBoundingClientRect() }))
+      .filter(item => item.rect.top < inputRect.bottom + 12 && item.rect.bottom > inputRect.top - 12)
+      .filter(item => item.rect.left > inputRect.right && item.rect.left < headingRect.right + 300)
+      .sort((a, b) => a.rect.left - b.rect.left)[0]?.element || null;
+  }
+
+  function setCalendarDate(input, date, value) {
+    let usedWidget = false;
+    const jq = window.jQuery ? window.jQuery(input) : null;
+
+    try {
+      const kendo = jq?.data('kendoDatePicker');
+      if (kendo?.value) {
+        kendo.value(date);
+        kendo.trigger?.('change');
+        usedWidget = true;
+      }
+    } catch (_) {}
+
+    try {
+      if (jq && typeof jq.datepicker === 'function' && (jq.hasClass('hasDatepicker') || jq.data('datepicker'))) {
+        jq.datepicker('setDate', date).trigger('change');
+        usedWidget = true;
+      }
+    } catch (_) {}
+
+    try {
+      if (input._flatpickr?.setDate) {
+        input._flatpickr.setDate(date, true);
+        usedWidget = true;
+      }
+    } catch (_) {}
+
+    setInput(input, value);
+    input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter', code: 'Enter' }));
+    input.dispatchEvent(new KeyboardEvent('keypress', { bubbles: true, key: 'Enter', code: 'Enter' }));
+    input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Enter', code: 'Enter' }));
+
+    if (!usedWidget && !input.dataset.lcCalendarOpened) {
+      const trigger = calendarTriggerNearLabel('Expected Order Date', input);
+      if (trigger) {
+        input.dataset.lcCalendarOpened = '1';
+        trigger.click();
+        setTimeout(() => {
+          setInput(input, value);
+          input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter', code: 'Enter' }));
+          input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Enter', code: 'Enter' }));
+        }, 150);
+      }
+    }
+  }
+
   function setProbability(select) {
     if (!select) return;
     const option = Array.from(select.options || []).find(item => /^50\s*%?$/.test(clean(item.textContent))) ||
@@ -118,7 +177,7 @@
       const createdDate = parseDate(createdValue);
       if (createdDate && !Number.isNaN(createdDate.getTime())) {
         createdDate.setDate(createdDate.getDate() + 14);
-        setInput(expected, formatDate(createdDate, createdValue));
+        setCalendarDate(expected, createdDate, formatDate(createdDate, createdValue));
       }
     }
     setProbability(fieldNearLabel('Probability of Winning', 'select'));
