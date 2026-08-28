@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Custom Comments
 // @namespace    livingculture-omni
-// @version      0.1.5
+// @version      0.1.6
 // @description  Builds custom pergola comments and fills Omni internal and product-line comments.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-custom-comments.user.js
@@ -65,8 +65,6 @@
     for (const label of labels) {
       const linked = label.htmlFor && document.getElementById(label.htmlFor);
       if (linked && controls.includes(linked)) return linked;
-      const nested = label.parentElement?.querySelector('textarea, input:not([type="hidden"]), [contenteditable="true"]');
-      if (nested && visible(nested)) return nested;
     }
     const candidates = labels.flatMap(label => {
       const rect = label.getBoundingClientRect();
@@ -74,7 +72,7 @@
         const fieldRect = field.getBoundingClientRect();
         const vertical = Math.abs(fieldRect.top - rect.bottom);
         const horizontal = Math.abs(fieldRect.left - rect.left);
-        return { field, fieldRect, score: vertical * 5 + horizontal };
+        return { field, fieldRect, score: vertical * 5 + horizontal - (field instanceof HTMLTextAreaElement ? 1000 : 0) };
       }).filter(item => item.fieldRect.top >= rect.top - 8 && item.fieldRect.top <= rect.bottom + 55 && item.fieldRect.right > rect.left);
     });
     return candidates.sort((a, b) => a.score - b.score)[0]?.field || null;
@@ -123,10 +121,11 @@
     const headers = Array.from(headerRow.children);
     const commentsIndex = headers.indexOf(commentsHeader);
     const codeIndex = headers.findIndex(cell => /^code$/i.test(clean(cell.textContent)));
-    const productRow = Array.from(table.querySelectorAll('tr')).slice(1).find(row => {
+    const tableRows = Array.from(table.querySelectorAll('tr')).slice(1).filter(row => row.children.length > commentsIndex);
+    const productRow = tableRows.find(row => {
       const code = clean(row.children[codeIndex]?.querySelector('input,textarea')?.value || row.children[codeIndex]?.textContent);
       return code && !/^search/i.test(code);
-    });
+    }) || tableRows[0];
     const commentCell = productRow?.children[commentsIndex];
     if (!commentCell) return null;
     const cellRect = commentCell.getBoundingClientRect();
