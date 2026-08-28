@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Website Shortcuts
 // @namespace    livingculture-omni
-// @version      0.1.9
+// @version      0.1.10
 // @description  Adds Living Culture website shortcuts to the grey space between Cin7 Omni quote sections.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @match        https://livingculture.co.nz/*
@@ -108,9 +108,13 @@
     let slot = document.getElementById(SLOT_ID);
     if (!slot) { slot = document.createElement('div'); slot.id = SLOT_ID; }
     if (slot.nextElementSibling !== card || slot.parentElement !== card.parentElement) card.parentElement.insertBefore(slot, card);
-    slot.style.cssText = 'box-sizing:border-box;display:flex;align-items:center;justify-content:flex-start;width:100%;height:48px;padding:9px 16px;background:transparent;';
-    if (bar.parentElement !== slot) slot.appendChild(bar);
-    bar.style.cssText = 'position:static;display:flex;align-items:center;gap:7px;z-index:55;height:30px;';
+    slot.style.cssText = 'box-sizing:border-box;display:block;width:100%;height:48px;padding:0;background:transparent;';
+    if (bar.parentElement !== document.body) document.body.appendChild(bar);
+    const cardRect = card.getBoundingClientRect();
+    const upperRect = slot.previousElementSibling?.getBoundingClientRect();
+    const gapTop = upperRect?.bottom ?? (cardRect.top - 48);
+    const top = gapTop + Math.max(0, (cardRect.top - gapTop - 30) / 2);
+    bar.style.cssText = `position:absolute;display:flex;align-items:center;gap:7px;left:${window.scrollX + cardRect.left}px;top:${window.scrollY + top}px;z-index:55;height:30px;`;
     for (const button of bar.querySelectorAll('button')) {
       button.style.cssText = 'box-sizing:border-box;height:30px;min-width:92px;padding:0 14px;color:#13377e;background:#fff;border:1px solid #13377e;border-radius:4px;font:700 12px Arial,sans-serif;line-height:28px;text-align:center;cursor:pointer;white-space:nowrap;';
     }
