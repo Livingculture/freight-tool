@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Website Shortcuts
 // @namespace    livingculture-omni
-// @version      0.1.21
+// @version      0.1.22
 // @description  Adds Living Culture website shortcuts to the grey space between Cin7 Omni quote sections.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @match        https://livingculture.co.nz/*
@@ -79,18 +79,17 @@
   }
 
   function productTableCard() {
-    const headerRow = Array.from(document.querySelectorAll('tr')).filter(visible).find(row => {
-      const labels = Array.from(row.children).map(cell => clean(cell.textContent).toLowerCase());
-      return labels.some(value => /(?:^|\s)code$/.test(value)) &&
-        labels.some(value => /(?:^|\s)product$/.test(value)) &&
-        labels.some(value => /^option3$/.test(value)) &&
-        labels.some(value => /^comments$/.test(value));
-    });
-    const table = headerRow?.closest('table');
-    if (!table) return null;
     const addLine = Array.from(document.querySelectorAll('button, input, a, [role="button"]'))
       .filter(visible)
       .find(element => /^add\s+a\s+new\s+line$/i.test(clean(element.value || element.textContent)));
+    const headerRows = Array.from(document.querySelectorAll('tr')).filter(visible).filter(row => {
+      const labels = Array.from(row.children).map(cell => clean(cell.textContent).toLowerCase());
+      return labels.some(value => /(?:^|\s)code$/.test(value)) &&
+        labels.some(value => /(?:^|\s)product$/.test(value));
+    });
+    const headerRow = headerRows.find(row => addLine && row.closest('table')?.parentElement?.contains(addLine)) || headerRows[0];
+    const table = headerRow?.closest('table');
+    if (!table) return null;
     let current = table.parentElement;
     while (current && current !== document.body) {
       if (addLine && current.contains(addLine)) return current;
