@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Copy SKU
 // @namespace    livingculture
-// @version      1.9
+// @version      2.0
 // @description  Copies the current product SKU and sends it to an originating Cin7 Omni product line.
 // @match        https://livingculture.co.nz/products/*
 // @match        https://www.livingculture.co.nz/products/*
@@ -226,9 +226,11 @@
     const originalText = 'Copy SKU';
 
     try {
-      await loadProduct();
-
-      const sku = resolveCurrentSku();
+      let sku = resolveCurrentSku();
+      if (!sku) {
+        await loadProduct();
+        sku = resolveCurrentSku();
+      }
 
       if (!sku) {
         button.textContent = 'SKU not found';
