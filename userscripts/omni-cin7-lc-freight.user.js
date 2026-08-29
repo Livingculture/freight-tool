@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.27
+// @version      0.1.28
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -517,13 +517,25 @@
     if (!status) return;
 
     const isQueuedUpdate = !isError && /^Cin7 products changed\./i.test(message || '');
+    const isLoading = Boolean(message && !isError && (isQueuedUpdate || /getting|loading|reading|updating/i.test(message)));
 
-    status.textContent = isQueuedUpdate ? '' : message || '';
-    status.setAttribute('aria-label', isQueuedUpdate ? message : '');
+    status.innerHTML = isLoading ? `
+      <div class="lc-omni-truck-track" aria-hidden="true">
+        <div class="lc-omni-truck">
+          <div class="lc-omni-truck-cargo">
+            <img src="https://livingculture.co.nz/cdn/shop/files/logo_ec2b0c5e-42ca-4695-8c7e-43b344144c58.png?v=1675047511&amp;width=120" alt="">
+          </div>
+          <div class="lc-omni-truck-cab"></div>
+          <span class="lc-omni-truck-wheel lc-omni-truck-wheel-back"></span>
+          <span class="lc-omni-truck-wheel lc-omni-truck-wheel-front"></span>
+        </div>
+      </div>
+    ` : escapeHtml(message || '');
+    status.setAttribute('aria-label', isLoading ? message : '');
     status.style.display = message ? '' : 'none';
     status.style.color = isError ? '#9a2d20' : '#34577f';
     status.classList.toggle('is-queued-update', isQueuedUpdate);
-    status.classList.toggle('is-loading', Boolean(message && !isQueuedUpdate && !isError && /getting|loading|reading|updating/i.test(message)));
+    status.classList.toggle('is-loading', isLoading);
   }
 
   function setResult(price, method = '', preSaleFreightEstimate = null) {
@@ -570,7 +582,7 @@
     const breakdownBlock = document.getElementById('lc-omni-freight-breakdown');
 
     if (result) {
-      result.textContent = 'Freight: updating...';
+      result.textContent = 'Freight: -';
     }
 
     if (methodBlock) {
@@ -590,7 +602,7 @@
     const freightItems = normaliseFreightItems({ items });
     if (!block || !freightItems.length) return;
 
-    block.innerHTML = '<div class="lc-omni-breakdown-title">Product freight breakdown</div><div>Calculating…</div>';
+    block.innerHTML = '<div class="lc-omni-breakdown-title">Product freight breakdown</div>';
     const rows = [];
 
     for (const item of freightItems) {
@@ -611,7 +623,6 @@
             <strong>${row.error ? 'Unavailable' : escapeHtml(row.price)}</strong>
           </div>
         `).join('')}
-        ${rows.length < freightItems.length ? '<div>Calculating next product…</div>' : ''}
       `;
     }
   }
@@ -747,7 +758,7 @@
         const detailsHtml = detailsLine
           ? product.metricsLoaded
             ? `<div>${escapeHtml(detailsLine)}</div>`
-            : `<div class="lc-omni-loading-line"><span class="lc-omni-spinner" aria-hidden="true"></span>${escapeHtml(detailsLine)}</div>`
+            : ''
           : '';
 
         const quantityLine = preSaleQuantity
@@ -2043,61 +2054,101 @@
 
       #lc-omni-freight-status {
         grid-area: status;
-        min-height: 20px;
+        min-height: 38px;
         margin: 6px;
         color: #34577f;
       }
 
       #lc-omni-freight-status.is-loading {
-        display: flex;
-        align-items: center;
-        gap: 7px;
+        display: block;
       }
 
       #lc-omni-freight-status.is-queued-update {
         position: relative;
-        height: 24px;
-        min-height: 24px;
+        height: 38px;
+        min-height: 38px;
         overflow: hidden;
       }
 
-      #lc-omni-freight-status.is-queued-update::before {
-        content: '\\1F69A';
+      .lc-omni-truck-track {
+        position: relative;
+        width: 100%;
+        height: 38px;
+        overflow: hidden;
+        border-bottom: 2px solid rgba(40, 102, 79, 0.22);
+      }
+
+      .lc-omni-truck {
         position: absolute;
         left: 0;
-        top: 1px;
-        font-size: 16px;
-        line-height: 1;
-        animation: lc-omni-truck-shuttle 1.35s ease-in-out infinite alternate;
+        bottom: 2px;
+        width: 82px;
+        height: 32px;
+        animation: lc-omni-truck-shuttle 2.1s ease-in-out infinite alternate;
       }
 
-      #lc-omni-freight-status.is-loading::before,
-      .lc-omni-spinner {
-        content: '';
-        display: inline-block;
-        width: 13px;
-        height: 13px;
-        flex: 0 0 13px;
+      .lc-omni-truck-cargo {
+        position: absolute;
+        left: 0;
+        bottom: 7px;
         box-sizing: border-box;
-        border: 2px solid rgba(19, 55, 126, 0.22);
-        border-top-color: #13377e;
-        border-radius: 50%;
-        animation: lc-omni-spin 0.85s linear infinite;
-      }
-
-      .lc-omni-loading-line {
         display: flex;
         align-items: center;
-        gap: 6px;
+        justify-content: center;
+        width: 57px;
+        height: 23px;
+        padding: 3px;
+        overflow: hidden;
+        background: #28664f;
+        border-radius: 3px 2px 2px 3px;
       }
 
-      @keyframes lc-omni-spin {
-        to { transform: rotate(360deg); }
+      .lc-omni-truck-cargo img {
+        display: block;
+        width: 49px;
+        max-height: 17px;
+        object-fit: contain;
       }
+
+      .lc-omni-truck-cab {
+        position: absolute;
+        right: 2px;
+        bottom: 7px;
+        width: 25px;
+        height: 18px;
+        background: #347a5f;
+        border-radius: 2px 5px 2px 2px;
+        clip-path: polygon(0 0, 66% 0, 100% 42%, 100% 100%, 0 100%);
+      }
+
+      .lc-omni-truck-cab::after {
+        content: '';
+        position: absolute;
+        top: 3px;
+        right: 4px;
+        width: 8px;
+        height: 6px;
+        background: #dce6f4;
+        border-radius: 1px;
+      }
+
+      .lc-omni-truck-wheel {
+        position: absolute;
+        bottom: 2px;
+        width: 10px;
+        height: 10px;
+        box-sizing: border-box;
+        background: #243642;
+        border: 2px solid #fff;
+        border-radius: 50%;
+      }
+
+      .lc-omni-truck-wheel-back { left: 11px; }
+      .lc-omni-truck-wheel-front { right: 8px; }
 
       @keyframes lc-omni-truck-shuttle {
-        from { transform: translateX(0); }
-        to { transform: translateX(54px); }
+        from { left: 0; }
+        to { left: calc(100% - 82px); }
       }
 
       #lc-omni-product-details {
