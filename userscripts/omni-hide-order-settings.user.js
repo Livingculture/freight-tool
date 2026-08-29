@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         Omni Living Culture Hide Order Settings
 // @namespace    livingculture-omni
-// @version      0.1.0
+// @version      0.1.1
 // @description  Hides the Order Currency, Exchange Rate, Price Tier and Order Tax Calculation card in Cin7 Omni.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-hide-order-settings.user.js
 // @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-hide-order-settings.user.js
 // @supportURL   https://github.com/Livingculture/freight-tool
-// @run-at       document-idle
+// @run-at       document-start
 // @grant        none
 // ==/UserScript==
 
@@ -31,12 +31,17 @@
     if (!orderCurrency) return null;
 
     let element = orderCurrency;
+    let matched = null;
     while (element && element !== document.body) {
       const text = clean(element.textContent);
-      if (REQUIRED_TEXT.every(label => text.includes(label))) return element;
+      if (REQUIRED_TEXT.every(label => text.includes(label))) {
+        const rect = element.getBoundingClientRect();
+        if (rect.height > 0 && rect.height < 320 && rect.width > 600) matched = element;
+        else if (matched) break;
+      }
       element = element.parentElement;
     }
-    return null;
+    return matched;
   }
 
   function hideCard() {
@@ -54,7 +59,8 @@
     });
   }
 
+  const observer = new MutationObserver(schedule);
+  observer.observe(document.documentElement, { childList: true, subtree: true });
   hideCard();
-  new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true });
-  setInterval(hideCard, 2000);
+  setInterval(hideCard, 1000);
 })();
