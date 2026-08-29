@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Quote Defaults
 // @namespace    livingculture-omni
-// @version      0.1.9
+// @version      0.1.10
 // @description  Sets Expected Order Date to 14 days after Created Date and Probability of Winning to 50%.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-defaults.user.js
@@ -15,27 +15,6 @@
   'use strict';
 
   const clean = value => String(value || '').replace(/\s+/g, ' ').trim();
-
-  function showDiagnostic(message) {
-    let box = document.getElementById('lc-omni-defaults-diagnostic');
-    if (!box) {
-      box = document.createElement('div');
-      box.id = 'lc-omni-defaults-diagnostic';
-      Object.assign(box.style, {
-        position: 'fixed', left: '18px', bottom: '18px', zIndex: '2147483647',
-        maxWidth: '720px', padding: '10px 14px', border: '2px solid #e67e00',
-        borderRadius: '6px', background: '#fff7e8', color: '#172b4d',
-        font: '600 13px/1.4 Arial, sans-serif', boxShadow: '0 4px 16px rgba(0,0,0,.22)'
-      });
-      document.body.appendChild(box);
-    }
-    box.textContent = message;
-  }
-
-  function fieldDescription(field) {
-    if (!field) return 'not found';
-    return `${field.tagName.toLowerCase()}#${field.id || '-'} name=${field.name || '-'} type=${field.type || '-'} value="${dateValue(field)}"`;
-  }
 
   function visible(element) {
     if (!element) return false;
@@ -237,28 +216,18 @@
   }
 
   function applyDefaults() {
+    document.getElementById('lc-omni-defaults-diagnostic')?.remove();
+    if (!label('Expected Order Date')) return;
     const probability = fieldNearLabel('Probability of Winning', 'select');
     const expected = expectedDateField(probability);
     const created = createdDateField(expected);
     const createdValue = dateValue(created) || displayedDateNearLabel('Created Date');
-    if (!createdValue || !expected) {
-      showDiagnostic(`Quote date diagnostic — Created value: "${createdValue || 'not found'}" (${fieldDescription(created)}) | Expected control: ${fieldDescription(expected)}`);
-    }
     if (createdValue && expected && !parseDate(dateValue(expected))) {
       const createdDate = parseDate(createdValue);
       if (createdDate && !Number.isNaN(createdDate.getTime())) {
         createdDate.setDate(createdDate.getDate() + 14);
         const targetValue = formatDate(createdDate, createdValue);
         setCalendarDate(expected, createdDate, targetValue);
-        setTimeout(() => {
-          if (!parseDate(dateValue(expected))) {
-            showDiagnostic(`Quote date diagnostic — Created: ${fieldDescription(created)} | Expected target: ${targetValue} | Selected control after attempt: ${fieldDescription(expected)}`);
-          } else {
-            document.getElementById('lc-omni-defaults-diagnostic')?.remove();
-          }
-        }, 500);
-      } else {
-        showDiagnostic(`Quote date diagnostic — Created value could not be read as a date: ${fieldDescription(created)} | Expected control: ${fieldDescription(expected)}`);
       }
     }
     setProbability(probability);
