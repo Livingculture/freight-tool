@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.27
+// @version      0.1.28
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -334,11 +334,29 @@
         .forEach((control) => { control.style.display = "none"; });
     };
 
+    const hideCustomerHistory = () => {
+      const heading = Array.from(document.querySelectorAll("h1, h2, h3, h4, strong, div, span"))
+        .find((element) => /^history for this customer$/i.test(clean(element.textContent)));
+      if (!heading) return;
+      let card = heading.closest("section, article, .history, .history-box, [class*='history']");
+      if (!card || card === document.body) {
+        card = heading.parentElement;
+        while (card?.parentElement && card !== document.body) {
+          const rect = card.getBoundingClientRect();
+          if (clean(card.textContent) !== clean(heading.textContent)
+            && rect.width > 240 && rect.height > 55 && rect.height < 600) break;
+          card = card.parentElement;
+        }
+      }
+      if (card && card !== document.body) card.style.display = "none";
+    };
+
     const maintainSignatureTools = () => {
       injectSignatureImageUpload();
       renderDraftSignatureImage();
       hideImageUrlOverride();
       hideLookupButton();
+      hideCustomerHistory();
     };
     maintainSignatureTools();
     new MutationObserver(maintainSignatureTools).observe(document.body, { childList: true, subtree: true });
