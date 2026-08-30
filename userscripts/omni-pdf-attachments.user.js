@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture PDF Attachments
 // @namespace    livingculture-omni
-// @version      0.2.1
+// @version      0.3.0
 // @description  Selects Living Culture Google Drive PDFs and loads them into the Cin7 Omni email attachment fields.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -156,8 +156,16 @@
     setStatus("Loading selected PDFs into Omni...");
     try {
       const downloaded = await Promise.all(files.map(downloadFile));
-      window.parent.postMessage({ type: "LC_OMNI_PDF_FILES", files: downloaded }, OMNI_ORIGIN);
-      setStatus("Adding selected PDFs to Omni...");
+      if (location.origin === OMNI_ORIGIN) {
+        const inputs = availableFileInputs();
+        if (downloaded.length > inputs.length) throw new Error(`Omni has ${inputs.length} empty attachment field${inputs.length === 1 ? "" : "s"}.`);
+        downloaded.forEach((file, index) => assignFile(inputs[index], file));
+        state.selected.clear();
+        setStatus(`${downloaded.length} PDF${downloaded.length === 1 ? "" : "s"} added to the Omni email.`);
+      } else {
+        window.parent.postMessage({ type: "LC_OMNI_PDF_FILES", files: downloaded }, OMNI_ORIGIN);
+        setStatus("Adding selected PDFs to Omni...");
+      }
     } catch (error) {
       setStatus(error.message, true);
     } finally {
@@ -208,10 +216,10 @@
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
-      #${HOST_ID} { position: relative; display: inline-flex; }
+      #${HOST_ID} { position: relative; display: flex; flex-direction: column; align-items: center; width: 100%; margin-top: 14px; }
       #${BUTTON_ID} { min-height: 40px; border: 1px solid #8da9cc; border-radius: 6px; background: #fff; color: #0b3978; padding: 0 16px; font: 700 14px Arial,sans-serif; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
       #${BUTTON_ID}:hover { background: #eef4fb; }
-      #${PANEL_ID} { display: none; position: absolute; z-index: 2147483647; top: 46px; left: 0; width: 390px; max-width: calc(100vw - 48px); border: 1px solid #9eb8d8; border-radius: 7px; background: #fff; box-shadow: 0 14px 36px rgba(15,46,106,.22); color: #172b49; font: 13px Arial,sans-serif; }
+      #${PANEL_ID} { display: none; position: absolute; z-index: 2147483647; top: 46px; left: 50%; transform: translateX(-50%); width: 390px; max-width: calc(100vw - 48px); border: 1px solid #9eb8d8; border-radius: 7px; background: #fff; box-shadow: 0 14px 36px rgba(15,46,106,.22); color: #172b49; font: 13px Arial,sans-serif; }
       #${HOST_ID}.is-open #${PANEL_ID} { display: block; }
       .lc-omni-pdf-summary, .lc-omni-pdf-empty, #lc-omni-pdf-attachments-status { padding: 9px 11px; color: #526987; }
       .lc-omni-pdf-loading { min-height: 76px; display: flex; align-items: center; justify-content: center; gap: 9px; color: #365a87; font-weight: 700; }
@@ -232,16 +240,15 @@
   function inject() {
     injectStyles();
     if (document.getElementById(HOST_ID)) return;
-    const actionRow = document.querySelector("header .actions");
-    const copyEmail = document.getElementById("copy-body");
-    if (!actionRow || !copyEmail) return;
+    const contactsColumn = document.querySelector(".lc-omni-contacts-column");
+    if (!contactsColumn) return;
 
     const host = document.createElement("div");
     host.id = HOST_ID;
     host.innerHTML = `
       <button type="button" id="${BUTTON_ID}" class="ghost">PDF Attachments</button>
       <section id="${PANEL_ID}" aria-label="Living Culture PDF Attachments"></section>`;
-    copyEmail.insertAdjacentElement("beforebegin", host);
+    contactsColumn.appendChild(host);
     host.querySelector(`#${BUTTON_ID}`).addEventListener("click", () => {
       host.classList.toggle("is-open");
       if (host.classList.contains("is-open") && !state.loaded && !state.loadingList) loadFiles();
@@ -261,10 +268,6 @@
 
   function boot() {
     if (location.origin === HELPER_ORIGIN) {
-      const restoredCache = restoreCachedFiles();
-      inject();
-      if (!restoredCache) loadFiles();
-      new MutationObserver(scheduleInject).observe(document.body, { childList: true, subtree: true });
       window.addEventListener("message", (event) => {
         if (event.origin !== OMNI_ORIGIN || event.data?.type !== "LC_OMNI_PDF_RESULT") return;
         state.busy = false;
@@ -274,6 +277,11 @@
       });
       return;
     }
+
+    const restoredCache = restoreCachedFiles();
+    inject();
+    if (!restoredCache) loadFiles();
+    new MutationObserver(scheduleInject).observe(document.body, { childList: true, subtree: true });
 
     window.addEventListener("message", (event) => {
       if (event.origin !== HELPER_ORIGIN || event.data?.type !== "LC_OMNI_PDF_FILES") return;
