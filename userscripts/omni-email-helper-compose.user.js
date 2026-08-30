@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.20
+// @version      0.1.21
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -25,6 +25,7 @@
   const CONTEXT_KEY = "lcOmniEmailHelperQuoteContext";
   const SIGNATURE_IMAGE_KEY = "lcOmniEmailHelperSignatureImageV1";
   const SIGNATURE_MODE_KEY = "lcOmniEmailHelperSignatureModeV1";
+  const SIGNATURE_WIDTH_KEY = "lcOmniEmailHelperSignatureWidthV1";
   let composePlaceholder = null;
   let contactsPlaceholder = null;
   let composePanel = null;
@@ -142,10 +143,19 @@
         padding: 6px;
         background: #fff;
       }
+      .lc-signature-size-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 76px;
+        gap: 8px;
+        align-items: center;
+        margin-top: 8px;
+      }
+      .lc-signature-size-row input[type="range"] { width: 100%; }
+      .lc-signature-size-row input[type="number"] { width: 76px; }
       #lc-signature-image-preview {
         display: none;
         max-width: 100%;
-        max-height: 120px;
+        height: auto;
         margin-top: 8px;
         object-fit: contain;
         object-position: left center;
@@ -170,6 +180,15 @@
     const signatureMode = () => {
       try { return localStorage.getItem(SIGNATURE_MODE_KEY) === "image" ? "image" : "text"; }
       catch (_) { return "text"; }
+    };
+
+    const signatureWidth = () => {
+      try {
+        const value = Number(localStorage.getItem(SIGNATURE_WIDTH_KEY) || 420);
+        return Math.min(1000, Math.max(80, Number.isFinite(value) ? value : 420));
+      } catch (_) {
+        return 420;
+      }
     };
 
     const setNativeTextSignature = (enabled) => {
@@ -197,12 +216,27 @@
         <div class="lc-signature-image-fields">
           <label class="lc-signature-image-label" for="lc-signature-image-input">Signature image</label>
           <input id="lc-signature-image-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
+          <label class="lc-signature-image-label" for="lc-signature-image-size">Signature width</label>
+          <div class="lc-signature-size-row">
+            <input id="lc-signature-image-size" type="range" min="80" max="1000" step="10">
+            <input id="lc-signature-image-size-number" type="number" min="80" max="1000" step="10" aria-label="Signature width in pixels">
+          </div>
           <img id="lc-signature-image-preview" alt="Signature image preview">
           <button id="lc-signature-image-remove" type="button" class="ghost">Remove image</button>
         </div>`;
       signatureBox.appendChild(tools);
       const input = tools.querySelector("#lc-signature-image-input");
       const preview = tools.querySelector("#lc-signature-image-preview");
+      const sizeSlider = tools.querySelector("#lc-signature-image-size");
+      const sizeNumber = tools.querySelector("#lc-signature-image-size-number");
+      const applyWidth = (value) => {
+        const width = Math.min(1000, Math.max(80, Number(value) || 420));
+        sizeSlider.value = String(width);
+        sizeNumber.value = String(width);
+        preview.style.width = `${width}px`;
+        preview.style.maxWidth = "100%";
+        try { localStorage.setItem(SIGNATURE_WIDTH_KEY, String(width)); } catch (_) {}
+      };
       const show = (source) => {
         preview.src = source || "";
         tools.classList.toggle("has-image", Boolean(source));
@@ -215,7 +249,10 @@
         setNativeTextSignature(nextMode === "text");
       };
       show(storedSignatureImage());
+      applyWidth(signatureWidth());
       applyMode(signatureMode());
+      sizeSlider.addEventListener("input", () => applyWidth(sizeSlider.value));
+      sizeNumber.addEventListener("input", () => applyWidth(sizeNumber.value));
       tools.querySelectorAll('input[name="lc-signature-mode"]').forEach((radio) => {
         radio.addEventListener("change", () => {
           if (radio.checked) applyMode(radio.value);
@@ -299,7 +336,8 @@
       const subject = document.querySelector("#subject-output")?.value || "";
       const text = document.querySelector("#body-output, #body")?.value || "";
       const signatureImage = signatureMode() === "image" ? storedSignatureImage() : "";
-      const html = `${escapeHtml(text).replace(/\n/g, "<br>")}${signatureImage ? `<br><br><img src="${signatureImage}" alt="Signature" style="display:block;width:auto;height:auto">` : ""}`;
+      const width = signatureWidth();
+      const html = `${escapeHtml(text).replace(/\n/g, "<br>")}${signatureImage ? `<br><br><img src="${signatureImage}" alt="Signature" width="${width}" style="display:block;width:${width}px;height:auto">` : ""}`;
       window.parent.postMessage({
         type: "LC_EMAIL_HELPER_DRAFT",
         subject,
