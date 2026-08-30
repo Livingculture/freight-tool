@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.2
+// @version      0.1.3
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -218,11 +218,11 @@
       }
       #${LAYOUT_ID} {
         display: grid !important;
-        grid-template-columns: minmax(540px, .95fr) minmax(220px, 280px) minmax(650px, 1.15fr) !important;
+        grid-template-columns: minmax(500px, .85fr) minmax(210px, 250px) minmax(940px, 1.5fr) !important;
         align-items: start !important;
-        gap: 20px !important;
-        width: calc(100vw - 120px) !important;
-        max-width: 1900px !important;
+        gap: 16px !important;
+        width: calc(100vw - 76px) !important;
+        max-width: 2200px !important;
         margin: 12px auto 24px !important;
       }
       #${LAYOUT_ID} > .lc-omni-compose-column,
@@ -231,11 +231,10 @@
         max-width: none !important;
         margin: 0 !important;
       }
-      @media (max-width: 1450px) {
+      @media (max-width: 1750px) {
         #${LAYOUT_ID} {
-          grid-template-columns: minmax(500px, .9fr) minmax(190px, 230px) minmax(560px, 1fr) !important;
-          gap: 12px !important;
-          width: calc(100vw - 88px) !important;
+          grid-template-columns: 480px 210px minmax(940px, 1fr) !important;
+          overflow-x: auto !important;
         }
       }
     `;
