@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.13
+// @version      0.1.14
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -148,8 +148,8 @@
       input.addEventListener("change", () => {
         const file = input.files?.[0];
         if (!file) return;
-        if (file.size > 1.5 * 1024 * 1024) {
-          alert("Please choose a signature image smaller than 1.5 MB.");
+        if (file.size > 10 * 1024 * 1024) {
+          alert("Please choose a signature image smaller than 10 MB.");
           input.value = "";
           return;
         }
