@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.14
+// @version      0.1.15
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -167,8 +167,28 @@
         show("");
       });
     };
-    injectSignatureImageUpload();
-    new MutationObserver(injectSignatureImageUpload).observe(document.body, { childList: true, subtree: true });
+
+    const hideImageUrlOverride = () => {
+      const label = Array.from(document.querySelectorAll("label"))
+        .find((element) => /^image url override$/i.test(clean(element.textContent)));
+      if (!label) return;
+      const linkedField = label.htmlFor && document.getElementById(label.htmlFor);
+      const wrapper = label.closest(".field, .form-group, .input-group")
+        || (linkedField && label.parentElement?.contains(linkedField) ? label.parentElement : null)
+        || label.parentElement;
+      if (wrapper && !wrapper.matches(".signature-box")) wrapper.style.display = "none";
+      else {
+        label.style.display = "none";
+        if (linkedField) linkedField.style.display = "none";
+      }
+    };
+
+    const maintainSignatureTools = () => {
+      injectSignatureImageUpload();
+      hideImageUrlOverride();
+    };
+    maintainSignatureTools();
+    new MutationObserver(maintainSignatureTools).observe(document.body, { childList: true, subtree: true });
 
     const addCin7NumberToSubject = () => {
       const subject = document.querySelector("#subject-output");
