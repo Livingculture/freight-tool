@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.4
+// @version      0.1.5
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
+// @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @match        https://living-culture-email-helper.vercel.app/*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-email-helper-compose.user.js
 // @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-email-helper-compose.user.js
@@ -21,6 +22,7 @@
   const STYLE_ID = "lc-omni-email-helper-compose-styles";
   const PANEL_ID = "lc-omni-email-helper-panel";
   const LAYOUT_ID = "lc-omni-email-helper-layout";
+  const CONTEXT_KEY = "lcOmniEmailHelperQuoteContext";
   let composePlaceholder = null;
   let contactsPlaceholder = null;
   let composePanel = null;
@@ -104,6 +106,23 @@
       button.textContent = "Sent to Omni";
       setTimeout(() => { button.textContent = label; }, 1200);
     }, true);
+
+    window.addEventListener("message", (event) => {
+      if (event.origin !== "https://go.cin7.com" || event.data?.type !== "LC_OMNI_EMAIL_CONTEXT") return;
+      const context = event.data.context || {};
+      const values = {
+        order: context.quoteNumber,
+        first: context.firstName,
+        product: context.product
+      };
+      Object.entries(values).forEach(([id, value]) => {
+        const field = document.getElementById(id);
+        if (!field || !value) return;
+        field.value = value;
+        field.dispatchEvent(new Event("input", { bubbles: true }));
+        field.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+    });
   }
 
   if (location.hostname === "living-culture-email-helper.vercel.app") {
@@ -129,6 +148,68 @@
     const style = getComputedStyle(element);
     const rect = element.getBoundingClientRect();
     return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+  }
+
+  function fieldNearLabel(labelText) {
+    const wanted = clean(labelText).toLowerCase();
+    const labels = Array.from(document.querySelectorAll("label, td, th, div, span"))
+      .filter(visible)
+      .filter((element) => clean(element.textContent).replace(/:$/, "").toLowerCase() === wanted);
+    const fields = Array.from(document.querySelectorAll("input:not([type='hidden']), textarea, select")).filter(visible);
+    for (const label of labels) {
+      const linked = label.htmlFor && document.getElementById(label.htmlFor);
+      if (linked) return linked;
+      const rect = label.getBoundingClientRect();
+      const candidate = fields
+        .map((field) => ({ field, rect: field.getBoundingClientRect() }))
+        .filter((item) => item.rect.top >= rect.top - 8 && item.rect.top <= rect.bottom + 32 && item.rect.left >= rect.right - 15)
+        .sort((a, b) => a.rect.left - b.rect.left)[0]?.field;
+      if (candidate) return candidate;
+    }
+    return null;
+  }
+
+  function productNamesFromQuote() {
+    const productHeader = Array.from(document.querySelectorAll("th, td"))
+      .filter(visible)
+      .find((cell) => /^product$/i.test(clean(cell.textContent)));
+    const row = productHeader?.closest("tr");
+    const table = row?.closest("table");
+    if (!row || !table) return [];
+    const index = Array.from(row.children).indexOf(productHeader);
+    return Array.from(table.querySelectorAll("tr")).slice(1)
+      .map((item) => {
+        const cell = item.children[index];
+        return clean(cell?.querySelector("input, textarea")?.value || cell?.textContent);
+      })
+      .filter((value) => value && !/^search/i.test(value))
+      .filter((value, index, values) => values.indexOf(value) === index);
+  }
+
+  function captureQuoteContext() {
+    const pageText = clean(document.body?.innerText);
+    const quoteNumber = pageText.match(/\b(?:SFOR|NZSO)[- ]?\d+(?:-\d+)?\b/i)?.[0]?.replace(/\s+/g, "") || "";
+    const firstName = clean(fieldNearLabel("First Name")?.value);
+    const products = productNamesFromQuote();
+    if (!firstName && !quoteNumber && !products.length) return;
+    localStorage.setItem(CONTEXT_KEY, JSON.stringify({
+      firstName,
+      quoteNumber,
+      product: products.join(", "),
+      savedAt: Date.now()
+    }));
+  }
+
+  function bootQuoteCapture() {
+    let timer = 0;
+    const schedule = () => {
+      clearTimeout(timer);
+      timer = setTimeout(captureQuoteContext, 180);
+    };
+    captureQuoteContext();
+    new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true, characterData: true });
+    document.addEventListener("input", schedule, true);
+    document.addEventListener("change", schedule, true);
   }
 
   function injectStyles() {
@@ -218,7 +299,7 @@
       }
       #${LAYOUT_ID} {
         display: grid !important;
-        grid-template-columns: minmax(500px, .82fr) 330px minmax(940px, 1.5fr) !important;
+        grid-template-columns: minmax(570px, .9fr) 330px minmax(940px, 1.5fr) !important;
         align-items: start !important;
         gap: 24px !important;
         width: calc(100vw - 76px) !important;
@@ -237,7 +318,7 @@
       }
       @media (max-width: 1750px) {
         #${LAYOUT_ID} {
-          grid-template-columns: 470px 330px minmax(940px, 1fr) !important;
+          grid-template-columns: 570px 330px minmax(940px, 1fr) !important;
           overflow-x: auto !important;
         }
       }
@@ -287,6 +368,33 @@
     url.searchParams.set("theme", "omni");
     url.searchParams.set("embedded", "1");
     return url.toString();
+  }
+
+  function emailPageContext() {
+    let saved = {};
+    try {
+      saved = JSON.parse(localStorage.getItem(CONTEXT_KEY) || "{}");
+    } catch {
+      saved = {};
+    }
+    const to = clean(fieldNearLabel("To")?.value);
+    const subject = clean(findSubjectField()?.value);
+    const displayName = clean(to.replace(/<[^>]+>/g, "").replace(/[,;]+$/, ""));
+    const subjectQuote = subject.match(/\b(?:SFOR|NZSO)[- ]?\d+(?:-\d+)?\b/i)?.[0]?.replace(/\s+/g, "") || "";
+    const sameQuote = !saved.quoteNumber || !subjectQuote
+      || saved.quoteNumber.replace(/\D/g, "") === subjectQuote.replace(/\D/g, "");
+    return {
+      firstName: (sameQuote && saved.firstName) || displayName.split(/\s+/)[0] || "",
+      quoteNumber: subjectQuote || saved.quoteNumber || "",
+      product: sameQuote ? saved.product || "" : ""
+    };
+  }
+
+  function sendContextToHelper(frame) {
+    frame?.contentWindow?.postMessage({
+      type: "LC_OMNI_EMAIL_CONTEXT",
+      context: emailPageContext()
+    }, EMAIL_HELPER_URL);
   }
 
   function ensurePanel() {
@@ -386,8 +494,10 @@
     const frame = panel.querySelector("iframe");
     const url = helperUrl();
     if (frame.src !== url) frame.src = url;
+    frame.addEventListener("load", () => sendContextToHelper(frame), { once: true });
     panel.hidden = false;
     buildThreeColumnLayout(panel);
+    [500, 1400, 2800].forEach((delay) => setTimeout(() => sendContextToHelper(frame), delay));
   }
 
   function injectButton() {
@@ -489,6 +599,12 @@
     ensurePanel();
     const observer = new MutationObserver(scheduleInject);
     observer.observe(document.body, { childList: true, subtree: true });
+  }
+
+  if (/\/Cloud\/TransactionEntry\/TransactionEntry\.aspx$/i.test(location.pathname)) {
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bootQuoteCapture, { once: true });
+    else bootQuoteCapture();
+    return;
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot, { once: true });
