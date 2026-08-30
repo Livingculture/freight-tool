@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.6
+// @version      0.1.7
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -404,6 +404,19 @@
     const to = clean(addressField?.value || fieldNearLabel("To")?.value);
     const subject = clean(findSubjectField()?.value);
     const displayName = clean(to.replace(/<[^>]+>/g, "").replace(/[,;]+$/, ""));
+    const contactListName = (() => {
+      const heading = Array.from(document.querySelectorAll("div, span, td, th, strong"))
+        .filter(visible)
+        .find((element) => /^contact list$/i.test(clean(element.textContent)));
+      if (!heading) return "";
+      const panel = ancestorCandidates(heading)
+        .filter(({ rect }) => rect.width >= 180 && rect.width <= 650 && rect.height >= 70)
+        .sort((a, b) => a.rect.width * a.rect.height - b.rect.width * b.rect.height)[0]?.node;
+      return String(panel?.innerText || "")
+        .split(/\n+/)
+        .map(clean)
+        .find((line) => line && !/^contact list$/i.test(line) && !/@/.test(line) && !/^(to|cc|bcc)$/i.test(line)) || "";
+    })();
     const greetingName = editorCandidates()
       .map(({ element }) => clean(element.innerText || element.textContent))
       .map((text) => text.match(/\bHi\s+([^,\n]{1,50}),/i)?.[1] || "")
@@ -412,7 +425,11 @@
     const sameQuote = !saved.quoteNumber || !subjectQuote
       || saved.quoteNumber.replace(/\D/g, "") === subjectQuote.replace(/\D/g, "");
     return {
-      firstName: (sameQuote && saved.firstName) || displayName.split(/\s+/)[0] || greetingName.split(/\s+/)[0] || "",
+      firstName: (sameQuote && saved.firstName)
+        || displayName.split(/\s+/)[0]
+        || greetingName.split(/\s+/)[0]
+        || contactListName.split(/\s+/)[0]
+        || "",
       quoteNumber: subjectQuote || saved.quoteNumber || "",
       product: sameQuote ? saved.product || "" : ""
     };
