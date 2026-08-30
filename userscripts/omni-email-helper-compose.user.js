@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.37
+// @version      0.1.38
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -23,7 +23,6 @@
   const PANEL_ID = "lc-omni-email-helper-panel";
   const LAYOUT_ID = "lc-omni-email-helper-layout";
   const TOOLBAR_ID = "lc-omni-email-helper-toolbar";
-  const PDF_HOST_ID = "lc-omni-pdf-attachments-host";
   const CONTEXT_KEY = "lcOmniEmailHelperQuoteContext";
   const SIGNATURE_IMAGE_KEY = "lcOmniEmailHelperSignatureImageV1";
   const SIGNATURE_MODE_KEY = "lcOmniEmailHelperSignatureModeV1";
@@ -33,10 +32,6 @@
   let composePanel = null;
   let contactsPanel = null;
   let injectQueued = false;
-  let latestHelperDraft = null;
-  let pendingHelperAction = "";
-  let pendingGmailWindow = null;
-  let pendingActionButton = null;
 
   if (location.hostname === "go.cin7.com") {
     ["preconnect", "dns-prefetch"].forEach((relation) => {
@@ -172,19 +167,6 @@
         margin-top: 7px;
       }
       #lc-signature-image-tools.has-image #lc-signature-image-remove { display: inline-flex; }
-      #lc-draft-signature-image {
-        display: none;
-        padding: 0 12px 12px;
-        background: #fff;
-      }
-      #lc-draft-signature-image.is-visible { display: block; }
-      #lc-draft-signature-image img {
-        display: block;
-        max-width: 100%;
-        height: auto;
-        object-fit: contain;
-        object-position: left center;
-      }
       .panel {
         box-shadow: 0 12px 32px rgba(15, 46, 106, .09) !important;
       }
@@ -221,23 +203,6 @@
       checkbox.dispatchEvent(new Event("change", { bubbles: true }));
     };
 
-    const renderDraftSignatureImage = () => {
-      const body = document.querySelector("#body-output, #body");
-      if (!body) return;
-      let container = document.getElementById("lc-draft-signature-image");
-      if (!container) {
-        container = document.createElement("div");
-        container.id = "lc-draft-signature-image";
-        container.innerHTML = '<img alt="Email signature">';
-        body.insertAdjacentElement("afterend", container);
-      }
-      const source = signatureMode() === "image" ? storedSignatureImage() : "";
-      const image = container.querySelector("img");
-      image.src = source;
-      image.style.width = `${signatureWidth()}px`;
-      container.classList.toggle("is-visible", Boolean(source));
-    };
-
     const injectSignatureImageUpload = () => {
       if (document.getElementById("lc-signature-image-tools")) return;
       const signatureBox = document.querySelector(".signature-box");
@@ -272,7 +237,6 @@
         preview.style.width = `${width}px`;
         preview.style.maxWidth = "100%";
         try { localStorage.setItem(SIGNATURE_WIDTH_KEY, String(width)); } catch (_) {}
-        renderDraftSignatureImage();
       };
       const show = (source) => {
         preview.src = source || "";
@@ -284,7 +248,6 @@
         tools.querySelector(`input[name="lc-signature-mode"][value="${nextMode}"]`).checked = true;
         try { localStorage.setItem(SIGNATURE_MODE_KEY, nextMode); } catch (_) {}
         setNativeTextSignature(nextMode === "text");
-        renderDraftSignatureImage();
       };
       show(storedSignatureImage());
       applyWidth(signatureWidth());
@@ -309,7 +272,6 @@
           const source = String(reader.result || "");
           try { localStorage.setItem(SIGNATURE_IMAGE_KEY, source); } catch (_) {}
           show(source);
-          renderDraftSignatureImage();
         };
         reader.readAsDataURL(file);
       });
@@ -317,7 +279,6 @@
         try { localStorage.removeItem(SIGNATURE_IMAGE_KEY); } catch (_) {}
         input.value = "";
         show("");
-        renderDraftSignatureImage();
       });
     };
 
@@ -338,41 +299,13 @@
         .forEach((control) => { control.style.display = "none"; });
     };
 
-    const hideCustomerHistory = () => {
-      const heading = Array.from(document.querySelectorAll("h1, h2, h3, h4, strong, div, span"))
-        .find((element) => /^history for this customer$/i.test(clean(element.textContent)));
-      if (!heading) return;
-      let card = heading.closest("section, article, .history, .history-box, [class*='history']");
-      if (!card || card === document.body) {
-        card = heading.parentElement;
-        while (card?.parentElement && card !== document.body) {
-          const rect = card.getBoundingClientRect();
-          if (clean(card.textContent) !== clean(heading.textContent)
-            && rect.width > 240 && rect.height > 55 && rect.height < 600) break;
-          card = card.parentElement;
-        }
-      }
-      if (card && card !== document.body) card.style.display = "none";
-    };
-
     const maintainSignatureTools = () => {
       injectSignatureImageUpload();
-      renderDraftSignatureImage();
       hideImageUrlOverride();
       hideLookupButton();
-      hideCustomerHistory();
     };
     maintainSignatureTools();
     new MutationObserver(maintainSignatureTools).observe(document.body, { childList: true, subtree: true });
-
-    const setNativeValue = (field, value) => {
-      const prototype = Object.getPrototypeOf(field);
-      const ownSetter = Object.getOwnPropertyDescriptor(field, "value")?.set;
-      const prototypeSetter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
-      if (prototypeSetter && ownSetter !== prototypeSetter) prototypeSetter.call(field, value);
-      else if (ownSetter) ownSetter.call(field, value);
-      else field.value = value;
-    };
 
     const addCin7NumberToSubject = () => {
       const subject = document.querySelector("#subject-output");
@@ -384,16 +317,14 @@
         .trim();
       const next = base ? `${base} - ${order}` : order;
       if (subject.value === next) return;
-      setNativeValue(subject, next);
+      subject.value = next;
       subject.dispatchEvent(new Event("input", { bubbles: true }));
       subject.dispatchEvent(new Event("change", { bubbles: true }));
     };
 
-    let subjectUpdateTimers = [];
-    const queueSubjectUpdate = () => {
-      subjectUpdateTimers.forEach(clearTimeout);
-      subjectUpdateTimers = [0, 120, 360].map((delay) => setTimeout(addCin7NumberToSubject, delay));
-    };
+    const queueSubjectUpdate = () => [0, 80, 250, 700].forEach((delay) => {
+      setTimeout(addCin7NumberToSubject, delay);
+    });
     document.addEventListener("input", (event) => {
       if (event.target?.matches?.("#order, #product")) queueSubjectUpdate();
     });
@@ -404,54 +335,35 @@
       if (event.target?.closest?.("button")) queueSubjectUpdate();
     });
 
-    const currentDraft = () => {
+    document.addEventListener("click", (event) => {
+      const button = event.target.closest?.("#copy-cin7");
+      if (!button) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
       addCin7NumberToSubject();
       const subject = document.querySelector("#subject-output")?.value || "";
       const text = document.querySelector("#body-output, #body")?.value || "";
       const signatureImage = signatureMode() === "image" ? storedSignatureImage() : "";
       const width = signatureWidth();
       const html = `${escapeHtml(text).replace(/\n/g, "<br>")}${signatureImage ? `<br><br><img src="${signatureImage}" alt="Signature" width="${width}" style="display:block;width:${width}px;height:auto">` : ""}`;
-      return {
+      window.parent.postMessage({
         type: "LC_EMAIL_HELPER_DRAFT",
         subject,
         text,
         html,
         order: document.querySelector("#order")?.value || ""
-      };
-    };
-
-    const broadcastDraftState = () => {
-      window.parent.postMessage({ ...currentDraft(), type: "LC_EMAIL_HELPER_DRAFT_STATE" }, "https://go.cin7.com");
-    };
-
-    let draftBroadcastTimer = 0;
-    const queueDraftBroadcast = () => {
-      clearTimeout(draftBroadcastTimer);
-      draftBroadcastTimer = setTimeout(broadcastDraftState, 100);
-    };
-    document.addEventListener("input", queueDraftBroadcast, true);
-    document.addEventListener("change", queueDraftBroadcast, true);
-    [250, 800, 1800, 3200].forEach((delay) => setTimeout(broadcastDraftState, delay));
-
-    const sendDraftToOmni = (button = null) => {
-      window.parent.postMessage(currentDraft(), "https://go.cin7.com");
-      if (button) {
-        const label = button.textContent;
-        button.textContent = "Sent to Omni";
-        setTimeout(() => { button.textContent = label; }, 1200);
-      }
-    };
-
-    document.addEventListener("click", (event) => {
-      const button = event.target.closest?.("#copy-cin7");
-      if (!button) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      sendDraftToOmni(button);
+      }, "https://go.cin7.com");
+      const label = button.textContent;
+      button.textContent = "Sent to Omni";
+      setTimeout(() => { button.textContent = label; }, 1200);
     }, true);
 
-    const openGmailCompose = () => {
-      if (!omniRecipientEmail) return false;
+    document.addEventListener("click", (event) => {
+      const button = event.target.closest?.("#open-gmail")
+        || Array.from(document.querySelectorAll("button, a")).find((control) => /^open gmail$/i.test(clean(control.textContent)) && control.contains(event.target));
+      if (!button || !omniRecipientEmail) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
       const subject = document.querySelector("#subject-output")?.value || "";
       const body = document.querySelector("#body-output, #body")?.value || "";
       const gmailUrl = new URL("https://mail.google.com/mail/");
@@ -461,16 +373,6 @@
       if (subject) gmailUrl.searchParams.set("su", subject);
       if (body) gmailUrl.searchParams.set("body", body);
       window.open(gmailUrl.toString(), "_blank", "noopener");
-      return true;
-    };
-
-    document.addEventListener("click", (event) => {
-      const button = event.target.closest?.("#open-gmail")
-        || Array.from(document.querySelectorAll("button, a")).find((control) => /^open gmail$/i.test(clean(control.textContent)) && control.contains(event.target));
-      if (!button) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      openGmailCompose();
     }, true);
 
     window.addEventListener("message", (event) => {
@@ -484,8 +386,8 @@
       };
       Object.entries(values).forEach(([id, value]) => {
         const field = document.getElementById(id);
-        if (!field || !value || field.value === value) return;
-        setNativeValue(field, value);
+        if (!field || !value) return;
+        field.value = value;
         field.dispatchEvent(new Event("input", { bubbles: true }));
         field.dispatchEvent(new Event("change", { bubbles: true }));
       });
@@ -493,28 +395,13 @@
     });
 
     window.addEventListener("message", (event) => {
-      if (event.origin !== "https://go.cin7.com") return;
-      if (event.data?.type === "LC_OMNI_EMAIL_DRAFT_PORT" && event.ports?.[0]) {
-        event.ports[0].postMessage(currentDraft());
-        return;
-      }
-      if (event.data?.type === "LC_OMNI_EMAIL_DRAFT_REQUEST") {
-        broadcastDraftState();
-        return;
-      }
-      if (event.data?.type !== "LC_OMNI_EMAIL_ACTION") return;
-      if (event.data.action === "cin7") {
-        sendDraftToOmni();
-        return;
-      }
-      if (event.data.action === "gmail") {
-        openGmailCompose();
-        return;
-      }
+      if (event.origin !== "https://go.cin7.com" || event.data?.type !== "LC_OMNI_EMAIL_ACTION") return;
       const selector = {
         copy: "#copy-body",
+        cin7: "#copy-cin7",
+        gmail: "#open-gmail"
       }[event.data.action];
-      if (selector) document.querySelector(selector)?.click();
+      document.querySelector(selector)?.click();
     });
 
     const applyUrlContext = () => {
@@ -526,7 +413,7 @@
       Object.entries(values).forEach(([id, value]) => {
         const field = document.getElementById(id);
         if (!field || !value || field.value === value) return;
-        setNativeValue(field, value);
+        field.value = value;
         field.dispatchEvent(new Event("input", { bubbles: true }));
         field.dispatchEvent(new Event("change", { bubbles: true }));
       });
@@ -690,13 +577,11 @@
         overflow: visible !important;
       }
       #${TOOLBAR_ID} {
-        display: flex !important;
-        float: none !important;
+        display: inline-flex !important;
+        float: right !important;
         align-items: center !important;
-        justify-content: center !important;
         gap: 9px !important;
-        width: 100% !important;
-        margin: 62px 0 0 !important;
+        margin: 0 42px 0 auto !important;
         vertical-align: middle !important;
       }
       #${TOOLBAR_ID} button {
@@ -734,112 +619,25 @@
   }
 
   function ensureOmniToolbar() {
-    let toolbar = document.getElementById(TOOLBAR_ID);
-    if (!toolbar) {
-      const back = findBackControl();
-      if (!back) return;
-      toolbar = document.createElement("div");
-      toolbar.id = TOOLBAR_ID;
-      toolbar.innerHTML = `
-        <button type="button" data-action="copy">Copy Email</button>
-        <button type="button" data-action="cin7">Copy to Cin7</button>
-        <button type="button" data-action="gmail">Open Gmail</button>`;
-      back.insertAdjacentElement("afterend", toolbar);
-    }
-    positionOmniToolbar(toolbar);
-  }
-
-  function handleOmniToolbarAction(button) {
-    const action = button?.dataset?.action || "";
-    if (!/^(copy|cin7|gmail)$/.test(action)) return;
-    const frame = document.querySelector(`#${PANEL_ID} iframe`);
-    if (!frame?.contentWindow) {
-      alert("The Email Helper has not finished loading. Please try again.");
-      return;
-    }
-
-    if (action === "copy") {
-      const originalLabel = button.textContent;
-      button.textContent = "Copying…";
-      frame.contentWindow.postMessage({
+    if (document.getElementById(TOOLBAR_ID)) return;
+    const back = findBackControl();
+    if (!back) return;
+    const toolbar = document.createElement("div");
+    toolbar.id = TOOLBAR_ID;
+    toolbar.innerHTML = `
+      <button type="button" data-action="copy">Copy Email</button>
+      <button type="button" data-action="cin7">Copy to Cin7</button>
+      <button type="button" data-action="gmail">Open Gmail</button>`;
+    back.insertAdjacentElement("afterend", toolbar);
+    toolbar.addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-action]");
+      if (!button) return;
+      const frame = document.querySelector(`#${PANEL_ID} iframe`);
+      frame?.contentWindow?.postMessage({
         type: "LC_OMNI_EMAIL_ACTION",
-        action: "copy"
+        action: button.dataset.action
       }, EMAIL_HELPER_URL);
-      setTimeout(() => {
-        if (button.isConnected) button.textContent = originalLabel;
-      }, 1200);
-      return;
-    }
-
-    const originalLabel = button.textContent;
-    button.textContent = action === "cin7" ? "Copying…" : "Opening…";
-    const gmailWindow = action === "gmail" ? window.open("about:blank", "_blank") : null;
-    const channel = new MessageChannel();
-    let answered = false;
-    const finishLabel = (label) => {
-      button.textContent = label;
-      setTimeout(() => { if (button.isConnected) button.textContent = originalLabel; }, 1200);
-    };
-    const timeout = setTimeout(() => {
-      if (answered) return;
-      channel.port1.close();
-      if (gmailWindow && !gmailWindow.closed) gmailWindow.close();
-      finishLabel("Try again");
-      alert("The Email Helper did not answer. Refresh this Omni email page, then try again.");
-    }, 3000);
-
-    channel.port1.onmessage = (messageEvent) => {
-      answered = true;
-      clearTimeout(timeout);
-      channel.port1.close();
-      latestHelperDraft = messageEvent.data || null;
-      if (!latestHelperDraft?.subject && !latestHelperDraft?.text) {
-        if (gmailWindow && !gmailWindow.closed) gmailWindow.close();
-        finishLabel("Try again");
-        alert("The Email Helper returned an empty draft. Refresh the page and try again.");
-        return;
-      }
-      if (action === "cin7") {
-        const inserted = insertLatestDraft();
-        finishLabel(inserted ? "Copied" : "Try again");
-      } else {
-        const opened = openLatestDraftInGmail(gmailWindow);
-        finishLabel(opened ? "Opened" : "Try again");
-      }
-    };
-    channel.port1.start();
-    frame.contentWindow.postMessage(
-      { type: "LC_OMNI_EMAIL_DRAFT_PORT" },
-      EMAIL_HELPER_URL,
-      [channel.port2]
-    );
-  }
-
-  function finishActionButton(status) {
-    const pending = pendingActionButton;
-    pendingActionButton = null;
-    if (!pending?.button?.isConnected) return;
-    pending.button.textContent = status;
-    setTimeout(() => {
-      if (pending.button.isConnected) pending.button.textContent = pending.originalLabel;
-    }, 1200);
-  }
-
-  document.addEventListener("click", (event) => {
-    const button = event.target.closest?.(`#${TOOLBAR_ID} button[data-action]`);
-    if (!button) return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    handleOmniToolbarAction(button);
-  }, true);
-
-  function positionOmniToolbar(toolbar = document.getElementById(TOOLBAR_ID)) {
-    const contacts = document.querySelector(".lc-omni-contacts-column");
-    if (!toolbar || !contacts) return false;
-    const careGuides = contacts.querySelector(`#${PDF_HOST_ID}`);
-    if (careGuides) contacts.insertBefore(toolbar, careGuides);
-    else if (toolbar.parentElement !== contacts) contacts.appendChild(toolbar);
-    return true;
+    });
   }
 
   function findSubjectField() {
@@ -995,7 +793,6 @@
     composePanel.classList.add("lc-omni-compose-column");
     contactsPanel.classList.add("lc-omni-contacts-column");
     layout.append(composePanel, contactsPanel, panel);
-    positionOmniToolbar();
     return true;
   }
 
@@ -1104,60 +901,18 @@
     return true;
   }
 
-  function insertLatestDraft() {
-    if (!latestHelperDraft) return false;
-    const html = String(latestHelperDraft.html || "").trim()
-      || escapeHtml(latestHelperDraft.text || "").replace(/\n/g, "<br>");
-    setOmniSubject(latestHelperDraft.subject);
-    if (!setEditorHtml(html)) {
-      alert("The Omni email editor could not be found. Keep this email page open and try Copy to Cin7 again.");
-      return false;
-    }
-    window.focus();
-    return true;
-  }
-
-  function openLatestDraftInGmail(targetWindow = null) {
-    if (!latestHelperDraft) return false;
-    const context = emailPageContext();
-    const gmailUrl = new URL("https://mail.google.com/mail/");
-    gmailUrl.searchParams.set("view", "cm");
-    gmailUrl.searchParams.set("fs", "1");
-    if (context.recipientEmail) gmailUrl.searchParams.set("to", context.recipientEmail);
-    if (latestHelperDraft.subject) gmailUrl.searchParams.set("su", latestHelperDraft.subject);
-    if (latestHelperDraft.text) gmailUrl.searchParams.set("body", latestHelperDraft.text);
-    if (targetWindow && !targetWindow.closed) targetWindow.location.replace(gmailUrl.toString());
-    else window.open(gmailUrl.toString(), "_blank", "noopener");
-    return true;
-  }
-
-  function finishPendingHelperAction() {
-    const action = pendingHelperAction;
-    if (!action || !latestHelperDraft) return;
-    pendingHelperAction = "";
-    if (action === "cin7") {
-      const inserted = insertLatestDraft();
-      finishActionButton(inserted ? "Copied" : "Try again");
-      return;
-    }
-    if (action === "gmail") {
-      const opened = openLatestDraftInGmail(pendingGmailWindow);
-      pendingGmailWindow = null;
-      finishActionButton(opened ? "Opened" : "Try again");
-    }
-  }
-
   window.addEventListener("message", (event) => {
     if (event.origin !== EMAIL_HELPER_URL) return;
     const payload = event.data || {};
-    if (payload.type === "LC_EMAIL_HELPER_DRAFT_STATE") {
-      latestHelperDraft = payload;
-      finishPendingHelperAction();
+    if (payload.type !== "LC_EMAIL_HELPER_DRAFT") return;
+
+    const html = String(payload.html || "").trim()
+      || escapeHtml(payload.text || "").replace(/\n/g, "<br>");
+    setOmniSubject(payload.subject);
+    if (!setEditorHtml(html)) {
+      alert("The Omni email editor could not be found. Keep this email page open and try Copy to Cin7 again.");
       return;
     }
-    if (payload.type !== "LC_EMAIL_HELPER_DRAFT") return;
-    latestHelperDraft = payload;
-    if (!insertLatestDraft()) return;
 
     event.source?.postMessage({ type: "LC_EMAIL_HELPER_DRAFT_INSERTED" }, EMAIL_HELPER_URL);
     window.focus();
