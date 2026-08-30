@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.19
+// @version      0.1.20
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -24,6 +24,7 @@
   const LAYOUT_ID = "lc-omni-email-helper-layout";
   const CONTEXT_KEY = "lcOmniEmailHelperQuoteContext";
   const SIGNATURE_IMAGE_KEY = "lcOmniEmailHelperSignatureImageV1";
+  const SIGNATURE_MODE_KEY = "lcOmniEmailHelperSignatureModeV1";
   let composePlaceholder = null;
   let contactsPlaceholder = null;
   let composePanel = null;
@@ -123,6 +124,18 @@
         font-weight: 700;
         color: #294467;
       }
+      #lc-signature-mode-choice {
+        display: flex;
+        gap: 14px;
+        margin-bottom: 9px;
+      }
+      #lc-signature-mode-choice label {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-weight: 700;
+      }
+      #lc-signature-image-tools:not(.is-image-mode) .lc-signature-image-fields { display: none; }
       #lc-signature-image-tools input[type="file"] {
         display: block;
         width: 100%;
@@ -154,6 +167,22 @@
       catch (_) { return ""; }
     };
 
+    const signatureMode = () => {
+      try { return localStorage.getItem(SIGNATURE_MODE_KEY) === "image" ? "image" : "text"; }
+      catch (_) { return "text"; }
+    };
+
+    const setNativeTextSignature = (enabled) => {
+      const checkbox = document.querySelector("#signature") || Array.from(document.querySelectorAll("input[type='checkbox']")).find((input) => {
+        const label = input.id && document.querySelector(`label[for="${CSS.escape(input.id)}"]`);
+        return /^signature$/i.test(clean(label?.textContent || input.parentElement?.textContent));
+      });
+      if (!checkbox || checkbox.checked === enabled) return;
+      checkbox.checked = enabled;
+      checkbox.dispatchEvent(new Event("input", { bubbles: true }));
+      checkbox.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+
     const injectSignatureImageUpload = () => {
       if (document.getElementById("lc-signature-image-tools")) return;
       const signatureBox = document.querySelector(".signature-box");
@@ -161,10 +190,16 @@
       const tools = document.createElement("div");
       tools.id = "lc-signature-image-tools";
       tools.innerHTML = `
-        <label class="lc-signature-image-label" for="lc-signature-image-input">Signature image</label>
-        <input id="lc-signature-image-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
-        <img id="lc-signature-image-preview" alt="Signature image preview">
-        <button id="lc-signature-image-remove" type="button" class="ghost">Remove image</button>`;
+        <div id="lc-signature-mode-choice">
+          <label><input type="radio" name="lc-signature-mode" value="text"> Text signature</label>
+          <label><input type="radio" name="lc-signature-mode" value="image"> Image signature</label>
+        </div>
+        <div class="lc-signature-image-fields">
+          <label class="lc-signature-image-label" for="lc-signature-image-input">Signature image</label>
+          <input id="lc-signature-image-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
+          <img id="lc-signature-image-preview" alt="Signature image preview">
+          <button id="lc-signature-image-remove" type="button" class="ghost">Remove image</button>
+        </div>`;
       signatureBox.appendChild(tools);
       const input = tools.querySelector("#lc-signature-image-input");
       const preview = tools.querySelector("#lc-signature-image-preview");
@@ -172,7 +207,20 @@
         preview.src = source || "";
         tools.classList.toggle("has-image", Boolean(source));
       };
+      const applyMode = (mode) => {
+        const nextMode = mode === "image" ? "image" : "text";
+        tools.classList.toggle("is-image-mode", nextMode === "image");
+        tools.querySelector(`input[name="lc-signature-mode"][value="${nextMode}"]`).checked = true;
+        try { localStorage.setItem(SIGNATURE_MODE_KEY, nextMode); } catch (_) {}
+        setNativeTextSignature(nextMode === "text");
+      };
       show(storedSignatureImage());
+      applyMode(signatureMode());
+      tools.querySelectorAll('input[name="lc-signature-mode"]').forEach((radio) => {
+        radio.addEventListener("change", () => {
+          if (radio.checked) applyMode(radio.value);
+        });
+      });
       input.addEventListener("change", () => {
         const file = input.files?.[0];
         if (!file) return;
@@ -250,7 +298,7 @@
       addCin7NumberToSubject();
       const subject = document.querySelector("#subject-output")?.value || "";
       const text = document.querySelector("#body-output, #body")?.value || "";
-      const signatureImage = storedSignatureImage();
+      const signatureImage = signatureMode() === "image" ? storedSignatureImage() : "";
       const html = `${escapeHtml(text).replace(/\n/g, "<br>")}${signatureImage ? `<br><br><img src="${signatureImage}" alt="Signature" style="display:block;width:auto;height:auto">` : ""}`;
       window.parent.postMessage({
         type: "LC_EMAIL_HELPER_DRAFT",
