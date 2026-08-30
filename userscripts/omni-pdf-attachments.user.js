@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture PDF Attachments
 // @namespace    livingculture-omni
-// @version      0.3.0
+// @version      0.3.1
 // @description  Selects Living Culture Google Drive PDFs and loads them into the Cin7 Omni email attachment fields.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -216,7 +216,7 @@
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
-      #${HOST_ID} { position: relative; display: flex; flex-direction: column; align-items: center; width: 100%; margin-top: 14px; }
+      #${HOST_ID} { position: relative; display: flex; flex-direction: column; align-items: center; width: 100%; margin-top: 62px; }
       #${BUTTON_ID} { min-height: 40px; border: 1px solid #8da9cc; border-radius: 6px; background: #fff; color: #0b3978; padding: 0 16px; font: 700 14px Arial,sans-serif; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
       #${BUTTON_ID}:hover { background: #eef4fb; }
       #${PANEL_ID} { display: none; position: absolute; z-index: 2147483647; top: 46px; left: 50%; transform: translateX(-50%); width: 390px; max-width: calc(100vw - 48px); border: 1px solid #9eb8d8; border-radius: 7px; background: #fff; box-shadow: 0 14px 36px rgba(15,46,106,.22); color: #172b49; font: 13px Arial,sans-serif; }

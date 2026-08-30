@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.12
+// @version      0.1.13
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -23,6 +23,7 @@
   const PANEL_ID = "lc-omni-email-helper-panel";
   const LAYOUT_ID = "lc-omni-email-helper-layout";
   const CONTEXT_KEY = "lcOmniEmailHelperQuoteContext";
+  const SIGNATURE_IMAGE_KEY = "lcOmniEmailHelperSignatureImageV1";
   let composePlaceholder = null;
   let contactsPlaceholder = null;
   let composePanel = null;
@@ -83,11 +84,91 @@
         border-color: #c2d2e6 !important;
         background: #f4f8fd !important;
       }
+      #lc-signature-image-tools {
+        margin-top: 9px;
+        padding-top: 9px;
+        border-top: 1px solid #c2d2e6;
+      }
+      #lc-signature-image-tools .lc-signature-image-label {
+        display: block;
+        margin-bottom: 6px;
+        font-weight: 700;
+        color: #294467;
+      }
+      #lc-signature-image-tools input[type="file"] {
+        display: block;
+        width: 100%;
+        padding: 6px;
+        background: #fff;
+      }
+      #lc-signature-image-preview {
+        display: none;
+        max-width: 100%;
+        max-height: 120px;
+        margin-top: 8px;
+        object-fit: contain;
+        object-position: left center;
+      }
+      #lc-signature-image-tools.has-image #lc-signature-image-preview { display: block; }
+      #lc-signature-image-remove {
+        display: none;
+        margin-top: 7px;
+      }
+      #lc-signature-image-tools.has-image #lc-signature-image-remove { display: inline-flex; }
       .panel {
         box-shadow: 0 12px 32px rgba(15, 46, 106, .09) !important;
       }
     `;
     document.head.appendChild(style);
+
+    const storedSignatureImage = () => {
+      try { return localStorage.getItem(SIGNATURE_IMAGE_KEY) || ""; }
+      catch (_) { return ""; }
+    };
+
+    const injectSignatureImageUpload = () => {
+      if (document.getElementById("lc-signature-image-tools")) return;
+      const signatureBox = document.querySelector(".signature-box");
+      if (!signatureBox) return;
+      const tools = document.createElement("div");
+      tools.id = "lc-signature-image-tools";
+      tools.innerHTML = `
+        <label class="lc-signature-image-label" for="lc-signature-image-input">Signature image</label>
+        <input id="lc-signature-image-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
+        <img id="lc-signature-image-preview" alt="Signature image preview">
+        <button id="lc-signature-image-remove" type="button" class="ghost">Remove image</button>`;
+      signatureBox.appendChild(tools);
+      const input = tools.querySelector("#lc-signature-image-input");
+      const preview = tools.querySelector("#lc-signature-image-preview");
+      const show = (source) => {
+        preview.src = source || "";
+        tools.classList.toggle("has-image", Boolean(source));
+      };
+      show(storedSignatureImage());
+      input.addEventListener("change", () => {
+        const file = input.files?.[0];
+        if (!file) return;
+        if (file.size > 1.5 * 1024 * 1024) {
+          alert("Please choose a signature image smaller than 1.5 MB.");
+          input.value = "";
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+          const source = String(reader.result || "");
+          try { localStorage.setItem(SIGNATURE_IMAGE_KEY, source); } catch (_) {}
+          show(source);
+        };
+        reader.readAsDataURL(file);
+      });
+      tools.querySelector("#lc-signature-image-remove").addEventListener("click", () => {
+        try { localStorage.removeItem(SIGNATURE_IMAGE_KEY); } catch (_) {}
+        input.value = "";
+        show("");
+      });
+    };
+    injectSignatureImageUpload();
+    new MutationObserver(injectSignatureImageUpload).observe(document.body, { childList: true, subtree: true });
 
     const addCin7NumberToSubject = () => {
       const subject = document.querySelector("#subject-output");
@@ -125,10 +206,13 @@
       addCin7NumberToSubject();
       const subject = document.querySelector("#subject-output")?.value || "";
       const text = document.querySelector("#body-output, #body")?.value || "";
+      const signatureImage = storedSignatureImage();
+      const html = `${escapeHtml(text).replace(/\n/g, "<br>")}${signatureImage ? `<br><br><img src="${signatureImage}" alt="Signature" style="display:block;max-width:420px;max-height:160px;width:auto;height:auto">` : ""}`;
       window.parent.postMessage({
         type: "LC_EMAIL_HELPER_DRAFT",
         subject,
         text,
+        html,
         order: document.querySelector("#order")?.value || ""
       }, "https://go.cin7.com");
       const label = button.textContent;
