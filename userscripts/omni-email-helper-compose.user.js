@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.26
+// @version      0.1.27
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -23,6 +23,7 @@
   const PANEL_ID = "lc-omni-email-helper-panel";
   const LAYOUT_ID = "lc-omni-email-helper-layout";
   const TOOLBAR_ID = "lc-omni-email-helper-toolbar";
+  const PDF_HOST_ID = "lc-omni-pdf-attachments-host";
   const CONTEXT_KEY = "lcOmniEmailHelperQuoteContext";
   const SIGNATURE_IMAGE_KEY = "lcOmniEmailHelperSignatureImageV1";
   const SIGNATURE_MODE_KEY = "lcOmniEmailHelperSignatureModeV1";
@@ -612,11 +613,13 @@
         overflow: visible !important;
       }
       #${TOOLBAR_ID} {
-        display: inline-flex !important;
-        float: right !important;
+        display: flex !important;
+        float: none !important;
         align-items: center !important;
+        justify-content: center !important;
         gap: 9px !important;
-        margin: 0 42px 0 auto !important;
+        width: 100% !important;
+        margin: 62px 0 0 !important;
         vertical-align: middle !important;
       }
       #${TOOLBAR_ID} button {
@@ -654,25 +657,37 @@
   }
 
   function ensureOmniToolbar() {
-    if (document.getElementById(TOOLBAR_ID)) return;
-    const back = findBackControl();
-    if (!back) return;
-    const toolbar = document.createElement("div");
-    toolbar.id = TOOLBAR_ID;
-    toolbar.innerHTML = `
-      <button type="button" data-action="copy">Copy Email</button>
-      <button type="button" data-action="cin7">Copy to Cin7</button>
-      <button type="button" data-action="gmail">Open Gmail</button>`;
-    back.insertAdjacentElement("afterend", toolbar);
-    toolbar.addEventListener("click", (event) => {
-      const button = event.target.closest("button[data-action]");
-      if (!button) return;
-      const frame = document.querySelector(`#${PANEL_ID} iframe`);
-      frame?.contentWindow?.postMessage({
-        type: "LC_OMNI_EMAIL_ACTION",
-        action: button.dataset.action
-      }, EMAIL_HELPER_URL);
-    });
+    let toolbar = document.getElementById(TOOLBAR_ID);
+    if (!toolbar) {
+      const back = findBackControl();
+      if (!back) return;
+      toolbar = document.createElement("div");
+      toolbar.id = TOOLBAR_ID;
+      toolbar.innerHTML = `
+        <button type="button" data-action="copy">Copy Email</button>
+        <button type="button" data-action="cin7">Copy to Cin7</button>
+        <button type="button" data-action="gmail">Open Gmail</button>`;
+      back.insertAdjacentElement("afterend", toolbar);
+      toolbar.addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-action]");
+        if (!button) return;
+        const frame = document.querySelector(`#${PANEL_ID} iframe`);
+        frame?.contentWindow?.postMessage({
+          type: "LC_OMNI_EMAIL_ACTION",
+          action: button.dataset.action
+        }, EMAIL_HELPER_URL);
+      });
+    }
+    positionOmniToolbar(toolbar);
+  }
+
+  function positionOmniToolbar(toolbar = document.getElementById(TOOLBAR_ID)) {
+    const contacts = document.querySelector(".lc-omni-contacts-column");
+    if (!toolbar || !contacts) return false;
+    const careGuides = contacts.querySelector(`#${PDF_HOST_ID}`);
+    if (careGuides) contacts.insertBefore(toolbar, careGuides);
+    else if (toolbar.parentElement !== contacts) contacts.appendChild(toolbar);
+    return true;
   }
 
   function findSubjectField() {
@@ -828,6 +843,7 @@
     composePanel.classList.add("lc-omni-compose-column");
     contactsPanel.classList.add("lc-omni-contacts-column");
     layout.append(composePanel, contactsPanel, panel);
+    positionOmniToolbar();
     return true;
   }
 
