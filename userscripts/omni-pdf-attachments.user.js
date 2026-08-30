@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture PDF Attachments
 // @namespace    livingculture-omni
-// @version      0.3.1
+// @version      0.3.2
 // @description  Selects Living Culture Google Drive PDFs and loads them into the Cin7 Omni email attachment fields.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -179,11 +179,11 @@
     if (!panel) return;
     const launchButton = document.getElementById(BUTTON_ID);
     if (launchButton) launchButton.innerHTML = state.loadingList
-      ? '<span class="lc-omni-pdf-spinner" aria-hidden="true"></span> Loading PDFs…'
-      : "PDF Attachments";
+      ? '<span class="lc-omni-pdf-spinner" aria-hidden="true"></span> Loading Care Guides…'
+      : "Care Guides";
     const slots = 2;
     const rows = state.loadingList && !state.loaded
-      ? '<div class="lc-omni-pdf-loading"><span class="lc-omni-pdf-spinner" aria-hidden="true"></span><span>Loading PDFs…</span></div>'
+      ? '<div class="lc-omni-pdf-loading"><span class="lc-omni-pdf-spinner" aria-hidden="true"></span><span>Loading Care Guides…</span></div>'
       : state.loaded
       ? state.files.map((file) => `
           <label class="lc-omni-pdf-row">
@@ -246,8 +246,8 @@
     const host = document.createElement("div");
     host.id = HOST_ID;
     host.innerHTML = `
-      <button type="button" id="${BUTTON_ID}" class="ghost">PDF Attachments</button>
-      <section id="${PANEL_ID}" aria-label="Living Culture PDF Attachments"></section>`;
+      <button type="button" id="${BUTTON_ID}" class="ghost">Care Guides</button>
+      <section id="${PANEL_ID}" aria-label="Living Culture Care Guides"></section>`;
     contactsColumn.appendChild(host);
     host.querySelector(`#${BUTTON_ID}`).addEventListener("click", () => {
       host.classList.toggle("is-open");
