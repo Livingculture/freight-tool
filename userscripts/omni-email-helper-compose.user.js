@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.23
+// @version      0.1.24
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -22,6 +22,7 @@
   const STYLE_ID = "lc-omni-email-helper-compose-styles";
   const PANEL_ID = "lc-omni-email-helper-panel";
   const LAYOUT_ID = "lc-omni-email-helper-layout";
+  const TOOLBAR_ID = "lc-omni-email-helper-toolbar";
   const CONTEXT_KEY = "lcOmniEmailHelperQuoteContext";
   const SIGNATURE_IMAGE_KEY = "lcOmniEmailHelperSignatureImageV1";
   const SIGNATURE_MODE_KEY = "lcOmniEmailHelperSignatureModeV1";
@@ -84,12 +85,7 @@
         padding: 12px 0 20px !important;
       }
       header {
-        box-sizing: border-box !important;
-        width: calc(100% + 24px) !important;
-        margin: -12px -12px 12px !important;
-        padding: 14px 12px !important;
-        background: #eceff3 !important;
-        border-bottom: 1px solid #d2d9e3 !important;
+        display: none !important;
       }
       header h1 {
         display: none !important;
@@ -398,6 +394,16 @@
       queueSubjectUpdate();
     });
 
+    window.addEventListener("message", (event) => {
+      if (event.origin !== "https://go.cin7.com" || event.data?.type !== "LC_OMNI_EMAIL_ACTION") return;
+      const selector = {
+        copy: "#copy-body",
+        cin7: "#copy-cin7",
+        gmail: "#open-gmail"
+      }[event.data.action];
+      document.querySelector(selector)?.click();
+    });
+
     const applyUrlContext = () => {
       const values = {
         order: params.get("quote") || "",
@@ -570,6 +576,28 @@
         min-width: 330px !important;
         overflow: visible !important;
       }
+      #${TOOLBAR_ID} {
+        display: inline-flex !important;
+        align-items: center !important;
+        gap: 9px !important;
+        margin-left: 10px !important;
+        vertical-align: middle !important;
+      }
+      #${TOOLBAR_ID} button {
+        min-height: 38px !important;
+        border: 1px solid #8da9cc !important;
+        border-radius: 6px !important;
+        background: #fff !important;
+        color: #0b3978 !important;
+        padding: 0 15px !important;
+        font: 700 14px Arial, sans-serif !important;
+        cursor: pointer !important;
+      }
+      #${TOOLBAR_ID} button:first-child {
+        border-color: #0b3978 !important;
+        background: #0b3978 !important;
+        color: #fff !important;
+      }
       @media (max-width: 1750px) {
         #${LAYOUT_ID} {
           grid-template-columns: 570px 330px minmax(940px, 1fr) !important;
@@ -587,6 +615,28 @@
 
   function findBackControl() {
     return pageControls().find((element) => /^back$/i.test(clean(element.textContent || element.value)));
+  }
+
+  function ensureOmniToolbar() {
+    if (document.getElementById(TOOLBAR_ID)) return;
+    const back = findBackControl();
+    if (!back) return;
+    const toolbar = document.createElement("div");
+    toolbar.id = TOOLBAR_ID;
+    toolbar.innerHTML = `
+      <button type="button" data-action="copy">Copy Email</button>
+      <button type="button" data-action="cin7">Copy to Cin7</button>
+      <button type="button" data-action="gmail">Open Gmail</button>`;
+    back.insertAdjacentElement("afterend", toolbar);
+    toolbar.addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-action]");
+      if (!button) return;
+      const frame = document.querySelector(`#${PANEL_ID} iframe`);
+      frame?.contentWindow?.postMessage({
+        type: "LC_OMNI_EMAIL_ACTION",
+        action: button.dataset.action
+      }, EMAIL_HELPER_URL);
+    });
   }
 
   function findSubjectField() {
@@ -780,6 +830,7 @@
   function injectButton() {
     injectStyles();
     document.getElementById(BUTTON_ID)?.remove();
+    ensureOmniToolbar();
     openEmailHelper();
   }
 
