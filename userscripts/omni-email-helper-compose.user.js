@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.17
+// @version      0.1.18
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -10,7 +10,7 @@
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-email-helper-compose.user.js
 // @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-email-helper-compose.user.js
 // @supportURL   https://github.com/Livingculture/freight-tool
-// @run-at       document-idle
+// @run-at       document-start
 // @grant        none
 // ==/UserScript==
 
@@ -30,6 +30,33 @@
   let contactsPanel = null;
   let injectQueued = false;
 
+  if (location.hostname === "go.cin7.com") {
+    ["preconnect", "dns-prefetch"].forEach((relation) => {
+      const link = document.createElement("link");
+      link.rel = relation;
+      link.href = EMAIL_HELPER_URL;
+      link.crossOrigin = "anonymous";
+      (document.head || document.documentElement).appendChild(link);
+    });
+
+    if (/\/Cloud\/CRM\/ContactLog\.aspx$/i.test(location.pathname)) {
+      const warmHelper = () => {
+        if (!document.body) return false;
+        const panel = ensurePanel();
+        const frame = panel.querySelector("iframe");
+        if (!frame.getAttribute("src")) frame.src = `${EMAIL_HELPER_URL}?theme=omni&embedded=1`;
+        return true;
+      };
+      if (!warmHelper()) {
+        const earlyObserver = new MutationObserver(() => {
+          if (!warmHelper()) return;
+          earlyObserver.disconnect();
+        });
+        earlyObserver.observe(document.documentElement, { childList: true, subtree: true });
+      }
+    }
+  }
+
   function applyEmbeddedHelperTheme() {
     const params = new URLSearchParams(location.search);
     if (params.get("theme") !== "omni" || params.get("embedded") !== "1") return;
@@ -48,7 +75,7 @@
         --background: #eef4fb !important;
       }
       body {
-        background: linear-gradient(180deg, rgba(11, 57, 120, .09), transparent 260px), #eef4fb !important;
+        background: #fff !important;
       }
       main {
         width: calc(100% - 24px) !important;
@@ -409,11 +436,11 @@
         min-width: 0 !important;
         height: calc(100vh - 105px) !important;
         min-height: 720px !important;
-        border: 1px solid #8da9cc !important;
-        border-radius: 6px !important;
+        border: 0 !important;
+        border-radius: 0 !important;
         overflow: hidden !important;
-        background: #eef4fb !important;
-        box-shadow: 0 12px 32px rgba(15, 46, 106, 0.16) !important;
+        background: #fff !important;
+        box-shadow: none !important;
       }
       #${PANEL_ID}[hidden] {
         display: none !important;
@@ -424,7 +451,7 @@
         width: 100% !important;
         min-height: 0 !important;
         border: 0 !important;
-        background: #eef4fb !important;
+        background: #fff !important;
       }
       #${LAYOUT_ID} {
         display: grid !important;
@@ -645,7 +672,7 @@
     const panel = ensurePanel();
     const frame = panel.querySelector("iframe");
     const url = helperUrl();
-    if (frame.src !== url) frame.src = url;
+    if (!frame.getAttribute("src")) frame.src = url;
     frame.addEventListener("load", () => sendContextToHelper(frame), { once: true });
     panel.hidden = false;
     buildThreeColumnLayout(panel);
