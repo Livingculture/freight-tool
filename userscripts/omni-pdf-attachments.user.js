@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         Omni Living Culture PDF Attachments
 // @namespace    livingculture-omni
-// @version      0.1.1
+// @version      0.2.0
 // @description  Selects Living Culture Google Drive PDFs and loads them into the Cin7 Omni email attachment fields.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
+// @match        https://living-culture-email-helper.vercel.app/*
 // @grant        GM_xmlhttpRequest
 // @connect      cin7-pdf-attachments.vercel.app
 // @run-at       document-idle
@@ -22,6 +23,8 @@
   const BUTTON_ID = "lc-omni-pdf-attachments-button";
   const PANEL_ID = "lc-omni-pdf-attachments-panel";
   const STYLE_ID = "lc-omni-pdf-attachments-styles";
+  const HELPER_ORIGIN = "https://living-culture-email-helper.vercel.app";
+  const OMNI_ORIGIN = "https://go.cin7.com";
   const state = { files: [], selected: new Set(), loaded: false, busy: false, status: "", statusError: false };
   let injectQueued = false;
 
@@ -122,10 +125,9 @@
 
   async function addSelected() {
     const files = selectedFiles();
-    const inputs = availableFileInputs();
     if (!files.length) return;
-    if (files.length > inputs.length) {
-      setStatus(`Omni has ${inputs.length} empty attachment field${inputs.length === 1 ? "" : "s"}. Choose ${inputs.length} PDF${inputs.length === 1 ? "" : "s"} or fewer.`, true);
+    if (files.length > 2) {
+      setStatus("Omni has two attachment fields. Choose two PDFs or fewer.", true);
       return;
     }
 
@@ -134,10 +136,8 @@
     setStatus("Loading selected PDFs into Omni...");
     try {
       const downloaded = await Promise.all(files.map(downloadFile));
-      downloaded.forEach((file, index) => assignFile(inputs[index], file));
-      state.selected.clear();
-      render();
-      setStatus(`${downloaded.length} PDF${downloaded.length === 1 ? "" : "s"} added to the Omni email.`);
+      window.parent.postMessage({ type: "LC_OMNI_PDF_FILES", files: downloaded }, OMNI_ORIGIN);
+      setStatus("Adding selected PDFs to Omni...");
     } catch (error) {
       setStatus(error.message, true);
     } finally {
@@ -149,7 +149,7 @@
   function render() {
     const panel = document.getElementById(PANEL_ID);
     if (!panel) return;
-    const slots = availableFileInputs().length;
+    const slots = 2;
     const rows = state.loaded
       ? state.files.map((file) => `
           <label class="lc-omni-pdf-row">
@@ -182,10 +182,10 @@
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
-      #${HOST_ID} { position: absolute; z-index: 4; top: 12px; right: 354px; }
-      #${BUTTON_ID} { min-height: 34px; border: 1px solid #0b3978; border-radius: 5px; background: #0b3978; color: #fff; padding: 0 14px; font: 700 13px Arial,sans-serif; cursor: pointer; }
-      #${BUTTON_ID}:hover { background: #072d62; }
-      #${PANEL_ID} { display: none; position: absolute; z-index: 2147483647; top: 42px; right: 0; width: 390px; max-width: calc(100vw - 48px); border: 1px solid #9eb8d8; border-radius: 7px; background: #fff; box-shadow: 0 14px 36px rgba(15,46,106,.22); color: #172b49; font: 13px Arial,sans-serif; }
+      #${HOST_ID} { position: relative; display: inline-flex; }
+      #${BUTTON_ID} { min-height: 40px; border: 1px solid #8da9cc; border-radius: 6px; background: #fff; color: #0b3978; padding: 0 16px; font: 700 14px Arial,sans-serif; cursor: pointer; }
+      #${BUTTON_ID}:hover { background: #eef4fb; }
+      #${PANEL_ID} { display: none; position: absolute; z-index: 2147483647; top: 46px; left: 0; width: 390px; max-width: calc(100vw - 48px); border: 1px solid #9eb8d8; border-radius: 7px; background: #fff; box-shadow: 0 14px 36px rgba(15,46,106,.22); color: #172b49; font: 13px Arial,sans-serif; }
       #${HOST_ID}.is-open #${PANEL_ID} { display: block; }
       .lc-omni-pdf-summary, .lc-omni-pdf-empty, #lc-omni-pdf-attachments-status { padding: 9px 11px; color: #526987; }
       .lc-omni-pdf-list { max-height: 310px; overflow: auto; border-block: 1px solid #d8e4f2; }
@@ -203,15 +203,16 @@
   function inject() {
     injectStyles();
     if (document.getElementById(HOST_ID)) return;
-    const helper = document.getElementById("lc-omni-email-helper-panel");
-    if (!helper) return;
+    const actionRow = document.querySelector("header .actions");
+    const copyEmail = document.getElementById("copy-body");
+    if (!actionRow || !copyEmail) return;
 
     const host = document.createElement("div");
     host.id = HOST_ID;
     host.innerHTML = `
-      <button type="button" id="${BUTTON_ID}">PDF Attachments</button>
+      <button type="button" id="${BUTTON_ID}" class="ghost">PDF Attachments</button>
       <section id="${PANEL_ID}" aria-label="Living Culture PDF Attachments"></section>`;
-    helper.appendChild(host);
+    copyEmail.insertAdjacentElement("beforebegin", host);
     host.querySelector(`#${BUTTON_ID}`).addEventListener("click", () => {
       host.classList.toggle("is-open");
       if (host.classList.contains("is-open") && !state.loaded) loadFiles();
@@ -229,8 +230,42 @@
   }
 
   function boot() {
-    inject();
-    new MutationObserver(scheduleInject).observe(document.body, { childList: true, subtree: true });
+    if (location.origin === HELPER_ORIGIN) {
+      inject();
+      new MutationObserver(scheduleInject).observe(document.body, { childList: true, subtree: true });
+      window.addEventListener("message", (event) => {
+        if (event.origin !== OMNI_ORIGIN || event.data?.type !== "LC_OMNI_PDF_RESULT") return;
+        state.busy = false;
+        if (event.data.ok) state.selected.clear();
+        setStatus(event.data.message || (event.data.ok ? "PDFs added to the Omni email." : "PDFs could not be added."), !event.data.ok);
+        render();
+      });
+      return;
+    }
+
+    window.addEventListener("message", (event) => {
+      if (event.origin !== HELPER_ORIGIN || event.data?.type !== "LC_OMNI_PDF_FILES") return;
+      const files = Array.isArray(event.data.files) ? event.data.files : [];
+      const inputs = availableFileInputs();
+      if (!files.length || files.length > inputs.length) {
+        event.source?.postMessage({
+          type: "LC_OMNI_PDF_RESULT",
+          ok: false,
+          message: `Omni has ${inputs.length} empty attachment field${inputs.length === 1 ? "" : "s"}.`
+        }, HELPER_ORIGIN);
+        return;
+      }
+      try {
+        files.forEach((file, index) => assignFile(inputs[index], file));
+        event.source?.postMessage({
+          type: "LC_OMNI_PDF_RESULT",
+          ok: true,
+          message: `${files.length} PDF${files.length === 1 ? "" : "s"} added to the Omni email.`
+        }, HELPER_ORIGIN);
+      } catch (error) {
+        event.source?.postMessage({ type: "LC_OMNI_PDF_RESULT", ok: false, message: error.message }, HELPER_ORIGIN);
+      }
+    });
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot, { once: true });

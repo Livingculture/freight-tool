@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.11
+// @version      0.1.12
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -586,6 +586,22 @@
     return true;
   }
 
+  function setOmniSubject(value) {
+    const subject = findSubjectField();
+    const next = clean(value);
+    if (!subject || !next) return false;
+    const prototype = subject instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype
+      : HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+    if (setter) setter.call(subject, next);
+    else subject.value = next;
+    subject.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: next }));
+    subject.dispatchEvent(new Event("change", { bubbles: true }));
+    subject.dispatchEvent(new Event("blur", { bubbles: true }));
+    return true;
+  }
+
   window.addEventListener("message", (event) => {
     if (event.origin !== EMAIL_HELPER_URL) return;
     const payload = event.data || {};
@@ -593,6 +609,7 @@
 
     const html = String(payload.html || "").trim()
       || escapeHtml(payload.text || "").replace(/\n/g, "<br>");
+    setOmniSubject(payload.subject);
     if (!setEditorHtml(html)) {
       alert("The Omni email editor could not be found. Keep this email page open and try Copy to Cin7 again.");
       return;
