@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.33
+// @version      0.1.34
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -36,6 +36,7 @@
   let latestHelperDraft = null;
   let pendingHelperAction = "";
   let pendingGmailWindow = null;
+  let pendingActionButton = null;
 
   if (location.hostname === "go.cin7.com") {
     ["preconnect", "dns-prefetch"].forEach((relation) => {
@@ -739,31 +740,55 @@
         <button type="button" data-action="cin7">Copy to Cin7</button>
         <button type="button" data-action="gmail">Open Gmail</button>`;
       back.insertAdjacentElement("afterend", toolbar);
-      toolbar.addEventListener("click", (event) => {
-        const button = event.target.closest("button[data-action]");
-        if (!button) return;
-        event.preventDefault();
-        event.stopPropagation();
-        if (button.dataset.action === "cin7" && latestHelperDraft) {
-          insertLatestDraft();
-          return;
-        }
-        if (button.dataset.action === "gmail" && latestHelperDraft) {
-          openLatestDraftInGmail();
-          return;
-        }
-        pendingHelperAction = button.dataset.action;
-        if (pendingHelperAction === "gmail") {
-          pendingGmailWindow = window.open("about:blank", "_blank");
-        }
-        const frame = document.querySelector(`#${PANEL_ID} iframe`);
-        frame?.contentWindow?.postMessage({
-          type: "LC_OMNI_EMAIL_DRAFT_REQUEST"
-        }, EMAIL_HELPER_URL);
-      }, true);
     }
     positionOmniToolbar(toolbar);
   }
+
+  function handleOmniToolbarAction(button) {
+    const action = button?.dataset?.action || "";
+    if (!/^(cin7|gmail)$/.test(action)) return;
+    const originalLabel = button.textContent;
+    button.textContent = action === "cin7" ? "Copying…" : "Opening…";
+    pendingActionButton = { button, originalLabel };
+
+    if (action === "cin7" && latestHelperDraft) {
+      insertLatestDraft();
+      finishActionButton("Copied");
+      return;
+    }
+    if (action === "gmail" && latestHelperDraft) {
+      openLatestDraftInGmail();
+      finishActionButton("Opened");
+      return;
+    }
+
+    pendingHelperAction = action;
+    if (action === "gmail") pendingGmailWindow = window.open("about:blank", "_blank");
+    const frame = document.querySelector(`#${PANEL_ID} iframe`);
+    if (!frame?.contentWindow) {
+      finishActionButton("Try again");
+      return;
+    }
+    frame.contentWindow.postMessage({ type: "LC_OMNI_EMAIL_DRAFT_REQUEST" }, EMAIL_HELPER_URL);
+  }
+
+  function finishActionButton(status) {
+    const pending = pendingActionButton;
+    pendingActionButton = null;
+    if (!pending?.button?.isConnected) return;
+    pending.button.textContent = status;
+    setTimeout(() => {
+      if (pending.button.isConnected) pending.button.textContent = pending.originalLabel;
+    }, 1200);
+  }
+
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest?.(`#${TOOLBAR_ID} button[data-action]`);
+    if (!button) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    handleOmniToolbarAction(button);
+  }, true);
 
   function positionOmniToolbar(toolbar = document.getElementById(TOOLBAR_ID)) {
     const contacts = document.querySelector(".lc-omni-contacts-column");
@@ -1068,12 +1093,14 @@
     if (!action || !latestHelperDraft) return;
     pendingHelperAction = "";
     if (action === "cin7") {
-      insertLatestDraft();
+      const inserted = insertLatestDraft();
+      finishActionButton(inserted ? "Copied" : "Try again");
       return;
     }
     if (action === "gmail") {
-      openLatestDraftInGmail(pendingGmailWindow);
+      const opened = openLatestDraftInGmail(pendingGmailWindow);
       pendingGmailWindow = null;
+      finishActionButton(opened ? "Opened" : "Try again");
     }
   }
 
