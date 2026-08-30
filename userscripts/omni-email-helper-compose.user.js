@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.32
+// @version      0.1.33
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -34,6 +34,8 @@
   let contactsPanel = null;
   let injectQueued = false;
   let latestHelperDraft = null;
+  let pendingHelperAction = "";
+  let pendingGmailWindow = null;
 
   if (location.hostname === "go.cin7.com") {
     ["preconnect", "dns-prefetch"].forEach((relation) => {
@@ -490,7 +492,12 @@
     });
 
     window.addEventListener("message", (event) => {
-      if (event.origin !== "https://go.cin7.com" || event.data?.type !== "LC_OMNI_EMAIL_ACTION") return;
+      if (event.origin !== "https://go.cin7.com") return;
+      if (event.data?.type === "LC_OMNI_EMAIL_DRAFT_REQUEST") {
+        broadcastDraftState();
+        return;
+      }
+      if (event.data?.type !== "LC_OMNI_EMAIL_ACTION") return;
       if (event.data.action === "cin7") {
         sendDraftToOmni();
         return;
@@ -745,10 +752,13 @@
           openLatestDraftInGmail();
           return;
         }
+        pendingHelperAction = button.dataset.action;
+        if (pendingHelperAction === "gmail") {
+          pendingGmailWindow = window.open("about:blank", "_blank");
+        }
         const frame = document.querySelector(`#${PANEL_ID} iframe`);
         frame?.contentWindow?.postMessage({
-          type: "LC_OMNI_EMAIL_ACTION",
-          action: button.dataset.action
+          type: "LC_OMNI_EMAIL_DRAFT_REQUEST"
         }, EMAIL_HELPER_URL);
       }, true);
     }
@@ -1039,7 +1049,7 @@
     return true;
   }
 
-  function openLatestDraftInGmail() {
+  function openLatestDraftInGmail(targetWindow = null) {
     if (!latestHelperDraft) return false;
     const context = emailPageContext();
     const gmailUrl = new URL("https://mail.google.com/mail/");
@@ -1048,8 +1058,23 @@
     if (context.recipientEmail) gmailUrl.searchParams.set("to", context.recipientEmail);
     if (latestHelperDraft.subject) gmailUrl.searchParams.set("su", latestHelperDraft.subject);
     if (latestHelperDraft.text) gmailUrl.searchParams.set("body", latestHelperDraft.text);
-    window.open(gmailUrl.toString(), "_blank", "noopener");
+    if (targetWindow && !targetWindow.closed) targetWindow.location.replace(gmailUrl.toString());
+    else window.open(gmailUrl.toString(), "_blank", "noopener");
     return true;
+  }
+
+  function finishPendingHelperAction() {
+    const action = pendingHelperAction;
+    if (!action || !latestHelperDraft) return;
+    pendingHelperAction = "";
+    if (action === "cin7") {
+      insertLatestDraft();
+      return;
+    }
+    if (action === "gmail") {
+      openLatestDraftInGmail(pendingGmailWindow);
+      pendingGmailWindow = null;
+    }
   }
 
   window.addEventListener("message", (event) => {
@@ -1057,6 +1082,7 @@
     const payload = event.data || {};
     if (payload.type === "LC_EMAIL_HELPER_DRAFT_STATE") {
       latestHelperDraft = payload;
+      finishPendingHelperAction();
       return;
     }
     if (payload.type !== "LC_EMAIL_HELPER_DRAFT") return;
