@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.25
+// @version      0.1.26
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -167,6 +167,19 @@
         margin-top: 7px;
       }
       #lc-signature-image-tools.has-image #lc-signature-image-remove { display: inline-flex; }
+      #lc-draft-signature-image {
+        display: none;
+        padding: 0 12px 12px;
+        background: #fff;
+      }
+      #lc-draft-signature-image.is-visible { display: block; }
+      #lc-draft-signature-image img {
+        display: block;
+        max-width: 100%;
+        height: auto;
+        object-fit: contain;
+        object-position: left center;
+      }
       .panel {
         box-shadow: 0 12px 32px rgba(15, 46, 106, .09) !important;
       }
@@ -203,6 +216,23 @@
       checkbox.dispatchEvent(new Event("change", { bubbles: true }));
     };
 
+    const renderDraftSignatureImage = () => {
+      const body = document.querySelector("#body-output, #body");
+      if (!body) return;
+      let container = document.getElementById("lc-draft-signature-image");
+      if (!container) {
+        container = document.createElement("div");
+        container.id = "lc-draft-signature-image";
+        container.innerHTML = '<img alt="Email signature">';
+        body.insertAdjacentElement("afterend", container);
+      }
+      const source = signatureMode() === "image" ? storedSignatureImage() : "";
+      const image = container.querySelector("img");
+      image.src = source;
+      image.style.width = `${signatureWidth()}px`;
+      container.classList.toggle("is-visible", Boolean(source));
+    };
+
     const injectSignatureImageUpload = () => {
       if (document.getElementById("lc-signature-image-tools")) return;
       const signatureBox = document.querySelector(".signature-box");
@@ -237,6 +267,7 @@
         preview.style.width = `${width}px`;
         preview.style.maxWidth = "100%";
         try { localStorage.setItem(SIGNATURE_WIDTH_KEY, String(width)); } catch (_) {}
+        renderDraftSignatureImage();
       };
       const show = (source) => {
         preview.src = source || "";
@@ -248,6 +279,7 @@
         tools.querySelector(`input[name="lc-signature-mode"][value="${nextMode}"]`).checked = true;
         try { localStorage.setItem(SIGNATURE_MODE_KEY, nextMode); } catch (_) {}
         setNativeTextSignature(nextMode === "text");
+        renderDraftSignatureImage();
       };
       show(storedSignatureImage());
       applyWidth(signatureWidth());
@@ -272,6 +304,7 @@
           const source = String(reader.result || "");
           try { localStorage.setItem(SIGNATURE_IMAGE_KEY, source); } catch (_) {}
           show(source);
+          renderDraftSignatureImage();
         };
         reader.readAsDataURL(file);
       });
@@ -279,6 +312,7 @@
         try { localStorage.removeItem(SIGNATURE_IMAGE_KEY); } catch (_) {}
         input.value = "";
         show("");
+        renderDraftSignatureImage();
       });
     };
 
@@ -301,6 +335,7 @@
 
     const maintainSignatureTools = () => {
       injectSignatureImageUpload();
+      renderDraftSignatureImage();
       hideImageUrlOverride();
       hideLookupButton();
     };
