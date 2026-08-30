@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.31
+// @version      0.1.32
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -33,6 +33,7 @@
   let composePanel = null;
   let contactsPanel = null;
   let injectQueued = false;
+  let latestHelperDraft = null;
 
   if (location.hostname === "go.cin7.com") {
     ["preconnect", "dns-prefetch"].forEach((relation) => {
@@ -400,20 +401,37 @@
       if (event.target?.closest?.("button")) queueSubjectUpdate();
     });
 
-    const sendDraftToOmni = (button = null) => {
+    const currentDraft = () => {
       addCin7NumberToSubject();
       const subject = document.querySelector("#subject-output")?.value || "";
       const text = document.querySelector("#body-output, #body")?.value || "";
       const signatureImage = signatureMode() === "image" ? storedSignatureImage() : "";
       const width = signatureWidth();
       const html = `${escapeHtml(text).replace(/\n/g, "<br>")}${signatureImage ? `<br><br><img src="${signatureImage}" alt="Signature" width="${width}" style="display:block;width:${width}px;height:auto">` : ""}`;
-      window.parent.postMessage({
+      return {
         type: "LC_EMAIL_HELPER_DRAFT",
         subject,
         text,
         html,
         order: document.querySelector("#order")?.value || ""
-      }, "https://go.cin7.com");
+      };
+    };
+
+    const broadcastDraftState = () => {
+      window.parent.postMessage({ ...currentDraft(), type: "LC_EMAIL_HELPER_DRAFT_STATE" }, "https://go.cin7.com");
+    };
+
+    let draftBroadcastTimer = 0;
+    const queueDraftBroadcast = () => {
+      clearTimeout(draftBroadcastTimer);
+      draftBroadcastTimer = setTimeout(broadcastDraftState, 100);
+    };
+    document.addEventListener("input", queueDraftBroadcast, true);
+    document.addEventListener("change", queueDraftBroadcast, true);
+    [250, 800, 1800, 3200].forEach((delay) => setTimeout(broadcastDraftState, delay));
+
+    const sendDraftToOmni = (button = null) => {
+      window.parent.postMessage(currentDraft(), "https://go.cin7.com");
       if (button) {
         const label = button.textContent;
         button.textContent = "Sent to Omni";
@@ -719,6 +737,14 @@
         if (!button) return;
         event.preventDefault();
         event.stopPropagation();
+        if (button.dataset.action === "cin7" && latestHelperDraft) {
+          insertLatestDraft();
+          return;
+        }
+        if (button.dataset.action === "gmail" && latestHelperDraft) {
+          openLatestDraftInGmail();
+          return;
+        }
         const frame = document.querySelector(`#${PANEL_ID} iframe`);
         frame?.contentWindow?.postMessage({
           type: "LC_OMNI_EMAIL_ACTION",
@@ -1000,18 +1026,42 @@
     return true;
   }
 
+  function insertLatestDraft() {
+    if (!latestHelperDraft) return false;
+    const html = String(latestHelperDraft.html || "").trim()
+      || escapeHtml(latestHelperDraft.text || "").replace(/\n/g, "<br>");
+    setOmniSubject(latestHelperDraft.subject);
+    if (!setEditorHtml(html)) {
+      alert("The Omni email editor could not be found. Keep this email page open and try Copy to Cin7 again.");
+      return false;
+    }
+    window.focus();
+    return true;
+  }
+
+  function openLatestDraftInGmail() {
+    if (!latestHelperDraft) return false;
+    const context = emailPageContext();
+    const gmailUrl = new URL("https://mail.google.com/mail/");
+    gmailUrl.searchParams.set("view", "cm");
+    gmailUrl.searchParams.set("fs", "1");
+    if (context.recipientEmail) gmailUrl.searchParams.set("to", context.recipientEmail);
+    if (latestHelperDraft.subject) gmailUrl.searchParams.set("su", latestHelperDraft.subject);
+    if (latestHelperDraft.text) gmailUrl.searchParams.set("body", latestHelperDraft.text);
+    window.open(gmailUrl.toString(), "_blank", "noopener");
+    return true;
+  }
+
   window.addEventListener("message", (event) => {
     if (event.origin !== EMAIL_HELPER_URL) return;
     const payload = event.data || {};
-    if (payload.type !== "LC_EMAIL_HELPER_DRAFT") return;
-
-    const html = String(payload.html || "").trim()
-      || escapeHtml(payload.text || "").replace(/\n/g, "<br>");
-    setOmniSubject(payload.subject);
-    if (!setEditorHtml(html)) {
-      alert("The Omni email editor could not be found. Keep this email page open and try Copy to Cin7 again.");
+    if (payload.type === "LC_EMAIL_HELPER_DRAFT_STATE") {
+      latestHelperDraft = payload;
       return;
     }
+    if (payload.type !== "LC_EMAIL_HELPER_DRAFT") return;
+    latestHelperDraft = payload;
+    if (!insertLatestDraft()) return;
 
     event.source?.postMessage({ type: "LC_EMAIL_HELPER_DRAFT_INSERTED" }, EMAIL_HELPER_URL);
     window.focus();
