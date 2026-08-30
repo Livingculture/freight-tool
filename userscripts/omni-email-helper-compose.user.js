@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.28
+// @version      0.1.29
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -682,7 +682,6 @@
       toolbar = document.createElement("div");
       toolbar.id = TOOLBAR_ID;
       toolbar.innerHTML = `
-        <button type="button" data-action="copy">Copy Email</button>
         <button type="button" data-action="cin7">Copy to Cin7</button>
         <button type="button" data-action="gmail">Open Gmail</button>`;
       back.insertAdjacentElement("afterend", toolbar);
