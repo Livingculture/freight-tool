@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture PDF Attachments
 // @namespace    livingculture-omni
-// @version      0.2.0
+// @version      0.2.1
 // @description  Selects Living Culture Google Drive PDFs and loads them into the Cin7 Omni email attachment fields.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -25,7 +25,9 @@
   const STYLE_ID = "lc-omni-pdf-attachments-styles";
   const HELPER_ORIGIN = "https://living-culture-email-helper.vercel.app";
   const OMNI_ORIGIN = "https://go.cin7.com";
-  const state = { files: [], selected: new Set(), loaded: false, busy: false, status: "", statusError: false };
+  const CACHE_KEY = "lc-omni-pdf-files-v1";
+  const CACHE_MAX_AGE = 15 * 60 * 1000;
+  const state = { files: [], selected: new Set(), loaded: false, loadingList: false, busy: false, status: "", statusError: false };
   let injectQueued = false;
 
   function clean(value) {
@@ -63,7 +65,10 @@
   }
 
   async function loadFiles() {
-    state.busy = true;
+    if (state.loadingList) return;
+    state.loadingList = true;
+    state.status = "";
+    state.statusError = false;
     render();
     try {
       const response = await request(`${API_BASE}/api/email-links`, {
@@ -73,12 +78,27 @@
       state.files = Array.isArray(payload.files) ? payload.files : [];
       state.loaded = true;
       state.selected.clear();
+      try {
+        localStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt: Date.now(), files: state.files }));
+      } catch (_) {}
     } catch (error) {
       state.loaded = true;
-      setStatus(error.message);
+      setStatus(error.message, true);
     } finally {
-      state.busy = false;
+      state.loadingList = false;
       render();
+    }
+  }
+
+  function restoreCachedFiles() {
+    try {
+      const cached = JSON.parse(localStorage.getItem(CACHE_KEY) || "null");
+      if (!cached || !Array.isArray(cached.files) || Date.now() - Number(cached.savedAt || 0) > CACHE_MAX_AGE) return false;
+      state.files = cached.files;
+      state.loaded = true;
+      return true;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -149,20 +169,26 @@
   function render() {
     const panel = document.getElementById(PANEL_ID);
     if (!panel) return;
+    const launchButton = document.getElementById(BUTTON_ID);
+    if (launchButton) launchButton.innerHTML = state.loadingList
+      ? '<span class="lc-omni-pdf-spinner" aria-hidden="true"></span> Loading PDFs…'
+      : "PDF Attachments";
     const slots = 2;
-    const rows = state.loaded
+    const rows = state.loadingList && !state.loaded
+      ? '<div class="lc-omni-pdf-loading"><span class="lc-omni-pdf-spinner" aria-hidden="true"></span><span>Loading PDFs…</span></div>'
+      : state.loaded
       ? state.files.map((file) => `
           <label class="lc-omni-pdf-row">
             <input type="checkbox" value="${escapeHtml(file.id)}" ${state.selected.has(file.id) ? "checked" : ""}>
             <span title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</span>
           </label>`).join("") || '<div class="lc-omni-pdf-empty">No PDFs found.</div>'
-      : '<div class="lc-omni-pdf-empty">Loading PDFs...</div>';
+      : '<div class="lc-omni-pdf-empty">PDF list is not loaded yet.</div>';
     panel.innerHTML = `
       <div class="lc-omni-pdf-summary">Choose up to ${slots} PDF${slots === 1 ? "" : "s"}</div>
       <div class="lc-omni-pdf-list">${rows}</div>
       <div class="lc-omni-pdf-actions">
-        <button type="button" data-action="refresh">Refresh</button>
-        <button type="button" data-action="add" ${state.busy || !state.selected.size ? "disabled" : ""}>Add to email</button>
+        <button type="button" data-action="refresh" ${state.loadingList ? "disabled" : ""}>${state.loadingList ? "Refreshing…" : "Refresh"}</button>
+        <button type="button" data-action="add" ${state.busy || state.loadingList || !state.selected.size ? "disabled" : ""}>Add to email</button>
       </div>
       <div id="lc-omni-pdf-attachments-status" class="${state.statusError ? "is-error" : ""}">${escapeHtml(state.status)}</div>`;
 
@@ -183,11 +209,14 @@
     style.id = STYLE_ID;
     style.textContent = `
       #${HOST_ID} { position: relative; display: inline-flex; }
-      #${BUTTON_ID} { min-height: 40px; border: 1px solid #8da9cc; border-radius: 6px; background: #fff; color: #0b3978; padding: 0 16px; font: 700 14px Arial,sans-serif; cursor: pointer; }
+      #${BUTTON_ID} { min-height: 40px; border: 1px solid #8da9cc; border-radius: 6px; background: #fff; color: #0b3978; padding: 0 16px; font: 700 14px Arial,sans-serif; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
       #${BUTTON_ID}:hover { background: #eef4fb; }
       #${PANEL_ID} { display: none; position: absolute; z-index: 2147483647; top: 46px; left: 0; width: 390px; max-width: calc(100vw - 48px); border: 1px solid #9eb8d8; border-radius: 7px; background: #fff; box-shadow: 0 14px 36px rgba(15,46,106,.22); color: #172b49; font: 13px Arial,sans-serif; }
       #${HOST_ID}.is-open #${PANEL_ID} { display: block; }
       .lc-omni-pdf-summary, .lc-omni-pdf-empty, #lc-omni-pdf-attachments-status { padding: 9px 11px; color: #526987; }
+      .lc-omni-pdf-loading { min-height: 76px; display: flex; align-items: center; justify-content: center; gap: 9px; color: #365a87; font-weight: 700; }
+      .lc-omni-pdf-spinner { width: 14px; height: 14px; flex: 0 0 14px; border: 2px solid #c6d7ea; border-top-color: #0b3978; border-radius: 50%; animation: lc-omni-pdf-spin .75s linear infinite; }
+      @keyframes lc-omni-pdf-spin { to { transform: rotate(360deg); } }
       .lc-omni-pdf-list { max-height: 310px; overflow: auto; border-block: 1px solid #d8e4f2; }
       .lc-omni-pdf-row { display: grid; grid-template-columns: 22px minmax(0,1fr); gap: 7px; align-items: center; padding: 8px 11px; border-bottom: 1px solid #e4edf7; cursor: pointer; }
       .lc-omni-pdf-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -215,9 +244,10 @@
     copyEmail.insertAdjacentElement("beforebegin", host);
     host.querySelector(`#${BUTTON_ID}`).addEventListener("click", () => {
       host.classList.toggle("is-open");
-      if (host.classList.contains("is-open") && !state.loaded) loadFiles();
+      if (host.classList.contains("is-open") && !state.loaded && !state.loadingList) loadFiles();
       else render();
     });
+    render();
   }
 
   function scheduleInject() {
@@ -231,7 +261,9 @@
 
   function boot() {
     if (location.origin === HELPER_ORIGIN) {
+      const restoredCache = restoreCachedFiles();
       inject();
+      if (!restoredCache) loadFiles();
       new MutationObserver(scheduleInject).observe(document.body, { childList: true, subtree: true });
       window.addEventListener("message", (event) => {
         if (event.origin !== OMNI_ORIGIN || event.data?.type !== "LC_OMNI_PDF_RESULT") return;
