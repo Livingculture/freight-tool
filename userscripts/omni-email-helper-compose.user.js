@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.24
+// @version      0.1.25
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -578,9 +578,10 @@
       }
       #${TOOLBAR_ID} {
         display: inline-flex !important;
+        float: right !important;
         align-items: center !important;
         gap: 9px !important;
-        margin-left: 10px !important;
+        margin: 0 42px 0 auto !important;
         vertical-align: middle !important;
       }
       #${TOOLBAR_ID} button {
