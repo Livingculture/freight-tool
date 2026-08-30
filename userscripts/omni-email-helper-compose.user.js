@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.16
+// @version      0.1.17
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -33,6 +33,7 @@
   function applyEmbeddedHelperTheme() {
     const params = new URLSearchParams(location.search);
     if (params.get("theme") !== "omni" || params.get("embedded") !== "1") return;
+    let omniRecipientEmail = params.get("recipient") || "";
     const style = document.createElement("style");
     style.textContent = `
       :root {
@@ -236,9 +237,27 @@
       setTimeout(() => { button.textContent = label; }, 1200);
     }, true);
 
+    document.addEventListener("click", (event) => {
+      const button = event.target.closest?.("#open-gmail")
+        || Array.from(document.querySelectorAll("button, a")).find((control) => /^open gmail$/i.test(clean(control.textContent)) && control.contains(event.target));
+      if (!button || !omniRecipientEmail) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const subject = document.querySelector("#subject-output")?.value || "";
+      const body = document.querySelector("#body-output, #body")?.value || "";
+      const gmailUrl = new URL("https://mail.google.com/mail/");
+      gmailUrl.searchParams.set("view", "cm");
+      gmailUrl.searchParams.set("fs", "1");
+      gmailUrl.searchParams.set("to", omniRecipientEmail);
+      if (subject) gmailUrl.searchParams.set("su", subject);
+      if (body) gmailUrl.searchParams.set("body", body);
+      window.open(gmailUrl.toString(), "_blank", "noopener");
+    }, true);
+
     window.addEventListener("message", (event) => {
       if (event.origin !== "https://go.cin7.com" || event.data?.type !== "LC_OMNI_EMAIL_CONTEXT") return;
       const context = event.data.context || {};
+      omniRecipientEmail = context.recipientEmail || omniRecipientEmail;
       const values = {
         order: context.quoteNumber,
         "first-name": context.firstName,
@@ -479,6 +498,7 @@
     if (context.quoteNumber) url.searchParams.set("quote", context.quoteNumber);
     if (context.firstName) url.searchParams.set("first", context.firstName);
     if (context.product) url.searchParams.set("product", context.product);
+    if (context.recipientEmail) url.searchParams.set("recipient", context.recipientEmail);
     url.searchParams.set("theme", "omni");
     url.searchParams.set("embedded", "1");
     return url.toString();
@@ -496,6 +516,7 @@
     const addressField = directTo || Array.from(document.querySelectorAll("input:not([type='hidden']), textarea"))
       .find((field) => /<[^>]+@[^>]+>/.test(clean(field.value)));
     const to = clean(addressField?.value || fieldNearLabel("To")?.value);
+    const recipientEmail = to.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || "";
     const subject = clean(findSubjectField()?.value);
     const displayName = clean(to.replace(/<[^>]+>/g, "").replace(/[,;]+$/, ""));
     const contactListName = (() => {
@@ -525,7 +546,8 @@
         || contactListName.split(/\s+/)[0]
         || "",
       quoteNumber: subjectQuote || saved.quoteNumber || "",
-      product: sameQuote ? saved.product || "" : ""
+      product: sameQuote ? saved.product || "" : "",
+      recipientEmail
     };
   }
 
