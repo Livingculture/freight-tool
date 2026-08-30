@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture PDF Attachments
 // @namespace    livingculture-omni
-// @version      0.3.3
+// @version      0.3.4
 // @description  Selects Living Culture Google Drive PDFs and loads them into the Cin7 Omni email attachment fields.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -26,7 +26,7 @@
   const HELPER_ORIGIN = "https://living-culture-email-helper.vercel.app";
   const OMNI_ORIGIN = "https://go.cin7.com";
   const CACHE_KEY = "lc-omni-pdf-files-v1";
-  const CACHE_MAX_AGE = 15 * 60 * 1000;
+  const CACHE_MAX_AGE = 5 * 60 * 1000;
   const state = { files: [], selected: new Set(), loaded: false, loadingList: false, busy: false, status: "", statusError: false };
   let injectQueued = false;
 
@@ -52,7 +52,9 @@
         responseType: options.responseType || "text",
         onload(response) {
           if (response.status < 200 || response.status >= 300) {
-            reject(new Error(`Attachment service returned HTTP ${response.status}.`));
+            const error = new Error(`Attachment service returned HTTP ${response.status}.`);
+            error.status = response.status;
+            reject(error);
             return;
           }
           resolve(response);
@@ -128,7 +130,22 @@
   }
 
   async function downloadFile(file) {
-    const response = await request(file.downloadUrl, { responseType: "arraybuffer" });
+    const options = { responseType: "arraybuffer", headers: { "x-lc-token": TOOL_TOKEN } };
+    let response;
+    try {
+      response = await request(file.downloadUrl, options);
+    } catch (error) {
+      if (error.status !== 401 && error.status !== 403) throw error;
+      const listResponse = await request(`${API_BASE}/api/email-links`, {
+        headers: { Accept: "application/json", "x-lc-token": TOOL_TOKEN }
+      });
+      const freshFiles = JSON.parse(listResponse.responseText || "{}").files || [];
+      const freshFile = freshFiles.find((item) => item.id === file.id);
+      if (!freshFile?.downloadUrl) throw error;
+      state.files = freshFiles;
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt: Date.now(), files: freshFiles }));
+      response = await request(freshFile.downloadUrl, options);
+    }
     return new File([response.response], clean(file.name) || "Living Culture document.pdf", {
       type: "application/pdf",
       lastModified: Date.now()

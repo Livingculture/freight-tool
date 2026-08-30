@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.34
+// @version      0.1.35
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -747,29 +747,11 @@
   function handleOmniToolbarAction(button) {
     const action = button?.dataset?.action || "";
     if (!/^(cin7|gmail)$/.test(action)) return;
-    const originalLabel = button.textContent;
-    button.textContent = action === "cin7" ? "Copying…" : "Opening…";
-    pendingActionButton = { button, originalLabel };
-
-    if (action === "cin7" && latestHelperDraft) {
-      insertLatestDraft();
-      finishActionButton("Copied");
-      return;
-    }
-    if (action === "gmail" && latestHelperDraft) {
-      openLatestDraftInGmail();
-      finishActionButton("Opened");
-      return;
-    }
-
-    pendingHelperAction = action;
-    if (action === "gmail") pendingGmailWindow = window.open("about:blank", "_blank");
     const frame = document.querySelector(`#${PANEL_ID} iframe`);
-    if (!frame?.contentWindow) {
-      finishActionButton("Try again");
-      return;
-    }
-    frame.contentWindow.postMessage({ type: "LC_OMNI_EMAIL_DRAFT_REQUEST" }, EMAIL_HELPER_URL);
+    frame?.contentWindow?.postMessage({
+      type: "LC_OMNI_EMAIL_ACTION",
+      action
+    }, EMAIL_HELPER_URL);
   }
 
   function finishActionButton(status) {
