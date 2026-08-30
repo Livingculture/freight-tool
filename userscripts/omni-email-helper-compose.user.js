@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.1
+// @version      0.1.2
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -20,6 +20,11 @@
   const BUTTON_ID = "lc-omni-email-helper-compose-button";
   const STYLE_ID = "lc-omni-email-helper-compose-styles";
   const PANEL_ID = "lc-omni-email-helper-panel";
+  const LAYOUT_ID = "lc-omni-email-helper-layout";
+  let composePlaceholder = null;
+  let contactsPlaceholder = null;
+  let composePanel = null;
+  let contactsPanel = null;
   let injectQueued = false;
 
   function applyEmbeddedHelperTheme() {
@@ -81,6 +86,24 @@
       }
     `;
     document.head.appendChild(style);
+
+    document.addEventListener("click", (event) => {
+      const button = event.target.closest?.("#copy-cin7");
+      if (!button) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const subject = document.querySelector("#subject")?.value || "";
+      const text = document.querySelector("#body-output, #body")?.value || "";
+      window.parent.postMessage({
+        type: "LC_EMAIL_HELPER_DRAFT",
+        subject,
+        text,
+        order: document.querySelector("#order")?.value || ""
+      }, "https://go.cin7.com");
+      const label = button.textContent;
+      button.textContent = "Sent to Omni";
+      setTimeout(() => { button.textContent = label; }, 1200);
+    }, true);
   }
 
   if (location.hostname === "living-culture-email-helper.vercel.app") {
@@ -142,17 +165,19 @@
         outline: none !important;
       }
       #${PANEL_ID} {
-        position: fixed !important;
-        inset: 48px 0 0 auto !important;
-        z-index: 2147483646 !important;
+        position: relative !important;
+        z-index: 1 !important;
         display: flex !important;
         flex-direction: column !important;
-        width: min(940px, 62vw) !important;
-        min-width: 720px !important;
-        height: calc(100vh - 48px) !important;
-        border-left: 1px solid #8da9cc !important;
+        width: 100% !important;
+        min-width: 0 !important;
+        height: calc(100vh - 105px) !important;
+        min-height: 720px !important;
+        border: 1px solid #8da9cc !important;
+        border-radius: 6px !important;
+        overflow: hidden !important;
         background: #eef4fb !important;
-        box-shadow: -16px 0 42px rgba(15, 46, 106, 0.24) !important;
+        box-shadow: 0 12px 32px rgba(15, 46, 106, 0.16) !important;
       }
       #${PANEL_ID}[hidden] {
         display: none !important;
@@ -191,10 +216,26 @@
         border: 0 !important;
         background: #eef4fb !important;
       }
-      @media (max-width: 1100px) {
-        #${PANEL_ID} {
-          width: 100vw !important;
-          min-width: 0 !important;
+      #${LAYOUT_ID} {
+        display: grid !important;
+        grid-template-columns: minmax(540px, .95fr) minmax(220px, 280px) minmax(650px, 1.15fr) !important;
+        align-items: start !important;
+        gap: 20px !important;
+        width: calc(100vw - 120px) !important;
+        max-width: 1900px !important;
+        margin: 12px auto 24px !important;
+      }
+      #${LAYOUT_ID} > .lc-omni-compose-column,
+      #${LAYOUT_ID} > .lc-omni-contacts-column {
+        width: 100% !important;
+        max-width: none !important;
+        margin: 0 !important;
+      }
+      @media (max-width: 1450px) {
+        #${LAYOUT_ID} {
+          grid-template-columns: minmax(500px, .9fr) minmax(190px, 230px) minmax(560px, 1fr) !important;
+          gap: 12px !important;
+          width: calc(100vw - 88px) !important;
         }
       }
     `;
@@ -261,10 +302,80 @@
       <iframe title="Living Culture Email Helper" allow="clipboard-write"></iframe>
     `;
     panel.querySelector(".lc-omni-email-helper-close").addEventListener("click", () => {
-      panel.hidden = true;
+      closeEmailHelper();
     });
     document.body.appendChild(panel);
     return panel;
+  }
+
+  function ancestorCandidates(element) {
+    const candidates = [];
+    for (let node = element; node && node !== document.body; node = node.parentElement) {
+      const rect = node.getBoundingClientRect();
+      if (visible(node) && rect.width > 160 && rect.height > 60) candidates.push({ node, rect });
+    }
+    return candidates;
+  }
+
+  function findComposePanel() {
+    const subject = findSubjectField();
+    if (!subject) return null;
+    return ancestorCandidates(subject)
+      .filter(({ node, rect }) => rect.width >= 420 && rect.width <= 1100 && rect.height >= 380)
+      .filter(({ node }) => /\bfrom\b/i.test(node.innerText || "") && /\battachment\b/i.test(node.innerText || ""))
+      .sort((a, b) => a.rect.width * a.rect.height - b.rect.width * b.rect.height)[0]?.node || null;
+  }
+
+  function findContactsPanel() {
+    const heading = Array.from(document.querySelectorAll("div, span, td, th, strong"))
+      .filter(visible)
+      .find((element) => /^contact list$/i.test(clean(element.textContent)));
+    if (!heading) return null;
+    return ancestorCandidates(heading)
+      .filter(({ rect }) => rect.width >= 180 && rect.width <= 650 && rect.height >= 70)
+      .filter(({ node }) => Array.from(node.querySelectorAll("button, input, a")).some((control) => /^(to|cc|bcc)$/i.test(clean(control.textContent || control.value))))
+      .sort((a, b) => a.rect.width * a.rect.height - b.rect.width * b.rect.height)[0]?.node || null;
+  }
+
+  function buildThreeColumnLayout(panel) {
+    if (document.getElementById(LAYOUT_ID)) return true;
+    composePanel = findComposePanel();
+    contactsPanel = findContactsPanel();
+    if (!composePanel || !contactsPanel || composePanel.contains(contactsPanel) || contactsPanel.contains(composePanel)) return false;
+
+    composePlaceholder = document.createComment("LC Omni compose panel position");
+    contactsPlaceholder = document.createComment("LC Omni contacts panel position");
+    composePanel.before(composePlaceholder);
+    contactsPanel.before(contactsPlaceholder);
+
+    const layout = document.createElement("section");
+    layout.id = LAYOUT_ID;
+    composePlaceholder.parentNode.insertBefore(layout, composePlaceholder.nextSibling);
+    composePanel.classList.add("lc-omni-compose-column");
+    contactsPanel.classList.add("lc-omni-contacts-column");
+    layout.append(composePanel, contactsPanel, panel);
+    return true;
+  }
+
+  function closeEmailHelper() {
+    const panel = document.getElementById(PANEL_ID);
+    if (composePlaceholder?.parentNode && composePanel) {
+      composePlaceholder.parentNode.insertBefore(composePanel, composePlaceholder);
+      composePanel.classList.remove("lc-omni-compose-column");
+      composePlaceholder.remove();
+    }
+    if (contactsPlaceholder?.parentNode && contactsPanel) {
+      contactsPlaceholder.parentNode.insertBefore(contactsPanel, contactsPlaceholder);
+      contactsPanel.classList.remove("lc-omni-contacts-column");
+      contactsPlaceholder.remove();
+    }
+    document.getElementById(LAYOUT_ID)?.remove();
+    document.body.appendChild(panel);
+    panel.hidden = true;
+    composePlaceholder = null;
+    contactsPlaceholder = null;
+    composePanel = null;
+    contactsPanel = null;
   }
 
   function openEmailHelper() {
@@ -273,6 +384,7 @@
     const url = helperUrl();
     if (frame.src !== url) frame.src = url;
     panel.hidden = false;
+    buildThreeColumnLayout(panel);
   }
 
   function injectButton() {
