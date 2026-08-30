@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.30
+// @version      0.1.31
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -400,11 +400,7 @@
       if (event.target?.closest?.("button")) queueSubjectUpdate();
     });
 
-    document.addEventListener("click", (event) => {
-      const button = event.target.closest?.("#copy-cin7");
-      if (!button) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
+    const sendDraftToOmni = (button = null) => {
       addCin7NumberToSubject();
       const subject = document.querySelector("#subject-output")?.value || "";
       const text = document.querySelector("#body-output, #body")?.value || "";
@@ -418,17 +414,23 @@
         html,
         order: document.querySelector("#order")?.value || ""
       }, "https://go.cin7.com");
-      const label = button.textContent;
-      button.textContent = "Sent to Omni";
-      setTimeout(() => { button.textContent = label; }, 1200);
-    }, true);
+      if (button) {
+        const label = button.textContent;
+        button.textContent = "Sent to Omni";
+        setTimeout(() => { button.textContent = label; }, 1200);
+      }
+    };
 
     document.addEventListener("click", (event) => {
-      const button = event.target.closest?.("#open-gmail")
-        || Array.from(document.querySelectorAll("button, a")).find((control) => /^open gmail$/i.test(clean(control.textContent)) && control.contains(event.target));
-      if (!button || !omniRecipientEmail) return;
+      const button = event.target.closest?.("#copy-cin7");
+      if (!button) return;
       event.preventDefault();
       event.stopImmediatePropagation();
+      sendDraftToOmni(button);
+    }, true);
+
+    const openGmailCompose = () => {
+      if (!omniRecipientEmail) return false;
       const subject = document.querySelector("#subject-output")?.value || "";
       const body = document.querySelector("#body-output, #body")?.value || "";
       const gmailUrl = new URL("https://mail.google.com/mail/");
@@ -438,6 +440,16 @@
       if (subject) gmailUrl.searchParams.set("su", subject);
       if (body) gmailUrl.searchParams.set("body", body);
       window.open(gmailUrl.toString(), "_blank", "noopener");
+      return true;
+    };
+
+    document.addEventListener("click", (event) => {
+      const button = event.target.closest?.("#open-gmail")
+        || Array.from(document.querySelectorAll("button, a")).find((control) => /^open gmail$/i.test(clean(control.textContent)) && control.contains(event.target));
+      if (!button) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      openGmailCompose();
     }, true);
 
     window.addEventListener("message", (event) => {
@@ -461,12 +473,18 @@
 
     window.addEventListener("message", (event) => {
       if (event.origin !== "https://go.cin7.com" || event.data?.type !== "LC_OMNI_EMAIL_ACTION") return;
+      if (event.data.action === "cin7") {
+        sendDraftToOmni();
+        return;
+      }
+      if (event.data.action === "gmail") {
+        openGmailCompose();
+        return;
+      }
       const selector = {
         copy: "#copy-body",
-        cin7: "#copy-cin7",
-        gmail: "#open-gmail"
       }[event.data.action];
-      document.querySelector(selector)?.click();
+      if (selector) document.querySelector(selector)?.click();
     });
 
     const applyUrlContext = () => {
@@ -699,12 +717,14 @@
       toolbar.addEventListener("click", (event) => {
         const button = event.target.closest("button[data-action]");
         if (!button) return;
+        event.preventDefault();
+        event.stopPropagation();
         const frame = document.querySelector(`#${PANEL_ID} iframe`);
         frame?.contentWindow?.postMessage({
           type: "LC_OMNI_EMAIL_ACTION",
           action: button.dataset.action
         }, EMAIL_HELPER_URL);
-      });
+      }, true);
     }
     positionOmniToolbar(toolbar);
   }
