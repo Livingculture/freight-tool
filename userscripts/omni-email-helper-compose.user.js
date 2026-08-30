@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.10
+// @version      0.1.11
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -281,34 +281,6 @@
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
-      #${BUTTON_ID} {
-        box-sizing: border-box !important;
-        display: inline-flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        min-width: 122px !important;
-        min-height: 36px !important;
-        margin-left: 10px !important;
-        padding: 0 18px !important;
-        border: 1px solid #0b3978 !important;
-        border-radius: 5px !important;
-        background: #0b3978 !important;
-        box-shadow: none !important;
-        color: #fff !important;
-        font: 700 14px Arial, sans-serif !important;
-        line-height: 1 !important;
-        text-decoration: none !important;
-        white-space: nowrap !important;
-        vertical-align: middle !important;
-        cursor: pointer !important;
-      }
-      #${BUTTON_ID}:hover,
-      #${BUTTON_ID}:focus {
-        border-color: #072d62 !important;
-        background: #072d62 !important;
-        color: #fff !important;
-        outline: none !important;
-      }
       #${PANEL_ID} {
         position: relative !important;
         z-index: 1 !important;
@@ -326,32 +298,6 @@
       }
       #${PANEL_ID}[hidden] {
         display: none !important;
-      }
-      #${PANEL_ID} .lc-omni-email-helper-head {
-        flex: 0 0 auto !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: space-between !important;
-        min-height: 54px !important;
-        padding: 0 14px 0 20px !important;
-        background: #0b3978 !important;
-        color: #fff !important;
-        font: 700 18px Arial, sans-serif !important;
-      }
-      #${PANEL_ID} .lc-omni-email-helper-close {
-        display: inline-flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        width: 34px !important;
-        height: 34px !important;
-        min-height: 34px !important;
-        padding: 0 !important;
-        border: 1px solid #bfd0e6 !important;
-        border-radius: 5px !important;
-        background: #eef4fb !important;
-        color: #0b3978 !important;
-        font: 700 22px/1 Arial, sans-serif !important;
-        cursor: pointer !important;
       }
       #${PANEL_ID} iframe {
         flex: 1 1 auto !important;
@@ -498,16 +444,7 @@
     panel.id = PANEL_ID;
     panel.hidden = true;
     panel.setAttribute("aria-label", "Living Culture Email Helper");
-    panel.innerHTML = `
-      <div class="lc-omni-email-helper-head">
-        <span>Living Culture Email Helper</span>
-        <button type="button" class="lc-omni-email-helper-close" aria-label="Close Email Helper">×</button>
-      </div>
-      <iframe title="Living Culture Email Helper" allow="clipboard-write"></iframe>
-    `;
-    panel.querySelector(".lc-omni-email-helper-close").addEventListener("click", () => {
-      closeEmailHelper();
-    });
+    panel.innerHTML = '<iframe title="Living Culture Email Helper" allow="clipboard-write"></iframe>';
     document.body.appendChild(panel);
     return panel;
   }
@@ -595,21 +532,8 @@
 
   function injectButton() {
     injectStyles();
-    if (document.getElementById(BUTTON_ID)) return;
-
-    const anchor = findBackControl();
-    const subject = findSubjectField();
-    if (!anchor && !subject) return;
-
-    const button = document.createElement("button");
-    button.id = BUTTON_ID;
-    button.type = "button";
-    button.textContent = "Email Helper";
-    button.title = "Open Living Culture Email Helper";
-    button.addEventListener("click", openEmailHelper);
-
-    if (anchor) anchor.insertAdjacentElement("afterend", button);
-    else subject.insertAdjacentElement("afterend", button);
+    document.getElementById(BUTTON_ID)?.remove();
+    openEmailHelper();
   }
 
   function editorCandidates() {
@@ -689,7 +613,6 @@
 
   function boot() {
     injectButton();
-    ensurePanel();
     const observer = new MutationObserver(scheduleInject);
     observer.observe(document.body, { childList: true, subtree: true });
   }

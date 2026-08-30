@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture PDF Attachments
 // @namespace    livingculture-omni
-// @version      0.1.0
+// @version      0.1.1
 // @description  Selects Living Culture Google Drive PDFs and loads them into the Cin7 Omni email attachment fields.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -182,10 +182,10 @@
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
-      #${HOST_ID} { position: relative; padding: 8px 12px 0; background: #dce8f6; }
-      #${BUTTON_ID} { min-height: 32px; border: 1px solid #0b3978; border-radius: 5px; background: #fff; color: #0b3978; padding: 0 14px; font: 700 13px Arial,sans-serif; cursor: pointer; }
-      #${BUTTON_ID}:hover { background: #eef4fb; }
-      #${PANEL_ID} { display: none; position: absolute; z-index: 2147483647; top: 46px; left: 12px; width: 390px; max-width: calc(100vw - 48px); border: 1px solid #9eb8d8; border-radius: 7px; background: #fff; box-shadow: 0 14px 36px rgba(15,46,106,.22); color: #172b49; font: 13px Arial,sans-serif; }
+      #${HOST_ID} { position: absolute; z-index: 4; top: 12px; right: 354px; }
+      #${BUTTON_ID} { min-height: 34px; border: 1px solid #0b3978; border-radius: 5px; background: #0b3978; color: #fff; padding: 0 14px; font: 700 13px Arial,sans-serif; cursor: pointer; }
+      #${BUTTON_ID}:hover { background: #072d62; }
+      #${PANEL_ID} { display: none; position: absolute; z-index: 2147483647; top: 42px; right: 0; width: 390px; max-width: calc(100vw - 48px); border: 1px solid #9eb8d8; border-radius: 7px; background: #fff; box-shadow: 0 14px 36px rgba(15,46,106,.22); color: #172b49; font: 13px Arial,sans-serif; }
       #${HOST_ID}.is-open #${PANEL_ID} { display: block; }
       .lc-omni-pdf-summary, .lc-omni-pdf-empty, #lc-omni-pdf-attachments-status { padding: 9px 11px; color: #526987; }
       .lc-omni-pdf-list { max-height: 310px; overflow: auto; border-block: 1px solid #d8e4f2; }
@@ -204,15 +204,14 @@
     injectStyles();
     if (document.getElementById(HOST_ID)) return;
     const helper = document.getElementById("lc-omni-email-helper-panel");
-    const header = helper?.querySelector(".lc-omni-email-helper-head");
-    if (!helper || !header) return;
+    if (!helper) return;
 
     const host = document.createElement("div");
     host.id = HOST_ID;
     host.innerHTML = `
       <button type="button" id="${BUTTON_ID}">PDF Attachments</button>
       <section id="${PANEL_ID}" aria-label="Living Culture PDF Attachments"></section>`;
-    header.insertAdjacentElement("afterend", host);
+    helper.appendChild(host);
     host.querySelector(`#${BUTTON_ID}`).addEventListener("click", () => {
       host.classList.toggle("is-open");
       if (host.classList.contains("is-open") && !state.loaded) loadFiles();
