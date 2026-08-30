@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.9
+// @version      0.1.10
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -90,7 +90,7 @@
     document.head.appendChild(style);
 
     const addCin7NumberToSubject = () => {
-      const subject = document.querySelector("#subject");
+      const subject = document.querySelector("#subject-output");
       const order = clean(document.querySelector("#order")?.value);
       if (!subject || !order) return;
       const escapedOrder = order.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -123,7 +123,7 @@
       event.preventDefault();
       event.stopImmediatePropagation();
       addCin7NumberToSubject();
-      const subject = document.querySelector("#subject")?.value || "";
+      const subject = document.querySelector("#subject-output")?.value || "";
       const text = document.querySelector("#body-output, #body")?.value || "";
       window.parent.postMessage({
         type: "LC_EMAIL_HELPER_DRAFT",
@@ -141,7 +141,7 @@
       const context = event.data.context || {};
       const values = {
         order: context.quoteNumber,
-        first: context.firstName,
+        "first-name": context.firstName,
         product: context.product
       };
       Object.entries(values).forEach(([id, value]) => {
@@ -157,7 +157,7 @@
     const applyUrlContext = () => {
       const values = {
         order: params.get("quote") || "",
-        first: params.get("first") || "",
+        "first-name": params.get("first") || "",
         product: params.get("product") || ""
       };
       Object.entries(values).forEach(([id, value]) => {
