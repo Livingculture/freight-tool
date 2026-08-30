@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.35
+// @version      0.1.36
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -494,6 +494,10 @@
 
     window.addEventListener("message", (event) => {
       if (event.origin !== "https://go.cin7.com") return;
+      if (event.data?.type === "LC_OMNI_EMAIL_DRAFT_PORT" && event.ports?.[0]) {
+        event.ports[0].postMessage(currentDraft());
+        return;
+      }
       if (event.data?.type === "LC_OMNI_EMAIL_DRAFT_REQUEST") {
         broadcastDraftState();
         return;
@@ -748,10 +752,53 @@
     const action = button?.dataset?.action || "";
     if (!/^(cin7|gmail)$/.test(action)) return;
     const frame = document.querySelector(`#${PANEL_ID} iframe`);
-    frame?.contentWindow?.postMessage({
-      type: "LC_OMNI_EMAIL_ACTION",
-      action
-    }, EMAIL_HELPER_URL);
+    if (!frame?.contentWindow) {
+      alert("The Email Helper has not finished loading. Please try again.");
+      return;
+    }
+
+    const originalLabel = button.textContent;
+    button.textContent = action === "cin7" ? "Copying…" : "Opening…";
+    const gmailWindow = action === "gmail" ? window.open("about:blank", "_blank") : null;
+    const channel = new MessageChannel();
+    let answered = false;
+    const finishLabel = (label) => {
+      button.textContent = label;
+      setTimeout(() => { if (button.isConnected) button.textContent = originalLabel; }, 1200);
+    };
+    const timeout = setTimeout(() => {
+      if (answered) return;
+      channel.port1.close();
+      if (gmailWindow && !gmailWindow.closed) gmailWindow.close();
+      finishLabel("Try again");
+      alert("The Email Helper did not answer. Refresh this Omni email page, then try again.");
+    }, 3000);
+
+    channel.port1.onmessage = (messageEvent) => {
+      answered = true;
+      clearTimeout(timeout);
+      channel.port1.close();
+      latestHelperDraft = messageEvent.data || null;
+      if (!latestHelperDraft?.subject && !latestHelperDraft?.text) {
+        if (gmailWindow && !gmailWindow.closed) gmailWindow.close();
+        finishLabel("Try again");
+        alert("The Email Helper returned an empty draft. Refresh the page and try again.");
+        return;
+      }
+      if (action === "cin7") {
+        const inserted = insertLatestDraft();
+        finishLabel(inserted ? "Copied" : "Try again");
+      } else {
+        const opened = openLatestDraftInGmail(gmailWindow);
+        finishLabel(opened ? "Opened" : "Try again");
+      }
+    };
+    channel.port1.start();
+    frame.contentWindow.postMessage(
+      { type: "LC_OMNI_EMAIL_DRAFT_PORT" },
+      EMAIL_HELPER_URL,
+      [channel.port2]
+    );
   }
 
   function finishActionButton(status) {
