@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.29
+// @version      0.1.30
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -361,6 +361,15 @@
     maintainSignatureTools();
     new MutationObserver(maintainSignatureTools).observe(document.body, { childList: true, subtree: true });
 
+    const setNativeValue = (field, value) => {
+      const prototype = Object.getPrototypeOf(field);
+      const ownSetter = Object.getOwnPropertyDescriptor(field, "value")?.set;
+      const prototypeSetter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+      if (prototypeSetter && ownSetter !== prototypeSetter) prototypeSetter.call(field, value);
+      else if (ownSetter) ownSetter.call(field, value);
+      else field.value = value;
+    };
+
     const addCin7NumberToSubject = () => {
       const subject = document.querySelector("#subject-output");
       const order = clean(document.querySelector("#order")?.value);
@@ -371,14 +380,16 @@
         .trim();
       const next = base ? `${base} - ${order}` : order;
       if (subject.value === next) return;
-      subject.value = next;
+      setNativeValue(subject, next);
       subject.dispatchEvent(new Event("input", { bubbles: true }));
       subject.dispatchEvent(new Event("change", { bubbles: true }));
     };
 
-    const queueSubjectUpdate = () => [0, 80, 250, 700].forEach((delay) => {
-      setTimeout(addCin7NumberToSubject, delay);
-    });
+    let subjectUpdateTimers = [];
+    const queueSubjectUpdate = () => {
+      subjectUpdateTimers.forEach(clearTimeout);
+      subjectUpdateTimers = [0, 120, 360].map((delay) => setTimeout(addCin7NumberToSubject, delay));
+    };
     document.addEventListener("input", (event) => {
       if (event.target?.matches?.("#order, #product")) queueSubjectUpdate();
     });
@@ -440,8 +451,8 @@
       };
       Object.entries(values).forEach(([id, value]) => {
         const field = document.getElementById(id);
-        if (!field || !value) return;
-        field.value = value;
+        if (!field || !value || field.value === value) return;
+        setNativeValue(field, value);
         field.dispatchEvent(new Event("input", { bubbles: true }));
         field.dispatchEvent(new Event("change", { bubbles: true }));
       });
@@ -467,7 +478,7 @@
       Object.entries(values).forEach(([id, value]) => {
         const field = document.getElementById(id);
         if (!field || !value || field.value === value) return;
-        field.value = value;
+        setNativeValue(field, value);
         field.dispatchEvent(new Event("input", { bubbles: true }));
         field.dispatchEvent(new Event("change", { bubbles: true }));
       });
