@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.7
+// @version      0.1.8
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -172,17 +172,34 @@
       .filter(visible)
       .filter((element) => clean(element.textContent).replace(/:$/, "").toLowerCase() === wanted);
     const fields = Array.from(document.querySelectorAll("input:not([type='hidden']), textarea, select")).filter(visible);
+    let emptyFallback = null;
     for (const label of labels) {
       const linked = label.htmlFor && document.getElementById(label.htmlFor);
-      if (linked) return linked;
+      if (linked) {
+        if (clean(linked.value)) return linked;
+        emptyFallback ||= linked;
+        continue;
+      }
       const rect = label.getBoundingClientRect();
-      const candidate = fields
+      const candidates = fields
         .map((field) => ({ field, rect: field.getBoundingClientRect() }))
         .filter((item) => item.rect.top >= rect.top - 8 && item.rect.top <= rect.bottom + 32 && item.rect.left >= rect.right - 15)
-        .sort((a, b) => a.rect.left - b.rect.left)[0]?.field;
-      if (candidate) return candidate;
+        .sort((a, b) => a.rect.left - b.rect.left);
+      const populated = candidates.find(({ field }) => clean(field.value))?.field;
+      if (populated) return populated;
+      emptyFallback ||= candidates[0]?.field || null;
     }
-    return null;
+    return emptyFallback;
+  }
+
+  function customerFirstNameFromQuote() {
+    const direct = clean(fieldNearLabel("First Name")?.value);
+    if (direct) return direct.split(/\s+/)[0];
+
+    const selected = clean(fieldNearLabel("Selected Customer")?.value)
+      .replace(/^[-–—\s]+/, "")
+      .replace(/\s+[-–—]\s+/g, " ");
+    return selected.split(/\s+/).find(Boolean) || "";
   }
 
   function productNamesFromQuote() {
@@ -205,7 +222,7 @@
   function captureQuoteContext() {
     const pageText = clean(document.body?.innerText);
     const quoteNumber = pageText.match(/\b(?:SFOR|NZSO)[- ]?\d+(?:-\d+)?\b/i)?.[0]?.replace(/\s+/g, "") || "";
-    const firstName = clean(fieldNearLabel("First Name")?.value);
+    const firstName = customerFirstNameFromQuote();
     const products = productNamesFromQuote();
     if (!firstName && !quoteNumber && !products.length) return;
     localStorage.setItem(CONTEXT_KEY, JSON.stringify({
