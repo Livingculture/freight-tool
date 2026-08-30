@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.5
+// @version      0.1.6
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -123,6 +123,22 @@
         field.dispatchEvent(new Event("change", { bubbles: true }));
       });
     });
+
+    const applyUrlContext = () => {
+      const values = {
+        order: params.get("quote") || "",
+        first: params.get("first") || "",
+        product: params.get("product") || ""
+      };
+      Object.entries(values).forEach(([id, value]) => {
+        const field = document.getElementById(id);
+        if (!field || !value || field.value === value) return;
+        field.value = value;
+        field.dispatchEvent(new Event("input", { bubbles: true }));
+        field.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+    };
+    [0, 400, 1100, 2400].forEach((delay) => setTimeout(applyUrlContext, delay));
   }
 
   if (location.hostname === "living-culture-email-helper.vercel.app") {
@@ -365,6 +381,10 @@
     const url = new URL(EMAIL_HELPER_URL);
     const order = extractOrderNumber();
     if (order) url.searchParams.set("order", order);
+    const context = emailPageContext();
+    if (context.quoteNumber) url.searchParams.set("quote", context.quoteNumber);
+    if (context.firstName) url.searchParams.set("first", context.firstName);
+    if (context.product) url.searchParams.set("product", context.product);
     url.searchParams.set("theme", "omni");
     url.searchParams.set("embedded", "1");
     return url.toString();
@@ -377,14 +397,22 @@
     } catch {
       saved = {};
     }
-    const to = clean(fieldNearLabel("To")?.value);
+    const directTo = Array.from(document.querySelectorAll("input:not([type='hidden']), textarea"))
+      .find((field) => /(^|[_$-])to([_$-]|$)/i.test(`${field.id} ${field.name}`) && clean(field.value));
+    const addressField = directTo || Array.from(document.querySelectorAll("input:not([type='hidden']), textarea"))
+      .find((field) => /<[^>]+@[^>]+>/.test(clean(field.value)));
+    const to = clean(addressField?.value || fieldNearLabel("To")?.value);
     const subject = clean(findSubjectField()?.value);
     const displayName = clean(to.replace(/<[^>]+>/g, "").replace(/[,;]+$/, ""));
+    const greetingName = editorCandidates()
+      .map(({ element }) => clean(element.innerText || element.textContent))
+      .map((text) => text.match(/\bHi\s+([^,\n]{1,50}),/i)?.[1] || "")
+      .find(Boolean) || "";
     const subjectQuote = subject.match(/\b(?:SFOR|NZSO)[- ]?\d+(?:-\d+)?\b/i)?.[0]?.replace(/\s+/g, "") || "";
     const sameQuote = !saved.quoteNumber || !subjectQuote
       || saved.quoteNumber.replace(/\D/g, "") === subjectQuote.replace(/\D/g, "");
     return {
-      firstName: (sameQuote && saved.firstName) || displayName.split(/\s+/)[0] || "",
+      firstName: (sameQuote && saved.firstName) || displayName.split(/\s+/)[0] || greetingName.split(/\s+/)[0] || "",
       quoteNumber: subjectQuote || saved.quoteNumber || "",
       product: sameQuote ? saved.product || "" : ""
     };
