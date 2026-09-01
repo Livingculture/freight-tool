@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture PDF Attachments
 // @namespace    livingculture-omni
-// @version      0.4.2
+// @version      0.4.3
 // @description  Selects Living Culture Google Drive PDFs and loads them into the Cin7 Omni email attachment fields.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -525,8 +525,11 @@
     });
     document.addEventListener("click", (event) => {
       if (!host.isConnected) return;
-      const insideOpenPanel = event.target.closest?.(`#${PANEL_ID}, #${DRAWINGS_PANEL_ID}`);
-      const onLaunchButton = event.target.closest?.(`#${BUTTON_ID}, #${DRAWINGS_BUTTON_ID}`);
+      const path = typeof event.composedPath === "function" ? event.composedPath() : [];
+      const insideOpenPanel = path.includes(host.querySelector(`#${PANEL_ID}`))
+        || path.includes(host.querySelector(`#${DRAWINGS_PANEL_ID}`));
+      const onLaunchButton = path.includes(host.querySelector(`#${BUTTON_ID}`))
+        || path.includes(host.querySelector(`#${DRAWINGS_BUTTON_ID}`));
       if (!insideOpenPanel && !onLaunchButton) host.classList.remove("is-care-open", "is-drawings-open");
     });
     render();
