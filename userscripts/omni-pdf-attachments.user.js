@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture PDF Attachments
 // @namespace    livingculture-omni
-// @version      0.4.5
+// @version      0.4.6
 // @description  Selects Living Culture Google Drive PDFs and loads them into the Cin7 Omni email attachment fields.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -10,6 +10,8 @@
 // @connect      cin7-pdf-attachments.vercel.app
 // @connect      drive.google.com
 // @connect      drive.usercontent.google.com
+// @connect      github.com
+// @connect      release-assets.githubusercontent.com
 // @run-at       document-idle
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-pdf-attachments.user.js
 // @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-pdf-attachments.user.js
@@ -32,6 +34,7 @@
   const CACHE_KEY = "lc-omni-pdf-files-v1";
   const CACHE_MAX_AGE = 5 * 60 * 1000;
   const DRAWINGS_ROOT_ID = "1Tcxn7LceZztaoWUmgsNZgml18s2LZORj";
+  const OPTIMIZED_CARE_BASE = "https://github.com/Livingculture/freight-tool/releases/download/care-guides-email-v1";
   const DRIVE_FOLDER_MIME = "application/vnd.google-apps.folder";
   const state = { files: [], selected: new Set(), loaded: false, loadingList: false, preparing: false, busy: false, status: "", statusError: false };
   const drawingState = { levels: [], selected: new Set(), loaded: false, loading: false, preparing: false, busy: false, status: "", statusError: false };
@@ -240,6 +243,15 @@
   }
 
   async function downloadCareGuide(file) {
+    try {
+      const optimized = await request(`${OPTIMIZED_CARE_BASE}/${encodeURIComponent(file.id)}.pdf`, { responseType: "arraybuffer" });
+      return new File([optimized.response], clean(file.name) || "Living Culture document.pdf", {
+        type: "application/pdf",
+        lastModified: Date.now()
+      });
+    } catch (_) {
+      // Fall back to the original attachment service if an optimised copy is unavailable.
+    }
     const options = { responseType: "arraybuffer", headers: { "x-lc-token": TOOL_TOKEN } };
     let response;
     try {
