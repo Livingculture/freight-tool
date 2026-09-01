@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture PDF Attachments
 // @namespace    livingculture-omni
-// @version      0.4.0
+// @version      0.4.1
 // @description  Selects Living Culture Google Drive PDFs and loads them into the Cin7 Omni email attachment fields.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -430,7 +430,25 @@
       .lc-omni-drawing-selectors { display: grid; gap: 8px; padding: 0 11px 11px; }
       .lc-omni-drawing-file-choice { padding: 11px; }
       .lc-omni-drawing-select { display: grid; grid-template-columns: 68px minmax(0,1fr); gap: 8px; align-items: center; color: #294467; font-weight: 700; }
-      .lc-omni-drawing-select select { min-width: 0; min-height: 34px; border: 1px solid #9eb8d8; border-radius: 5px; background: #fff; color: #172b49; padding: 0 8px; }
+      .lc-omni-drawing-select select {
+        appearance: none;
+        -webkit-appearance: none;
+        min-width: 0;
+        min-height: 38px;
+        border: 1px solid #8da9cc;
+        border-radius: 5px;
+        background-color: #fff;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5l5-5' fill='none' stroke='%230b3978' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 11px center;
+        color: #172b49;
+        padding: 0 34px 0 11px;
+        font: 600 13px Arial, sans-serif;
+        cursor: pointer;
+        outline: none;
+      }
+      .lc-omni-drawing-select select:hover { border-color: #517daf; }
+      .lc-omni-drawing-select select:focus { border-color: #0b3978; box-shadow: 0 0 0 2px rgba(11,57,120,.14); }
       .lc-omni-pdf-row { display: grid; grid-template-columns: 22px minmax(0,1fr); gap: 7px; align-items: center; padding: 8px 11px; border-bottom: 1px solid #e4edf7; cursor: pointer; }
       .lc-omni-pdf-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .lc-omni-pdf-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 9px 11px; }
@@ -467,6 +485,12 @@
       host.classList.toggle("is-drawings-open");
       if (host.classList.contains("is-drawings-open") && !drawingState.loaded && !drawingState.loading) loadDrawingLevel(DRAWINGS_ROOT_ID, 0);
       else renderDrawings();
+    });
+    document.addEventListener("click", (event) => {
+      if (!host.isConnected) return;
+      const insideOpenPanel = event.target.closest?.(`#${PANEL_ID}, #${DRAWINGS_PANEL_ID}`);
+      const onLaunchButton = event.target.closest?.(`#${BUTTON_ID}, #${DRAWINGS_BUTTON_ID}`);
+      if (!insideOpenPanel && !onLaunchButton) host.classList.remove("is-care-open", "is-drawings-open");
     });
     render();
     renderDrawings();
