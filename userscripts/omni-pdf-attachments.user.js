@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture PDF Attachments
 // @namespace    livingculture-omni
-// @version      0.4.4
+// @version      0.4.5
 // @description  Selects Living Culture Google Drive PDFs and loads them into the Cin7 Omni email attachment fields.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -412,10 +412,12 @@
     panel.querySelector('[data-action="add"]')?.addEventListener("click", addSelected);
   }
 
-  function drawingLevelLabel(index) {
+  function drawingLevelLabel(index, folders = []) {
     if (index === 0) return "Pergola";
     if (index === 1) return "Type";
-    if (index === 2) return "Size";
+    if (folders.length && folders.every((folder) => /\b(manual|motorised|motorized)\b/i.test(folder.name))) return "Operation";
+    if (folders.length && folders.every((folder) => /\d+(?:\.\d+)?\s*[x×]\s*\d/i.test(folder.name))) return "Size";
+    if (index === 2) return "Type";
     return "Folder";
   }
 
@@ -443,23 +445,26 @@
     if (launchButton) launchButton.innerHTML = drawingState.loading && !drawingState.loaded
       ? '<span class="lc-omni-pdf-spinner" aria-hidden="true"></span> Loading Drawings…'
       : "Drawings";
-    const selectors = drawingState.levels.map((level, index) => level.folders.length
+    const selectors = drawingState.levels.map((level, index) => {
+      const label = drawingLevelLabel(index, level.folders);
+      return level.folders.length
       ? customDropdown({
-          label: drawingLevelLabel(index),
-          placeholder: `Select ${drawingLevelLabel(index).toLowerCase()}…`,
+          label,
+          placeholder: `Select ${label.toLowerCase()}…`,
           options: level.folders,
           value: level.selectedFolderId,
           level: index
         })
-      : "").join("");
+      : "";
+    }).join("");
     const files = currentDrawingFiles();
     const selectedDrawingId = Array.from(drawingState.selected)[0] || "";
     const rows = drawingState.loading
       ? '<div class="lc-omni-pdf-loading"><span class="lc-omni-pdf-spinner" aria-hidden="true"></span><span>Loading folder…</span></div>'
       : files.length
         ? `<div class="lc-omni-drawing-file-choice">${customDropdown({
-            label: "Drawing",
-            placeholder: "Select size / drawing…",
+            label: "Size",
+            placeholder: "Select size…",
             options: files.map((file) => ({ ...file, name: file.name.replace(/\.pdf$/i, "") })),
             value: selectedDrawingId,
             file: true
