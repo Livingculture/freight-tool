@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture PDF Attachments
 // @namespace    livingculture-omni
-// @version      0.4.1
+// @version      0.4.2
 // @description  Selects Living Culture Google Drive PDFs and loads them into the Cin7 Omni email attachment fields.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -358,6 +358,23 @@
     return "Folder";
   }
 
+  function customDropdown({ label, placeholder, options, value, level, file = false }) {
+    const selected = options.find((option) => option.id === value);
+    return `
+      <div class="lc-omni-drawing-select">
+        <span>${escapeHtml(label)}</span>
+        <div class="lc-omni-custom-select" ${file ? "data-file-select" : `data-level-select="${level}"`}>
+          <button type="button" class="lc-omni-select-trigger" aria-haspopup="listbox" aria-expanded="false">
+            <span>${escapeHtml(selected?.name || placeholder)}</span><i aria-hidden="true"></i>
+          </button>
+          <div class="lc-omni-select-menu" role="listbox">
+            <button type="button" class="lc-omni-select-option${value ? "" : " is-selected"}" data-value="" role="option">${escapeHtml(placeholder)}</button>
+            ${options.map((option) => `<button type="button" class="lc-omni-select-option${value === option.id ? " is-selected" : ""}" data-value="${escapeHtml(option.id)}" role="option">${escapeHtml(option.name)}</button>`).join("")}
+          </div>
+        </div>
+      </div>`;
+  }
+
   function renderDrawings() {
     const panel = document.getElementById(DRAWINGS_PANEL_ID);
     if (!panel) return;
@@ -365,28 +382,27 @@
     if (launchButton) launchButton.innerHTML = drawingState.loading && !drawingState.loaded
       ? '<span class="lc-omni-pdf-spinner" aria-hidden="true"></span> Loading Drawings…'
       : "Drawings";
-    const selectors = drawingState.levels.map((level, index) => level.folders.length ? `
-      <label class="lc-omni-drawing-select">
-        <span>${drawingLevelLabel(index)}</span>
-        <select data-level="${index}" ${drawingState.loading ? "disabled" : ""}>
-          <option value="">Select ${drawingLevelLabel(index).toLowerCase()}…</option>
-          ${level.folders.map((folder) => `<option value="${escapeHtml(folder.id)}" ${level.selectedFolderId === folder.id ? "selected" : ""}>${escapeHtml(folder.name)}</option>`).join("")}
-        </select>
-      </label>` : "").join("");
+    const selectors = drawingState.levels.map((level, index) => level.folders.length
+      ? customDropdown({
+          label: drawingLevelLabel(index),
+          placeholder: `Select ${drawingLevelLabel(index).toLowerCase()}…`,
+          options: level.folders,
+          value: level.selectedFolderId,
+          level: index
+        })
+      : "").join("");
     const files = currentDrawingFiles();
     const selectedDrawingId = Array.from(drawingState.selected)[0] || "";
     const rows = drawingState.loading
       ? '<div class="lc-omni-pdf-loading"><span class="lc-omni-pdf-spinner" aria-hidden="true"></span><span>Loading folder…</span></div>'
       : files.length
-        ? `<div class="lc-omni-drawing-file-choice">
-            <label class="lc-omni-drawing-select">
-              <span>Drawing</span>
-              <select data-drawing-file>
-                <option value="">Select size / drawing…</option>
-                ${files.map((file) => `<option value="${escapeHtml(file.id)}" ${selectedDrawingId === file.id ? "selected" : ""}>${escapeHtml(file.name.replace(/\.pdf$/i, ""))}</option>`).join("")}
-              </select>
-            </label>
-          </div>`
+        ? `<div class="lc-omni-drawing-file-choice">${customDropdown({
+            label: "Drawing",
+            placeholder: "Select size / drawing…",
+            options: files.map((file) => ({ ...file, name: file.name.replace(/\.pdf$/i, "") })),
+            value: selectedDrawingId,
+            file: true
+          })}</div>`
         : drawingState.loaded && !drawingState.levels.at(-1)?.folders.length
           ? '<div class="lc-omni-pdf-empty">No PDF drawings found in this folder.</div>'
           : '<div class="lc-omni-pdf-empty">Choose each folder to find its drawings.</div>';
@@ -399,13 +415,30 @@
         <button type="button" data-action="drawing-add" ${drawingState.busy || drawingState.loading || !drawingState.selected.size ? "disabled" : ""}>Add to email</button>
       </div>
       <div id="lc-omni-drawings-status" class="${drawingState.statusError ? "is-error" : ""}">${escapeHtml(drawingState.status)}</div>`;
-    panel.querySelectorAll("select[data-level]").forEach((select) => {
-      select.addEventListener("change", () => chooseDrawingFolder(Number(select.dataset.level), select.value));
+    panel.querySelectorAll(".lc-omni-select-trigger").forEach((button) => {
+      button.addEventListener("click", () => {
+        const select = button.closest(".lc-omni-custom-select");
+        const opening = !select.classList.contains("is-open");
+        panel.querySelectorAll(".lc-omni-custom-select.is-open").forEach((other) => {
+          other.classList.remove("is-open");
+          other.querySelector(".lc-omni-select-trigger")?.setAttribute("aria-expanded", "false");
+        });
+        select.classList.toggle("is-open", opening);
+        button.setAttribute("aria-expanded", String(opening));
+      });
     });
-    panel.querySelector("select[data-drawing-file]")?.addEventListener("change", (event) => {
-      drawingState.selected.clear();
-      if (event.target.value) drawingState.selected.add(event.target.value);
-      renderDrawings();
+    panel.querySelectorAll(".lc-omni-select-option").forEach((option) => {
+      option.addEventListener("click", () => {
+        const select = option.closest(".lc-omni-custom-select");
+        const value = option.dataset.value || "";
+        if (select.hasAttribute("data-file-select")) {
+          drawingState.selected.clear();
+          if (value) drawingState.selected.add(value);
+          renderDrawings();
+          return;
+        }
+        chooseDrawingFolder(Number(select.dataset.levelSelect), value);
+      });
     });
     panel.querySelector('[data-action="drawing-refresh"]')?.addEventListener("click", () => loadDrawingLevel(DRAWINGS_ROOT_ID, 0));
     panel.querySelector('[data-action="drawing-add"]')?.addEventListener("click", addSelectedDrawings);
@@ -427,28 +460,32 @@
       .lc-omni-pdf-spinner { width: 14px; height: 14px; flex: 0 0 14px; border: 2px solid #c6d7ea; border-top-color: #0b3978; border-radius: 50%; animation: lc-omni-pdf-spin .75s linear infinite; }
       @keyframes lc-omni-pdf-spin { to { transform: rotate(360deg); } }
       .lc-omni-pdf-list { max-height: 310px; overflow: auto; border-block: 1px solid #d8e4f2; }
+      #${DRAWINGS_PANEL_ID} .lc-omni-pdf-list { overflow: visible; }
       .lc-omni-drawing-selectors { display: grid; gap: 8px; padding: 0 11px 11px; }
       .lc-omni-drawing-file-choice { padding: 11px; }
       .lc-omni-drawing-select { display: grid; grid-template-columns: 68px minmax(0,1fr); gap: 8px; align-items: center; color: #294467; font-weight: 700; }
-      .lc-omni-drawing-select select {
-        appearance: none;
-        -webkit-appearance: none;
-        min-width: 0;
-        min-height: 38px;
-        border: 1px solid #8da9cc;
-        border-radius: 5px;
-        background-color: #fff;
-        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5l5-5' fill='none' stroke='%230b3978' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-        background-repeat: no-repeat;
-        background-position: right 11px center;
-        color: #172b49;
-        padding: 0 34px 0 11px;
-        font: 600 13px Arial, sans-serif;
-        cursor: pointer;
-        outline: none;
+      .lc-omni-custom-select { position: relative; min-width: 0; }
+      .lc-omni-select-trigger {
+        width: 100%; min-height: 38px; display: grid; grid-template-columns: minmax(0,1fr) 14px; gap: 8px; align-items: center;
+        border: 1px solid #8da9cc; border-radius: 5px; background: #fff; color: #172b49; padding: 0 11px;
+        font: 600 13px Arial,sans-serif; text-align: left; cursor: pointer;
       }
-      .lc-omni-drawing-select select:hover { border-color: #517daf; }
-      .lc-omni-drawing-select select:focus { border-color: #0b3978; box-shadow: 0 0 0 2px rgba(11,57,120,.14); }
+      .lc-omni-select-trigger span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .lc-omni-select-trigger i { width: 8px; height: 8px; border-right: 2px solid #0b3978; border-bottom: 2px solid #0b3978; transform: rotate(45deg) translateY(-2px); justify-self: center; }
+      .lc-omni-select-trigger:hover { border-color: #517daf; background: #f7faff; }
+      .lc-omni-custom-select.is-open .lc-omni-select-trigger { border-color: #0b3978; box-shadow: 0 0 0 2px rgba(11,57,120,.14); }
+      .lc-omni-custom-select.is-open .lc-omni-select-trigger i { transform: rotate(225deg) translate(-1px,-1px); }
+      .lc-omni-select-menu {
+        display: none; position: absolute; z-index: 2147483647; top: calc(100% + 4px); left: 0; right: 0; max-height: 260px; overflow-y: auto;
+        padding: 4px; border: 1px solid #8da9cc; border-radius: 6px; background: #fff; box-shadow: 0 10px 24px rgba(15,46,106,.2);
+      }
+      .lc-omni-custom-select.is-open .lc-omni-select-menu { display: grid; }
+      .lc-omni-select-option {
+        min-height: 34px; border: 0; border-radius: 4px; background: #fff; color: #172b49; padding: 7px 9px;
+        font: 600 12px Arial,sans-serif; text-align: left; cursor: pointer;
+      }
+      .lc-omni-select-option:hover { background: #e6eef8; color: #0b3978; }
+      .lc-omni-select-option.is-selected { background: #0b3978; color: #fff; }
       .lc-omni-pdf-row { display: grid; grid-template-columns: 22px minmax(0,1fr); gap: 7px; align-items: center; padding: 8px 11px; border-bottom: 1px solid #e4edf7; cursor: pointer; }
       .lc-omni-pdf-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .lc-omni-pdf-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 9px 11px; }
