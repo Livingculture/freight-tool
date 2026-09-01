@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture PDF Attachments
 // @namespace    livingculture-omni
-// @version      0.4.3
+// @version      0.4.4
 // @description  Selects Living Culture Google Drive PDFs and loads them into the Cin7 Omni email attachment fields.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -33,8 +33,9 @@
   const CACHE_MAX_AGE = 5 * 60 * 1000;
   const DRAWINGS_ROOT_ID = "1Tcxn7LceZztaoWUmgsNZgml18s2LZORj";
   const DRIVE_FOLDER_MIME = "application/vnd.google-apps.folder";
-  const state = { files: [], selected: new Set(), loaded: false, loadingList: false, busy: false, status: "", statusError: false };
-  const drawingState = { levels: [], selected: new Set(), loaded: false, loading: false, busy: false, status: "", statusError: false };
+  const state = { files: [], selected: new Set(), loaded: false, loadingList: false, preparing: false, busy: false, status: "", statusError: false };
+  const drawingState = { levels: [], selected: new Set(), loaded: false, loading: false, preparing: false, busy: false, status: "", statusError: false };
+  const downloadCache = new Map();
   let injectQueued = false;
 
   function clean(value) {
@@ -194,7 +195,9 @@
     state.statusError = error;
     const status = document.querySelector("#lc-omni-pdf-attachments-status");
     if (!status) return;
-    status.textContent = message;
+    const text = status.querySelector("span:last-child");
+    if (text) text.textContent = message;
+    else status.textContent = message;
     status.classList.toggle("is-error", error);
   }
 
@@ -210,16 +213,33 @@
     return currentDrawingFiles().filter((file) => drawingState.selected.has(file.id));
   }
 
+  function cachedDownload(key, factory) {
+    if (!downloadCache.has(key)) {
+      const promise = Promise.resolve().then(factory).catch((error) => {
+        downloadCache.delete(key);
+        throw error;
+      });
+      downloadCache.set(key, promise);
+    }
+    return downloadCache.get(key);
+  }
+
   function setDrawingStatus(message, error = false) {
     drawingState.status = message;
     drawingState.statusError = error;
     const status = document.querySelector("#lc-omni-drawings-status");
     if (!status) return;
-    status.textContent = message;
+    const text = status.querySelector("span:last-child");
+    if (text) text.textContent = message;
+    else status.textContent = message;
     status.classList.toggle("is-error", error);
   }
 
   async function downloadFile(file) {
+    return cachedDownload(`care:${file.id}`, () => downloadCareGuide(file));
+  }
+
+  async function downloadCareGuide(file) {
     const options = { responseType: "arraybuffer", headers: { "x-lc-token": TOOL_TOKEN } };
     let response;
     try {
@@ -243,11 +263,51 @@
   }
 
   async function downloadDrawing(file) {
-    const response = await request(file.downloadUrl, { responseType: "arraybuffer" });
-    return new File([response.response], clean(file.name) || "Living Culture drawing.pdf", {
-      type: "application/pdf",
-      lastModified: Date.now()
+    return cachedDownload(`drawing:${file.id}`, async () => {
+      const response = await request(file.downloadUrl, { responseType: "arraybuffer" });
+      return new File([response.response], clean(file.name) || "Living Culture drawing.pdf", {
+        type: "application/pdf",
+        lastModified: Date.now()
+      });
     });
+  }
+
+  async function prepareCareGuides() {
+    const files = selectedFiles();
+    if (!files.length) return;
+    state.preparing = true;
+    state.status = "Preparing selected Care Guides…";
+    state.statusError = false;
+    render();
+    try {
+      await Promise.all(files.map(downloadFile));
+      state.status = "Selected Care Guides are ready to add.";
+    } catch (error) {
+      state.status = error.message;
+      state.statusError = true;
+    } finally {
+      state.preparing = false;
+      render();
+    }
+  }
+
+  async function prepareDrawing() {
+    const files = selectedDrawingFiles();
+    if (!files.length) return;
+    drawingState.preparing = true;
+    drawingState.status = "Preparing selected drawing…";
+    drawingState.statusError = false;
+    renderDrawings();
+    try {
+      await Promise.all(files.map(downloadDrawing));
+      drawingState.status = "Selected drawing is ready to add.";
+    } catch (error) {
+      drawingState.status = error.message;
+      drawingState.statusError = true;
+    } finally {
+      drawingState.preparing = false;
+      renderDrawings();
+    }
   }
 
   function assignFile(input, file) {
@@ -336,15 +396,16 @@
       <div class="lc-omni-pdf-list">${rows}</div>
       <div class="lc-omni-pdf-actions">
         <button type="button" data-action="refresh" ${state.loadingList ? "disabled" : ""}>${state.loadingList ? "Refreshing…" : "Refresh"}</button>
-        <button type="button" data-action="add" ${state.busy || state.loadingList || !state.selected.size ? "disabled" : ""}>Add to email</button>
+        <button type="button" data-action="add" ${state.busy || state.loadingList || !state.selected.size ? "disabled" : ""}>${state.busy ? '<span class="lc-omni-pdf-spinner" aria-hidden="true"></span> Adding…' : "Add to email"}</button>
       </div>
-      <div id="lc-omni-pdf-attachments-status" class="${state.statusError ? "is-error" : ""}">${escapeHtml(state.status)}</div>`;
+      <div id="lc-omni-pdf-attachments-status" class="${state.statusError ? "is-error" : ""}">${state.preparing || state.busy ? '<span class="lc-omni-pdf-spinner" aria-hidden="true"></span>' : ""}<span>${escapeHtml(state.status)}</span></div>`;
 
     panel.querySelectorAll("input[type='checkbox']").forEach((input) => {
       input.addEventListener("change", () => {
         if (input.checked) state.selected.add(input.value);
         else state.selected.delete(input.value);
         render();
+        if (input.checked) prepareCareGuides();
       });
     });
     panel.querySelector('[data-action="refresh"]')?.addEventListener("click", loadFiles);
@@ -412,9 +473,9 @@
       <div class="lc-omni-pdf-list">${rows}</div>
       <div class="lc-omni-pdf-actions">
         <button type="button" data-action="drawing-refresh" ${drawingState.loading ? "disabled" : ""}>Refresh</button>
-        <button type="button" data-action="drawing-add" ${drawingState.busy || drawingState.loading || !drawingState.selected.size ? "disabled" : ""}>Add to email</button>
+        <button type="button" data-action="drawing-add" ${drawingState.busy || drawingState.loading || !drawingState.selected.size ? "disabled" : ""}>${drawingState.busy ? '<span class="lc-omni-pdf-spinner" aria-hidden="true"></span> Adding…' : "Add to email"}</button>
       </div>
-      <div id="lc-omni-drawings-status" class="${drawingState.statusError ? "is-error" : ""}">${escapeHtml(drawingState.status)}</div>`;
+      <div id="lc-omni-drawings-status" class="${drawingState.statusError ? "is-error" : ""}">${drawingState.preparing || drawingState.busy ? '<span class="lc-omni-pdf-spinner" aria-hidden="true"></span>' : ""}<span>${escapeHtml(drawingState.status)}</span></div>`;
     panel.querySelectorAll(".lc-omni-select-trigger").forEach((button) => {
       button.addEventListener("click", () => {
         const select = button.closest(".lc-omni-custom-select");
@@ -435,6 +496,7 @@
           drawingState.selected.clear();
           if (value) drawingState.selected.add(value);
           renderDrawings();
+          if (value) prepareDrawing();
           return;
         }
         chooseDrawingFolder(Number(select.dataset.levelSelect), value);
@@ -456,6 +518,8 @@
       #${DRAWINGS_PANEL_ID} { top: 96px; }
       #${HOST_ID}.is-care-open #${PANEL_ID}, #${HOST_ID}.is-drawings-open #${DRAWINGS_PANEL_ID} { display: block; }
       .lc-omni-pdf-summary, .lc-omni-pdf-empty, #lc-omni-pdf-attachments-status, #lc-omni-drawings-status { padding: 9px 11px; color: #526987; }
+      #lc-omni-pdf-attachments-status, #lc-omni-drawings-status { display: flex; align-items: center; gap: 8px; min-height: 18px; }
+      .lc-omni-pdf-actions button .lc-omni-pdf-spinner { display: inline-block; margin-right: 6px; vertical-align: -2px; border-color: rgba(255,255,255,.45); border-top-color: #fff; }
       .lc-omni-pdf-loading { min-height: 76px; display: flex; align-items: center; justify-content: center; gap: 9px; color: #365a87; font-weight: 700; }
       .lc-omni-pdf-spinner { width: 14px; height: 14px; flex: 0 0 14px; border: 2px solid #c6d7ea; border-top-color: #0b3978; border-radius: 50%; animation: lc-omni-pdf-spin .75s linear infinite; }
       @keyframes lc-omni-pdf-spin { to { transform: rotate(360deg); } }
