@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Living Culture Drawings
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.1
+// @version      0.1.2
 // @description  Selects Living Culture pergola drawings from Google Drive and attaches them to Gmail drafts.
 // @author       Living Culture
 // @match        https://mail.google.com/*
@@ -224,7 +224,7 @@
   function ensurePanel() {
     let panel = document.getElementById(PANEL_ID);
     if (!panel) {
-      panel = document.createElement("section");
+      panel = document.createElement("div");
       panel.id = PANEL_ID;
       document.body.appendChild(panel);
     }
@@ -244,12 +244,12 @@
       options: files.map((file) => ({ ...file, name: file.name.replace(/\.pdf$/i, "") })),
       value: state.selected, file: true
     }) : "";
-    panel.innerHTML = `<header><strong>Living Culture Drawings</strong><button type="button" data-close aria-label="Close">×</button></header>
+    panel.innerHTML = `<div class="lc-gd-head"><strong>Living Culture Drawings</strong><button type="button" data-close aria-label="Close">×</button></div>
       <div class="lc-gd-content">
         ${state.loading && !state.loaded ? '<div class="lc-gd-loading"><i></i> Loading drawings…</div>' : `${selectors}${fileSelector}`}
       </div>
-      <footer><div class="lc-gd-status ${state.error ? "error" : ""}">${state.loading || state.preparing || state.busy ? "<i></i>" : ""}<span>${escapeHtml(state.status)}</span></div>
-      <button type="button" data-attach ${state.busy || !state.selected ? "disabled" : ""}>${state.busy ? "Attaching…" : "Attach to Gmail"}</button></footer>`;
+      <div class="lc-gd-footer"><div class="lc-gd-status ${state.error ? "error" : ""}">${state.loading || state.preparing || state.busy ? "<i></i>" : ""}<span>${escapeHtml(state.status)}</span></div>
+      <button type="button" data-attach ${state.busy || !state.selected ? "disabled" : ""}>${state.busy ? "Attaching…" : "Attach to Gmail"}</button></div>`;
     panel.querySelector("[data-close]")?.addEventListener("click", closePanel);
     panel.querySelectorAll(".lc-gd-trigger").forEach((trigger) => trigger.addEventListener("click", () => {
       const select = trigger.closest(".lc-gd-select");
@@ -273,7 +273,7 @@
   function openPanel() {
     state.open = true;
     const panel = ensurePanel();
-    panel.style.display = "block";
+    panel.style.setProperty("display", "block", "important");
     render();
     if (!state.loaded) loadLevel(ROOT_FOLDER_ID, 0);
   }
@@ -281,7 +281,7 @@
   function closePanel() {
     state.open = false;
     const panel = document.getElementById(PANEL_ID);
-    if (panel) panel.style.display = "none";
+    if (panel) panel.style.setProperty("display", "none", "important");
   }
 
   function injectStyles() {
@@ -290,18 +290,18 @@
     style.id = STYLE_ID;
     style.textContent = `
       #${BUTTON_ID}{position:fixed;z-index:2147483646;display:none;height:28px;border:1px solid #0d6f78;border-radius:15px;background:#fff;color:#0d6f78;padding:0 11px;font:700 12px Arial,sans-serif;cursor:pointer;box-shadow:0 4px 12px rgba(20,31,38,.18)}
-      #${PANEL_ID}{display:none;position:fixed;z-index:2147483647;top:50%;left:50%;transform:translate(-50%,-50%);width:430px;max-width:calc(100vw - 30px);border:1px solid #abc9c6;border-radius:9px;background:#fff;box-shadow:0 18px 45px rgba(20,45,48,.28);color:#18343a;font:13px Arial,sans-serif}
-      #${PANEL_ID} header{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid #dce9e7;background:#0d6f78;color:#fff;border-radius:8px 8px 0 0;font-size:15px}
-      #${PANEL_ID} header button{border:0;background:transparent;color:#fff;font:700 22px Arial;cursor:pointer}
-      .lc-gd-content{display:grid;gap:10px;padding:14px;min-height:60px}
+      #${PANEL_ID}{display:none;position:fixed!important;z-index:2147483647!important;top:50%!important;left:50%!important;right:auto!important;bottom:auto!important;transform:translate(-50%,-50%)!important;width:430px!important;height:auto!important;min-height:170px!important;max-width:calc(100vw - 30px)!important;overflow:visible!important;opacity:1!important;visibility:visible!important;border:1px solid #abc9c6!important;border-radius:9px!important;background:#fff!important;box-shadow:0 18px 45px rgba(20,45,48,.28)!important;color:#18343a!important;font:13px Arial,sans-serif!important}
+      #${PANEL_ID} .lc-gd-head{display:flex!important;min-height:24px!important;align-items:center!important;justify-content:space-between!important;padding:12px 14px!important;border-bottom:1px solid #dce9e7!important;background:#0d6f78!important;color:#fff!important;border-radius:8px 8px 0 0!important;font-size:15px!important}
+      #${PANEL_ID} .lc-gd-head button{border:0!important;background:transparent!important;color:#fff!important;font:700 22px Arial!important;cursor:pointer!important}
+      #${PANEL_ID} .lc-gd-content{display:grid!important;gap:10px!important;padding:14px!important;min-height:70px!important;background:#fff!important;overflow:visible!important}
       .lc-gd-field{display:grid;grid-template-columns:78px minmax(0,1fr);gap:10px;align-items:center;font-weight:700}
       .lc-gd-select{position:relative;min-width:0}.lc-gd-trigger{width:100%;min-height:39px;display:grid;grid-template-columns:minmax(0,1fr) 14px;align-items:center;gap:8px;border:1px solid #8ab7b3;border-radius:6px;background:#fff;color:#18343a;padding:0 11px;font:600 13px Arial;text-align:left;cursor:pointer}
       .lc-gd-trigger span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.lc-gd-trigger i{width:8px;height:8px;border-right:2px solid #0d6f78;border-bottom:2px solid #0d6f78;transform:rotate(45deg) translateY(-2px)}
       .lc-gd-select.open .lc-gd-trigger{border-color:#0d6f78;box-shadow:0 0 0 2px rgba(13,111,120,.14)}.lc-gd-select.open .lc-gd-trigger i{transform:rotate(225deg) translate(-1px,-1px)}
       .lc-gd-menu{display:none;position:absolute;z-index:2;top:calc(100% + 4px);left:0;right:0;max-height:270px;overflow:auto;padding:4px;border:1px solid #8ab7b3;border-radius:6px;background:#fff;box-shadow:0 10px 26px rgba(20,45,48,.22)}.lc-gd-select.open .lc-gd-menu{display:grid}
       .lc-gd-menu button{min-height:34px;border:0;border-radius:4px;background:#fff;color:#18343a;padding:7px 9px;font:600 12px Arial;text-align:left;cursor:pointer}.lc-gd-menu button:hover{background:#e5f1ef;color:#0d6f78}.lc-gd-menu button.selected{background:#0d6f78;color:#fff}
-      #${PANEL_ID} footer{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 14px;border-top:1px solid #dce9e7}.lc-gd-status{display:flex;align-items:center;gap:7px;color:#506b6c}.lc-gd-status.error{color:#b42318}
-      #${PANEL_ID} footer>button{min-height:34px;border:0;border-radius:5px;background:#0d6f78;color:#fff;padding:0 13px;font:700 12px Arial;cursor:pointer}#${PANEL_ID} footer>button:disabled{opacity:.5;cursor:not-allowed}
+      #${PANEL_ID} .lc-gd-footer{display:flex!important;min-height:38px!important;align-items:center!important;justify-content:space-between!important;gap:10px!important;padding:11px 14px!important;border-top:1px solid #dce9e7!important;background:#fff!important;border-radius:0 0 8px 8px!important}.lc-gd-status{display:flex;align-items:center;gap:7px;color:#506b6c}.lc-gd-status.error{color:#b42318}
+      #${PANEL_ID} .lc-gd-footer>button{min-height:34px!important;border:0!important;border-radius:5px!important;background:#0d6f78!important;color:#fff!important;padding:0 13px!important;font:700 12px Arial!important;cursor:pointer!important}#${PANEL_ID} .lc-gd-footer>button:disabled{opacity:.5!important;cursor:not-allowed!important}
       .lc-gd-loading{display:flex;align-items:center;justify-content:center;gap:8px;min-height:70px;color:#0d6f78;font-weight:700}.lc-gd-loading i,.lc-gd-status i{width:14px;height:14px;border:2px solid #c8dfdc;border-top-color:#0d6f78;border-radius:50%;animation:lc-gd-spin .75s linear infinite}@keyframes lc-gd-spin{to{transform:rotate(360deg)}}
     `;
     document.head.appendChild(style);
