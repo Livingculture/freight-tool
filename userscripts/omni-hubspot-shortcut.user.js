@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Omni Living Culture HubSpot Shortcut
 // @namespace    livingculture-omni
-// @version      0.1.0
-// @description  Adds an orange HubSpot shortcut beside the Omni action buttons.
+// @version      0.2.0
+// @description  Removes the retired shortcut; HubSpot and Quote Review now use the Cin7 Workflow userscript.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-hubspot-shortcut.user.js
 // @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-hubspot-shortcut.user.js
@@ -13,6 +13,9 @@
 
 (function () {
   'use strict';
+
+  document.getElementById('lc-omni-hubspot-shortcut-button')?.remove();
+  return;
 
   const HUBSPOT_URL = 'https://app.hubspot.com/';
   const BUTTON_ID = 'lc-omni-hubspot-shortcut-button';
