@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.6
+// @version      0.1.7
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.6
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.6
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.7
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.7
 // ==/UserScript==
 
 (function () {
@@ -286,7 +286,7 @@
   function cellText(cells, index) {
     if (index < 0 || !cells[index]) return '';
     const cell = cells[index];
-    const control = cell.querySelector('input, textarea, select');
+    const control = cell.querySelector('input:not([type="hidden"]), textarea, select');
     return clean(
       control?.value ||
       control?.getAttribute('value') ||
@@ -297,7 +297,66 @@
     );
   }
 
+  function extractOmniTableLineItems() {
+    const items = [];
+    const tables = Array.from(document.querySelectorAll('table')).filter(isVisible);
+    for (const table of tables) {
+      const headers = tableHeaderMap(table);
+      const codeIndex = indexForHeader(headers, ['code']);
+      const productIndex = indexForHeader(headers, ['product']);
+      const quantityIndex = indexForHeader(headers, ['qty ordered', 'quantity', 'qty']);
+      const optionIndex = indexForHeader(headers, ['option1', 'option 1']);
+      const commentsIndex = indexForHeader(headers, ['comments', 'comment']);
+      const priceIndex = indexForHeader(headers, ['unit price', 'price']);
+      const amountIndex = indexForHeader(headers, ['amount nzd', 'amount', 'total']);
+      if (codeIndex < 0 || productIndex < 0 || quantityIndex < 0) continue;
+
+      for (const row of Array.from(table.querySelectorAll('tr')).filter(isVisible)) {
+        const cells = Array.from(row.querySelectorAll('td,th'));
+        if (cells.length <= Math.max(codeIndex, productIndex, quantityIndex)) continue;
+        const sku = clean(cellText(cells, codeIndex)).toUpperCase();
+        const name = clean(cellText(cells, productIndex));
+        const quantity = cleanQuantity(cellText(cells, quantityIndex));
+        if (!sku || !name || !quantity) continue;
+        if (/^(?:code|search\.\.\.)$/i.test(sku) || /^(?:product|search\.\.\.)$/i.test(name)) continue;
+        if (!/^[A-Z0-9][A-Z0-9._/-]{2,}$/i.test(sku)) continue;
+        const option = clean(cellText(cells, optionIndex));
+        const comments = clean(cellText(cells, commentsIndex));
+        const price = parseMoneyText(cellText(cells, priceIndex));
+        const total = parseMoneyText(cellText(cells, amountIndex));
+        items.push({ sku, name, quantity, option, comments, price, total });
+      }
+    }
+    const seen = new Set();
+    return items.filter(item => {
+      const key = [item.sku, item.name, item.quantity, item.option].join('|').toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0, 30);
+  }
+
+  function omniProductText(items = extractOmniTableLineItems()) {
+    return items.map(item => {
+      const option = item.option ? ` (${item.option})` : '';
+      const comments = item.comments ? ` — ${item.comments}` : '';
+      return `${item.quantity} x ${item.sku}: ${item.name}${option}${comments}`;
+    }).join('\n');
+  }
+
   function extractHubSpotLineItems() {
+    if (isOmniPage()) {
+      const omniItems = extractOmniTableLineItems();
+      if (omniItems.length) {
+        return omniItems.map(item => ({
+          name: item.option ? `${item.name} - ${item.option}` : item.name,
+          sku: item.sku,
+          quantity: item.quantity,
+          price: item.price,
+          total: item.total
+        }));
+      }
+    }
     const items = [];
     const tables = Array.from(document.querySelectorAll('table')).filter(isVisible);
 
@@ -485,6 +544,10 @@
   }
 
   function extractProductLines() {
+    if (isOmniPage()) {
+      const productText = omniProductText();
+      if (productText) return productText;
+    }
     const quoteProducts = extractQuoteProductLines();
     if (quoteProducts.length) return quoteProducts.join('\n');
 
