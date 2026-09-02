@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Living Culture Drawings
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.0
+// @version      0.1.1
 // @description  Selects Living Culture pergola drawings from Google Drive and attaches them to Gmail drafts.
 // @author       Living Culture
 // @match        https://mail.google.com/*
@@ -91,7 +91,7 @@
   }
 
   function activeComposeBody() {
-    return Array.from(document.querySelectorAll('div[aria-label="Message Body"][contenteditable="true"], div[role="textbox"][contenteditable="true"]'))
+    return Array.from(document.querySelectorAll('div[aria-label="Message Body"][contenteditable="true"], div[role="textbox"][contenteditable="true"], div[g_editable="true"][contenteditable="true"]'))
       .reverse().find((body) => {
         const rect = body.getBoundingClientRect();
         const style = getComputedStyle(body);
@@ -310,23 +310,27 @@
   function syncButton() {
     const button = document.getElementById(BUTTON_ID);
     if (!button) return;
+    const careButton = document.getElementById("lc-gmail-care-guides-button");
+    const careRect = careButton?.getBoundingClientRect();
+    const width = button.offsetWidth || 76;
+    const careStyle = careButton ? getComputedStyle(careButton) : null;
+    if (careRect?.width && careRect?.height && careStyle?.display !== "none" && careStyle?.visibility !== "hidden") {
+      button.style.left = `${Math.max(8, careRect.left - width - 8)}px`;
+      button.style.top = `${careRect.top}px`;
+      button.style.display = "inline-flex";
+      button.style.alignItems = "center";
+      return;
+    }
+
     const compose = activeComposeRoot();
     if (!compose) {
       button.style.display = "none";
       if (state.open) closePanel();
       return;
     }
-    const careButton = document.getElementById("lc-gmail-care-guides-button");
-    const careRect = careButton?.getBoundingClientRect();
-    const width = button.offsetWidth || 76;
-    if (careRect?.width) {
-      button.style.left = `${Math.max(8, careRect.left - width - 8)}px`;
-      button.style.top = `${careRect.top}px`;
-    } else {
-      const rect = compose.getBoundingClientRect();
-      button.style.left = `${Math.max(8, rect.right - width - 140)}px`;
-      button.style.top = `${Math.max(8, rect.bottom - 42)}px`;
-    }
+    const rect = compose.getBoundingClientRect();
+    button.style.left = `${Math.max(8, rect.right - width - 140)}px`;
+    button.style.top = `${Math.max(8, rect.bottom - 42)}px`;
     button.style.display = "inline-flex";
     button.style.alignItems = "center";
   }
