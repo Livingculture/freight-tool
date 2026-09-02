@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.0
+// @version      0.1.1
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -1159,6 +1159,45 @@
     return readValueNearLabel(labelText);
   }
 
+  function readOmniControlByLabel(labelText) {
+    const wanted = normalizeLabel(labelText);
+    const labels = Array.from(document.querySelectorAll('label, legend, span, div, td'))
+      .filter(isVisible)
+      .filter(node => normalizeLabel(node.textContent || '') === wanted)
+      .sort((left, right) => left.children.length - right.children.length);
+
+    for (const label of labels) {
+      const labelRect = label.getBoundingClientRect();
+      const nearby = Array.from(document.querySelectorAll('input:not([type="hidden"]), textarea, select'))
+        .filter(isVisible)
+        .map(control => ({ control, rect: control.getBoundingClientRect() }))
+        .filter(({ rect }) => Math.abs((rect.top + rect.height / 2) - (labelRect.top + labelRect.height / 2)) < 34)
+        .filter(({ rect }) => rect.left >= labelRect.left - 4)
+        .sort((left, right) => {
+          const leftDistance = Math.abs(left.rect.top - labelRect.top) + Math.max(0, left.rect.left - labelRect.right);
+          const rightDistance = Math.abs(right.rect.top - labelRect.top) + Math.max(0, right.rect.left - labelRect.right);
+          return leftDistance - rightDistance;
+        });
+      for (const { control } of nearby) {
+        const value = clean(control.value || control.getAttribute('value') || '');
+        if (value && !/^search\.\.\.$/i.test(value)) return value;
+      }
+    }
+    return '';
+  }
+
+  function omniSalesRep() {
+    const rep = readOmniControlByLabel('Created By') ||
+      readOmniControlByLabel('Sales Rep') ||
+      readOmniControlByLabel('Processed By') ||
+      readValueNearLabel('Created By') ||
+      readValueNearLabel('Sales rep') ||
+      readValueNearLabel('Processed By');
+    if (!rep || /^[A-Z]{2,5}\s*[-–—]/i.test(rep)) return rep;
+    const branch = clean(document.body?.innerText || document.body?.textContent || '').match(/\bBranch\s*:\s*([A-Z]{2,5})\b/i)?.[1]?.toUpperCase() || '';
+    return branch ? `${branch}-${rep}` : rep;
+  }
+
   function readCin7CommentsTextarea() {
     const commentsAnchor = findCommentsAnchor();
     if (!commentsAnchor) return readMultilineNearLabel('Comments');
@@ -1258,7 +1297,7 @@
     const address1 = readValueNearLabel('Shipping address line 1') || readValueNearLabel('Delivery Address 1') || readValueNearLabel('Billing address line 1') || readValueNearLabel('Billing Address 1');
     const address2 = readValueNearLabel('Shipping address line 2') || readValueNearLabel('Delivery Address 2') || readValueNearLabel('Billing address line 2') || readValueNearLabel('Billing Address 2');
     const reference = readValueNearLabel('Reference') || readValueNearLabel('Customer PO No');
-    const rep = readValueNearLabel('Sales rep');
+    const rep = omniSalesRep();
     const pageText = document.body ? document.body.innerText : '';
     const titleOrderId = extractOrderId(document.title || '');
     const pageOrderId = extractOrderId(pageText);
