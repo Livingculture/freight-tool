@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.13.1
+// @version      1.13.2
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 Core and Cin7 Omni sales.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.13.1
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.13.1
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.13.2
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.13.2
 // ==/UserScript==
 
 (function () {
@@ -2206,7 +2206,20 @@
 
   function addButton() {
     if (isOmniPage()) {
-      document.getElementById(BUTTON_ID)?.remove();
+      const existing = document.getElementById(BUTTON_ID);
+      if (existing) {
+        placeOmniActionButton(existing, findOmniActionAnchor());
+        return;
+      }
+      const anchor = findOmniActionAnchor();
+      if (!anchor) return;
+      const button = document.createElement('button');
+      button.id = BUTTON_ID;
+      button.type = 'button';
+      button.textContent = 'Site Visit';
+      styleInlineButton(button, '#05cbbf');
+      wireActionButton(button);
+      placeOmniActionButton(button, anchor);
       return;
     }
     if (document.getElementById(BUTTON_ID)) return;
@@ -2284,7 +2297,7 @@
     const siteVisitButton = document.getElementById(BUTTON_ID);
     const installAnchor = findButtonByLabel('Install Fees') || findButtonByLabel('Scan');
     const commentsAnchor = findCommentsAnchor();
-    const omniAnchor = isOmniPage() ? findOmniActionAnchor() : null;
+    const omniAnchor = isOmniPage() ? (siteVisitButton || findOmniActionAnchor()) : null;
     const anchor = omniAnchor || siteVisitButton || installAnchor || commentsAnchor;
     if (!anchor) return;
 
@@ -2319,13 +2332,14 @@
     const siteVisitButton = document.getElementById(BUTTON_ID);
 
     if (isOmniPage()) {
-      if (!hubspotButton) {
+      if (!hubspotButton || !siteVisitButton) {
         removeQuoteReviewButton();
         return;
       }
       if (existingButton) {
-        placeOmniActionButton(hubspotButton, findOmniActionAnchor());
-        placeOmniActionButton(existingButton, hubspotButton);
+        placeOmniActionButton(siteVisitButton, findOmniActionAnchor());
+        placeOmniActionButton(existingButton, siteVisitButton);
+        placeOmniActionButton(hubspotButton, existingButton);
         return;
       }
 
@@ -2338,8 +2352,9 @@
       button.style.borderColor = '#f0b429';
       button.style.textShadow = '0 1px 1px rgba(0,0,0,.28)';
       wireActionButton(button);
-      placeOmniActionButton(hubspotButton, findOmniActionAnchor());
-      placeOmniActionButton(button, hubspotButton);
+      placeOmniActionButton(siteVisitButton, findOmniActionAnchor());
+      placeOmniActionButton(button, siteVisitButton);
+      placeOmniActionButton(hubspotButton, button);
       return;
     }
 
