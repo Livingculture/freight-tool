@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.4
+// @version      0.1.5
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.4
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.4
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.5
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.5
 // ==/UserScript==
 
 (function () {
@@ -1191,18 +1191,21 @@
       .filter(isVisible)
       .filter(node => normalizeLabel(node.textContent || '') === 'created by')
       .sort((left, right) => left.children.length - right.children.length)[0];
-    let createdBy = '';
-    let container = createdByLabel?.parentElement || null;
-    for (let depth = 0; container && depth < 5 && !createdBy; depth += 1, container = container.parentElement) {
-      const controls = Array.from(container.querySelectorAll('select, input:not([type="hidden"])')).filter(isVisible);
-      for (const control of controls) {
-        const value = clean(control.value || control.selectedOptions?.[0]?.textContent || control.getAttribute('value') || '');
-        if (value) {
-          createdBy = value;
-          break;
-        }
-      }
-    }
+    const labelRect = createdByLabel?.getBoundingClientRect();
+    const createdBy = labelRect
+      ? Array.from(document.querySelectorAll('select'))
+        .filter(isVisible)
+        .map(control => ({ control, rect: control.getBoundingClientRect() }))
+        .filter(({ rect }) => rect.left >= labelRect.left - 8 && rect.left <= labelRect.right + 280)
+        .filter(({ rect }) => rect.top >= labelRect.top - 6 && rect.top <= labelRect.bottom + 60)
+        .sort((left, right) => {
+          const leftDistance = Math.abs(left.rect.left - labelRect.left) + Math.abs(left.rect.top - labelRect.bottom);
+          const rightDistance = Math.abs(right.rect.left - labelRect.left) + Math.abs(right.rect.top - labelRect.bottom);
+          return leftDistance - rightDistance;
+        })
+        .map(({ control }) => clean(control.selectedOptions?.[0]?.textContent || control.value || ''))
+        .find(Boolean) || ''
+      : '';
     const rep = createdBy || readOmniControlByLabel('Created By') ||
       readOmniControlByLabel('Sales Rep') ||
       readOmniControlByLabel('Processed By') ||
@@ -1212,7 +1215,16 @@
     if (!rep || /^[A-Z]{2,5}\s*[-–—]/i.test(rep)) return rep;
     const branch = clean(document.body?.innerText || document.body?.textContent || '')
       .match(/\bBranch\s*:\s*([A-Z]{2,5})\b/i)?.[1]?.toUpperCase() || '';
-    return branch ? `${branch}-${rep}` : rep;
+    const proposed = branch ? `${branch}-${rep}` : rep;
+    const exact = workflowRepOptions.find(option => clean(option).toLowerCase() === proposed.toLowerCase());
+    if (exact) return exact;
+    const byName = workflowRepOptions.find(option => {
+      const parts = clean(option).split(/[-–—]/);
+      const optionName = clean(parts.slice(1).join('-') || parts[0]);
+      const optionBranch = clean(parts[0]).toUpperCase();
+      return optionName.toLowerCase() === rep.toLowerCase() && (!branch || optionBranch === branch);
+    });
+    return byName || proposed;
   }
 
   function readCin7CommentsTextarea() {
@@ -2468,6 +2480,7 @@
   function boot() {
     if (isOmniPage()) document.getElementById('lc-omni-hubspot-shortcut-button')?.remove();
     ensureDelegatedClickHandler();
+    void loadRepOptions();
     scheduleButtonPass();
     setTimeout(scheduleButtonPass, 500);
     setTimeout(scheduleButtonPass, 1500);
