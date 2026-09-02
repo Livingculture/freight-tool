@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.2
+// @version      0.1.3
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -1203,12 +1203,16 @@
         }
       }
     }
-    return createdBy || readOmniControlByLabel('Created By') ||
+    const rep = createdBy || readOmniControlByLabel('Created By') ||
       readOmniControlByLabel('Sales Rep') ||
       readOmniControlByLabel('Processed By') ||
       readValueNearLabel('Created By') ||
       readValueNearLabel('Sales rep') ||
       readValueNearLabel('Processed By');
+    if (!rep || /^[A-Z]{2,5}\s*[-–—]/i.test(rep)) return rep;
+    const branch = clean(document.body?.innerText || document.body?.textContent || '')
+      .match(/\bBranch\s*:\s*([A-Z]{2,5})\b/i)?.[1]?.toUpperCase() || '';
+    return branch ? `${branch}-${rep}` : rep;
   }
 
   function readCin7CommentsTextarea() {
