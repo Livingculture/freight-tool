@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.5
+// @version      0.1.6
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.5
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.5
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.6
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.6
 // ==/UserScript==
 
 (function () {
@@ -1771,26 +1771,81 @@
     });
   }
 
-  function submitQuoteReview(button) {
+  function confirmOmniQuoteReview(payload) {
+    return new Promise(resolve => {
+      document.getElementById('lc-omni-quote-review-confirm')?.remove();
+      const overlay = document.createElement('div');
+      overlay.id = 'lc-omni-quote-review-confirm';
+      overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(12,29,54,.48);font-family:Arial,sans-serif;box-sizing:border-box;';
+
+      const panel = document.createElement('div');
+      panel.style.cssText = 'width:min(480px,calc(100vw - 40px));overflow:hidden;background:#fff;border:1px solid #b9c9dc;border-radius:8px;box-shadow:0 20px 60px rgba(7,28,58,.28);color:#172b4d;';
+
+      const header = document.createElement('div');
+      header.textContent = 'Send Quote for Review';
+      header.style.cssText = 'padding:16px 20px;background:#13377e;color:#fff;font-size:19px;font-weight:700;';
+
+      const content = document.createElement('div');
+      content.style.cssText = 'padding:18px 20px 20px;';
+      const details = document.createElement('div');
+      details.style.cssText = 'display:grid;grid-template-columns:auto 1fr;gap:9px 14px;padding:14px 16px;margin-bottom:16px;background:#f1f4f8;border:1px solid #d8e0ea;border-radius:6px;font-size:14px;line-height:1.35;';
+      [['Quote', payload.orderId], ['Customer', payload.customerName], ['Rep', payload.salesRep]].forEach(([label, value]) => {
+        const key = document.createElement('strong');
+        key.textContent = `${label}:`;
+        const text = document.createElement('span');
+        text.textContent = value || '—';
+        details.append(key, text);
+      });
+
+      const notesLabel = document.createElement('label');
+      notesLabel.textContent = 'Optional notes';
+      notesLabel.style.cssText = 'display:block;margin:0 0 7px;color:#172b4d;font-size:13px;font-weight:700;';
+      const notes = document.createElement('textarea');
+      notes.rows = 4;
+      notes.placeholder = 'Add any notes for the quote review…';
+      notes.style.cssText = 'display:block;width:100%;box-sizing:border-box;resize:vertical;padding:10px 11px;border:1px solid #9fb4cf;border-radius:4px;background:#fff;color:#172b4d;font:14px Arial,sans-serif;line-height:1.4;outline:none;';
+      notes.addEventListener('focus', () => { notes.style.borderColor = '#13377e'; notes.style.boxShadow = '0 0 0 2px rgba(19,55,126,.14)'; });
+      notes.addEventListener('blur', () => { notes.style.borderColor = '#9fb4cf'; notes.style.boxShadow = 'none'; });
+
+      const actions = document.createElement('div');
+      actions.style.cssText = 'display:flex;justify-content:flex-end;gap:9px;margin-top:18px;';
+      const cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.textContent = 'Cancel';
+      cancel.style.cssText = 'height:38px;padding:0 16px;border:1px solid #13377e;border-radius:4px;background:#fff;color:#13377e;font:700 13px Arial,sans-serif;cursor:pointer;';
+      const send = document.createElement('button');
+      send.type = 'button';
+      send.textContent = 'Send Review';
+      send.style.cssText = 'height:38px;padding:0 17px;border:1px solid #13377e;border-radius:4px;background:#13377e;color:#fff;font:700 13px Arial,sans-serif;cursor:pointer;';
+
+      const finish = value => { overlay.remove(); resolve(value); };
+      cancel.addEventListener('click', () => finish(null));
+      send.addEventListener('click', () => finish(cleanMultiline(notes.value || '')));
+      overlay.addEventListener('click', event => { if (event.target === overlay) finish(null); });
+      overlay.addEventListener('keydown', event => { if (event.key === 'Escape') finish(null); });
+      actions.append(cancel, send);
+      content.append(details, notesLabel, notes, actions);
+      panel.append(header, content);
+      overlay.appendChild(panel);
+      document.body.appendChild(overlay);
+      window.setTimeout(() => notes.focus(), 0);
+    });
+  }
+
+  async function submitQuoteReview(button) {
     const payload = {
       ...hubspotDraft(),
       notes: ''
     };
-    const summary = [
-      payload.orderId ? `Quote: ${payload.orderId}` : '',
-      payload.customerName ? `Customer: ${payload.customerName}` : '',
-      payload.amount ? `Amount: ${payload.amount}` : '',
-      payload.salesRep ? `Rep: ${payload.salesRep}` : ''
-    ].filter(Boolean).join('\n');
 
     if (!payload.orderId && !payload.customerName) {
       window.alert('Quote number or customer name is required before sending a quote for review.');
       return;
     }
 
-    if (!window.confirm(`Send quote for review?\n\n${summary || 'Cin7 quote details will be sent to Workflow.'}`)) {
-      return;
-    }
+    const notes = await confirmOmniQuoteReview(payload);
+    if (notes === null) return;
+    payload.notes = notes;
 
     const originalText = button.textContent;
     button.disabled = true;
