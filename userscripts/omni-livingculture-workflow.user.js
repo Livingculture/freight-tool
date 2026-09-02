@@ -1,16 +1,16 @@
 // ==UserScript==
-// @name         Living Culture Cin7 Site Visit Card (Popup)
-// @namespace    https://livingculture.co.nz/
-// @version      1.13.5
-// @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 simple sale pages.
+// @name         Omni Living Culture Workflow
+// @namespace    livingculture-omni
+// @version      0.1.0
+// @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
-// @match        https://inventory.dearsystems.com/Sale*
+// @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @grant        GM_xmlhttpRequest
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.13.5
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.13.5
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js
 // ==/UserScript==
 
 (function () {
@@ -92,9 +92,40 @@
       .trim();
   }
 
+  function isOmniPage() {
+    return location.hostname === 'go.cin7.com' && /\/Cloud\/TransactionEntry\/TransactionEntry\.aspx/i.test(location.pathname);
+  }
+
   function extractOrderId(text) {
-    const match = clean(text).match(/\bNZSO-\d+\b/i);
-    return match ? match[0].toUpperCase() : '';
+    const match = clean(text).match(/\b(?:NZSO-?\d+|SFOR\d+(?:-\d+)?)\b/i);
+    if (!match) return '';
+    const value = match[0].toUpperCase();
+    return /^NZSO\d+$/i.test(value) ? value.replace(/^NZSO/i, 'NZSO-') : value;
+  }
+
+  function omniHeadingDraft() {
+    if (!isOmniPage()) return { customerName: '', orderId: '' };
+    const pageText = clean(document.body?.innerText || document.body?.textContent || '');
+    const pageMatch = pageText.match(/(?:Edit|New)\s+(?:Quote|Sales Order)\s*-\s*(.+?)\s*-\s*((?:NZSO-?\d+|SFOR\d+(?:-\d+)?))\b/i);
+    if (pageMatch) {
+      return {
+        customerName: clean(pageMatch[1]),
+        orderId: extractOrderId(pageMatch[2])
+      };
+    }
+    const headings = Array.from(document.querySelectorAll('h1, h2, h3, [role="heading"]'))
+      .filter(isVisible)
+      .map(node => clean(node.textContent || ''))
+      .filter(Boolean);
+    const heading = headings.find(text => /(?:Edit|New)\s+(?:Quote|Sales Order)/i.test(text) && extractOrderId(text)) ||
+      headings.find(text => extractOrderId(text)) ||
+      clean(document.title || '');
+    const orderId = extractOrderId(heading);
+    const customerMatch = heading.match(/^(?:Edit|New)\s+(?:Quote|Sales Order)\s*-\s*(.+?)\s*-\s*(?:NZSO-?\d+|SFOR\d+(?:-\d+)?)\b/i);
+    return {
+      customerName: clean(customerMatch?.[1] || ''),
+      orderId
+    };
   }
 
   function deriveBranchFromRep(repName) {
@@ -290,7 +321,10 @@
 
         const productCell = cells[productIndex];
         const productLink = productCell?.querySelector('a');
-        const rawName = productLink?.textContent ||
+        const productControl = productCell?.querySelector('input:not([type="hidden"]), textarea, select');
+        const rawName = productControl?.value ||
+          productControl?.getAttribute('value') ||
+          productLink?.textContent ||
           productLink?.getAttribute('title') ||
           productLink?.getAttribute('aria-label') ||
           productCell?.textContent ||
@@ -299,7 +333,11 @@
         const quantity = parseNumberText(cellText(cells, quantityIndex));
         const price = parseMoneyText(cellText(cells, priceIndex));
         const total = parseMoneyText(cellText(cells, totalIndex));
-        const sku = skuFromText(rowText) || skuFromText(rawName);
+        const rowControlValues = Array.from(row.querySelectorAll('input:not([type="hidden"]), textarea, select'))
+          .map(control => clean(control.value || control.getAttribute('value') || ''))
+          .filter(Boolean)
+          .join(' ');
+        const sku = skuFromText(rowText) || skuFromText(rowControlValues) || skuFromText(rawName);
 
         if (!name || !quantity) continue;
         if (/tax|discount|subtotal|total/i.test(name) && name.length < 30) continue;
@@ -992,6 +1030,28 @@
     return row;
   }
 
+  function findOmniActionAnchor() {
+    return document.getElementById('lc-omni-china-warehouse-button') ||
+      document.getElementById('lc-omni-product-availability-button') ||
+      document.getElementById('lc-omni-containers-open') ||
+      findButtonByLabel('Foshan Warehouse') ||
+      findButtonByLabel('NZ Availability') ||
+      findButtonByLabel('LC Containers');
+  }
+
+  function placeOmniActionButton(button, anchor) {
+    if (!button || !anchor || !isVisible(anchor)) return false;
+    const rect = anchor.getBoundingClientRect();
+    button.style.position = 'absolute';
+    button.style.left = `${window.scrollX + rect.right + 8}px`;
+    button.style.top = `${window.scrollY + rect.top}px`;
+    button.style.zIndex = '56';
+    button.style.margin = '0';
+    button.style.height = `${Math.max(34, rect.height || 34)}px`;
+    if (button.parentElement !== document.body) document.body.appendChild(button);
+    return true;
+  }
+
   function placeActionButton(button, slot) {
     const row = ensureActionRow();
     if (!row || !button) return false;
@@ -1010,6 +1070,10 @@
   }
 
   function isSimpleSaleReady() {
+    if (isOmniPage()) {
+      const text = clean(document.body?.textContent || '');
+      return /Created Date/i.test(text) && /(?:Selected Customer|Customer)/i.test(text) && /(?:Code|Product)/i.test(text);
+    }
     const text = clean(document.body?.textContent || '');
     if (!/Customer details/i.test(text)) return false;
     if (!/Accounting details/i.test(text)) return false;
@@ -1190,15 +1254,16 @@
   }
 
   function cin7Draft() {
-    const address1 = readValueNearLabel('Shipping address line 1') || readValueNearLabel('Billing address line 1');
-    const address2 = readValueNearLabel('Shipping address line 2') || readValueNearLabel('Billing address line 2');
-    const reference = readValueNearLabel('Reference');
+    const omniHeading = omniHeadingDraft();
+    const address1 = readValueNearLabel('Shipping address line 1') || readValueNearLabel('Delivery Address 1') || readValueNearLabel('Billing address line 1') || readValueNearLabel('Billing Address 1');
+    const address2 = readValueNearLabel('Shipping address line 2') || readValueNearLabel('Delivery Address 2') || readValueNearLabel('Billing address line 2') || readValueNearLabel('Billing Address 2');
+    const reference = readValueNearLabel('Reference') || readValueNearLabel('Customer PO No');
     const rep = readValueNearLabel('Sales rep');
     const pageText = document.body ? document.body.innerText : '';
     const titleOrderId = extractOrderId(document.title || '');
     const pageOrderId = extractOrderId(pageText);
     const referenceOrderId = extractOrderId(reference);
-    const customerName = readValueNearLabel('Customer');
+    const customerName = omniHeading.customerName || readValueNearLabel('Customer') || readValueNearLabel('Selected Customer') || readValueNearLabel('Company');
     const comments = readCin7CommentsTextarea();
     let productText = extractProductLines();
     if (productText && customerName && clean(productText).toLowerCase() === clean(customerName).toLowerCase()) {
@@ -1209,13 +1274,13 @@
       status: 'To be confirmed',
       bookedDate: localDateKey(),
       time: '',
-      orderId: referenceOrderId || titleOrderId || pageOrderId || reference,
+      orderId: omniHeading.orderId || referenceOrderId || titleOrderId || pageOrderId || reference,
       placedBy: rep,
       visitBy: '',
       customerName,
       address: clean(`${address1} ${address2}`),
       phone: readPhoneNumber(),
-      email: readValueNearLabel('Email'),
+      email: readValueNearLabel('Email') || readValueNearLabel('Email Address'),
       product: productText,
       comments,
       area: deriveBranchFromRep(rep),
@@ -2147,6 +2212,23 @@
   }
 
   function addButton() {
+    if (isOmniPage()) {
+      const existing = document.getElementById(BUTTON_ID);
+      if (existing) {
+        placeOmniActionButton(existing, findOmniActionAnchor());
+        return;
+      }
+      const anchor = findOmniActionAnchor();
+      if (!anchor) return;
+      const button = document.createElement('button');
+      button.id = BUTTON_ID;
+      button.type = 'button';
+      button.textContent = 'Site Visit';
+      styleInlineButton(button, '#05cbbf');
+      wireActionButton(button);
+      placeOmniActionButton(button, anchor);
+      return;
+    }
     if (document.getElementById(BUTTON_ID)) return;
     const commentsAnchor = findCommentsAnchor();
     const installAnchor = findButtonByLabel('Install Fees') || findButtonByLabel('Scan');
@@ -2213,12 +2295,17 @@
   }
 
   function addHubSpotButton() {
-    if (document.getElementById(HUBSPOT_BUTTON_ID)) return;
+    const existing = document.getElementById(HUBSPOT_BUTTON_ID);
+    if (existing) {
+      if (isOmniPage()) placeOmniActionButton(existing, findOmniActionAnchor());
+      return;
+    }
 
     const siteVisitButton = document.getElementById(BUTTON_ID);
     const installAnchor = findButtonByLabel('Install Fees') || findButtonByLabel('Scan');
     const commentsAnchor = findCommentsAnchor();
-    const anchor = siteVisitButton || installAnchor || commentsAnchor;
+    const omniAnchor = isOmniPage() ? (siteVisitButton || findOmniActionAnchor()) : null;
+    const anchor = omniAnchor || siteVisitButton || installAnchor || commentsAnchor;
     if (!anchor) return;
 
     const rect = anchor.getBoundingClientRect();
@@ -2230,7 +2317,9 @@
     button.style.height = `${Math.max(34, rect.height || 34)}px`;
     wireActionButton(button);
 
-    if (commentsAnchor && placeActionButton(button, 'right')) {
+    if (isOmniPage()) {
+      placeOmniActionButton(button, omniAnchor);
+    } else if (commentsAnchor && placeActionButton(button, 'right')) {
       return;
     } else if (commentsAnchor && anchor === commentsAnchor) {
       commentsAnchor.insertAdjacentElement('beforebegin', button);
@@ -2248,6 +2337,33 @@
     const existingButton = document.getElementById(QUOTE_REVIEW_BUTTON_ID);
     const hubspotButton = document.getElementById(HUBSPOT_BUTTON_ID);
     const siteVisitButton = document.getElementById(BUTTON_ID);
+
+    if (isOmniPage()) {
+      if (!hubspotButton || !siteVisitButton) {
+        removeQuoteReviewButton();
+        return;
+      }
+      if (existingButton) {
+        placeOmniActionButton(siteVisitButton, findOmniActionAnchor());
+        placeOmniActionButton(existingButton, siteVisitButton);
+        placeOmniActionButton(hubspotButton, existingButton);
+        return;
+      }
+
+      const button = document.createElement('button');
+      button.id = QUOTE_REVIEW_BUTTON_ID;
+      button.type = 'button';
+      button.textContent = 'Quote Review';
+      styleInlineButton(button, '#f7c948');
+      button.style.color = '#fff';
+      button.style.borderColor = '#f0b429';
+      button.style.textShadow = '0 1px 1px rgba(0,0,0,.28)';
+      wireActionButton(button);
+      placeOmniActionButton(siteVisitButton, findOmniActionAnchor());
+      placeOmniActionButton(button, siteVisitButton);
+      placeOmniActionButton(hubspotButton, button);
+      return;
+    }
 
     if (!hubspotButton || !siteVisitButton) {
       removeQuoteReviewButton();
@@ -2294,6 +2410,7 @@
   }
 
   function boot() {
+    if (isOmniPage()) document.getElementById('lc-omni-hubspot-shortcut-button')?.remove();
     ensureDelegatedClickHandler();
     scheduleButtonPass();
     setTimeout(scheduleButtonPass, 500);
