@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni + Cin7 Core Living Culture Workflow
 // @namespace    https://livingculture.co.nz/
-// @version      1.13.3
+// @version      1.13.4
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 Core and Cin7 Omni sales.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.13.3
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.13.3
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.13.4
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.13.4
 // ==/UserScript==
 
 (function () {
@@ -106,6 +106,14 @@
 
   function omniHeadingDraft() {
     if (!isOmniPage()) return { customerName: '', orderId: '' };
+    const pageText = clean(document.body?.innerText || document.body?.textContent || '');
+    const pageMatch = pageText.match(/(?:Edit|New)\s+(?:Quote|Sales Order)\s*-\s*(.+?)\s*-\s*((?:NZSO-?\d+|SFOR\d+(?:-\d+)?))\b/i);
+    if (pageMatch) {
+      return {
+        customerName: clean(pageMatch[1]),
+        orderId: extractOrderId(pageMatch[2])
+      };
+    }
     const headings = Array.from(document.querySelectorAll('h1, h2, h3, [role="heading"]'))
       .filter(isVisible)
       .map(node => clean(node.textContent || ''))
