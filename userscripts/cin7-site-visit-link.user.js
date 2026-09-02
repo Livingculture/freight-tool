@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Living Culture Cin7 Site Visit Card (Popup)
+// @name         Omni + Cin7 Core Living Culture Workflow
 // @namespace    https://livingculture.co.nz/
-// @version      1.13.2
+// @version      1.13.3
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 Core and Cin7 Omni sales.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.13.2
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.13.2
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.13.3
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.13.3
 // ==/UserScript==
 
 (function () {
