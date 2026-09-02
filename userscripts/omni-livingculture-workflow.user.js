@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.1
+// @version      0.1.2
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -1187,15 +1187,28 @@
   }
 
   function omniSalesRep() {
-    const rep = readOmniControlByLabel('Created By') ||
+    const createdByLabel = Array.from(document.querySelectorAll('label, legend, span, div, td'))
+      .filter(isVisible)
+      .filter(node => normalizeLabel(node.textContent || '') === 'created by')
+      .sort((left, right) => left.children.length - right.children.length)[0];
+    let createdBy = '';
+    let container = createdByLabel?.parentElement || null;
+    for (let depth = 0; container && depth < 5 && !createdBy; depth += 1, container = container.parentElement) {
+      const controls = Array.from(container.querySelectorAll('select, input:not([type="hidden"])')).filter(isVisible);
+      for (const control of controls) {
+        const value = clean(control.value || control.selectedOptions?.[0]?.textContent || control.getAttribute('value') || '');
+        if (value) {
+          createdBy = value;
+          break;
+        }
+      }
+    }
+    return createdBy || readOmniControlByLabel('Created By') ||
       readOmniControlByLabel('Sales Rep') ||
       readOmniControlByLabel('Processed By') ||
       readValueNearLabel('Created By') ||
       readValueNearLabel('Sales rep') ||
       readValueNearLabel('Processed By');
-    if (!rep || /^[A-Z]{2,5}\s*[-–—]/i.test(rep)) return rep;
-    const branch = clean(document.body?.innerText || document.body?.textContent || '').match(/\bBranch\s*:\s*([A-Z]{2,5})\b/i)?.[1]?.toUpperCase() || '';
-    return branch ? `${branch}-${rep}` : rep;
   }
 
   function readCin7CommentsTextarea() {
