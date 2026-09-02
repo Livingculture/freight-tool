@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.7
+// @version      0.1.8
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.7
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.7
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.8
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.8
 // ==/UserScript==
 
 (function () {
@@ -1611,6 +1611,7 @@
           <div class="lc-hs-modal-body">
             ${payload.orderId ? `<p>Sale: ${escapeHtml(payload.orderId)}</p>` : ''}
             ${payload.customerName ? `<p>Customer: ${escapeHtml(payload.customerName)}</p>` : ''}
+            ${payload.salesRep ? `<p>Rep: ${escapeHtml(payload.salesRep)}</p>` : ''}
             ${payload.phone ? `<p>Phone: ${escapeHtml(payload.phone)}</p>` : ''}
             ${leadSource?.label ? `<p>Lead Source: ${escapeHtml(leadSource.label)}</p>` : ''}
             ${payload.amount ? `<p>Amount: ${escapeHtml(payload.amount)}</p>` : ''}
@@ -1625,14 +1626,16 @@
               ${lineItems.map((item, index) => {
                 const quantity = clean(item.quantity) || '1';
                 const name = clean(item.name);
+                const sku = clean(item.sku);
                 const price = clean(item.price);
                 const total = clean(item.total);
                 const money = price ? `$${price}` : total ? `total $${total}` : 'price missing';
                 const checked = isHubSpotProductLineItem(item) ? 'checked' : '';
+                const product = sku ? `${sku}: ${name}` : name;
                 return `
                   <label class="lc-hs-line-review-item">
                     <input type="checkbox" data-line-index="${index}" ${checked}>
-                    <span>${escapeHtml(`${quantity} x ${name}: ${money}`)}</span>
+                    <span>${escapeHtml(`${quantity} x ${product}: ${money}`)}</span>
                   </label>
                 `;
               }).join('')}
