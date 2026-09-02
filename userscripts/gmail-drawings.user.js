@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Living Culture Drawings
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.2
+// @version      0.1.3
 // @description  Selects Living Culture pergola drawings from Google Drive and attaches them to Gmail drafts.
 // @author       Living Culture
 // @match        https://mail.google.com/*
@@ -212,13 +212,48 @@
     }
   }
 
-  function dropdown({ label, placeholder, options, value, level, file = false }) {
+  function element(tag, className = "", text = "") {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text) node.textContent = text;
+    return node;
+  }
+
+  function dropdown({ label, placeholder, options, value, level, file = false, panel }) {
     const selected = options.find((option) => option.id === value);
-    return `<div class="lc-gd-field"><span>${escapeHtml(label)}</span><div class="lc-gd-select" ${file ? "data-file" : `data-level="${level}"`}>
-      <button type="button" class="lc-gd-trigger"><span>${escapeHtml(selected?.name || placeholder)}</span><i></i></button>
-      <div class="lc-gd-menu"><button type="button" data-value="" class="${value ? "" : "selected"}">${escapeHtml(placeholder)}</button>
-      ${options.map((option) => `<button type="button" data-value="${escapeHtml(option.id)}" class="${value === option.id ? "selected" : ""}">${escapeHtml(option.name)}</button>`).join("")}</div>
-    </div></div>`;
+    const field = element("div", "lc-gd-field");
+    field.appendChild(element("span", "", label));
+    const select = element("div", "lc-gd-select");
+    if (file) select.dataset.file = "";
+    else select.dataset.level = String(level);
+    const trigger = element("button", "lc-gd-trigger");
+    trigger.type = "button";
+    trigger.append(element("span", "", selected?.name || placeholder), element("i"));
+    trigger.addEventListener("click", () => {
+      const opening = !select.classList.contains("open");
+      panel.querySelectorAll(".lc-gd-select.open").forEach((other) => other.classList.remove("open"));
+      select.classList.toggle("open", opening);
+    });
+    const menu = element("div", "lc-gd-menu");
+    [{ id: "", name: placeholder }, ...options].forEach((option) => {
+      const choice = element("button", value === option.id ? "selected" : "", option.name);
+      choice.type = "button";
+      choice.dataset.value = option.id;
+      choice.addEventListener("click", () => {
+        if (file) {
+          state.selected = option.id || null;
+          render();
+          const selectedFile = currentFiles().find((item) => item.id === option.id);
+          if (selectedFile) prepare(selectedFile);
+        } else {
+          chooseFolder(level, option.id);
+        }
+      });
+      menu.appendChild(choice);
+    });
+    select.append(trigger, menu);
+    field.appendChild(select);
+    return field;
   }
 
   function ensurePanel() {
@@ -233,41 +268,43 @@
 
   function render() {
     const panel = ensurePanel();
-    const selectors = state.levels.map((level, index) => {
-      if (!level.folders.length) return "";
-      const label = levelLabel(index, level.folders);
-      return dropdown({ label, placeholder: `Select ${label.toLowerCase()}…`, options: level.folders, value: level.selectedFolderId, level: index });
-    }).join("");
-    const files = currentFiles();
-    const fileSelector = files.length ? dropdown({
-      label: "Size", placeholder: "Select size…",
-      options: files.map((file) => ({ ...file, name: file.name.replace(/\.pdf$/i, "") })),
-      value: state.selected, file: true
-    }) : "";
-    panel.innerHTML = `<div class="lc-gd-head"><strong>Living Culture Drawings</strong><button type="button" data-close aria-label="Close">×</button></div>
-      <div class="lc-gd-content">
-        ${state.loading && !state.loaded ? '<div class="lc-gd-loading"><i></i> Loading drawings…</div>' : `${selectors}${fileSelector}`}
-      </div>
-      <div class="lc-gd-footer"><div class="lc-gd-status ${state.error ? "error" : ""}">${state.loading || state.preparing || state.busy ? "<i></i>" : ""}<span>${escapeHtml(state.status)}</span></div>
-      <button type="button" data-attach ${state.busy || !state.selected ? "disabled" : ""}>${state.busy ? "Attaching…" : "Attach to Gmail"}</button></div>`;
-    panel.querySelector("[data-close]")?.addEventListener("click", closePanel);
-    panel.querySelectorAll(".lc-gd-trigger").forEach((trigger) => trigger.addEventListener("click", () => {
-      const select = trigger.closest(".lc-gd-select");
-      const opening = !select.classList.contains("open");
-      panel.querySelectorAll(".lc-gd-select.open").forEach((other) => other.classList.remove("open"));
-      select.classList.toggle("open", opening);
-    }));
-    panel.querySelectorAll(".lc-gd-menu button").forEach((option) => option.addEventListener("click", () => {
-      const select = option.closest(".lc-gd-select");
-      const value = option.dataset.value || "";
-      if (select.hasAttribute("data-file")) {
-        state.selected = value || null;
-        render();
-        const file = currentFiles().find((item) => item.id === value);
-        if (file) prepare(file);
-      } else chooseFolder(Number(select.dataset.level), value);
-    }));
-    panel.querySelector("[data-attach]")?.addEventListener("click", attachSelected);
+    panel.replaceChildren();
+
+    const head = element("div", "lc-gd-head");
+    const close = element("button", "", "×");
+    close.type = "button";
+    close.setAttribute("aria-label", "Close");
+    close.addEventListener("click", closePanel);
+    head.append(element("strong", "", "Living Culture Drawings"), close);
+
+    const content = element("div", "lc-gd-content");
+    if (state.loading && !state.loaded) {
+      const loading = element("div", "lc-gd-loading");
+      loading.append(element("i"), document.createTextNode("Loading drawings…"));
+      content.appendChild(loading);
+    } else {
+      state.levels.forEach((level, index) => {
+        if (!level.folders.length) return;
+        const label = levelLabel(index, level.folders);
+        content.appendChild(dropdown({ label, placeholder: `Select ${label.toLowerCase()}…`, options: level.folders, value: level.selectedFolderId, level: index, panel }));
+      });
+      const files = currentFiles();
+      if (files.length) content.appendChild(dropdown({
+        label: "Size", placeholder: "Select size…", panel, file: true,
+        options: files.map((file) => ({ ...file, name: file.name.replace(/\.pdf$/i, "") })), value: state.selected
+      }));
+    }
+
+    const footer = element("div", "lc-gd-footer");
+    const status = element("div", `lc-gd-status${state.error ? " error" : ""}`);
+    if (state.loading || state.preparing || state.busy) status.appendChild(element("i"));
+    status.appendChild(element("span", "", state.status));
+    const attach = element("button", "", state.busy ? "Attaching…" : "Attach to Gmail");
+    attach.type = "button";
+    attach.disabled = state.busy || !state.selected;
+    attach.addEventListener("click", attachSelected);
+    footer.append(status, attach);
+    panel.append(head, content, footer);
   }
 
   function openPanel() {
