@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Cin7 Site Visit Card (Popup)
 // @namespace    https://livingculture.co.nz/
-// @version      1.13.0
+// @version      1.13.1
 // @description  Adds Site Visit, Quote Review and HubSpot helper buttons to Cin7 Core and Cin7 Omni sales.
 // @author       Living Culture
 // @match        https://inventory.dearsystems.com/Sale*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.13.0
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.13.0
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.13.1
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js?v=1.13.1
 // ==/UserScript==
 
 (function () {
@@ -98,8 +98,27 @@
   }
 
   function extractOrderId(text) {
-    const match = clean(text).match(/\bNZSO-\d+\b/i);
-    return match ? match[0].toUpperCase() : '';
+    const match = clean(text).match(/\b(?:NZSO-?\d+|SFOR\d+(?:-\d+)?)\b/i);
+    if (!match) return '';
+    const value = match[0].toUpperCase();
+    return /^NZSO\d+$/i.test(value) ? value.replace(/^NZSO/i, 'NZSO-') : value;
+  }
+
+  function omniHeadingDraft() {
+    if (!isOmniPage()) return { customerName: '', orderId: '' };
+    const headings = Array.from(document.querySelectorAll('h1, h2, h3, [role="heading"]'))
+      .filter(isVisible)
+      .map(node => clean(node.textContent || ''))
+      .filter(Boolean);
+    const heading = headings.find(text => /(?:Edit|New)\s+(?:Quote|Sales Order)/i.test(text) && extractOrderId(text)) ||
+      headings.find(text => extractOrderId(text)) ||
+      clean(document.title || '');
+    const orderId = extractOrderId(heading);
+    const customerMatch = heading.match(/^(?:Edit|New)\s+(?:Quote|Sales Order)\s*-\s*(.+?)\s*-\s*(?:NZSO-?\d+|SFOR\d+(?:-\d+)?)\b/i);
+    return {
+      customerName: clean(customerMatch?.[1] || ''),
+      orderId
+    };
   }
 
   function deriveBranchFromRep(repName) {
@@ -1228,6 +1247,7 @@
   }
 
   function cin7Draft() {
+    const omniHeading = omniHeadingDraft();
     const address1 = readValueNearLabel('Shipping address line 1') || readValueNearLabel('Delivery Address 1') || readValueNearLabel('Billing address line 1') || readValueNearLabel('Billing Address 1');
     const address2 = readValueNearLabel('Shipping address line 2') || readValueNearLabel('Delivery Address 2') || readValueNearLabel('Billing address line 2') || readValueNearLabel('Billing Address 2');
     const reference = readValueNearLabel('Reference') || readValueNearLabel('Customer PO No');
@@ -1236,7 +1256,7 @@
     const titleOrderId = extractOrderId(document.title || '');
     const pageOrderId = extractOrderId(pageText);
     const referenceOrderId = extractOrderId(reference);
-    const customerName = readValueNearLabel('Customer') || readValueNearLabel('Selected Customer') || readValueNearLabel('Company');
+    const customerName = omniHeading.customerName || readValueNearLabel('Customer') || readValueNearLabel('Selected Customer') || readValueNearLabel('Company');
     const comments = readCin7CommentsTextarea();
     let productText = extractProductLines();
     if (productText && customerName && clean(productText).toLowerCase() === clean(customerName).toLowerCase()) {
@@ -1247,7 +1267,7 @@
       status: 'To be confirmed',
       bookedDate: localDateKey(),
       time: '',
-      orderId: referenceOrderId || titleOrderId || pageOrderId || reference,
+      orderId: omniHeading.orderId || referenceOrderId || titleOrderId || pageOrderId || reference,
       placedBy: rep,
       visitBy: '',
       customerName,
