@@ -1,14 +1,14 @@
 // ==UserScript==
 // @name         Gmail Living Culture HubSpot Quote Auto Log
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.0
+// @version      0.1.1
 // @description  Finds an SFOR quote number in a Gmail draft and automatically selects its matching HubSpot deals for logging.
 // @author       Living Culture
 // @match        https://mail.google.com/*
 // @grant        none
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-quote-auto-log.user.js?v=0.1.0
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-quote-auto-log.user.js?v=0.1.0
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-quote-auto-log.user.js?v=0.1.1
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-quote-auto-log.user.js?v=0.1.1
 // @supportURL   https://github.com/Livingculture/freight-tool
 // ==/UserScript==
 
@@ -60,11 +60,15 @@
   }
 
   function setReactInput(input, value) {
+    const previous = input.value;
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
     if (setter) setter.call(input, value);
     else input.value = value;
+    if (input._valueTracker) input._valueTracker.setValue(previous);
+    input.dispatchEvent(new InputEvent("beforeinput", { bubbles: true, cancelable: true, inputType: "insertText", data: value }));
     input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, key: value.at(-1) || "", code: "KeyR" }));
   }
 
   function checkedState(row) {
@@ -80,8 +84,9 @@
     (control || row).dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
   }
 
-  function matchingDealRows(quote) {
-    return Array.from(document.querySelectorAll("[role=dialog] label, [role=dialog] [role=option], [role=dialog] li, [role=dialog] div"))
+  function matchingDealRows(quote, search) {
+    const panel = search.ownerDocument?.body || document.body;
+    return Array.from(panel.querySelectorAll("label, [role=option], li, div"))
       .filter((row) => {
         if (!visible(row)) return false;
         const text = clean(row.textContent).toUpperCase();
@@ -123,8 +128,14 @@
 
     search.focus();
     setReactInput(search, quote);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    if (clean(search.value).toUpperCase() !== quote) {
+      search.focus();
+      search.select?.();
+      document.execCommand("insertText", false, quote);
+    }
     const rows = await waitFor(() => {
-      const found = matchingDealRows(quote);
+      const found = matchingDealRows(quote, search);
       return found.length ? found : null;
     });
     if (!rows) return false;
