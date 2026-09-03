@@ -1,14 +1,14 @@
 // ==UserScript==
 // @name         Gmail Living Culture HubSpot Quote Auto Log
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.2
+// @version      0.1.3
 // @description  Finds an SFOR quote number in a Gmail draft and automatically selects its matching HubSpot deals for logging.
 // @author       Living Culture
 // @match        https://mail.google.com/*
 // @grant        none
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-quote-auto-log.user.js?v=0.1.2
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-quote-auto-log.user.js?v=0.1.2
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-quote-auto-log.user.js?v=0.1.3
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-quote-auto-log.user.js?v=0.1.3
 // @supportURL   https://github.com/Livingculture/freight-tool
 // ==/UserScript==
 
@@ -28,6 +28,24 @@
     const rect = element.getBoundingClientRect();
     const style = getComputedStyle(element);
     return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+  }
+
+  function deepRoots() {
+    const roots = [document];
+    for (let index = 0; index < roots.length; index += 1) {
+      roots[index].querySelectorAll?.("*").forEach((element) => {
+        if (element.shadowRoot && !roots.includes(element.shadowRoot)) roots.push(element.shadowRoot);
+      });
+    }
+    return roots;
+  }
+
+  function deepQueryAll(selector) {
+    return deepRoots().flatMap((root) => Array.from(root.querySelectorAll?.(selector) || []));
+  }
+
+  function deepQueryVisible(selector) {
+    return deepQueryAll(selector).find(visible) || null;
   }
 
   function subjectFields() {
@@ -57,8 +75,14 @@
   }
 
   function textElements(root, pattern) {
-    return Array.from(root.querySelectorAll("button, label, span, div"))
+    const candidates = deepQueryAll('button, label, span, div, [role="button"]')
+      .filter((element) => root === document.body || root.contains(element) || element.getRootNode()?.host && root.contains(element.getRootNode().host))
       .filter((element) => visible(element) && pattern.test(clean(element.textContent)));
+    return candidates.sort((left, right) => {
+      const leftRect = left.getBoundingClientRect();
+      const rightRect = right.getBoundingClientRect();
+      return (leftRect.width * leftRect.height) - (rightRect.width * rightRect.height);
+    });
   }
 
   function showStatus(message, intent = "working") {
@@ -118,8 +142,7 @@
   }
 
   function matchingDealRows(quote, search) {
-    const panel = search.ownerDocument?.body || document.body;
-    return Array.from(panel.querySelectorAll("label, [role=option], li, div"))
+    return deepQueryAll("label, [role=option], li, div")
       .filter((row) => {
         if (!visible(row)) return false;
         const text = clean(row.textContent).toUpperCase();
@@ -132,7 +155,7 @@
   }
 
   async function openHubSpotPicker(root) {
-    const logLabels = textElements(root, /^Log(?:\s+\d+\s*\/\s*\d+)?$/i);
+    const logLabels = textElements(root, /(?:^|\s)Log\s*\d+\s*\/\s*\d+(?:\s|$)/i);
     if (!logLabels.length) return null;
 
     const logLabel = logLabels.at(-1);
@@ -142,14 +165,14 @@
     if (nativeCheckbox && !nativeCheckbox.checked) nativeCheckbox.click();
 
     logLabel.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
-    let search = await waitFor(() => Array.from(document.querySelectorAll('input[placeholder="Search Deals"]')).find(visible), 2500);
+    let search = await waitFor(() => deepQueryVisible('input[placeholder="Search Deals"]'), 2500);
     if (search) return search;
 
     const parent = logLabel.parentElement;
     const clickTargets = parent ? Array.from(parent.querySelectorAll("button, [role=button], svg")) : [];
     for (const target of clickTargets.reverse()) {
       target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
-      search = await waitFor(() => Array.from(document.querySelectorAll('input[placeholder="Search Deals"]')).find(visible), 650);
+      search = await waitFor(() => deepQueryVisible('input[placeholder="Search Deals"]'), 650);
       if (search) return search;
     }
     return null;
