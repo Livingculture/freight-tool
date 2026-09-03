@@ -1,14 +1,14 @@
 // ==UserScript==
 // @name         Gmail Living Culture HubSpot Quote Auto Log
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.1
+// @version      0.1.2
 // @description  Finds an SFOR quote number in a Gmail draft and automatically selects its matching HubSpot deals for logging.
 // @author       Living Culture
 // @match        https://mail.google.com/*
 // @grant        none
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-quote-auto-log.user.js?v=0.1.1
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-quote-auto-log.user.js?v=0.1.1
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-quote-auto-log.user.js?v=0.1.2
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-quote-auto-log.user.js?v=0.1.2
 // @supportURL   https://github.com/Livingculture/freight-tool
 // ==/UserScript==
 
@@ -30,13 +30,28 @@
     return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
   }
 
+  function subjectFields() {
+    return Array.from(document.querySelectorAll('input[name="subjectbox"], input[placeholder="Subject"], input[aria-label="Subject"]')).filter(visible);
+  }
+
+  function composeRootFor(subject) {
+    let node = subject;
+    while (node && node !== document.body) {
+      const hasBody = node.querySelector?.('div[aria-label="Message Body"][contenteditable="true"], div[role="textbox"][contenteditable="true"], div[g_editable="true"][contenteditable="true"]');
+      const hasLog = /\bLog(?:\s+\d+\s*\/\s*\d+)?\b/i.test(clean(node.innerText));
+      if (hasBody && hasLog) return node;
+      node = node.parentElement;
+    }
+    return subject.closest('div[role="dialog"], div[role="listitem"]') || document.body;
+  }
+
   function composeRoots() {
-    return Array.from(document.querySelectorAll('div[role="dialog"], div[role="listitem"]'))
-      .filter((root) => visible(root) && root.querySelector('input[name="subjectbox"], div[aria-label="Message Body"][contenteditable="true"], div[g_editable="true"][contenteditable="true"]'));
+    return Array.from(new Set(subjectFields().map(composeRootFor)));
   }
 
   function quoteNumber(root) {
-    const subject = root.querySelector('input[name="subjectbox"]')?.value || "";
+    const subject = Array.from(root.querySelectorAll('input[name="subjectbox"], input[placeholder="Subject"], input[aria-label="Subject"]'))
+      .find(visible)?.value || "";
     const match = clean(subject).match(QUOTE_RE);
     return match ? `SFOR${match[1]}`.toUpperCase() : "";
   }
@@ -44,6 +59,24 @@
   function textElements(root, pattern) {
     return Array.from(root.querySelectorAll("button, label, span, div"))
       .filter((element) => visible(element) && pattern.test(clean(element.textContent)));
+  }
+
+  function showStatus(message, intent = "working") {
+    let toast = document.getElementById("lc-hubspot-auto-log-status");
+    if (!toast) {
+      toast = document.createElement("div");
+      toast.id = "lc-hubspot-auto-log-status";
+      Object.assign(toast.style, {
+        position: "fixed", right: "22px", bottom: "72px", zIndex: "2147483647",
+        padding: "9px 13px", borderRadius: "7px", color: "#fff", font: "600 13px Arial, sans-serif",
+        boxShadow: "0 5px 18px rgba(0,0,0,.22)"
+      });
+      document.body.appendChild(toast);
+    }
+    toast.textContent = message;
+    toast.style.background = intent === "error" ? "#b42318" : intent === "done" ? "#087f8c" : "#ff5c35";
+    clearTimeout(toast._hideTimer);
+    toast._hideTimer = setTimeout(() => toast.remove(), intent === "working" ? 5000 : 3500);
   }
 
   function waitFor(find, timeout = 8000, interval = 120) {
@@ -123,8 +156,12 @@
   }
 
   async function associate(root, quote) {
+    showStatus(`HubSpot: finding ${quote}…`);
     const search = await openHubSpotPicker(root);
-    if (!search) return false;
+    if (!search) {
+      showStatus("HubSpot Log control was not found.", "error");
+      return false;
+    }
 
     search.focus();
     setReactInput(search, quote);
@@ -138,7 +175,10 @@
       const found = matchingDealRows(quote, search);
       return found.length ? found : null;
     });
-    if (!rows) return false;
+    if (!rows) {
+      showStatus(`No HubSpot deal found for ${quote}.`, "error");
+      return false;
+    }
 
     const controls = new Set();
     const uniqueRows = rows.filter((row) => {
@@ -150,6 +190,7 @@
     uniqueRows.forEach((row) => {
       if (!checkedState(row)) clickCheckbox(row);
     });
+    showStatus(`HubSpot: ${uniqueRows.length} deal${uniqueRows.length === 1 ? "" : "s"} selected for ${quote}.`, "done");
     return uniqueRows.length > 0;
   }
 
