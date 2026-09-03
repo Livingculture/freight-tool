@@ -1,19 +1,25 @@
 // ==UserScript==
 // @name         Gmail Living Culture HubSpot Quote Auto Log
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.3
-// @description  Finds an SFOR quote number in a Gmail draft and automatically selects its matching HubSpot deals for logging.
+// @version      0.1.4
+// @description  Retired safety stub for the Gmail HubSpot quote auto-log experiment.
 // @author       Living Culture
 // @match        https://mail.google.com/*
 // @grant        none
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-quote-auto-log.user.js?v=0.1.3
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-quote-auto-log.user.js?v=0.1.3
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-quote-auto-log.user.js?v=0.1.4
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-quote-auto-log.user.js?v=0.1.4
 // @supportURL   https://github.com/Livingculture/freight-tool
 // ==/UserScript==
 
 (function () {
   "use strict";
+
+  // HubSpot Sales is a separately isolated Chrome extension. Attempting to
+  // operate its controls from a page userscript can click the Gmail compose
+  // controls underneath it. Keep this installed script inert so existing
+  // installations update safely without risking modified drafts.
+  return;
 
   const QUOTE_RE = /\bSFOR\s*[-#]?\s*(\d{4,}(?:-\d+)?)\b/i;
   const processed = new WeakMap();
