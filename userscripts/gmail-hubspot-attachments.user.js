@@ -1,15 +1,16 @@
 // ==UserScript==
 // @name         Gmail Living Culture HubSpot Attachments
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.2
+// @version      0.1.3
 // @description  Uploads Gmail attachments to the customer HubSpot deals referenced by the subject and attached quotes.
 // @author       Living Culture
 // @match        https://mail.google.com/*
 // @grant        GM_xmlhttpRequest
 // @connect      living-culture-workflow.vercel.app
+// @connect      *.supabase.co
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-attachments.user.js?v=0.1.2
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-attachments.user.js?v=0.1.2
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-attachments.user.js?v=0.1.3
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-attachments.user.js?v=0.1.3
 // @supportURL   https://github.com/Livingculture/freight-tool
 // ==/UserScript==
 
@@ -78,50 +79,68 @@
     toast._hideTimer = setTimeout(() => toast.remove(), intent === "working" ? 15000 : 5000);
   }
 
-  function upload(state, key, file, quote, attempt = 0) {
-    const form = new FormData();
-    form.set("quoteNumbers", JSON.stringify([quote]));
-    form.set("file", file, file.name);
-    showStatus(`HubSpot: uploading ${file.name} to ${quote}…`);
-    GM_xmlhttpRequest({
-      method: "POST",
-      url: API_URL,
-      headers: { Accept: "application/json", "x-lc-token": TOOL_TOKEN },
-      data: form,
-      timeout: 90000,
-      onload(response) {
-        let payload = {};
-        try { payload = JSON.parse(response.responseText || "{}"); } catch {}
-        if (response.status >= 200 && response.status < 300 && payload.ok) {
-          if (!state.uploaded.has(key)) state.uploaded.set(key, new Set());
-          state.uploaded.get(key).add(quote);
-          state.pending.get(key)?.delete(quote);
-          const count = Array.isArray(payload.deals) ? payload.deals.length : 0;
-          const missing = Array.isArray(payload.missingQuoteNumbers) && payload.missingQuoteNumbers.length
-            ? ` Missing: ${payload.missingQuoteNumbers.join(", ")}.`
-            : "";
-          showStatus(`HubSpot: ${file.name} added to ${count} deal${count === 1 ? "" : "s"}.${missing}`, missing ? "error" : "done");
-          return;
-        }
-        if ((response.status === 404 || response.status >= 500) && attempt < 2) {
-          setTimeout(() => upload(state, key, file, quote, attempt + 1), 4000 * (attempt + 1));
-          return;
-        }
-        state.pending.get(key)?.delete(quote);
-        showStatus(payload.error || `HubSpot attachment failed (${response.status}).`, "error");
-      },
-      ontimeout() {
-        if (attempt < 2) setTimeout(() => upload(state, key, file, quote, attempt + 1), 4000 * (attempt + 1));
-        else {
-          state.pending.get(key)?.delete(quote);
-          showStatus(`HubSpot timed out while uploading ${file.name}.`, "error");
-        }
-      },
-      onerror() {
-        state.pending.get(key)?.delete(quote);
-        showStatus(`Could not connect to HubSpot for ${file.name}.`, "error");
-      }
+  function errorMessage(payload, fallback) {
+    const error = payload?.error;
+    if (typeof error === "string") return error;
+    if (typeof error?.message === "string") return error.message;
+    if (typeof payload?.message === "string") return payload.message;
+    return fallback;
+  }
+
+  function requestJson(options) {
+    return new Promise((resolve, reject) => {
+      GM_xmlhttpRequest({
+        ...options,
+        timeout: 90000,
+        onload(response) {
+          let payload = {};
+          try { payload = JSON.parse(response.responseText || "{}"); } catch {}
+          if (response.status >= 200 && response.status < 300) resolve(payload);
+          else reject(new Error(errorMessage(payload, `Upload failed (${response.status}).`)));
+        },
+        ontimeout() { reject(new Error("The upload timed out.")); },
+        onerror() { reject(new Error("Could not connect to the attachment service.")); }
+      });
     });
+  }
+
+  async function upload(state, key, file, quote, attempt = 0) {
+    showStatus(`HubSpot: uploading ${file.name} to ${quote}…`);
+    try {
+      const prepared = await requestJson({
+        method: "POST", url: API_URL,
+        headers: { "Content-Type": "application/json", Accept: "application/json", "x-lc-token": TOOL_TOKEN },
+        data: JSON.stringify({ action: "prepare", fileName: file.name, fileType: file.type, fileSize: file.size })
+      });
+      if (!prepared.ok || !prepared.signedUrl || !prepared.storagePath) throw new Error(errorMessage(prepared, "Could not prepare the upload."));
+
+      const stagingForm = new FormData();
+      stagingForm.append("cacheControl", "3600");
+      stagingForm.append("", file, file.name);
+      await requestJson({ method: "PUT", url: prepared.signedUrl, data: stagingForm });
+
+      const payload = await requestJson({
+        method: "POST", url: API_URL,
+        headers: { "Content-Type": "application/json", Accept: "application/json", "x-lc-token": TOOL_TOKEN },
+        data: JSON.stringify({
+          action: "complete", storagePath: prepared.storagePath, fileName: file.name,
+          fileType: file.type, quoteNumbers: [quote]
+        })
+      });
+      if (!payload.ok) throw new Error(errorMessage(payload, "HubSpot did not accept the attachment."));
+      if (!state.uploaded.has(key)) state.uploaded.set(key, new Set());
+      state.uploaded.get(key).add(quote);
+      state.pending.get(key)?.delete(quote);
+      const count = Array.isArray(payload.deals) ? payload.deals.length : 0;
+      showStatus(`HubSpot: ${file.name} added to ${count} deal${count === 1 ? "" : "s"}.`, "done");
+    } catch (error) {
+      if (attempt < 2) {
+        setTimeout(() => upload(state, key, file, quote, attempt + 1), 4000 * (attempt + 1));
+        return;
+      }
+      state.pending.get(key)?.delete(quote);
+      showStatus(error instanceof Error ? error.message : "Could not attach the file to HubSpot.", "error");
+    }
   }
 
   function capture(input) {
