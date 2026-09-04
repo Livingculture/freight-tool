@@ -1,12 +1,14 @@
 // ==UserScript==
 // @name         Omni Living Culture PDF Attachments
 // @namespace    livingculture-omni
-// @version      0.4.6
+// @version      0.4.7
 // @description  Selects Living Culture Google Drive PDFs and loads them into the Cin7 Omni email attachment fields.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
+// @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @match        https://living-culture-email-helper.vercel.app/*
 // @grant        GM_xmlhttpRequest
+// @connect      go.cin7.com
 // @connect      cin7-pdf-attachments.vercel.app
 // @connect      drive.google.com
 // @connect      drive.usercontent.google.com
@@ -27,17 +29,20 @@
   const BUTTON_ID = "lc-omni-pdf-attachments-button";
   const PANEL_ID = "lc-omni-pdf-attachments-panel";
   const DRAWINGS_BUTTON_ID = "lc-omni-drawings-button";
+  const QUOTE_BUTTON_ID = "lc-omni-quote-pdf-button";
   const DRAWINGS_PANEL_ID = "lc-omni-drawings-panel";
   const STYLE_ID = "lc-omni-pdf-attachments-styles";
   const HELPER_ORIGIN = "https://living-culture-email-helper.vercel.app";
   const OMNI_ORIGIN = "https://go.cin7.com";
   const CACHE_KEY = "lc-omni-pdf-files-v1";
   const CACHE_MAX_AGE = 5 * 60 * 1000;
+  const QUOTE_CONTEXT_KEY = "lcOmniQuotePdfContextV1";
   const DRAWINGS_ROOT_ID = "1Tcxn7LceZztaoWUmgsNZgml18s2LZORj";
   const OPTIMIZED_CARE_BASE = "https://github.com/Livingculture/freight-tool/releases/download/care-guides-email-v1";
   const DRIVE_FOLDER_MIME = "application/vnd.google-apps.folder";
   const state = { files: [], selected: new Set(), loaded: false, loadingList: false, preparing: false, busy: false, status: "", statusError: false };
   const drawingState = { levels: [], selected: new Set(), loaded: false, loading: false, preparing: false, busy: false, status: "", statusError: false };
+  let quoteBusy = false;
   const downloadCache = new Map();
   let injectQueued = false;
 
@@ -330,6 +335,99 @@
     input.dispatchEvent(new Event("change", { bubbles: true }));
   }
 
+  function extractQuoteNumber(value) {
+    return clean(value).match(/\bSFOR\d+(?:-[A-Z0-9]+)?\b/i)?.[0]?.toUpperCase() || "";
+  }
+
+  function numericIdsFromUrl(value) {
+    try {
+      const url = new URL(value, location.href);
+      const preferred = ["sid", "transactionid", "saleid", "orderid", "id"];
+      return preferred.flatMap((name) => Array.from(url.searchParams.entries())
+        .filter(([key, item]) => key.toLowerCase() === name && /^\d{6,}$/.test(item))
+        .map(([, item]) => item));
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function captureQuotePdfContext() {
+    const quoteNumber = extractQuoteNumber(document.body?.innerText || document.title || "");
+    if (!quoteNumber) return;
+    const links = Array.from(document.querySelectorAll("a[href]"))
+      .filter((link) => /go to admin|quote/i.test(clean(link.textContent)))
+      .map((link) => link.href);
+    const hiddenIds = Array.from(document.querySelectorAll('input[type="hidden"]'))
+      .filter((input) => /(?:^|_)(?:sid|transactionid|saleid|orderid|id)$/i.test(input.name || input.id || ""))
+      .map((input) => clean(input.value))
+      .filter((value) => /^\d{6,}$/.test(value));
+    const sids = Array.from(new Set([
+      ...numericIdsFromUrl(location.href),
+      ...links.flatMap(numericIdsFromUrl),
+      ...hiddenIds
+    ]));
+    localStorage.setItem(QUOTE_CONTEXT_KEY, JSON.stringify({ quoteNumber, sids, savedAt: Date.now() }));
+  }
+
+  function quotePdfContext() {
+    try {
+      const context = JSON.parse(localStorage.getItem(QUOTE_CONTEXT_KEY) || "null");
+      if (!context || !extractQuoteNumber(context.quoteNumber) || !Array.isArray(context.sids)) return null;
+      return { quoteNumber: extractQuoteNumber(context.quoteNumber), sids: context.sids.filter((value) => /^\d{6,}$/.test(clean(value))) };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function isPdf(buffer) {
+    const bytes = new Uint8Array(buffer || new ArrayBuffer(0));
+    return bytes.length > 4 && String.fromCharCode(...bytes.slice(0, 4)) === "%PDF";
+  }
+
+  async function addQuotePdf() {
+    const context = quotePdfContext();
+    if (!context?.sids.length) {
+      window.alert("Open the quote screen once, then return to its email screen and try Quote PDF again.");
+      return;
+    }
+    const input = availableFileInputs()[0];
+    if (!input) {
+      window.alert("Omni has no empty attachment field available.");
+      return;
+    }
+    quoteBusy = true;
+    const button = document.getElementById(QUOTE_BUTTON_ID);
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Loading Quote…";
+    }
+    try {
+      let pdfResponse = null;
+      for (const sid of context.sids) {
+        const url = `https://go.cin7.com/Cloud/Docs/PDF/?T=Quote&idWebSite=27265&UN=vi&ID=363&SID=${encodeURIComponent(sid)}`;
+        try {
+          const response = await request(url, { responseType: "arraybuffer" });
+          if (isPdf(response.response)) {
+            pdfResponse = response;
+            break;
+          }
+        } catch (_) {}
+      }
+      if (!pdfResponse) throw new Error("Cin7 could not generate the PDF for this quote.");
+      assignFile(input, new File([pdfResponse.response], `${context.quoteNumber}.pdf`, {
+        type: "application/pdf",
+        lastModified: Date.now()
+      }));
+      if (button) button.textContent = "Quote Added";
+    } catch (error) {
+      window.alert(error.message || "The quote PDF could not be added.");
+      if (button) button.textContent = "Quote PDF";
+    } finally {
+      quoteBusy = false;
+      if (button) button.disabled = false;
+    }
+  }
+
   async function addSelected() {
     const files = selectedFiles();
     if (!files.length) return;
@@ -529,8 +627,11 @@
     style.id = STYLE_ID;
     style.textContent = `
       #${HOST_ID} { position: relative; display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; margin-top: 24px; }
-      #${BUTTON_ID}, #${DRAWINGS_BUTTON_ID} { min-height: 40px; border: 1px solid #8da9cc; border-radius: 6px; background: #fff; color: #0b3978; padding: 0 16px; font: 700 14px Arial,sans-serif; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
-      #${BUTTON_ID}:hover, #${DRAWINGS_BUTTON_ID}:hover { background: #eef4fb; }
+      #${BUTTON_ID}, #${DRAWINGS_BUTTON_ID}, #${QUOTE_BUTTON_ID} { min-height: 40px; border: 1px solid #8da9cc; border-radius: 6px; background: #fff; color: #0b3978; padding: 0 16px; font: 700 14px Arial,sans-serif; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
+      #${BUTTON_ID}:hover, #${DRAWINGS_BUTTON_ID}:hover, #${QUOTE_BUTTON_ID}:hover { background: #eef4fb; }
+      #${QUOTE_BUTTON_ID} { border-color: #e2a900; background: #f7c948; color: #fff; }
+      #${QUOTE_BUTTON_ID}:hover { background: #eebc2e; }
+      #${QUOTE_BUTTON_ID}:disabled { opacity: .65; cursor: wait; }
       #${PANEL_ID}, #${DRAWINGS_PANEL_ID} { display: none; position: absolute; z-index: 2147483647; top: 46px; left: 50%; transform: translateX(-50%); width: 410px; max-width: calc(100vw - 48px); border: 1px solid #9eb8d8; border-radius: 7px; background: #fff; box-shadow: 0 14px 36px rgba(15,46,106,.22); color: #172b49; font: 13px Arial,sans-serif; }
       #${DRAWINGS_PANEL_ID} { top: 96px; }
       #${HOST_ID}.is-care-open #${PANEL_ID}, #${HOST_ID}.is-drawings-open #${DRAWINGS_PANEL_ID} { display: block; }
@@ -587,11 +688,13 @@
     const host = document.createElement("div");
     host.id = HOST_ID;
     host.innerHTML = `
+      <button type="button" id="${QUOTE_BUTTON_ID}">Quote PDF</button>
       <button type="button" id="${BUTTON_ID}" class="ghost">Care Guides</button>
       <section id="${PANEL_ID}" aria-label="Living Culture Care Guides"></section>
       <button type="button" id="${DRAWINGS_BUTTON_ID}" class="ghost">Drawings</button>
       <section id="${DRAWINGS_PANEL_ID}" aria-label="Living Culture Drawings"></section>`;
     contactsColumn.appendChild(host);
+    host.querySelector(`#${QUOTE_BUTTON_ID}`).addEventListener("click", addQuotePdf);
     host.querySelector(`#${BUTTON_ID}`).addEventListener("click", () => {
       host.classList.remove("is-drawings-open");
       host.classList.toggle("is-care-open");
@@ -627,6 +730,15 @@
   }
 
   function boot() {
+    if (/\/Cloud\/TransactionEntry\/TransactionEntry\.aspx$/i.test(location.pathname)) {
+      captureQuotePdfContext();
+      let captureTimer = 0;
+      new MutationObserver(() => {
+        clearTimeout(captureTimer);
+        captureTimer = setTimeout(captureQuotePdfContext, 200);
+      }).observe(document.body, { childList: true, subtree: true, characterData: true });
+      return;
+    }
     if (location.origin === HELPER_ORIGIN) {
       window.addEventListener("message", (event) => {
         if (event.origin !== OMNI_ORIGIN || event.data?.type !== "LC_OMNI_PDF_RESULT") return;
