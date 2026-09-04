@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.8
+// @version      0.1.9
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.8
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.8
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.9
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.9
 // ==/UserScript==
 
 (function () {
@@ -28,6 +28,14 @@
   const WORKFLOW_PLANNER_URL = 'https://living-culture-workflow.vercel.app/';
   const HUBSPOT_API_URL = 'https://living-culture-workflow.vercel.app/api/hubspot/create-deal';
   const HUBSPOT_LEAD_SOURCE_OPTIONS_URL = 'https://living-culture-workflow.vercel.app/api/hubspot/lead-source-options';
+  const HUBSPOT_GATE_CLASS = 'lc-omni-hubspot-gated-action';
+  const HUBSPOT_GATE_STORAGE_PREFIX = 'lc-omni-hubspot-deal-complete:';
+  const HUBSPOT_GATED_LABELS = new Set([
+    'go to admin',
+    'approve & email',
+    'approve back to list',
+    'approve'
+  ]);
   const API_KEY = '';
   const STATUSES = ['To be confirmed', 'Site Visit Confirmed', 'Completed', 'Hold'];
   const POPUP_STATUSES = ['To be confirmed', 'Site Visit Confirmed'];
@@ -126,6 +134,61 @@
       customerName: clean(customerMatch?.[1] || ''),
       orderId
     };
+  }
+
+  function hubSpotGateOrderId() {
+    return omniHeadingDraft().orderId || extractOrderId(document.title || '') || extractOrderId(document.body?.innerText || '');
+  }
+
+  function hubSpotGateStorageKey(orderId) {
+    const normalizedOrderId = extractOrderId(orderId);
+    return normalizedOrderId ? `${HUBSPOT_GATE_STORAGE_PREFIX}${normalizedOrderId}` : '';
+  }
+
+  function isHubSpotStepComplete(orderId) {
+    const key = hubSpotGateStorageKey(orderId);
+    if (!key) return false;
+    try {
+      return window.localStorage.getItem(key) === '1';
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function markHubSpotStepComplete(orderId) {
+    const key = hubSpotGateStorageKey(orderId);
+    if (!key) return;
+    try {
+      window.localStorage.setItem(key, '1');
+    } catch (error) {
+      // The controls still unlock for the current page even if storage is unavailable.
+    }
+    applyHubSpotApprovalGate(orderId);
+  }
+
+  function ensureHubSpotGateStyles() {
+    if (document.getElementById('lc-omni-hubspot-gate-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'lc-omni-hubspot-gate-styles';
+    style.textContent = `.${HUBSPOT_GATE_CLASS} { display: none !important; }`;
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  function applyHubSpotApprovalGate(completedOrderId = '') {
+    if (!isOmniPage()) return;
+    ensureHubSpotGateStyles();
+    const currentOrderId = hubSpotGateOrderId();
+    const unlocked = Boolean(
+      currentOrderId &&
+      (extractOrderId(completedOrderId) === currentOrderId || isHubSpotStepComplete(currentOrderId))
+    );
+
+    document.querySelectorAll('button, a, input[type="button"], input[type="submit"]').forEach((element) => {
+      if (element.id?.startsWith('lc-')) return;
+      const label = normalizeLabel(element.value || element.textContent || '');
+      if (!HUBSPOT_GATED_LABELS.has(label)) return;
+      element.classList.toggle(HUBSPOT_GATE_CLASS, !unlocked);
+    });
   }
 
   function deriveBranchFromRep(repName) {
@@ -1774,6 +1837,7 @@
         }
 
         if (response.status >= 200 && response.status < 300 && data.ok) {
+          markHubSpotStepComplete(payload.orderId);
           button.textContent = data.orderDealAssociated
             ? 'HubSpot Linked'
             : data.duplicate ? 'Already in HubSpot' : 'HubSpot Created';
@@ -2590,6 +2654,7 @@
     addButton();
     addHubSpotButton();
     addQuoteReviewButton();
+    applyHubSpotApprovalGate();
   }
 
   function scheduleButtonPass() {
