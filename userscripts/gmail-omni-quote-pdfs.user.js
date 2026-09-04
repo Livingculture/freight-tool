@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Omni Quote PDFs
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.1
+// @version      0.1.2
 // @description  Remembers opened Cin7 Omni quotes and attaches their PDFs directly to Gmail drafts.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -12,8 +12,8 @@
 // @grant        GM_setValue
 // @connect      go.cin7.com
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-omni-quote-pdfs.user.js?v=0.1.1
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-omni-quote-pdfs.user.js?v=0.1.1
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-omni-quote-pdfs.user.js?v=0.1.2
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-omni-quote-pdfs.user.js?v=0.1.2
 // @supportURL   https://github.com/Livingculture/freight-tool
 // ==/UserScript==
 
@@ -25,6 +25,7 @@
   const PANEL_ID = "lc-gmail-omni-quotes-panel";
   const QUOTES_URL = "https://go.cin7.com/Cloud/ShoppingCartAdmin/Orders/OrdersList.aspx?idWebSite=27265&idCustomerAppsLink=1328006";
   let syncTimer = 0;
+  let lastOpenAt = 0;
 
   function clean(value) {
     return String(value || "").replace(/\s+/g, " ").trim();
@@ -169,7 +170,15 @@
     document.getElementById(PANEL_ID)?.remove();
   }
 
-  async function openPanel() {
+  async function openPanel(event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (typeof event.stopImmediatePropagation === "function") event.stopImmediatePropagation();
+    }
+    const now = Date.now();
+    if (now - lastOpenAt < 350) return;
+    lastOpenAt = now;
     closePanel();
     const composeRoot = activeComposeRoot();
     if (!composeRoot) return;
@@ -274,7 +283,10 @@
       button.id = BUTTON_ID;
       button.type = "button";
       button.textContent = "Quote PDFs";
-      button.addEventListener("click", openPanel);
+      ["pointerdown", "mousedown", "touchstart", "click"].forEach((eventName) => {
+        button.addEventListener(eventName, openPanel, true);
+      });
+      button.onclick = openPanel;
       document.body.appendChild(button);
     }
     syncButton();
