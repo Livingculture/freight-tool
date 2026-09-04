@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.38
+// @version      0.1.39
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -309,13 +309,14 @@
 
     const addCin7NumberToSubject = () => {
       const subject = document.querySelector("#subject-output");
-      const order = clean(document.querySelector("#order")?.value);
+      const order = clean(document.querySelector("#order")?.value).toUpperCase();
       if (!subject || !order) return;
       const escapedOrder = order.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const base = clean(subject.value)
+        .replace(new RegExp(`^${escapedOrder}\\s*[-–—|:]?\\s*`, "i"), "")
         .replace(new RegExp(`\\s*[-–—|:]?\\s*${escapedOrder}\\s*$`, "i"), "")
         .trim();
-      const next = base ? `${base} - ${order}` : order;
+      const next = base ? `${order} - ${base}` : order;
       if (subject.value === next) return;
       subject.value = next;
       subject.dispatchEvent(new Event("input", { bubbles: true }));
