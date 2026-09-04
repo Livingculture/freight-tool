@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.9
+// @version      0.1.10
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.9
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.9
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.10
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.10
 // ==/UserScript==
 
 (function () {
@@ -1681,8 +1681,8 @@
             <p>Line items: <span id="lcHsSelectedLineItemCount">0</span></p>
           </div>
           <label class="lc-hs-option-check">
-            <input type="checkbox" id="lcHsCopyContactTimeline" checked>
-            <span>Add existing contact email activity to this deal</span>
+            <input type="checkbox" id="lcHsCopyContactTimeline">
+            <span>Add all existing contact email activity to this deal (optional)</span>
           </label>
           ${lineItems.length ? `
             <div class="lc-hs-line-review" aria-label="HubSpot line items">
