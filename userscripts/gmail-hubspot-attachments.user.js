@@ -1,16 +1,17 @@
 // ==UserScript==
 // @name         Gmail Living Culture HubSpot Attachments
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.4
+// @version      0.1.5
 // @description  Uploads Gmail attachments to the customer HubSpot deals referenced by the subject and attached quotes.
 // @author       Living Culture
 // @match        https://mail.google.com/*
 // @grant        GM_xmlhttpRequest
 // @connect      living-culture-workflow.vercel.app
 // @connect      *.supabase.co
+// @connect      qvoacxmzsmulhnllfntl.supabase.co
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-attachments.user.js?v=0.1.4
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-attachments.user.js?v=0.1.4
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-attachments.user.js?v=0.1.5
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-attachments.user.js?v=0.1.5
 // @supportURL   https://github.com/Livingculture/freight-tool
 // ==/UserScript==
 
@@ -98,17 +99,23 @@
 
   function requestJson(options) {
     return new Promise((resolve, reject) => {
+      const phase = options.phase || "attachment service";
+      const requestOptions = { ...options };
+      delete requestOptions.phase;
       GM_xmlhttpRequest({
-        ...options,
-        timeout: 90000,
+        ...requestOptions,
+        timeout: 180000,
         onload(response) {
           let payload = {};
           try { payload = JSON.parse(response.responseText || "{}"); } catch {}
           if (response.status >= 200 && response.status < 300) resolve(payload);
           else reject(new Error(errorMessage(payload, `Upload failed (${response.status}).`)));
         },
-        ontimeout() { reject(new Error("The upload timed out.")); },
-        onerror() { reject(new Error("Could not connect to the attachment service.")); }
+        ontimeout() { reject(new Error(`${phase} timed out.`)); },
+        onerror(response) {
+          const detail = clean(response?.statusText || "");
+          reject(new Error(`Could not connect during ${phase}${detail ? `: ${detail}` : ""}.`));
+        }
       });
     });
   }
@@ -117,6 +124,7 @@
     showStatus(`HubSpot: uploading ${file.name} to ${quote}…`);
     try {
       const prepared = await requestJson({
+        phase: "upload preparation",
         method: "POST", url: API_URL,
         headers: { "Content-Type": "application/json", Accept: "application/json", "x-lc-token": TOOL_TOKEN },
         data: JSON.stringify({ action: "prepare", fileName: file.name, fileType: file.type, fileSize: file.size })
@@ -126,9 +134,10 @@
       const stagingForm = new FormData();
       stagingForm.append("cacheControl", "3600");
       stagingForm.append("", file, file.name);
-      await requestJson({ method: "PUT", url: prepared.signedUrl, data: stagingForm });
+      await requestJson({ phase: "temporary file upload", method: "PUT", url: prepared.signedUrl, data: stagingForm });
 
       const payload = await requestJson({
+        phase: "HubSpot attachment completion",
         method: "POST", url: API_URL,
         headers: { "Content-Type": "application/json", Accept: "application/json", "x-lc-token": TOOL_TOKEN },
         data: JSON.stringify({
