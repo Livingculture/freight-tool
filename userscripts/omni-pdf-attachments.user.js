@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture PDF Attachments
 // @namespace    livingculture-omni
-// @version      0.4.8
+// @version      0.4.9
 // @description  Selects Living Culture Google Drive PDFs and loads them into the Cin7 Omni email attachment fields.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -771,13 +771,11 @@
     const host = document.createElement("div");
     host.id = HOST_ID;
     host.innerHTML = `
-      <button type="button" id="${QUOTE_BUTTON_ID}">Quote PDF</button>
       <button type="button" id="${BUTTON_ID}" class="ghost">Care Guides</button>
       <section id="${PANEL_ID}" aria-label="Living Culture Care Guides"></section>
       <button type="button" id="${DRAWINGS_BUTTON_ID}" class="ghost">Drawings</button>
       <section id="${DRAWINGS_PANEL_ID}" aria-label="Living Culture Drawings"></section>`;
     contactsColumn.appendChild(host);
-    host.querySelector(`#${QUOTE_BUTTON_ID}`).addEventListener("click", addQuotePdf);
     host.querySelector(`#${BUTTON_ID}`).addEventListener("click", () => {
       host.classList.remove("is-drawings-open");
       host.classList.toggle("is-care-open");
