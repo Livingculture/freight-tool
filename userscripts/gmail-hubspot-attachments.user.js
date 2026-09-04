@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Living Culture HubSpot Attachments
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.3
+// @version      0.1.4
 // @description  Uploads Gmail attachments to the customer HubSpot deals referenced by the subject and attached quotes.
 // @author       Living Culture
 // @match        https://mail.google.com/*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      *.supabase.co
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-attachments.user.js?v=0.1.3
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-attachments.user.js?v=0.1.3
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-attachments.user.js?v=0.1.4
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-attachments.user.js?v=0.1.4
 // @supportURL   https://github.com/Livingculture/freight-tool
 // ==/UserScript==
 
@@ -21,6 +21,7 @@
   const TOOL_TOKEN = "fXlAMocbHnglrq02Vg4WZY0xbHaPsA+b";
   const QUOTE_RE = /\bSFOR\s*[-#]?\s*(\d{4,}(?:-\d+)?)\b/gi;
   const composeStates = new WeakMap();
+  let uploadQueue = Promise.resolve();
 
   function clean(value) {
     return String(value || "").replace(/\s+/g, " ").trim();
@@ -83,8 +84,16 @@
     const error = payload?.error;
     if (typeof error === "string") return error;
     if (typeof error?.message === "string") return error.message;
+    if (typeof error?.error === "string") return error.error;
     if (typeof payload?.message === "string") return payload.message;
+    try {
+      if (error && typeof error === "object") return JSON.stringify(error);
+    } catch {}
     return fallback;
+  }
+
+  function delay(milliseconds) {
+    return new Promise((resolve) => setTimeout(resolve, milliseconds));
   }
 
   function requestJson(options) {
@@ -135,8 +144,8 @@
       showStatus(`HubSpot: ${file.name} added to ${count} deal${count === 1 ? "" : "s"}.`, "done");
     } catch (error) {
       if (attempt < 2) {
-        setTimeout(() => upload(state, key, file, quote, attempt + 1), 4000 * (attempt + 1));
-        return;
+        await delay(4000 * (attempt + 1));
+        return upload(state, key, file, quote, attempt + 1);
       }
       state.pending.get(key)?.delete(quote);
       showStatus(error instanceof Error ? error.message : "Could not attach the file to HubSpot.", "error");
@@ -166,7 +175,9 @@
       targets.forEach((quote) => {
         if (state.uploaded.get(key).has(quote) || state.pending.get(key).has(quote)) return;
         state.pending.get(key).add(quote);
-        upload(state, key, file, quote);
+        uploadQueue = uploadQueue
+          .catch(() => {})
+          .then(() => upload(state, key, file, quote));
       });
     });
   }
