@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Gmail Omni Quote PDFs
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.6
-// @description  Remembers downloaded Cin7 Omni quote PDFs and selects them from a private list in Gmail.
+// @version      0.1.7
+// @description  Retired Gmail quote selector; use Gmail's native attachment button for Omni-downloaded PDFs.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @match        https://go.cin7.com/Cloud/ShoppingCartAdmin/Orders/OrdersList.aspx*
@@ -12,8 +12,8 @@
 // @grant        GM_setValue
 // @connect      go.cin7.com
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-omni-quote-pdfs.user.js?v=0.1.6
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-omni-quote-pdfs.user.js?v=0.1.6
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-omni-quote-pdfs.user.js?v=0.1.7
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-omni-quote-pdfs.user.js?v=0.1.7
 // @supportURL   https://github.com/Livingculture/freight-tool
 // ==/UserScript==
 
@@ -432,21 +432,12 @@
   }
 
   if (location.hostname === "go.cin7.com") {
-    const capture = () => {
-      if (/\/Orders\/OrdersList\.aspx$/i.test(location.pathname)) saveQuoteContexts(quoteContextsFromDocument(document));
-      else captureOmniQuote();
-    };
-    capture();
-    let timer = 0;
-    new MutationObserver(() => {
-      clearTimeout(timer);
-      timer = setTimeout(() => {
-        capture();
-        bindOmniDownloadCache();
-      }, 200);
-    }).observe(document.body, { childList: true, subtree: true, characterData: true });
-    bindOmniDownloadCache();
+    // Retired: Omni's separate workflow script owns the working PDF download button.
   } else {
-    bootGmail();
+    clearInterval(syncTimer);
+    syncTimer = 0;
+    document.getElementById(BUTTON_ID)?.remove();
+    document.getElementById(PANEL_ID)?.remove();
+    document.getElementById("lc-gmail-omni-quotes-styles")?.remove();
   }
 })();
