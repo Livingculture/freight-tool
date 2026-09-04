@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.16
+// @version      0.1.17
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.16
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.16
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.17
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.17
 // ==/UserScript==
 
 (function () {
@@ -2500,8 +2500,46 @@
     try {
       localStorage.setItem(QUOTE_PDF_HANDOFF_KEY, JSON.stringify({ quoteNumber, startedAt: Date.now() }));
       button.disabled = true;
-      button.textContent = 'Opening Admin…';
-      adminControl.click();
+      button.textContent = 'Downloading…';
+      const frameName = `lc-quote-pdf-${Date.now()}`;
+      const frame = document.createElement('iframe');
+      frame.name = frameName;
+      frame.id = frameName;
+      frame.hidden = true;
+      frame.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(frame);
+
+      const href = adminControl instanceof HTMLAnchorElement ? adminControl.href : '';
+      if (href && !/^javascript:/i.test(href)) {
+        frame.src = href;
+      } else if (adminControl.form) {
+        const form = adminControl.form;
+        const previousTarget = form.target;
+        form.target = frameName;
+        adminControl.click();
+        window.setTimeout(() => { form.target = previousTarget; }, 0);
+      } else {
+        frame.remove();
+        throw new Error('Cin7\'s Admin page could not be opened in the background.');
+      }
+
+      let cleanupTimer = 0;
+      const cleanup = () => {
+        window.clearTimeout(cleanupTimer);
+        frame.remove();
+        button.disabled = false;
+        button.textContent = 'Download Quote PDF';
+      };
+      const handleFinished = (event) => {
+        if (event.origin !== location.origin || event.data !== 'lc-quote-pdf-finished') return;
+        window.removeEventListener('message', handleFinished);
+        cleanup();
+      };
+      window.addEventListener('message', handleFinished);
+      cleanupTimer = window.setTimeout(() => {
+        window.removeEventListener('message', handleFinished);
+        cleanup();
+      }, 120000);
     } catch (error) {
       button.disabled = false;
       button.textContent = 'Download Quote PDF';
@@ -2520,6 +2558,7 @@
         const isPdf = bytes.length > 3000 && String.fromCharCode(...bytes.slice(0, 4)) === '%PDF';
         if (!isPdf) {
           window.alert('Cin7 did not return a valid quote PDF.');
+          if (window.parent !== window) window.parent.postMessage('lc-quote-pdf-finished', location.origin);
           return;
         }
         const blobUrl = URL.createObjectURL(new Blob([response.response], { type: 'application/pdf' }));
@@ -2530,9 +2569,16 @@
         link.click();
         link.remove();
         window.setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+        if (window.parent !== window) window.parent.postMessage('lc-quote-pdf-finished', location.origin);
       },
-      onerror: () => window.alert('Could not connect to Cin7\'s quote PDF.'),
-      ontimeout: () => window.alert('Cin7\'s quote PDF timed out.')
+      onerror: () => {
+        window.alert('Could not connect to Cin7\'s quote PDF.');
+        if (window.parent !== window) window.parent.postMessage('lc-quote-pdf-finished', location.origin);
+      },
+      ontimeout: () => {
+        window.alert('Cin7\'s quote PDF timed out.');
+        if (window.parent !== window) window.parent.postMessage('lc-quote-pdf-finished', location.origin);
+      }
     });
   }
 
