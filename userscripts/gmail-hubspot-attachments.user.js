@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Living Culture HubSpot Attachments
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.5
+// @version      0.1.6
 // @description  Uploads Gmail attachments to the customer HubSpot deals referenced by the subject and attached quotes.
 // @author       Living Culture
 // @match        https://mail.google.com/*
@@ -10,8 +10,8 @@
 // @connect      *.supabase.co
 // @connect      qvoacxmzsmulhnllfntl.supabase.co
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-attachments.user.js?v=0.1.5
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-attachments.user.js?v=0.1.5
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-attachments.user.js?v=0.1.6
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-attachments.user.js?v=0.1.6
 // @supportURL   https://github.com/Livingculture/freight-tool
 // ==/UserScript==
 
@@ -20,7 +20,7 @@
 
   const API_URL = "https://living-culture-workflow.vercel.app/api/hubspot/gmail-attachment";
   const TOOL_TOKEN = "fXlAMocbHnglrq02Vg4WZY0xbHaPsA+b";
-  const QUOTE_RE = /\bSFOR\s*[-#]?\s*(\d{4,}(?:-\d+)?)\b/gi;
+  const QUOTE_RE = /\bSFOR\s*[-#]?\s*(\d{4,}(?:-[A-Z0-9]+)?)\b/gi;
   const composeStates = new WeakMap();
   let uploadQueue = Promise.resolve();
 
