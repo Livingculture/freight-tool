@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Omni Quote PDFs
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.5
+// @version      0.1.6
 // @description  Remembers downloaded Cin7 Omni quote PDFs and selects them from a private list in Gmail.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -12,8 +12,8 @@
 // @grant        GM_setValue
 // @connect      go.cin7.com
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-omni-quote-pdfs.user.js?v=0.1.5
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-omni-quote-pdfs.user.js?v=0.1.5
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-omni-quote-pdfs.user.js?v=0.1.6
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-omni-quote-pdfs.user.js?v=0.1.6
 // @supportURL   https://github.com/Livingculture/freight-tool
 // ==/UserScript==
 
@@ -212,14 +212,19 @@
       const item = { quoteNumber: context.quoteNumber, base64: bytesToBase64(buffer), savedAt: Date.now() };
       const existing = cachedQuotePdfs().filter((entry) => quoteNumber(entry.quoteNumber) !== context.quoteNumber);
       GM_setValue(PDF_CACHE_KEY, [item, ...existing].slice(0, 25));
-    } catch (_) {}
+      showPickerMessage(`${context.quoteNumber} remembered for Gmail.`);
+    } catch (error) {
+      showPickerMessage(error.message || "The quote could not be remembered for Gmail.", true);
+    }
   }
 
   function bindOmniDownloadCache() {
-    const button = document.getElementById("lc-quote-pdf-download-button-v1");
-    if (!button || button.dataset.lcGmailQuoteCacheBound) return;
-    button.dataset.lcGmailQuoteCacheBound = "1";
-    button.addEventListener("click", () => void rememberCurrentOmniPdf());
+    if (document.documentElement.dataset.lcGmailQuoteCacheBound) return;
+    document.documentElement.dataset.lcGmailQuoteCacheBound = "1";
+    document.addEventListener("pointerdown", (event) => {
+      const target = event.target instanceof Element ? event.target.closest("#lc-quote-pdf-download-button-v1") : null;
+      if (target) void rememberCurrentOmniPdf();
+    }, true);
   }
 
   function showPickerMessage(message, error = false) {
