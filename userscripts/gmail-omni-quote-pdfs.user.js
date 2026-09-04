@@ -1,18 +1,19 @@
 // ==UserScript==
 // @name         Gmail Omni Quote PDFs
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.0
+// @version      0.1.1
 // @description  Remembers opened Cin7 Omni quotes and attaches their PDFs directly to Gmail drafts.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
+// @match        https://go.cin7.com/Cloud/ShoppingCartAdmin/Orders/OrdersList.aspx*
 // @match        https://mail.google.com/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @connect      go.cin7.com
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-omni-quote-pdfs.user.js?v=0.1.0
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-omni-quote-pdfs.user.js?v=0.1.0
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-omni-quote-pdfs.user.js?v=0.1.1
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-omni-quote-pdfs.user.js?v=0.1.1
 // @supportURL   https://github.com/Livingculture/freight-tool
 // ==/UserScript==
 
@@ -22,10 +23,15 @@
   const HISTORY_KEY = "lcGmailOmniQuotePdfHistoryV1";
   const BUTTON_ID = "lc-gmail-omni-quotes-button";
   const PANEL_ID = "lc-gmail-omni-quotes-panel";
+  const QUOTES_URL = "https://go.cin7.com/Cloud/ShoppingCartAdmin/Orders/OrdersList.aspx?idWebSite=27265&idCustomerAppsLink=1328006";
   let syncTimer = 0;
 
   function clean(value) {
     return String(value || "").replace(/\s+/g, " ").trim();
+  }
+
+  function escapeHtml(value) {
+    return String(value || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
   }
 
   function quoteNumber(value) {
@@ -67,6 +73,55 @@
     return (Array.isArray(stored) ? stored : []).filter((item) =>
       quoteNumber(item?.quoteNumber) && Array.isArray(item?.sids) && item.sids.some((sid) => /^\d{6,}$/.test(clean(sid)))
     );
+  }
+
+  function quoteContextsFromDocument(root) {
+    const contexts = [];
+    root.querySelectorAll("a").forEach((link) => {
+      const number = quoteNumber(link.textContent || "");
+      if (!number) return;
+      const row = link.closest("tr");
+      const source = [link.getAttribute("href"), link.getAttribute("onclick"), row?.innerHTML].filter(Boolean).join(" ");
+      const sids = Array.from(new Set([
+        ...idsFromUrl(link.getAttribute("href") || ""),
+        ...(source.match(/\b\d{6,}\b/g) || [])
+      ]));
+      if (!sids.length) return;
+      const cells = Array.from(row?.querySelectorAll("td") || []).map((cell) => clean(cell.textContent));
+      const customer = cells.find((value) => value && value !== number && !/^\$|^\d|^(open|draft|new|processing|onhold|accepted|declined)$/i.test(value)) || "";
+      contexts.push({ quoteNumber: number, sids, customer, savedAt: Date.now() });
+    });
+    const seen = new Set();
+    return contexts.filter((context) => !seen.has(context.quoteNumber) && seen.add(context.quoteNumber));
+  }
+
+  function saveQuoteContexts(contexts) {
+    if (!contexts.length) return;
+    const existing = history();
+    const numbers = new Set(contexts.map((item) => item.quoteNumber));
+    GM_setValue(HISTORY_KEY, [...contexts, ...existing.filter((item) => !numbers.has(quoteNumber(item.quoteNumber)))].slice(0, 100));
+  }
+
+  function loadOmniQuoteList() {
+    return new Promise((resolve, reject) => GM_xmlhttpRequest({
+      method: "GET", url: QUOTES_URL, timeout: 60000,
+      onload(response) {
+        if (response.status < 200 || response.status >= 300) {
+          reject(new Error(`Omni quotes returned HTTP ${response.status}.`));
+          return;
+        }
+        const documentCopy = new DOMParser().parseFromString(response.responseText || "", "text/html");
+        const contexts = quoteContextsFromDocument(documentCopy);
+        if (!contexts.length) {
+          reject(new Error("Open the Omni Quotes page and reload it once."));
+          return;
+        }
+        saveQuoteContexts(contexts);
+        resolve(contexts);
+      },
+      onerror: () => reject(new Error("Could not connect to the Omni quote list.")),
+      ontimeout: () => reject(new Error("The Omni quote list timed out."))
+    }));
   }
 
   function activeComposeBody() {
@@ -114,13 +169,26 @@
     document.getElementById(PANEL_ID)?.remove();
   }
 
-  function openPanel() {
+  async function openPanel() {
     closePanel();
     const composeRoot = activeComposeRoot();
     if (!composeRoot) return;
-    const quotes = history();
+    const loadingPanel = document.createElement("div");
+    loadingPanel.id = PANEL_ID;
+    loadingPanel.innerHTML = `<div class="lc-gq-head"><strong>Omni Quote PDFs</strong><button type="button" data-close>×</button></div><div class="lc-gq-help">Loading current Omni quotes…</div>`;
+    document.body.appendChild(loadingPanel);
+    loadingPanel.querySelector("[data-close]").addEventListener("click", closePanel);
+    let quotes = [];
+    let listWarning = "";
+    try {
+      quotes = await loadOmniQuoteList();
+    } catch (error) {
+      quotes = history();
+      listWarning = error.message || String(error);
+    }
+    closePanel();
     if (!quotes.length) {
-      alert("Open each required quote in Omni once, then return to Gmail.");
+      alert(listWarning || "No Omni quotes were found.");
       return;
     }
     const subjectQuotes = new Set((gmailSubject(composeRoot).match(/\bSFOR\d+(?:-[A-Z0-9]+)?\b/gi) || []).map((item) => item.toUpperCase()));
@@ -128,11 +196,18 @@
     panel.id = PANEL_ID;
     panel.innerHTML = `
       <div class="lc-gq-head"><strong>Omni Quote PDFs</strong><button type="button" data-close>×</button></div>
-      <div class="lc-gq-help">Select quotes to attach. Open a quote in Omni first if it is not listed.</div>
-      <div class="lc-gq-list">${quotes.map((item, index) => `<label><input type="checkbox" value="${index}" ${subjectQuotes.has(quoteNumber(item.quoteNumber)) ? "checked" : ""}><span>${quoteNumber(item.quoteNumber)}</span></label>`).join("")}</div>
+      <div class="lc-gq-help">Select one or more current Omni quotes.${listWarning ? ` ${listWarning}` : ""}</div>
+      <input class="lc-gq-search" type="search" placeholder="Search quote or customer">
+      <div class="lc-gq-list">${quotes.map((item, index) => `<label data-search="${escapeHtml(clean(`${item.quoteNumber} ${item.customer || ""}`).toLowerCase())}"><input type="checkbox" value="${index}" ${subjectQuotes.has(quoteNumber(item.quoteNumber)) ? "checked" : ""}><span>${escapeHtml(quoteNumber(item.quoteNumber))}${item.customer ? ` — ${escapeHtml(clean(item.customer))}` : ""}</span></label>`).join("")}</div>
       <div class="lc-gq-status"></div>
       <div class="lc-gq-actions"><button type="button" data-close>Cancel</button><button type="button" data-attach>Attach selected</button></div>`;
     document.body.appendChild(panel);
+    panel.querySelector(".lc-gq-search").addEventListener("input", (event) => {
+      const search = clean(event.target.value).toLowerCase();
+      panel.querySelectorAll(".lc-gq-list label").forEach((row) => {
+        row.style.display = !search || row.dataset.search.includes(search) ? "flex" : "none";
+      });
+    });
     panel.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", closePanel));
     panel.querySelector("[data-attach]").addEventListener("click", async () => {
       const selected = Array.from(panel.querySelectorAll('input[type="checkbox"]:checked')).map((input) => quotes[Number(input.value)]).filter(Boolean);
@@ -171,7 +246,7 @@
     style.textContent = `
       #${BUTTON_ID}{position:fixed;z-index:2147483646;display:none;height:28px;border:1px solid #e2a900;border-radius:15px;background:#f7c948;color:#fff;padding:0 10px;font:700 12px Arial,sans-serif;cursor:pointer;box-shadow:0 4px 12px rgba(20,31,38,.2)}
       #${PANEL_ID}{position:fixed;z-index:2147483647;left:50%;top:50%;transform:translate(-50%,-50%);width:390px;max-width:calc(100vw - 32px);max-height:calc(100vh - 40px);overflow:auto;background:#fff;border:1px solid #d7c175;border-radius:9px;box-shadow:0 18px 45px rgba(20,31,38,.28);font:13px Arial,sans-serif;color:#17202a}
-      .lc-gq-head,.lc-gq-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:11px;border-bottom:1px solid #eee}.lc-gq-head button{border:0;background:transparent;font-size:20px;cursor:pointer}.lc-gq-help,.lc-gq-status{padding:9px 11px;color:#50606b}.lc-gq-list{max-height:300px;overflow:auto}.lc-gq-list label{display:flex;gap:9px;padding:9px 11px;border-top:1px solid #eef1f3;cursor:pointer}.lc-gq-actions{justify-content:flex-end;border-top:1px solid #eee;border-bottom:0}.lc-gq-actions button{min-height:30px;border:0;border-radius:5px;padding:0 10px;font-weight:700;cursor:pointer}.lc-gq-actions [data-attach]{background:#f7c948;color:#fff}.lc-gq-actions button:disabled{opacity:.55}`;
+      .lc-gq-head,.lc-gq-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:11px;border-bottom:1px solid #eee}.lc-gq-head button{border:0;background:transparent;font-size:20px;cursor:pointer}.lc-gq-help,.lc-gq-status{padding:9px 11px;color:#50606b}.lc-gq-search{box-sizing:border-box;width:calc(100% - 22px);height:34px;margin:0 11px 9px;border:1px solid #c9d5da;border-radius:5px;padding:0 9px}.lc-gq-list{max-height:300px;overflow:auto}.lc-gq-list label{display:flex;gap:9px;padding:9px 11px;border-top:1px solid #eef1f3;cursor:pointer}.lc-gq-actions{justify-content:flex-end;border-top:1px solid #eee;border-bottom:0}.lc-gq-actions button{min-height:30px;border:0;border-radius:5px;padding:0 10px;font-weight:700;cursor:pointer}.lc-gq-actions [data-attach]{background:#f7c948;color:#fff}.lc-gq-actions button:disabled{opacity:.55}`;
     document.head.appendChild(style);
   }
 
@@ -207,11 +282,15 @@
   }
 
   if (location.hostname === "go.cin7.com") {
-    captureOmniQuote();
+    const capture = () => {
+      if (/\/Orders\/OrdersList\.aspx$/i.test(location.pathname)) saveQuoteContexts(quoteContextsFromDocument(document));
+      else captureOmniQuote();
+    };
+    capture();
     let timer = 0;
     new MutationObserver(() => {
       clearTimeout(timer);
-      timer = setTimeout(captureOmniQuote, 200);
+      timer = setTimeout(capture, 200);
     }).observe(document.body, { childList: true, subtree: true, characterData: true });
   } else {
     bootGmail();
