@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.13
+// @version      0.1.14
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.13
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.13
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.14
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.14
 // ==/UserScript==
 
 (function () {
@@ -2425,7 +2425,7 @@
     const addFromUrl = (value) => {
       try {
         const url = new URL(value, location.href);
-        ['SID', 'TransactionID', 'SaleID'].forEach((name) => {
+        ['SID', 'TransactionID', 'SaleID', 'OrderID', 'idOrder'].forEach((name) => {
           const entry = Array.from(url.searchParams.entries()).find(([key]) => key.toLowerCase() === name.toLowerCase());
           if (entry) add(entry[1]);
         });
@@ -2439,13 +2439,23 @@
         element.getAttribute('formaction')
       ].filter(Boolean).join(' ');
       addFromUrl(source);
-      Array.from(source.matchAll(/(?:SID|TransactionID|SaleID)\D{0,30}(\d{6,})/gi)).forEach((match) => add(match[1]));
+      if (/go to admin|quote/i.test(clean(element.textContent || element.value || ''))) {
+        try {
+          const linkedUrl = new URL(element.getAttribute('href') || element.getAttribute('formaction') || '', location.href);
+          const linkedId = Array.from(linkedUrl.searchParams.entries()).find(([key]) => key.toLowerCase() === 'id')?.[1];
+          add(linkedId);
+        } catch (error) {}
+      }
+      Array.from(source.matchAll(/(?:SID|TransactionID|SaleID|OrderID|idOrder)\D{0,30}(\d{6,})/gi)).forEach((match) => add(match[1]));
     });
     Array.from(document.querySelectorAll('input[type="hidden"]'))
-      .filter((input) => /(?:sid|transactionid|saleid)/i.test(`${input.name || ''} ${input.id || ''}`))
+      .filter((input) => /(?:sid|transactionid|saleid|orderid|idorder)/i.test(`${input.name || ''} ${input.id || ''}`))
+      .forEach((input) => add(input.value));
+    Array.from(document.querySelectorAll('input[type="hidden"]'))
+      .filter((input) => /^(?:id|.*[_$-]id)$/i.test(input.name || input.id || ''))
       .forEach((input) => add(input.value));
     const html = document.documentElement?.innerHTML || '';
-    Array.from(html.matchAll(/(?:SID|TransactionID|SaleID)\D{0,50}(\d{6,})/gi)).forEach((match) => add(match[1]));
+    Array.from(html.matchAll(/(?:SID|TransactionID|SaleID|OrderID|idOrder)\D{0,50}(\d{6,})/gi)).forEach((match) => add(match[1]));
     return Array.from(new Set(candidates));
   }
 
@@ -2465,7 +2475,9 @@
         onload: (response) => {
           const bytes = new Uint8Array(response.response || new ArrayBuffer(0));
           const isPdf = bytes.length > 4 && String.fromCharCode(...bytes.slice(0, 4)) === '%PDF';
-          if (response.status >= 200 && response.status < 300 && isPdf) resolve(response.response);
+          const preview = new TextDecoder('latin1').decode(bytes.slice(0, Math.min(bytes.length, 12000)));
+          const isCin7ErrorPdf = /invalid\s+url/i.test(preview);
+          if (response.status >= 200 && response.status < 300 && isPdf && !isCin7ErrorPdf && bytes.length > 3000) resolve(response.response);
           else reject(new Error(`Cin7 returned HTTP ${response.status}.`));
         },
         onerror: () => reject(new Error('Could not connect to the Cin7 quote PDF.')),
