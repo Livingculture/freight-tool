@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.39
+// @version      0.1.40
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -112,8 +112,7 @@
         border-color: #a9bfdc !important;
       }
       .signature-box {
-        border-color: #c2d2e6 !important;
-        background: #f4f8fd !important;
+        display: none !important;
       }
       #lc-signature-image-tools {
         margin-top: 9px;
@@ -300,7 +299,15 @@
     };
 
     const maintainSignatureTools = () => {
-      injectSignatureImageUpload();
+      setNativeTextSignature(false);
+      const signatureCheckbox = document.querySelector("#signature") || Array.from(document.querySelectorAll("input[type='checkbox']")).find((input) => {
+        const label = input.id && document.querySelector(`label[for="${CSS.escape(input.id)}"]`);
+        return /^signature$/i.test(clean(label?.textContent || input.parentElement?.textContent));
+      });
+      const signatureLabel = signatureCheckbox?.id && document.querySelector(`label[for="${CSS.escape(signatureCheckbox.id)}"]`);
+      const signatureRow = signatureCheckbox?.closest("label, .field, .form-row, .control, div");
+      if (signatureLabel) signatureLabel.style.display = "none";
+      if (signatureRow) signatureRow.style.display = "none";
       hideImageUrlOverride();
       hideLookupButton();
     };
@@ -344,9 +351,7 @@
       addCin7NumberToSubject();
       const subject = document.querySelector("#subject-output")?.value || "";
       const text = document.querySelector("#body-output, #body")?.value || "";
-      const signatureImage = signatureMode() === "image" ? storedSignatureImage() : "";
-      const width = signatureWidth();
-      const html = `${escapeHtml(text).replace(/\n/g, "<br>")}${signatureImage ? `<br><br><img src="${signatureImage}" alt="Signature" width="${width}" style="display:block;width:${width}px;height:auto">` : ""}`;
+      const html = escapeHtml(text).replace(/\n/g, "<br>");
       window.parent.postMessage({
         type: "LC_EMAIL_HELPER_DRAFT",
         subject,
