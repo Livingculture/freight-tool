@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.10
+// @version      0.1.11
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.10
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.10
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.11
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.11
 // ==/UserScript==
 
 (function () {
@@ -19,6 +19,7 @@
   const BUTTON_ID = 'lc-site-visit-inline-button-v2';
   const HUBSPOT_BUTTON_ID = 'lc-hubspot-deal-inline-button-v1';
   const QUOTE_REVIEW_BUTTON_ID = 'lc-quote-review-inline-button-v1';
+  const QUOTE_PDF_BUTTON_ID = 'lc-quote-pdf-download-button-v1';
   const ACTION_ROW_ID = 'lc-cin7-action-row-v1';
   const FLOATING_BAR_ID = 'lc-cin7-floating-actions-v1';
   const OVERLAY_ID = 'lc-site-visit-overlay-v2';
@@ -105,7 +106,7 @@
   }
 
   function extractOrderId(text) {
-    const match = clean(text).match(/\b(?:NZSO-?\d+|SFOR\d+(?:-\d+)?)\b/i);
+    const match = clean(text).match(/\b(?:NZSO-?\d+|SFOR\d+(?:-[A-Z0-9]+)?)\b/i);
     if (!match) return '';
     const value = match[0].toUpperCase();
     return /^NZSO\d+$/i.test(value) ? value.replace(/^NZSO/i, 'NZSO-') : value;
@@ -114,7 +115,7 @@
   function omniHeadingDraft() {
     if (!isOmniPage()) return { customerName: '', orderId: '' };
     const pageText = clean(document.body?.innerText || document.body?.textContent || '');
-    const pageMatch = pageText.match(/(?:Edit|New)\s+(?:Quote|Sales Order)\s*-\s*(.+?)\s*-\s*((?:NZSO-?\d+|SFOR\d+(?:-\d+)?))\b/i);
+    const pageMatch = pageText.match(/(?:Edit|New)\s+(?:Quote|Sales Order)\s*-\s*(.+?)\s*-\s*((?:NZSO-?\d+|SFOR\d+(?:-[A-Z0-9]+)?))\b/i);
     if (pageMatch) {
       return {
         customerName: clean(pageMatch[1]),
@@ -129,7 +130,7 @@
       headings.find(text => extractOrderId(text)) ||
       clean(document.title || '');
     const orderId = extractOrderId(heading);
-    const customerMatch = heading.match(/^(?:Edit|New)\s+(?:Quote|Sales Order)\s*-\s*(.+?)\s*-\s*(?:NZSO-?\d+|SFOR\d+(?:-\d+)?)\b/i);
+    const customerMatch = heading.match(/^(?:Edit|New)\s+(?:Quote|Sales Order)\s*-\s*(.+?)\s*-\s*(?:NZSO-?\d+|SFOR\d+(?:-[A-Z0-9]+)?)\b/i);
     return {
       customerName: clean(customerMatch?.[1] || ''),
       orderId
@@ -2404,6 +2405,86 @@
     field(OVERLAY_ID).classList.add('open');
   }
 
+  function quotePdfSidCandidates() {
+    const candidates = [];
+    const addFromUrl = (value) => {
+      try {
+        const url = new URL(value, location.href);
+        ['SID', 'TransactionID', 'SaleID', 'OrderID', 'idOrder', 'ID'].forEach((name) => {
+          const entry = Array.from(url.searchParams.entries()).find(([key]) => key.toLowerCase() === name.toLowerCase());
+          if (entry && /^\d{6,}$/.test(entry[1])) candidates.push(entry[1]);
+        });
+      } catch (error) {}
+    };
+    addFromUrl(location.href);
+    Array.from(document.querySelectorAll('a[href]'))
+      .filter((link) => /go to admin|quote/i.test(clean(link.textContent || '')))
+      .forEach((link) => addFromUrl(link.href));
+    Array.from(document.querySelectorAll('input[type="hidden"]'))
+      .filter((input) => /(?:^|_)(?:sid|transactionid|saleid|orderid|id)$/i.test(input.name || input.id || ''))
+      .map((input) => clean(input.value))
+      .filter((value) => /^\d{6,}$/.test(value))
+      .forEach((value) => candidates.push(value));
+    return Array.from(new Set(candidates));
+  }
+
+  function requestQuotePdf(sid) {
+    const url = `https://go.cin7.com/Cloud/Docs/PDF/?T=Quote&idWebSite=27265&UN=vi&ID=363&SID=${encodeURIComponent(sid)}`;
+    return new Promise((resolve, reject) => {
+      GM_xmlhttpRequest({
+        method: 'GET',
+        url,
+        responseType: 'arraybuffer',
+        timeout: 120000,
+        onload: (response) => {
+          const bytes = new Uint8Array(response.response || new ArrayBuffer(0));
+          const isPdf = bytes.length > 4 && String.fromCharCode(...bytes.slice(0, 4)) === '%PDF';
+          if (response.status >= 200 && response.status < 300 && isPdf) resolve(response.response);
+          else reject(new Error(`Cin7 returned HTTP ${response.status}.`));
+        },
+        onerror: () => reject(new Error('Could not connect to the Cin7 quote PDF.')),
+        ontimeout: () => reject(new Error('The Cin7 quote PDF timed out.'))
+      });
+    });
+  }
+
+  async function downloadCurrentQuotePdf(button) {
+    const orderId = omniHeadingDraft().orderId || extractOrderId(document.body?.innerText || '');
+    const sids = quotePdfSidCandidates();
+    if (!orderId || !sids.length) {
+      window.alert('The current Omni quote number or internal ID could not be found.');
+      return;
+    }
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Downloading…';
+    try {
+      let pdf = null;
+      for (const sid of sids) {
+        try {
+          pdf = await requestQuotePdf(sid);
+          if (pdf) break;
+        } catch (error) {}
+      }
+      if (!pdf) throw new Error('Cin7 could not generate the PDF for this quote.');
+      const blobUrl = URL.createObjectURL(new Blob([pdf], { type: 'application/pdf' }));
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = `${orderId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+      button.textContent = 'Downloaded';
+      window.setTimeout(() => { button.textContent = originalText; }, 1800);
+    } catch (error) {
+      button.textContent = originalText;
+      window.alert(error.message || 'The quote PDF could not be downloaded.');
+    } finally {
+      button.disabled = false;
+    }
+  }
+
   function shouldHandleAction(button) {
     const now = Date.now();
     if (lastHandledAction.id === button.id && now - lastHandledAction.at < 900) return false;
@@ -2425,6 +2506,10 @@
       }
       if (button.id === QUOTE_REVIEW_BUTTON_ID) {
         submitQuoteReview(button);
+        return;
+      }
+      if (button.id === QUOTE_PDF_BUTTON_ID) {
+        downloadCurrentQuotePdf(button);
       }
     } catch (error) {
       const message = error && error.message ? error.message : String(error || 'Unknown error');
@@ -2439,7 +2524,7 @@
     const handleEvent = (event) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
-      const button = target.closest(`#${BUTTON_ID}, #${HUBSPOT_BUTTON_ID}, #${QUOTE_REVIEW_BUTTON_ID}`);
+      const button = target.closest(`#${BUTTON_ID}, #${HUBSPOT_BUTTON_ID}, #${QUOTE_REVIEW_BUTTON_ID}, #${QUOTE_PDF_BUTTON_ID}`);
       if (!button) return;
       event.preventDefault();
       event.stopPropagation();
@@ -2647,6 +2732,25 @@
     placeActionButton(hubspotButton, 'right');
   }
 
+  function addQuotePdfButton() {
+    if (!isOmniPage() || !isSimpleSaleReady()) {
+      document.getElementById(QUOTE_PDF_BUTTON_ID)?.remove();
+      return;
+    }
+    const hubspotButton = document.getElementById(HUBSPOT_BUTTON_ID);
+    if (!hubspotButton) return;
+    let button = document.getElementById(QUOTE_PDF_BUTTON_ID);
+    if (!button) {
+      button = document.createElement('button');
+      button.id = QUOTE_PDF_BUTTON_ID;
+      button.type = 'button';
+      button.textContent = 'Download Quote PDF';
+      styleInlineButton(button, '#087f8c');
+      wireActionButton(button);
+    }
+    placeOmniActionButton(button, hubspotButton);
+  }
+
   let buttonPassScheduled = false;
 
   function runButtonPass() {
@@ -2654,6 +2758,7 @@
     addButton();
     addHubSpotButton();
     addQuoteReviewButton();
+    addQuotePdfButton();
     applyHubSpotApprovalGate();
   }
 
