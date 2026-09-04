@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.40
+// @version      0.1.41
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -372,7 +372,9 @@
       event.stopImmediatePropagation();
       const subject = document.querySelector("#subject-output")?.value || "";
       const body = document.querySelector("#body-output, #body")?.value || "";
+      const gmailAccount = clean(document.querySelector("#gmail-account")?.value || "").toLowerCase();
       const gmailUrl = new URL("https://mail.google.com/mail/");
+      if (gmailAccount) gmailUrl.searchParams.set("authuser", gmailAccount);
       gmailUrl.searchParams.set("view", "cm");
       gmailUrl.searchParams.set("fs", "1");
       gmailUrl.searchParams.set("to", omniRecipientEmail);
