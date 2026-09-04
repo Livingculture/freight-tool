@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Omni Quote PDFs
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.2
+// @version      0.1.3
 // @description  Remembers opened Cin7 Omni quotes and attaches their PDFs directly to Gmail drafts.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -12,8 +12,8 @@
 // @grant        GM_setValue
 // @connect      go.cin7.com
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-omni-quote-pdfs.user.js?v=0.1.2
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-omni-quote-pdfs.user.js?v=0.1.2
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-omni-quote-pdfs.user.js?v=0.1.3
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-omni-quote-pdfs.user.js?v=0.1.3
 // @supportURL   https://github.com/Livingculture/freight-tool
 // ==/UserScript==
 
