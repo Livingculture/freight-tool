@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Living Culture Drawings
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.3
+// @version      0.1.4
 // @description  Selects Living Culture pergola drawings from Google Drive and attaches them to Gmail drafts.
 // @author       Living Culture
 // @match        https://mail.google.com/*
@@ -10,8 +10,8 @@
 // @connect      drive.google.com
 // @connect      drive.usercontent.google.com
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.4
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.4
 // @supportURL   https://github.com/Livingculture/freight-tool
 // ==/UserScript==
 
@@ -366,8 +366,8 @@
       return;
     }
     const rect = compose.getBoundingClientRect();
-    button.style.left = `${Math.max(8, rect.right - width - 140)}px`;
-    button.style.top = `${Math.max(8, rect.bottom - 42)}px`;
+    button.style.left = `${Math.max(8, Math.min(rect.right - width - 140, window.innerWidth - width - 120))}px`;
+    button.style.top = `${Math.max(8, Math.min(rect.bottom - 42, window.innerHeight - 54))}px`;
     button.style.display = "inline-flex";
     button.style.alignItems = "center";
   }

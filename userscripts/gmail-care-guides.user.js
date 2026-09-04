@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Living Culture Care Guides
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.9
+// @version      0.1.10
 // @description  Attaches Living Culture care guide PDFs to Gmail compose windows.
 // @author       Living Culture
 // @match        https://mail.google.com/*
@@ -9,8 +9,8 @@
 // @grant        GM_registerMenuCommand
 // @connect      cin7-pdf-attachments.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.9
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.9
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.10
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.10
 // ==/UserScript==
 
 (function () {
@@ -525,8 +525,8 @@
     }
 
     const buttonWidth = button.offsetWidth || 96;
-    const left = rect.right - buttonWidth - 34;
-    const top = rect.bottom - 42;
+    const left = Math.min(rect.right - buttonWidth - 34, window.innerWidth - buttonWidth - 12);
+    const top = Math.min(rect.bottom - 42, window.innerHeight - 54);
     button.style.left = `${Math.max(8, left)}px`;
     button.style.top = `${Math.max(8, top)}px`;
     button.style.display = "inline-flex";
