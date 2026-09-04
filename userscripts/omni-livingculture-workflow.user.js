@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.17
+// @version      0.1.18
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.17
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.17
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.18
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.18
 // ==/UserScript==
 
 (function () {
@@ -2507,21 +2507,12 @@
       frame.id = frameName;
       frame.hidden = true;
       frame.setAttribute('aria-hidden', 'true');
+      frame.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-forms allow-downloads allow-modals');
       document.body.appendChild(frame);
 
-      const href = adminControl instanceof HTMLAnchorElement ? adminControl.href : '';
-      if (href && !/^javascript:/i.test(href)) {
-        frame.src = href;
-      } else if (adminControl.form) {
-        const form = adminControl.form;
-        const previousTarget = form.target;
-        form.target = frameName;
-        adminControl.click();
-        window.setTimeout(() => { form.target = previousTarget; }, 0);
-      } else {
-        frame.remove();
-        throw new Error('Cin7\'s Admin page could not be opened in the background.');
-      }
+      const backgroundUrl = new URL(location.href);
+      backgroundUrl.searchParams.set('lcQuotePdfBackground', '1');
+      frame.src = backgroundUrl.href;
 
       let cleanupTimer = 0;
       const cleanup = () => {
@@ -2545,6 +2536,25 @@
       button.textContent = 'Download Quote PDF';
       window.alert(error.message || 'The quote PDF could not be downloaded.');
     }
+  }
+
+  function continueQuotePdfFromEditFrame() {
+    if (window.parent === window || new URL(location.href).searchParams.get('lcQuotePdfBackground') !== '1') return false;
+    let attempts = 0;
+    const findAdmin = window.setInterval(() => {
+      attempts += 1;
+      const adminControl = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]'))
+        .filter(isVisible)
+        .find((element) => normalizeLabel(element.value || element.textContent || '') === 'go to admin');
+      if (!adminControl && attempts < 40) return;
+      window.clearInterval(findAdmin);
+      if (!adminControl) {
+        window.parent.postMessage('lc-quote-pdf-finished', location.origin);
+        return;
+      }
+      adminControl.click();
+    }, 250);
+    return true;
   }
 
   function downloadSignedQuotePdf(url, quoteNumber) {
@@ -2893,6 +2903,7 @@
       continueQuotePdfFromAdmin();
       return;
     }
+    if (continueQuotePdfFromEditFrame()) return;
     if (isOmniPage()) document.getElementById('lc-omni-hubspot-shortcut-button')?.remove();
     ensureDelegatedClickHandler();
     void loadRepOptions();
