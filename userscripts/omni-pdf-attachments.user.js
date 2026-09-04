@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture PDF Attachments
 // @namespace    livingculture-omni
-// @version      0.4.7
+// @version      0.4.8
 // @description  Selects Living Culture Google Drive PDFs and loads them into the Cin7 Omni email attachment fields.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -37,6 +37,7 @@
   const CACHE_KEY = "lc-omni-pdf-files-v1";
   const CACHE_MAX_AGE = 5 * 60 * 1000;
   const QUOTE_CONTEXT_KEY = "lcOmniQuotePdfContextV1";
+  const QUOTE_HISTORY_KEY = "lcOmniQuotePdfHistoryV1";
   const DRAWINGS_ROOT_ID = "1Tcxn7LceZztaoWUmgsNZgml18s2LZORj";
   const OPTIMIZED_CARE_BASE = "https://github.com/Livingculture/freight-tool/releases/download/care-guides-email-v1";
   const DRIVE_FOLDER_MIME = "application/vnd.google-apps.folder";
@@ -366,7 +367,17 @@
       ...links.flatMap(numericIdsFromUrl),
       ...hiddenIds
     ]));
-    localStorage.setItem(QUOTE_CONTEXT_KEY, JSON.stringify({ quoteNumber, sids, savedAt: Date.now() }));
+    const context = { quoteNumber, sids, savedAt: Date.now() };
+    localStorage.setItem(QUOTE_CONTEXT_KEY, JSON.stringify(context));
+    try {
+      const history = JSON.parse(localStorage.getItem(QUOTE_HISTORY_KEY) || "[]");
+      const updated = [context, ...(Array.isArray(history) ? history : [])
+        .filter((item) => extractQuoteNumber(item?.quoteNumber) !== quoteNumber)]
+        .slice(0, 20);
+      localStorage.setItem(QUOTE_HISTORY_KEY, JSON.stringify(updated));
+    } catch (_) {
+      localStorage.setItem(QUOTE_HISTORY_KEY, JSON.stringify([context]));
+    }
   }
 
   function quotePdfContext() {
@@ -379,22 +390,82 @@
     }
   }
 
+  function quotePdfHistory() {
+    const current = quotePdfContext();
+    try {
+      const history = JSON.parse(localStorage.getItem(QUOTE_HISTORY_KEY) || "[]");
+      const contexts = [current, ...(Array.isArray(history) ? history : [])].filter(Boolean);
+      const seen = new Set();
+      return contexts.filter((context) => {
+        const quoteNumber = extractQuoteNumber(context.quoteNumber);
+        if (!quoteNumber || seen.has(quoteNumber) || !Array.isArray(context.sids) || !context.sids.length) return false;
+        seen.add(quoteNumber);
+        context.quoteNumber = quoteNumber;
+        context.sids = context.sids.filter((value) => /^\d{6,}$/.test(clean(value)));
+        return context.sids.length > 0;
+      });
+    } catch (_) {
+      return current ? [current] : [];
+    }
+  }
+
+  function chooseQuotePdfs(contexts, maximum) {
+    return new Promise((resolve) => {
+      const overlay = document.createElement("div");
+      overlay.id = "lc-omni-quote-picker";
+      overlay.innerHTML = `
+        <div class="lc-omni-quote-picker-card">
+          <h3>Add Quote PDFs</h3>
+          <p>Select up to ${maximum} quote${maximum === 1 ? "" : "s"}. Open a quote in Omni first if it is not listed.</p>
+          <div class="lc-omni-quote-picker-list">
+            ${contexts.map((context, index) => `<label><input type="checkbox" value="${index}" ${index === 0 ? "checked" : ""}> <span>${escapeHtml(context.quoteNumber)}</span></label>`).join("")}
+          </div>
+          <div class="lc-omni-quote-picker-actions">
+            <button type="button" data-cancel>Cancel</button>
+            <button type="button" data-add>Add to email</button>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+      const finish = (value) => {
+        overlay.remove();
+        resolve(value);
+      };
+      overlay.querySelector("[data-cancel]").addEventListener("click", () => finish([]));
+      overlay.querySelector("[data-add]").addEventListener("click", () => {
+        const selected = Array.from(overlay.querySelectorAll('input[type="checkbox"]:checked'))
+          .map((input) => contexts[Number(input.value)])
+          .filter(Boolean);
+        if (!selected.length) return;
+        if (selected.length > maximum) {
+          window.alert(`Choose ${maximum} quote${maximum === 1 ? "" : "s"} or fewer.`);
+          return;
+        }
+        finish(selected);
+      });
+      overlay.addEventListener("click", (event) => {
+        if (event.target === overlay) finish([]);
+      });
+    });
+  }
+
   function isPdf(buffer) {
     const bytes = new Uint8Array(buffer || new ArrayBuffer(0));
     return bytes.length > 4 && String.fromCharCode(...bytes.slice(0, 4)) === "%PDF";
   }
 
   async function addQuotePdf() {
-    const context = quotePdfContext();
-    if (!context?.sids.length) {
+    const contexts = quotePdfHistory();
+    if (!contexts.length) {
       window.alert("Open the quote screen once, then return to its email screen and try Quote PDF again.");
       return;
     }
-    const input = availableFileInputs()[0];
-    if (!input) {
+    const inputs = availableFileInputs();
+    if (!inputs.length) {
       window.alert("Omni has no empty attachment field available.");
       return;
     }
+    const selectedContexts = await chooseQuotePdfs(contexts, inputs.length);
+    if (!selectedContexts.length) return;
     quoteBusy = true;
     const button = document.getElementById(QUOTE_BUTTON_ID);
     if (button) {
@@ -402,23 +473,26 @@
       button.textContent = "Loading Quote…";
     }
     try {
-      let pdfResponse = null;
-      for (const sid of context.sids) {
-        const url = `https://go.cin7.com/Cloud/Docs/PDF/?T=Quote&idWebSite=27265&UN=vi&ID=363&SID=${encodeURIComponent(sid)}`;
-        try {
-          const response = await request(url, { responseType: "arraybuffer" });
-          if (isPdf(response.response)) {
-            pdfResponse = response;
-            break;
-          }
-        } catch (_) {}
+      for (let index = 0; index < selectedContexts.length; index += 1) {
+        const context = selectedContexts[index];
+        let pdfResponse = null;
+        for (const sid of context.sids) {
+          const url = `https://go.cin7.com/Cloud/Docs/PDF/?T=Quote&idWebSite=27265&UN=vi&ID=363&SID=${encodeURIComponent(sid)}`;
+          try {
+            const response = await request(url, { responseType: "arraybuffer" });
+            if (isPdf(response.response)) {
+              pdfResponse = response;
+              break;
+            }
+          } catch (_) {}
+        }
+        if (!pdfResponse) throw new Error(`Cin7 could not generate the PDF for ${context.quoteNumber}.`);
+        assignFile(inputs[index], new File([pdfResponse.response], `${context.quoteNumber}.pdf`, {
+          type: "application/pdf",
+          lastModified: Date.now()
+        }));
       }
-      if (!pdfResponse) throw new Error("Cin7 could not generate the PDF for this quote.");
-      assignFile(input, new File([pdfResponse.response], `${context.quoteNumber}.pdf`, {
-        type: "application/pdf",
-        lastModified: Date.now()
-      }));
-      if (button) button.textContent = "Quote Added";
+      if (button) button.textContent = selectedContexts.length === 1 ? "Quote Added" : "Quotes Added";
     } catch (error) {
       window.alert(error.message || "The quote PDF could not be added.");
       if (button) button.textContent = "Quote PDF";
@@ -632,6 +706,15 @@
       #${QUOTE_BUTTON_ID} { border-color: #e2a900; background: #f7c948; color: #fff; }
       #${QUOTE_BUTTON_ID}:hover { background: #eebc2e; }
       #${QUOTE_BUTTON_ID}:disabled { opacity: .65; cursor: wait; }
+      #lc-omni-quote-picker { position: fixed; inset: 0; z-index: 2147483647; display: grid; place-items: center; background: rgba(9,30,66,.5); }
+      .lc-omni-quote-picker-card { width: 430px; max-width: calc(100vw - 40px); max-height: calc(100vh - 50px); overflow: auto; padding: 20px; border-radius: 10px; background: #fff; color: #172b49; box-shadow: 0 18px 50px rgba(0,0,0,.28); font: 14px Arial,sans-serif; }
+      .lc-omni-quote-picker-card h3 { margin: 0 0 8px; font-size: 21px; }
+      .lc-omni-quote-picker-card p { margin: 0 0 14px; color: #526987; }
+      .lc-omni-quote-picker-list { display: grid; gap: 7px; max-height: 330px; overflow: auto; }
+      .lc-omni-quote-picker-list label { display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid #d8e4f2; border-radius: 6px; cursor: pointer; }
+      .lc-omni-quote-picker-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+      .lc-omni-quote-picker-actions button { min-height: 36px; padding: 0 14px; border: 1px solid #8da9cc; border-radius: 6px; background: #fff; color: #0b3978; font-weight: 700; cursor: pointer; }
+      .lc-omni-quote-picker-actions [data-add] { border-color: #e2a900; background: #f7c948; color: #fff; }
       #${PANEL_ID}, #${DRAWINGS_PANEL_ID} { display: none; position: absolute; z-index: 2147483647; top: 46px; left: 50%; transform: translateX(-50%); width: 410px; max-width: calc(100vw - 48px); border: 1px solid #9eb8d8; border-radius: 7px; background: #fff; box-shadow: 0 14px 36px rgba(15,46,106,.22); color: #172b49; font: 13px Arial,sans-serif; }
       #${DRAWINGS_PANEL_ID} { top: 96px; }
       #${HOST_ID}.is-care-open #${PANEL_ID}, #${HOST_ID}.is-drawings-open #${DRAWINGS_PANEL_ID} { display: block; }
