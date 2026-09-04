@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Gmail Omni Quote PDFs
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.3
-// @description  Remembers opened Cin7 Omni quotes and attaches their PDFs directly to Gmail drafts.
+// @version      0.1.4
+// @description  Selects downloaded Cin7 Omni quote PDFs and attaches them to Gmail drafts.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @match        https://go.cin7.com/Cloud/ShoppingCartAdmin/Orders/OrdersList.aspx*
@@ -12,8 +12,8 @@
 // @grant        GM_setValue
 // @connect      go.cin7.com
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-omni-quote-pdfs.user.js?v=0.1.3
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-omni-quote-pdfs.user.js?v=0.1.3
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-omni-quote-pdfs.user.js?v=0.1.4
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-omni-quote-pdfs.user.js?v=0.1.4
 // @supportURL   https://github.com/Livingculture/freight-tool
 // ==/UserScript==
 
@@ -142,6 +142,68 @@
   function gmailSubject(root) {
     return Array.from(root?.querySelectorAll('input[name="subjectbox"], input[placeholder="Subject"], input[aria-label="Subject"]') || [])
       .find((input) => input.offsetWidth && input.offsetHeight)?.value || "";
+  }
+
+  function isDownloadedOmniQuote(file) {
+    return file?.type === "application/pdf"
+      && /^SFOR\d+(?:-[A-Z0-9]+)?(?: \(\d+\))?\.pdf$/i.test(clean(file.name));
+  }
+
+  function showPickerMessage(message, error = false) {
+    document.getElementById("lc-gq-picker-message")?.remove();
+    const notice = document.createElement("div");
+    notice.id = "lc-gq-picker-message";
+    notice.textContent = message;
+    notice.style.cssText = `position:fixed;right:18px;bottom:18px;z-index:2147483647;max-width:420px;padding:12px 16px;border-radius:7px;background:${error ? "#b3261e" : "#087f8c"};color:#fff;font:700 13px Arial,sans-serif;box-shadow:0 7px 22px rgba(0,0,0,.25)`;
+    document.body.appendChild(notice);
+    setTimeout(() => notice.remove(), error ? 6000 : 2600);
+  }
+
+  function chooseDownloadedQuotePdfs(event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    const composeRoot = activeComposeRoot();
+    if (!composeRoot) {
+      showPickerMessage("Open a Gmail compose window first.", true);
+      return;
+    }
+    const picker = document.createElement("input");
+    picker.type = "file";
+    picker.accept = ".pdf,application/pdf";
+    picker.multiple = true;
+    picker.style.display = "none";
+    document.body.appendChild(picker);
+    picker.addEventListener("change", () => {
+      try {
+        const selected = Array.from(picker.files || []);
+        if (!selected.length) return;
+        const files = selected.filter(isDownloadedOmniQuote);
+        const rejected = selected.filter((file) => !isDownloadedOmniQuote(file));
+        if (!files.length) {
+          showPickerMessage("No Omni quote PDFs selected. Choose files named like SFOR38454-2.pdf.", true);
+          return;
+        }
+        const localInputs = Array.from(composeRoot.querySelectorAll('input[type="file"]')).filter((input) => input !== picker);
+        const inputs = localInputs.length
+          ? localInputs
+          : Array.from(document.querySelectorAll('input[type="file"]')).filter((input) => input !== picker);
+        const gmailInput = inputs.reverse().find((input) => !input.disabled);
+        if (!gmailInput) throw new Error("Gmail's attachment control was not found. Click the paperclip once, cancel it, then try Quote PDFs again.");
+        const transfer = new DataTransfer();
+        files.forEach((file) => transfer.items.add(file));
+        gmailInput.files = transfer.files;
+        gmailInput.dispatchEvent(new Event("input", { bubbles: true }));
+        gmailInput.dispatchEvent(new Event("change", { bubbles: true }));
+        showPickerMessage(`${files.length} Omni quote PDF${files.length === 1 ? "" : "s"} attached.${rejected.length ? ` ${rejected.length} non-Omni file${rejected.length === 1 ? " was" : "s were"} skipped.` : ""}`);
+      } catch (error) {
+        showPickerMessage(error.message || String(error), true);
+      } finally {
+        picker.remove();
+      }
+    }, { once: true });
+    picker.click();
   }
 
   function downloadPdf(context) {
@@ -283,10 +345,7 @@
       button.id = BUTTON_ID;
       button.type = "button";
       button.textContent = "Quote PDFs";
-      ["pointerdown", "mousedown", "touchstart", "click"].forEach((eventName) => {
-        button.addEventListener(eventName, openPanel, true);
-      });
-      button.onclick = openPanel;
+      button.addEventListener("click", chooseDownloadedQuotePdfs, true);
       document.body.appendChild(button);
     }
     syncButton();
