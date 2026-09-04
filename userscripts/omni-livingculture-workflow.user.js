@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.11
+// @version      0.1.12
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -9,8 +9,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.11
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.11
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.12
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.12
 // ==/UserScript==
 
 (function () {
@@ -2405,35 +2405,59 @@
     field(OVERLAY_ID).classList.add('open');
   }
 
+  function currentQuotePdfOrderId() {
+    const params = new URL(location.href).searchParams;
+    for (const wanted of ['OrderId', 'idOrder', 'ID']) {
+      const entry = Array.from(params.entries()).find(([key]) => key.toLowerCase() === wanted.toLowerCase());
+      if (entry && /^\d+$/.test(entry[1])) return entry[1];
+    }
+    return '';
+  }
+
   function quotePdfSidCandidates() {
     const candidates = [];
+    const add = (value) => {
+      const match = clean(value).match(/^\d{6,}$/);
+      if (match) candidates.push(match[0]);
+    };
     const addFromUrl = (value) => {
       try {
         const url = new URL(value, location.href);
-        ['SID', 'TransactionID', 'SaleID', 'OrderID', 'idOrder', 'ID'].forEach((name) => {
+        ['SID', 'TransactionID', 'SaleID'].forEach((name) => {
           const entry = Array.from(url.searchParams.entries()).find(([key]) => key.toLowerCase() === name.toLowerCase());
-          if (entry && /^\d{6,}$/.test(entry[1])) candidates.push(entry[1]);
+          if (entry) add(entry[1]);
         });
       } catch (error) {}
     };
     addFromUrl(location.href);
-    Array.from(document.querySelectorAll('a[href]'))
-      .filter((link) => /go to admin|quote/i.test(clean(link.textContent || '')))
-      .forEach((link) => addFromUrl(link.href));
+    Array.from(document.querySelectorAll('a, button, input')).forEach((element) => {
+      const source = [
+        element.getAttribute('href'),
+        element.getAttribute('onclick'),
+        element.getAttribute('formaction')
+      ].filter(Boolean).join(' ');
+      addFromUrl(source);
+      Array.from(source.matchAll(/(?:SID|TransactionID|SaleID)\D{0,30}(\d{6,})/gi)).forEach((match) => add(match[1]));
+    });
     Array.from(document.querySelectorAll('input[type="hidden"]'))
-      .filter((input) => /(?:^|_)(?:sid|transactionid|saleid|orderid|id)$/i.test(input.name || input.id || ''))
-      .map((input) => clean(input.value))
-      .filter((value) => /^\d{6,}$/.test(value))
-      .forEach((value) => candidates.push(value));
+      .filter((input) => /(?:sid|transactionid|saleid)/i.test(`${input.name || ''} ${input.id || ''}`))
+      .forEach((input) => add(input.value));
+    const html = document.documentElement?.innerHTML || '';
+    Array.from(html.matchAll(/(?:SID|TransactionID|SaleID)\D{0,50}(\d{6,})/gi)).forEach((match) => add(match[1]));
     return Array.from(new Set(candidates));
   }
 
-  function requestQuotePdf(sid) {
-    const url = `https://go.cin7.com/Cloud/Docs/PDF/?T=Quote&idWebSite=27265&UN=vi&ID=363&SID=${encodeURIComponent(sid)}`;
+  function requestQuotePdf(orderId, sid) {
+    const url = new URL('https://go.cin7.com/Cloud/Docs/PDF/');
+    url.searchParams.set('T', 'Quote');
+    url.searchParams.set('idWebSite', '27265');
+    url.searchParams.set('UN', 'vi');
+    url.searchParams.set('ID', orderId);
+    if (sid) url.searchParams.set('SID', sid);
     return new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
         method: 'GET',
-        url,
+        url: url.href,
         responseType: 'arraybuffer',
         timeout: 120000,
         onload: (response) => {
@@ -2449,10 +2473,11 @@
   }
 
   async function downloadCurrentQuotePdf(button) {
-    const orderId = omniHeadingDraft().orderId || extractOrderId(document.body?.innerText || '');
+    const orderId = currentQuotePdfOrderId();
+    const quoteNumber = omniHeadingDraft().orderId || extractOrderId(document.body?.innerText || '');
     const sids = quotePdfSidCandidates();
-    if (!orderId || !sids.length) {
-      window.alert('The current Omni quote number or internal ID could not be found.');
+    if (!orderId) {
+      window.alert('The current Omni internal OrderId could not be found.');
       return;
     }
     const originalText = button.textContent;
@@ -2460,9 +2485,9 @@
     button.textContent = 'Downloading…';
     try {
       let pdf = null;
-      for (const sid of sids) {
+      for (const sid of [...sids, '']) {
         try {
-          pdf = await requestQuotePdf(sid);
+          pdf = await requestQuotePdf(orderId, sid);
           if (pdf) break;
         } catch (error) {}
       }
@@ -2470,7 +2495,7 @@
       const blobUrl = URL.createObjectURL(new Blob([pdf], { type: 'application/pdf' }));
       const link = document.createElement('a');
       link.href = blobUrl;
-      link.download = `${orderId}.pdf`;
+      link.download = `${quoteNumber || `Quote-${orderId}`}.pdf`;
       document.body.appendChild(link);
       link.click();
       link.remove();
