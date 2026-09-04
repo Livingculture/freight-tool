@@ -1,16 +1,17 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.14
+// @version      0.1.15
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
+// @match        https://go.cin7.com/Cloud/ShoppingCartAdmin/*
 // @grant        GM_xmlhttpRequest
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.14
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.14
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.15
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.15
 // ==/UserScript==
 
 (function () {
@@ -31,6 +32,7 @@
   const HUBSPOT_LEAD_SOURCE_OPTIONS_URL = 'https://living-culture-workflow.vercel.app/api/hubspot/lead-source-options';
   const HUBSPOT_GATE_CLASS = 'lc-omni-hubspot-gated-action';
   const HUBSPOT_GATE_STORAGE_PREFIX = 'lc-omni-hubspot-deal-complete:';
+  const QUOTE_PDF_HANDOFF_KEY = 'lc-omni-quote-pdf-handoff';
   const HUBSPOT_GATED_LABELS = new Set([
     'go to admin',
     'approve & email',
@@ -2487,41 +2489,74 @@
   }
 
   async function downloadCurrentQuotePdf(button) {
-    const orderId = currentQuotePdfOrderId();
     const quoteNumber = omniHeadingDraft().orderId || extractOrderId(document.body?.innerText || '');
-    const sids = quotePdfSidCandidates();
-    if (!orderId) {
-      window.alert('The current Omni internal OrderId could not be found.');
+    const adminControl = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]'))
+      .filter(isVisible)
+      .find((element) => normalizeLabel(element.value || element.textContent || '') === 'go to admin');
+    if (!quoteNumber || !adminControl) {
+      window.alert('Cin7\'s Go to Admin control could not be found for this quote.');
       return;
     }
-    const originalText = button.textContent;
-    button.disabled = true;
-    button.textContent = 'Downloading…';
     try {
-      let pdf = null;
-      for (const sid of [...sids, '']) {
-        try {
-          pdf = await requestQuotePdf(orderId, sid);
-          if (pdf) break;
-        } catch (error) {}
-      }
-      if (!pdf) throw new Error('Cin7 could not generate the PDF for this quote.');
-      const blobUrl = URL.createObjectURL(new Blob([pdf], { type: 'application/pdf' }));
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.download = `${quoteNumber || `Quote-${orderId}`}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
-      button.textContent = 'Downloaded';
-      window.setTimeout(() => { button.textContent = originalText; }, 1800);
+      localStorage.setItem(QUOTE_PDF_HANDOFF_KEY, JSON.stringify({ quoteNumber, startedAt: Date.now() }));
+      button.disabled = true;
+      button.textContent = 'Opening Admin…';
+      adminControl.click();
     } catch (error) {
-      button.textContent = originalText;
-      window.alert(error.message || 'The quote PDF could not be downloaded.');
-    } finally {
       button.disabled = false;
+      button.textContent = 'Download Quote PDF';
+      window.alert(error.message || 'The quote PDF could not be downloaded.');
     }
+  }
+
+  function downloadSignedQuotePdf(url, quoteNumber) {
+    GM_xmlhttpRequest({
+      method: 'GET',
+      url,
+      responseType: 'arraybuffer',
+      timeout: 120000,
+      onload(response) {
+        const bytes = new Uint8Array(response.response || new ArrayBuffer(0));
+        const isPdf = bytes.length > 3000 && String.fromCharCode(...bytes.slice(0, 4)) === '%PDF';
+        if (!isPdf) {
+          window.alert('Cin7 did not return a valid quote PDF.');
+          return;
+        }
+        const blobUrl = URL.createObjectURL(new Blob([response.response], { type: 'application/pdf' }));
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = `${quoteNumber}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+      },
+      onerror: () => window.alert('Could not connect to Cin7\'s quote PDF.'),
+      ontimeout: () => window.alert('Cin7\'s quote PDF timed out.')
+    });
+  }
+
+  function continueQuotePdfFromAdmin() {
+    let handoff = null;
+    try { handoff = JSON.parse(localStorage.getItem(QUOTE_PDF_HANDOFF_KEY) || 'null'); } catch (error) {}
+    if (!handoff?.quoteNumber || Date.now() - Number(handoff.startedAt || 0) > 120000) return;
+    let attempts = 0;
+    const findQuote = window.setInterval(() => {
+      attempts += 1;
+      const quoteControl = Array.from(document.querySelectorAll('a, button, input[type="button"], input[type="submit"]'))
+        .filter(isVisible)
+        .find((element) => normalizeLabel(element.textContent || element.value || '') === 'quote');
+      if (!quoteControl && attempts < 40) return;
+      window.clearInterval(findQuote);
+      localStorage.removeItem(QUOTE_PDF_HANDOFF_KEY);
+      if (!quoteControl) {
+        window.alert('Cin7\'s Quote link could not be found on the Admin page.');
+        return;
+      }
+      const href = quoteControl instanceof HTMLAnchorElement ? quoteControl.href : quoteControl.getAttribute('formaction');
+      if (href && /\/Cloud\/Docs\/PDF/i.test(href)) downloadSignedQuotePdf(href, handoff.quoteNumber);
+      else quoteControl.click();
+    }, 250);
   }
 
   function shouldHandleAction(button) {
@@ -2808,6 +2843,10 @@
   }
 
   function boot() {
+    if (/\/Cloud\/ShoppingCartAdmin\//i.test(location.pathname)) {
+      continueQuotePdfFromAdmin();
+      return;
+    }
     if (isOmniPage()) document.getElementById('lc-omni-hubspot-shortcut-button')?.remove();
     ensureDelegatedClickHandler();
     void loadRepOptions();
