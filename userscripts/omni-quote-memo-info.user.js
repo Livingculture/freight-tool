@@ -1,11 +1,11 @@
 // ==UserScript==
 // @name         Omni Living Culture Quote Memo Info
 // @namespace    livingculture-omni
-// @version      0.1.0
+// @version      0.1.1
 // @description  Fills selected quote wording into Omni Delivery Instructions for display on the quote PDF.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-memo-info.user.js?v=0.1.0
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-memo-info.user.js?v=0.1.0
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-memo-info.user.js?v=0.1.1
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-memo-info.user.js?v=0.1.1
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
 // @grant        none
@@ -80,15 +80,22 @@ Extra charges may be incurred for extra work required in materials and labour ou
   };
 
   function deliveryLabel() {
-    return Array.from(document.querySelectorAll('label, legend, div, span'))
+    const labelText = element => clean(Array.from(element.childNodes)
+      .filter(node => node.nodeType === Node.TEXT_NODE)
+      .map(node => node.textContent)
+      .join(' ')).replace(/[:*]+$/, '').trim().toLowerCase();
+    return Array.from(document.querySelectorAll('label, legend, td, th, div, span, p'))
       .filter(visible)
       .filter(element => !element.closest(`#${ROOT_ID}`))
-      .find(element => clean(element.textContent).toLowerCase() === 'delivery instructions');
+      .filter(element => labelText(element) === 'delivery instructions' || clean(element.textContent).replace(/[:*]+$/, '').trim().toLowerCase() === 'delivery instructions')
+      .sort((left, right) => left.children.length - right.children.length)[0] || null;
   }
 
   function deliveryField() {
     const label = deliveryLabel();
     if (!label) return null;
+    const contained = label.querySelector?.('textarea, input:not([type="hidden"]), [contenteditable="true"]');
+    if (contained) return contained;
     const linked = label.htmlFor && document.getElementById(label.htmlFor);
     if (linked?.matches('textarea,input,[contenteditable="true"]')) return linked;
     const labelRect = label.getBoundingClientRect();
