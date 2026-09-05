@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.31
+// @version      0.1.32
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.31
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.31
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.32
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.32
 // ==/UserScript==
 
 (function () {
@@ -2496,6 +2496,17 @@
     });
   }
 
+  function saveQuotePdfBuffer(buffer, quoteNumber) {
+    const blobUrl = URL.createObjectURL(new Blob([buffer], { type: 'application/pdf' }));
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = `${quoteNumber}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+  }
+
   async function downloadCurrentQuotePdf(button) {
     const quoteNumber = omniHeadingDraft().orderId || extractOrderId(document.body?.innerText || '');
     const adminControl = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]'))
@@ -2506,9 +2517,24 @@
       return;
     }
     try {
-      localStorage.setItem(QUOTE_PDF_HANDOFF_KEY, JSON.stringify({ quoteNumber, startedAt: Date.now() }));
       button.disabled = true;
       button.textContent = 'Downloading…';
+
+      const orderId = currentQuotePdfOrderId();
+      const sidCandidates = quotePdfSidCandidates();
+      if (orderId && sidCandidates.length) {
+        try {
+          const pdfBuffer = await Promise.any(sidCandidates.map((sid) => requestQuotePdf(orderId, sid)));
+          saveQuotePdfBuffer(pdfBuffer, quoteNumber);
+          button.disabled = false;
+          button.textContent = 'Download Quote';
+          return;
+        } catch (error) {
+          // Fall through to Cin7's Admin route when no page identifier produces a valid PDF.
+        }
+      }
+
+      localStorage.setItem(QUOTE_PDF_HANDOFF_KEY, JSON.stringify({ quoteNumber, startedAt: Date.now() }));
       const frameName = `lc-quote-pdf-${Date.now()}`;
       const frame = document.createElement('iframe');
       frame.name = frameName;
@@ -2614,14 +2640,7 @@
           finished();
           return;
         }
-        const blobUrl = URL.createObjectURL(new Blob([response.response], { type: 'application/pdf' }));
-        const link = document.createElement('a');
-        link.href = blobUrl;
-        link.download = `${quoteNumber}.pdf`;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        window.setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+        saveQuotePdfBuffer(response.response, quoteNumber);
         finished();
       },
       onerror: () => {
