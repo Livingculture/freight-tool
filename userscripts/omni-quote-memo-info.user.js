@@ -1,11 +1,11 @@
 // ==UserScript==
 // @name         Omni Living Culture Quote Memo Info
 // @namespace    livingculture-omni
-// @version      0.1.1
+// @version      0.1.2
 // @description  Fills selected quote wording into Omni Delivery Instructions for display on the quote PDF.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-memo-info.user.js?v=0.1.1
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-memo-info.user.js?v=0.1.1
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-memo-info.user.js?v=0.1.2
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-memo-info.user.js?v=0.1.2
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
 // @grant        none
@@ -88,7 +88,7 @@ Extra charges may be incurred for extra work required in materials and labour ou
       .filter(visible)
       .filter(element => !element.closest(`#${ROOT_ID}`))
       .filter(element => labelText(element) === 'delivery instructions' || clean(element.textContent).replace(/[:*]+$/, '').trim().toLowerCase() === 'delivery instructions')
-      .sort((left, right) => left.children.length - right.children.length)[0] || null;
+      .sort((left, right) => left.children.length - right.children.length || left.getBoundingClientRect().height - right.getBoundingClientRect().height)[0] || null;
   }
 
   function deliveryField() {
@@ -117,6 +117,7 @@ Extra charges may be incurred for extra work required in materials and labour ou
     field.dispatchEvent(new Event('input', { bubbles: true }));
     field.dispatchEvent(new Event('change', { bubbles: true }));
     field.dispatchEvent(new Event('blur', { bubbles: true }));
+    [0, 100, 300, 700].forEach(delay => window.setTimeout(() => window.dispatchEvent(new Event('resize')), delay));
   }
 
   async function copy(text) {
@@ -160,7 +161,9 @@ Extra charges may be incurred for extra work required in materials and labour ou
     button.textContent = 'Quote Memo Info';
     button.style.cssText = 'margin-left:10px;padding:6px 10px;border:1px solid #0b3978;border-radius:5px;color:#fff;background:#0b3978;font:700 12px Arial,sans-serif;cursor:pointer;';
     button.addEventListener('click', () => document.getElementById(ROOT_ID).shadowRoot.querySelector('.shade').classList.add('open'));
-    label.appendChild(button);
+    const field = deliveryField();
+    if (field && label.contains(field)) label.insertBefore(button, field);
+    else label.appendChild(button);
   }
 
   placeButton();
