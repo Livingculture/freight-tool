@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.26
+// @version      0.1.27
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.26
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.26
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.27
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.27
 // ==/UserScript==
 
 (function () {
@@ -1173,11 +1173,12 @@
       .map(element => ({ element, rect: element.getBoundingClientRect() }));
     if (!candidates.length) return null;
     if (!saveRect) return candidates.sort((left, right) => right.rect.top - left.rect.top)[0].element;
-    return candidates.sort((left, right) => {
-      const leftRowDistance = Math.abs((left.rect.top + left.rect.height / 2) - (saveRect.top + saveRect.height / 2));
-      const rightRowDistance = Math.abs((right.rect.top + right.rect.height / 2) - (saveRect.top + saveRect.height / 2));
-      return leftRowDistance - rightRowDistance || right.rect.left - left.rect.left;
-    })[0].element;
+    const saveCentreY = saveRect.top + saveRect.height / 2;
+    const sameRow = candidates.filter(({ rect }) =>
+      Math.abs((rect.top + rect.height / 2) - saveCentreY) <= Math.max(12, saveRect.height * 0.6)
+    );
+    const rowCandidates = sameRow.length ? sameRow : candidates;
+    return rowCandidates.sort((left, right) => right.rect.right - left.rect.right)[0].element;
   }
 
   function placeOmniActionButton(button, anchor) {
