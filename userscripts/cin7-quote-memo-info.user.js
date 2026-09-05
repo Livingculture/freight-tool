@@ -1,16 +1,16 @@
 // ==UserScript==
 // @name         Cin7 Quote Memo Info
 // @namespace    livingculture
-// @version      3.0
-// @description  Quote Memo Info panel that fills Omni Delivery Instructions or the legacy Cin7 Quote Memo.
+// @version      2.9
+// @description  Quote Memo Info panel with copy and auto-fill into Cin7 Quote Memo only.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
 // @match        *://*.cin7.co/*
 // @match        *://*.cin7core.com/*
 // @match        *://*.dearsystems.com/*
 // @match        https://inventory.dearsystems.com/*
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-quote-memo-info.user.js?v=3.0
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-quote-memo-info.user.js?v=3.0
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-quote-memo-info.user.js
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-quote-memo-info.user.js
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
 // @grant        none
@@ -171,9 +171,9 @@ Extra charges may be incurred for extra work required in materials and labour ou
   }
 
   function findQuoteMemoLabel() {
-    const labels = Array.from(document.querySelectorAll('label, legend, div, span, p')).filter(isVisible);
-    const exactLabel = (wanted) => labels.find(el => clean((el.innerText || el.textContent).replace(/Quote Memo Info/g, '')).toLowerCase() === wanted);
-    return exactLabel('quote memo') || exactLabel('delivery instructions');
+    return Array.from(document.querySelectorAll('label, legend, div, span, p'))
+      .filter(isVisible)
+      .find(el => clean((el.innerText || el.textContent).replace(/Quote Memo Info/g, '')).toLowerCase() === 'quote memo');
   }
 
   function findQuoteMemoField() {
@@ -244,9 +244,9 @@ Extra charges may be incurred for extra work required in materials and labour ou
     if (!field) {
       await navigator.clipboard.writeText(text);
 
-      setStatus('Could not find Delivery Instructions or Quote Memo. Text copied instead.', true);
+      setStatus('Could not find Quote memo. Text copied instead.', true);
 
-      alert('Could not find Delivery Instructions or Quote Memo.\n\nThe text has been copied so you can paste it manually.');
+      alert('Could not find the Quote memo field.\n\nText has been copied. Click inside Quote memo and paste.');
 
       return;
     }
@@ -280,7 +280,7 @@ Extra charges may be incurred for extra work required in materials and labour ou
     const old = button.textContent;
 
     button.textContent = 'Filled';
-    setStatus('Filled Delivery Instructions / Quote Memo and copied the text as backup.');
+    setStatus('Filled Quote memo and copied text as backup.');
 
     document.getElementById('lc-quote-memo-panel')?.classList.remove('is-open');
 
@@ -456,7 +456,7 @@ Extra charges may be incurred for extra work required in materials and labour ou
       <div class="lc-qm-hero">
         <img src="${LOGO_URL}" alt="Living Culture" class="lc-qm-logo" />
         <div class="lc-qm-title">Quote Memo Info</div>
-        <p>Copy or fill Omni Delivery Instructions so the wording appears on the quote PDF.</p>
+        <p>Copy or auto-fill into the Cin7 Quote memo.</p>
         <button id="lc-qm-close" type="button">×</button>
       </div>
 
@@ -468,7 +468,7 @@ Extra charges may be incurred for extra work required in materials and labour ou
             <textarea readonly>${memo.text}</textarea>
             <div class="lc-qm-actions">
               <button type="button" class="lc-qm-copy" data-index="${index}">Copy</button>
-              <button type="button" class="lc-qm-fill" data-index="${index}">Copy + Fill</button>
+              <button type="button" class="lc-qm-fill" data-index="${index}">Copy + Fill Quote Memo</button>
             </div>
           </div>
         `).join('')}
