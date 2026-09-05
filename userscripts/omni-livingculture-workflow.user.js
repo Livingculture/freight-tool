@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.22
+// @version      0.1.23
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.22
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.22
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.23
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.23
 // ==/UserScript==
 
 (function () {
@@ -2516,7 +2516,7 @@
         localStorage.removeItem(QUOTE_PDF_HANDOFF_KEY);
         frame.remove();
         button.disabled = false;
-        button.textContent = 'Download Quote PDF';
+        button.textContent = 'Download Quote';
       };
       const handleFrame = () => {
         window.setTimeout(() => {
@@ -2568,7 +2568,7 @@
       frame.src = backgroundUrl.href;
     } catch (error) {
       button.disabled = false;
-      button.textContent = 'Download Quote PDF';
+      button.textContent = 'Download Quote';
       window.alert(error.message || 'The quote PDF could not be downloaded.');
     }
   }
@@ -2894,7 +2894,7 @@
       button = document.createElement('button');
       button.id = QUOTE_PDF_BUTTON_ID;
       button.type = 'button';
-      button.textContent = 'Download Quote PDF';
+      button.textContent = 'Download Quote';
       styleInlineButton(button, '#087f8c');
       wireActionButton(button);
     }
