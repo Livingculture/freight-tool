@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.30
+// @version      0.1.31
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.30
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.30
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.31
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.31
 // ==/UserScript==
 
 (function () {
@@ -33,7 +33,7 @@
   const HUBSPOT_GATE_CLASS = 'lc-omni-hubspot-gated-action';
   const HUBSPOT_GATE_STORAGE_PREFIX = 'lc-omni-hubspot-deal-complete:';
   const QUOTE_PDF_HANDOFF_KEY = 'lc-omni-quote-pdf-handoff';
-  const QUOTE_PDF_TIMEOUT_MS = 300000;
+  const QUOTE_PDF_TIMEOUT_MS = 45000;
   const HUBSPOT_GATED_LABELS = new Set([
     'go to admin',
     'approve & email',
@@ -2519,7 +2519,6 @@
       document.body.appendChild(frame);
 
       let cleanupTimer = 0;
-      let adminOpened = false;
       let pdfStarted = false;
       const cleanup = () => {
         window.clearTimeout(cleanupTimer);
@@ -2538,16 +2537,6 @@
           } catch (error) { return; }
           if (!frameDocument) return;
           const controls = Array.from(frameDocument.querySelectorAll('button, a, input[type="button"], input[type="submit"]'));
-          if (/\/Cloud\/TransactionEntry\/TransactionEntry\.aspx/i.test(framePath) && !adminOpened) {
-            const goToAdmin = controls.find((element) => normalizeLabel(element.value || element.textContent || '') === 'go to admin');
-            if (!goToAdmin) {
-              if (frame.isConnected) window.setTimeout(handleFrame, 250);
-              return;
-            }
-            adminOpened = true;
-            goToAdmin.click();
-            return;
-          }
           if (/\/Cloud\/ShoppingCartAdmin\//i.test(framePath) && !pdfStarted) {
             const quoteControl = controls.find((element) => normalizeLabel(element.textContent || element.value || '') === 'quote');
             if (!quoteControl) {
@@ -2573,9 +2562,33 @@
         window.alert('Cin7 took too long to prepare the quote PDF.');
       }, QUOTE_PDF_TIMEOUT_MS);
 
-      const backgroundUrl = new URL(location.href);
-      backgroundUrl.searchParams.set('lcQuotePdfBackground', '1');
-      frame.src = backgroundUrl.href;
+      const directHref = adminControl instanceof HTMLAnchorElement
+        ? adminControl.href
+        : adminControl.getAttribute('formaction');
+      if (directHref && !/^javascript:/i.test(directHref)) {
+        frame.src = new URL(directHref, location.href).href;
+      } else if (adminControl.form) {
+        const sourceForm = adminControl.form;
+        const clonedForm = sourceForm.cloneNode(true);
+        clonedForm.style.display = 'none';
+        clonedForm.target = frameName;
+        clonedForm.action = sourceForm.action || location.href;
+        document.body.appendChild(clonedForm);
+        const sourceControls = Array.from(sourceForm.elements);
+        const controlIndex = sourceControls.indexOf(adminControl);
+        const clonedControl = controlIndex >= 0 ? clonedForm.elements[controlIndex] : null;
+        if (clonedControl) {
+          clonedControl.removeAttribute('onclick');
+          if ('type' in clonedControl && clonedControl.type === 'button') clonedControl.type = 'submit';
+          if (typeof clonedForm.requestSubmit === 'function') clonedForm.requestSubmit(clonedControl);
+          else clonedControl.click();
+        } else {
+          clonedForm.submit();
+        }
+        window.setTimeout(() => clonedForm.remove(), 1000);
+      } else {
+        throw new Error('Cin7\'s Admin page could not be opened in the background.');
+      }
     } catch (error) {
       button.disabled = false;
       button.textContent = 'Download Quote';
