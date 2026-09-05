@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.25
+// @version      0.1.26
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.25
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.25
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.26
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.26
 // ==/UserScript==
 
 (function () {
@@ -58,6 +58,7 @@
   let workflowRepOptions = [];
   let repOptionsLoadPromise = null;
   let hubSpotLeadSourceOptionsPromise = null;
+  let omniLayoutResizeObserver = null;
   let siteVisitBookingsCache = { key: '', bookings: [] };
   let delegatedClickHandlerInstalled = false;
   let lastHandledAction = { id: '', at: 0 };
@@ -1182,16 +1183,22 @@
   function placeOmniActionButton(button, anchor) {
     if (!button || !anchor || !isVisible(anchor)) return false;
     const rect = anchor.getBoundingClientRect();
-    button.style.position = 'static';
-    button.style.left = '';
-    button.style.top = '';
-    button.style.zIndex = '';
-    button.style.margin = '0 0 0 8px';
+    button.style.position = 'absolute';
+    button.style.left = `${window.scrollX + rect.right + 8}px`;
+    button.style.top = `${window.scrollY + rect.top}px`;
+    button.style.zIndex = '56';
+    button.style.margin = '0';
     button.style.height = `${Math.max(34, rect.height || 34)}px`;
-    if (button.parentElement !== anchor.parentElement || button.previousElementSibling !== anchor) {
-      anchor.insertAdjacentElement('afterend', button);
-    }
+    if (button.parentElement !== document.body) document.body.appendChild(button);
     return true;
+  }
+
+  function observeOmniLayout() {
+    if (!isOmniPage() || typeof ResizeObserver === 'undefined') return;
+    if (!omniLayoutResizeObserver) omniLayoutResizeObserver = new ResizeObserver(scheduleButtonPass);
+    document.querySelectorAll('textarea').forEach(element => omniLayoutResizeObserver.observe(element));
+    const anchor = findOmniActionAnchor();
+    if (anchor) omniLayoutResizeObserver.observe(anchor);
   }
 
   function placeActionButton(button, slot) {
@@ -2915,6 +2922,7 @@
 
   function runButtonPass() {
     buttonPassScheduled = false;
+    observeOmniLayout();
     addButton();
     addHubSpotButton();
     addQuoteReviewButton();
