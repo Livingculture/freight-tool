@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.24
+// @version      0.1.25
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.24
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.24
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.25
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.25
 // ==/UserScript==
 
 (function () {
@@ -1163,12 +1163,20 @@
   }
 
   function findOmniActionAnchor() {
-    return document.getElementById('lc-omni-china-warehouse-button') ||
-      document.getElementById('lc-omni-product-availability-button') ||
-      document.getElementById('lc-omni-containers-open') ||
-      findButtonByLabel('Foshan Warehouse') ||
-      findButtonByLabel('NZ Availability') ||
-      findButtonByLabel('LC Containers');
+    const saveButton = findButtonByLabel('Save As Draft') || findButtonByLabel('Save');
+    const saveRect = saveButton?.getBoundingClientRect();
+    const labels = new Set(['foshan warehouse', 'nz availability', 'lc containers']);
+    const candidates = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]'))
+      .filter(isVisible)
+      .filter(element => labels.has(normalizeLabel(element.value || element.textContent || '')))
+      .map(element => ({ element, rect: element.getBoundingClientRect() }));
+    if (!candidates.length) return null;
+    if (!saveRect) return candidates.sort((left, right) => right.rect.top - left.rect.top)[0].element;
+    return candidates.sort((left, right) => {
+      const leftRowDistance = Math.abs((left.rect.top + left.rect.height / 2) - (saveRect.top + saveRect.height / 2));
+      const rightRowDistance = Math.abs((right.rect.top + right.rect.height / 2) - (saveRect.top + saveRect.height / 2));
+      return leftRowDistance - rightRowDistance || right.rect.left - left.rect.left;
+    })[0].element;
   }
 
   function placeOmniActionButton(button, anchor) {
