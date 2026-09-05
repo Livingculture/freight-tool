@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.33
+// @version      0.1.34
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.33
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.33
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.34
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.34
 // ==/UserScript==
 
 (function () {
@@ -2537,86 +2537,35 @@
       }
 
       localStorage.setItem(QUOTE_PDF_HANDOFF_KEY, JSON.stringify({ quoteNumber, startedAt: Date.now() }));
-      const frameName = `lc-quote-pdf-${Date.now()}`;
-      const frame = document.createElement('iframe');
-      frame.name = frameName;
-      frame.id = frameName;
-      frame.hidden = true;
-      frame.setAttribute('aria-hidden', 'true');
-      frame.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-forms allow-downloads allow-modals');
-      document.body.appendChild(frame);
-
+      const workerName = `lc-quote-pdf-${Date.now()}`;
       let cleanupTimer = 0;
-      let pdfStarted = false;
+      let worker = null;
       const cleanup = () => {
         window.clearTimeout(cleanupTimer);
+        window.removeEventListener('message', handleFinished);
         localStorage.removeItem(QUOTE_PDF_HANDOFF_KEY);
-        frame.remove();
+        if (worker && !worker.closed) worker.close();
         button.disabled = false;
         button.textContent = 'Download Quote';
       };
-      const handleFrame = () => {
-        window.setTimeout(() => {
-          let frameDocument;
-          let framePath;
-          try {
-            frameDocument = frame.contentDocument;
-            framePath = frame.contentWindow.location.pathname;
-          } catch (error) { return; }
-          if (!frameDocument) return;
-          const controls = Array.from(frameDocument.querySelectorAll('button, a, input[type="button"], input[type="submit"]'));
-          if (/\/Cloud\/ShoppingCartAdmin\//i.test(framePath) && !pdfStarted) {
-            const quoteControl = controls.find((element) => normalizeLabel(element.textContent || element.value || '') === 'quote');
-            if (!quoteControl) {
-              if (frame.isConnected) window.setTimeout(handleFrame, 250);
-              return;
-            }
-            const href = quoteControl instanceof frame.contentWindow.HTMLAnchorElement
-              ? quoteControl.href
-              : quoteControl.getAttribute('formaction');
-            if (!href || !/\/Cloud\/Docs\/PDF/i.test(href)) {
-              cleanup();
-              window.alert('Cin7\'s signed Quote PDF link could not be found.');
-              return;
-            }
-            pdfStarted = true;
-            downloadSignedQuotePdf(href, quoteNumber, cleanup);
-          }
-        }, 300);
+      const handleFinished = (event) => {
+        if (event.origin !== location.origin || event.data !== 'lc-quote-pdf-finished') return;
+        cleanup();
       };
-      frame.addEventListener('load', handleFrame);
+      window.addEventListener('message', handleFinished);
       cleanupTimer = window.setTimeout(() => {
         cleanup();
         window.alert('Cin7 took too long to prepare the quote PDF.');
       }, QUOTE_PDF_TIMEOUT_MS);
-
-      const directHref = adminControl instanceof HTMLAnchorElement
-        ? adminControl.href
-        : adminControl.getAttribute('formaction');
-      if (directHref && !/^javascript:/i.test(directHref)) {
-        frame.src = new URL(directHref, location.href).href;
-      } else if (adminControl.form) {
-        const sourceForm = adminControl.form;
-        const clonedForm = sourceForm.cloneNode(true);
-        clonedForm.style.display = 'none';
-        clonedForm.target = frameName;
-        clonedForm.action = sourceForm.action || location.href;
-        document.body.appendChild(clonedForm);
-        const sourceControls = Array.from(sourceForm.elements);
-        const controlIndex = sourceControls.indexOf(adminControl);
-        const clonedControl = controlIndex >= 0 ? clonedForm.elements[controlIndex] : null;
-        if (clonedControl) {
-          clonedControl.removeAttribute('onclick');
-          if ('type' in clonedControl && clonedControl.type === 'button') clonedControl.type = 'submit';
-          if (typeof clonedForm.requestSubmit === 'function') clonedForm.requestSubmit(clonedControl);
-          else clonedControl.click();
-        } else {
-          clonedForm.submit();
-        }
-        window.setTimeout(() => clonedForm.remove(), 1000);
-      } else {
-        throw new Error('Cin7\'s Admin page could not be opened in the background.');
+      const workerUrl = new URL(location.href);
+      workerUrl.searchParams.set('lcQuotePdfBackground', '1');
+      worker = window.open(workerUrl.href, workerName, 'popup=yes,width=520,height=420,left=0,top=0');
+      if (!worker) {
+        cleanup();
+        window.alert('Allow pop-ups for go.cin7.com so the quote PDF can be prepared.');
+        return;
       }
+      window.focus();
     } catch (error) {
       button.disabled = false;
       button.textContent = 'Download Quote';
@@ -2625,7 +2574,24 @@
   }
 
   function continueQuotePdfFromEditFrame() {
-    return window.parent !== window && new URL(location.href).searchParams.get('lcQuotePdfBackground') === '1';
+    if (new URL(location.href).searchParams.get('lcQuotePdfBackground') !== '1') return false;
+    if (window.parent === window && !window.opener) return false;
+    let attempts = 0;
+    const findAdmin = window.setInterval(() => {
+      attempts += 1;
+      const adminControl = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]'))
+        .filter(isVisible)
+        .find((element) => normalizeLabel(element.value || element.textContent || '') === 'go to admin');
+      if (!adminControl && attempts < 80) return;
+      window.clearInterval(findAdmin);
+      if (!adminControl) {
+        window.opener?.postMessage('lc-quote-pdf-finished', location.origin);
+        window.close();
+        return;
+      }
+      adminControl.click();
+    }, 250);
+    return true;
   }
 
   function downloadSignedQuotePdf(url, quoteNumber, finished = () => {}) {
@@ -2674,7 +2640,10 @@
         return;
       }
       const href = quoteControl instanceof HTMLAnchorElement ? quoteControl.href : quoteControl.getAttribute('formaction');
-      if (href && /\/Cloud\/Docs\/PDF/i.test(href)) downloadSignedQuotePdf(href, handoff.quoteNumber);
+      if (href && /\/Cloud\/Docs\/PDF/i.test(href)) downloadSignedQuotePdf(href, handoff.quoteNumber, () => {
+        window.opener?.postMessage('lc-quote-pdf-finished', location.origin);
+        if (window.opener) window.close();
+      });
       else quoteControl.click();
     }, 250);
   }
