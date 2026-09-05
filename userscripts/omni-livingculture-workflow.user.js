@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.29
+// @version      0.1.30
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.29
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.29
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.30
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.30
 // ==/UserScript==
 
 (function () {
@@ -33,6 +33,7 @@
   const HUBSPOT_GATE_CLASS = 'lc-omni-hubspot-gated-action';
   const HUBSPOT_GATE_STORAGE_PREFIX = 'lc-omni-hubspot-deal-complete:';
   const QUOTE_PDF_HANDOFF_KEY = 'lc-omni-quote-pdf-handoff';
+  const QUOTE_PDF_TIMEOUT_MS = 300000;
   const HUBSPOT_GATED_LABELS = new Set([
     'go to admin',
     'approve & email',
@@ -2480,7 +2481,7 @@
         method: 'GET',
         url: url.href,
         responseType: 'arraybuffer',
-        timeout: 120000,
+        timeout: QUOTE_PDF_TIMEOUT_MS,
         onload: (response) => {
           const bytes = new Uint8Array(response.response || new ArrayBuffer(0));
           const isPdf = bytes.length > 4 && String.fromCharCode(...bytes.slice(0, 4)) === '%PDF';
@@ -2570,7 +2571,7 @@
       cleanupTimer = window.setTimeout(() => {
         cleanup();
         window.alert('Cin7 took too long to prepare the quote PDF.');
-      }, 120000);
+      }, QUOTE_PDF_TIMEOUT_MS);
 
       const backgroundUrl = new URL(location.href);
       backgroundUrl.searchParams.set('lcQuotePdfBackground', '1');
@@ -2591,7 +2592,7 @@
       method: 'GET',
       url,
       responseType: 'arraybuffer',
-      timeout: 120000,
+      timeout: QUOTE_PDF_TIMEOUT_MS,
       onload(response) {
         const bytes = new Uint8Array(response.response || new ArrayBuffer(0));
         const isPdf = bytes.length > 3000 && String.fromCharCode(...bytes.slice(0, 4)) === '%PDF';
@@ -2624,7 +2625,7 @@
   function continueQuotePdfFromAdmin() {
     let handoff = null;
     try { handoff = JSON.parse(localStorage.getItem(QUOTE_PDF_HANDOFF_KEY) || 'null'); } catch (error) {}
-    if (!handoff?.quoteNumber || Date.now() - Number(handoff.startedAt || 0) > 120000) return;
+    if (!handoff?.quoteNumber || Date.now() - Number(handoff.startedAt || 0) > QUOTE_PDF_TIMEOUT_MS) return;
     let attempts = 0;
     const findQuote = window.setInterval(() => {
       attempts += 1;
