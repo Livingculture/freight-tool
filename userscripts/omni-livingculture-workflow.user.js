@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.34
+// @version      0.1.35
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.34
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.34
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.35
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.35
 // ==/UserScript==
 
 (function () {
@@ -2509,6 +2509,57 @@
     window.setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
   }
 
+  function requestAdminQuoteHref(orderId) {
+    const adminUrl = new URL('https://go.cin7.com/Cloud/ShoppingCartAdmin/Orders/OrderDetail.aspx');
+    adminUrl.searchParams.set('idCustomerAppsLink', '1328006');
+    adminUrl.searchParams.set('idOrder', orderId);
+    adminUrl.searchParams.set('idWebSite', '27265');
+    return new Promise((resolve, reject) => {
+      GM_xmlhttpRequest({
+        method: 'GET',
+        url: adminUrl.href,
+        timeout: 15000,
+        onload: (response) => {
+          if (response.status < 200 || response.status >= 300) {
+            reject(new Error(`Cin7 Admin returned HTTP ${response.status}.`));
+            return;
+          }
+          const parsed = new DOMParser().parseFromString(response.responseText || '', 'text/html');
+          const quoteLink = Array.from(parsed.querySelectorAll('a[href]')).find((link) => {
+            const href = link.getAttribute('href') || '';
+            return /\/Cloud\/Docs\/PDF/i.test(href) && /(?:\?|&)T=Quote(?:&|$)/i.test(href.replace(/&amp;/gi, '&'));
+          });
+          if (!quoteLink) {
+            reject(new Error('Cin7 Admin did not include its signed Quote link.'));
+            return;
+          }
+          resolve(new URL((quoteLink.getAttribute('href') || '').replace(/&amp;/gi, '&'), adminUrl).href);
+        },
+        onerror: () => reject(new Error('Could not connect to Cin7 Admin.')),
+        ontimeout: () => reject(new Error('Cin7 Admin timed out.'))
+      });
+    });
+  }
+
+  function fetchSignedQuotePdf(url) {
+    return new Promise((resolve, reject) => {
+      GM_xmlhttpRequest({
+        method: 'GET',
+        url,
+        responseType: 'arraybuffer',
+        timeout: 15000,
+        onload: (response) => {
+          const bytes = new Uint8Array(response.response || new ArrayBuffer(0));
+          const isPdf = bytes.length > 3000 && String.fromCharCode(...bytes.slice(0, 4)) === '%PDF';
+          if (response.status >= 200 && response.status < 300 && isPdf) resolve(response.response);
+          else reject(new Error('Cin7 did not return a valid quote PDF.'));
+        },
+        onerror: () => reject(new Error('Could not connect to Cin7\'s quote PDF.')),
+        ontimeout: () => reject(new Error('Cin7\'s quote PDF timed out.'))
+      });
+    });
+  }
+
   async function downloadCurrentQuotePdf(button) {
     const quoteNumber = omniHeadingDraft().orderId || extractOrderId(document.body?.innerText || '');
     const adminControl = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]'))
@@ -2536,6 +2587,19 @@
         }
       }
 
+      if (orderId) {
+        try {
+          const signedPdfUrl = await requestAdminQuoteHref(orderId);
+          const pdfBuffer = await fetchSignedQuotePdf(signedPdfUrl);
+          saveQuotePdfBuffer(pdfBuffer, quoteNumber);
+          button.disabled = false;
+          button.textContent = 'Download Quote';
+          return;
+        } catch (error) {
+          // Cin7 sometimes requires a fully rendered Admin page; use the worker only then.
+        }
+      }
+
       localStorage.setItem(QUOTE_PDF_HANDOFF_KEY, JSON.stringify({ quoteNumber, startedAt: Date.now() }));
       const workerName = `lc-quote-pdf-${Date.now()}`;
       let cleanupTimer = 0;
@@ -2559,7 +2623,7 @@
       }, QUOTE_PDF_TIMEOUT_MS);
       const workerUrl = new URL(location.href);
       workerUrl.searchParams.set('lcQuotePdfBackground', '1');
-      worker = window.open(workerUrl.href, workerName, 'popup=yes,width=520,height=420,left=0,top=0');
+      worker = window.open(workerUrl.href, workerName, 'popup=yes,width=120,height=90,left=0,top=0');
       if (!worker) {
         cleanup();
         window.alert('Allow pop-ups for go.cin7.com so the quote PDF can be prepared.');
