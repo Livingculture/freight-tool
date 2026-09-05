@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.20
+// @version      0.1.21
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.20
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.20
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.21
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.21
 // ==/UserScript==
 
 (function () {
@@ -1821,6 +1821,7 @@
     }
     payload.lineItems = Array.isArray(review.lineItems) ? review.lineItems : [];
     payload.copyContactTimeline = Boolean(review.copyContactTimeline);
+    markHubSpotStepComplete(payload.orderId);
 
     const originalText = button.textContent;
     button.disabled = true;
@@ -1840,7 +1841,6 @@
         }
 
         if (response.status >= 200 && response.status < 300 && data.ok) {
-          markHubSpotStepComplete(payload.orderId);
           button.textContent = data.orderDealAssociated
             ? 'HubSpot Linked'
             : data.duplicate ? 'Already in HubSpot' : 'HubSpot Created';
