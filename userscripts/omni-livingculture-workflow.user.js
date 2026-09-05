@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.41
+// @version      0.1.42
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.41
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.41
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.42
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.42
 // ==/UserScript==
 
 (function () {
@@ -1505,8 +1505,15 @@
 
   function cin7Draft() {
     const omniHeading = omniHeadingDraft();
-    const address1 = readValueNearLabel('Shipping address line 1') || readValueNearLabel('Delivery Address 1') || readValueNearLabel('Billing address line 1') || readValueNearLabel('Billing Address 1');
-    const address2 = readValueNearLabel('Shipping address line 2') || readValueNearLabel('Delivery Address 2') || readValueNearLabel('Billing address line 2') || readValueNearLabel('Billing Address 2');
+    const omniValue = (...labels) => labels.map(label => readOmniControlByLabel(label) || readValueNearLabel(label)).find(Boolean) || '';
+    const addressParts = [
+      omniValue('Delivery Address 1', 'Shipping Address Line 1', 'Billing Address 1'),
+      omniValue('Delivery Address 2', 'Shipping Address Line 2', 'Billing Address 2'),
+      omniValue('Delivery City', 'Shipping City', 'Billing City'),
+      omniValue('Delivery State/Region', 'Shipping State/Region', 'Billing State/Region'),
+      omniValue('Delivery Postal Code', 'Shipping Postal Code', 'Billing Postal Code'),
+      omniValue('Delivery Country', 'Shipping Country', 'Billing Country')
+    ].map(clean).filter((value, index, values) => value && values.findIndex(other => other.toLowerCase() === value.toLowerCase()) === index);
     const reference = readValueNearLabel('Reference') || readValueNearLabel('Customer PO No');
     const rep = omniSalesRep();
     const pageText = document.body ? document.body.innerText : '';
@@ -1528,11 +1535,11 @@
       placedBy: rep,
       visitBy: '',
       customerName,
-      address: clean(`${address1} ${address2}`),
+      address: addressParts.join(', '),
       phone: readPhoneNumber(),
-      email: readValueNearLabel('Email') || readValueNearLabel('Email Address'),
+      email: omniValue('Email Address', 'Email', 'Contact Email'),
       product: productText,
-      comments,
+      comments: /^\d+(?:\.\d+)?$/.test(comments) ? '' : comments,
       area: deriveBranchFromRep(rep),
       sourceUrl: window.location.href
     };
@@ -2096,18 +2103,18 @@
     style.textContent = `
       #${OVERLAY_ID}{position:fixed;inset:0;background:rgba(0,0,0,.42);z-index:2147483645;display:none;align-items:center;justify-content:center;font-family:Arial,sans-serif}
       #${OVERLAY_ID}.open{display:flex}
-      .lc-sv-panel{width:min(640px,94vw);max-height:92vh;background:#fff;border-radius:14px;overflow:auto;box-shadow:0 20px 50px rgba(0,0,0,.35);border:1px solid #c9d6d3}
-      .lc-sv-head{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid #d9e3e1}
-      .lc-sv-head h3{margin:0;font-size:28px;color:#20453f}
+      .lc-sv-panel{width:min(640px,94vw);max-height:92vh;background:#fff;border-radius:6px;overflow:auto;box-shadow:0 20px 50px rgba(0,0,0,.35);border:1px solid #b8c9dc}
+      .lc-sv-head{display:flex;justify-content:space-between;align-items:center;padding:15px 17px;border-bottom:1px solid #0b3f7f;background:#073b7a}
+      .lc-sv-head h3{margin:0;font-size:24px;color:#fff}
       .lc-sv-body{padding:14px 16px;display:grid;gap:10px}
       .lc-sv-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
       .lc-sv-field{display:grid;gap:5px}
-      .lc-sv-field label{font-size:12px;font-weight:800;color:#2f675f}
-      .lc-sv-field input,.lc-sv-field textarea,.lc-sv-field select{border:1px solid #b9c8c5;border-radius:8px;padding:9px 10px;font-size:14px;color:#2e2e2e}
+      .lc-sv-field label{font-size:12px;font-weight:800;color:#243b57}
+      .lc-sv-field input,.lc-sv-field textarea,.lc-sv-field select{border:1px solid #9fb5cf;border-radius:4px;padding:9px 10px;font-size:14px;color:#26374a;background:#fff}
       .lc-sv-field select option:disabled{color:#9b2d25;background:#fff0ee;font-weight:700}
       .lc-sv-field textarea{min-height:72px;resize:vertical}
       .lc-sv-time-wrap{position:relative}
-      .lc-sv-time-button{width:100%;border:1px solid #b9c8c5;border-radius:8px;padding:9px 10px;background:#fff;color:#2e2e2e;font-size:14px;text-align:left;cursor:pointer}
+      .lc-sv-time-button{width:100%;border:1px solid #9fb5cf;border-radius:4px;padding:9px 10px;background:#fff;color:#26374a;font-size:14px;text-align:left;cursor:pointer}
       .lc-sv-time-menu{display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:2147483647;max-height:310px;overflow:auto;background:#fff;border:1px solid #b9c8c5;border-radius:10px;box-shadow:0 14px 34px rgba(0,0,0,.22);padding:4px}
       .lc-sv-time-menu.open{display:grid;gap:2px}
       .lc-sv-time-option{border:0;border-radius:6px;background:#fff;color:#243c38;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;font-size:14px;text-align:left;cursor:pointer}
@@ -2115,9 +2122,9 @@
       .lc-sv-time-option.unavailable{background:#fff0ee;color:#9b2d25;cursor:not-allowed;opacity:1;text-decoration:line-through}
       .lc-sv-time-option small{font-size:11px;font-weight:800;text-decoration:none}
       .lc-sv-actions{display:flex;gap:10px;padding-top:4px}
-      .lc-sv-actions button{border:1px solid #b6c8c5;border-radius:10px;padding:10px 12px;font-weight:800;cursor:pointer}
-      .lc-sv-primary{background:#f3c42f;border-color:#f3c42f;color:#193d37;flex:1}
-      .lc-sv-close{background:#fff;color:#305f58}
+      .lc-sv-actions button{border:1px solid #073b7a;border-radius:4px;padding:10px 12px;font-weight:800;cursor:pointer}
+      .lc-sv-primary{background:#073b7a;border-color:#073b7a;color:#fff;flex:1}
+      .lc-sv-close{background:#fff;color:#073b7a}
       .lc-sv-msg{font-size:12px;font-weight:700;min-height:16px}
       .lc-sv-msg.error{color:#9b2d25}
       .lc-sv-msg.ok{color:#2d7a45}
