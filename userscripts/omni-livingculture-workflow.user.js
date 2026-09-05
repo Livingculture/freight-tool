@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.27
+// @version      0.1.28
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.27
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.27
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.28
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.28
 // ==/UserScript==
 
 (function () {
@@ -1167,9 +1167,12 @@
     const saveButton = findButtonByLabel('Save As Draft') || findButtonByLabel('Save');
     const saveRect = saveButton?.getBoundingClientRect();
     const labels = new Set(['foshan warehouse', 'nz availability', 'lc containers']);
-    const candidates = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]'))
+    const candidates = Array.from(document.querySelectorAll(
+      'button, a, input[type="button"], input[type="submit"], [role="button"], div, span'
+    ))
       .filter(isVisible)
       .filter(element => labels.has(normalizeLabel(element.value || element.textContent || '')))
+      .filter(element => !element.querySelector?.('button, a, input, [role="button"]'))
       .map(element => ({ element, rect: element.getBoundingClientRect() }));
     if (!candidates.length) return null;
     if (!saveRect) return candidates.sort((left, right) => right.rect.top - left.rect.top)[0].element;
