@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.32
+// @version      0.1.33
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.32
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.32
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.33
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.33
 // ==/UserScript==
 
 (function () {
@@ -2474,7 +2474,9 @@
     url.searchParams.set('T', 'Quote');
     url.searchParams.set('idWebSite', '27265');
     url.searchParams.set('UN', 'vi');
-    url.searchParams.set('ID', orderId);
+    // Cin7 uses ID=363 for the Quote PDF document route. The quote itself is
+    // identified by SID; the OrderId from the edit-page URL is not this ID.
+    url.searchParams.set('ID', '363');
     if (sid) url.searchParams.set('SID', sid);
     return new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
