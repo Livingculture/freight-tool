@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.38
+// @version      0.1.39
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.38
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.38
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.39
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.39
 // ==/UserScript==
 
 (function () {
@@ -1194,6 +1194,36 @@
     button.style.height = `${Math.max(34, rect.height || 34)}px`;
     if (button.parentElement !== document.body) document.body.appendChild(button);
     return true;
+  }
+
+  function layoutOmniWorkflowButtons() {
+    if (!isOmniPage()) return;
+    const saveButton = findButtonByLabel('Save As Draft') || findButtonByLabel('Save');
+    if (!saveButton || !isVisible(saveButton)) return;
+    const buttons = [
+      document.getElementById(BUTTON_ID),
+      document.getElementById(QUOTE_REVIEW_BUTTON_ID),
+      document.getElementById(HUBSPOT_BUTTON_ID),
+      document.getElementById(QUOTE_PDF_BUTTON_ID)
+    ].filter((button) => button && isVisible(button));
+    if (!buttons.length) return;
+
+    const saveRect = saveButton.getBoundingClientRect();
+    const gap = 8;
+    const totalWidth = buttons.reduce((sum, button) => sum + button.getBoundingClientRect().width, 0) + gap * (buttons.length - 1);
+    let left = window.scrollX + saveRect.left - gap - totalWidth;
+    const top = window.scrollY + saveRect.top;
+    buttons.forEach((button) => {
+      const width = button.getBoundingClientRect().width;
+      button.style.position = 'absolute';
+      button.style.left = `${Math.round(left)}px`;
+      button.style.top = `${Math.round(top)}px`;
+      button.style.zIndex = '56';
+      button.style.margin = '0';
+      button.style.height = `${Math.max(34, saveRect.height || 34)}px`;
+      if (button.parentElement !== document.body) document.body.appendChild(button);
+      left += width + gap;
+    });
   }
 
   function observeOmniLayout() {
@@ -3004,6 +3034,7 @@
     addQuoteReviewButton();
     addQuotePdfButton();
     applyHubSpotApprovalGate();
+    layoutOmniWorkflowButtons();
   }
 
   function scheduleButtonPass() {
