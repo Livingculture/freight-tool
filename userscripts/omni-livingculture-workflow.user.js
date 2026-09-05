@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.19
+// @version      0.1.20
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.19
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.19
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.20
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.20
 // ==/UserScript==
 
 (function () {
@@ -57,6 +57,7 @@
   let apiLineItemCache = [];
   let workflowRepOptions = [];
   let repOptionsLoadPromise = null;
+  let hubSpotLeadSourceOptionsPromise = null;
   let siteVisitBookingsCache = { key: '', bookings: [] };
   let delegatedClickHandlerInstalled = false;
   let lastHandledAction = { id: '', at: 0 };
@@ -1565,7 +1566,8 @@
   }
 
   function fetchHubSpotLeadSourceOptions() {
-    return new Promise((resolve, reject) => {
+    if (hubSpotLeadSourceOptionsPromise) return hubSpotLeadSourceOptionsPromise;
+    hubSpotLeadSourceOptionsPromise = new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
         method: 'GET',
         url: HUBSPOT_LEAD_SOURCE_OPTIONS_URL,
@@ -1592,7 +1594,11 @@
         },
         onerror: () => reject(new Error('Could not load HubSpot lead sources.'))
       });
+    }).catch((error) => {
+      hubSpotLeadSourceOptionsPromise = null;
+      throw error;
     });
+    return hubSpotLeadSourceOptionsPromise;
   }
 
   function closeHubSpotLeadSourceModal() {
@@ -1750,53 +1756,45 @@
     });
   }
 
-  function chooseHubSpotLeadSource() {
+  async function chooseHubSpotLeadSource() {
     ensureStyles();
-    return fetchHubSpotLeadSourceOptions().then(({ label, options }) => {
-      if (!options.length) {
-        throw new Error('No HubSpot lead source options are available.');
-      }
-
-      return new Promise((resolve) => {
-        closeHubSpotLeadSourceModal();
-        const overlay = document.createElement('div');
-        overlay.id = 'lc-hs-lead-source-overlay';
-        overlay.innerHTML = `
-          <div class="lc-hs-lead-source-panel">
-            <h3>Create HubSpot Deal</h3>
-            <label for="lcHsLeadSourceSelect">${escapeHtml(label)}</label>
-            <select id="lcHsLeadSourceSelect">
-              <option value="">Choose lead source...</option>
-              ${options.map(option => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`).join('')}
-            </select>
-            <div class="lc-hs-lead-source-actions">
-              <button type="button" class="lc-hs-lead-source-primary" id="lcHsLeadSourceContinue">Continue</button>
-              <button type="button" class="lc-hs-lead-source-cancel" id="lcHsLeadSourceCancel">Cancel</button>
-            </div>
-          </div>
-        `;
-        document.body.appendChild(overlay);
-
-        const select = document.getElementById('lcHsLeadSourceSelect');
-        const finish = (selection) => {
-          closeHubSpotLeadSourceModal();
-          resolve(selection);
-        };
-        document.getElementById('lcHsLeadSourceContinue').addEventListener('click', () => {
-          const selected = options.find(option => option.value === clean(select.value));
-          if (!selected) {
-            window.alert('Choose a lead source before continuing.');
-            return;
-          }
-          finish(selected);
-        });
-        document.getElementById('lcHsLeadSourceCancel').addEventListener('click', () => finish(null));
-        overlay.addEventListener('click', event => {
-          if (event.target === overlay) finish(null);
-        });
-        select.focus();
-      });
+    closeHubSpotLeadSourceModal();
+    const overlay = document.createElement('div');
+    overlay.id = 'lc-hs-lead-source-overlay';
+    overlay.innerHTML = `
+      <div class="lc-hs-lead-source-panel">
+        <h3>Create HubSpot Deal</h3>
+        <label for="lcHsLeadSourceSelect">Lead Source</label>
+        <select id="lcHsLeadSourceSelect" disabled><option>Loading lead sources...</option></select>
+        <div class="lc-hs-lead-source-actions">
+          <button type="button" class="lc-hs-lead-source-primary" id="lcHsLeadSourceContinue" disabled>Continue</button>
+          <button type="button" class="lc-hs-lead-source-cancel" id="lcHsLeadSourceCancel">Cancel</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const cancelled = new Promise((resolve) => {
+      const cancel = () => { closeHubSpotLeadSourceModal(); resolve(null); };
+      overlay.querySelector('#lcHsLeadSourceCancel').addEventListener('click', cancel);
+      overlay.addEventListener('click', event => { if (event.target === overlay) cancel(); });
     });
+    const loaded = fetchHubSpotLeadSourceOptions().then(({ label, options }) => {
+      if (!options.length) throw new Error('No HubSpot lead source options are available.');
+      if (!overlay.isConnected) return null;
+      overlay.querySelector('label').textContent = label;
+      const select = overlay.querySelector('#lcHsLeadSourceSelect');
+      const continueButton = overlay.querySelector('#lcHsLeadSourceContinue');
+      select.innerHTML = `<option value="">Choose lead source...</option>${options.map(option => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`).join('')}`;
+      select.disabled = false;
+      continueButton.disabled = false;
+      select.focus();
+      return new Promise((resolve) => continueButton.addEventListener('click', () => {
+        const selected = options.find(option => option.value === clean(select.value));
+        if (!selected) { window.alert('Choose a lead source before continuing.'); return; }
+        closeHubSpotLeadSourceModal();
+        resolve(selected);
+      }));
+    });
+    return Promise.race([cancelled, loaded]);
   }
 
   async function submitHubSpotDeal(button) {
@@ -2928,6 +2926,7 @@
     if (isOmniPage()) document.getElementById('lc-omni-hubspot-shortcut-button')?.remove();
     ensureDelegatedClickHandler();
     void loadRepOptions();
+    void fetchHubSpotLeadSourceOptions().catch(() => {});
     scheduleButtonPass();
     setTimeout(scheduleButtonPass, 500);
     setTimeout(scheduleButtonPass, 1500);
