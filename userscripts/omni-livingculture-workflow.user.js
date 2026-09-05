@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.23
+// @version      0.1.24
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.23
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.23
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.24
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.24
 // ==/UserScript==
 
 (function () {
@@ -1174,13 +1174,15 @@
   function placeOmniActionButton(button, anchor) {
     if (!button || !anchor || !isVisible(anchor)) return false;
     const rect = anchor.getBoundingClientRect();
-    button.style.position = 'absolute';
-    button.style.left = `${window.scrollX + rect.right + 8}px`;
-    button.style.top = `${window.scrollY + rect.top}px`;
-    button.style.zIndex = '56';
-    button.style.margin = '0';
+    button.style.position = 'static';
+    button.style.left = '';
+    button.style.top = '';
+    button.style.zIndex = '';
+    button.style.margin = '0 0 0 8px';
     button.style.height = `${Math.max(34, rect.height || 34)}px`;
-    if (button.parentElement !== document.body) document.body.appendChild(button);
+    if (button.parentElement !== anchor.parentElement || button.previousElementSibling !== anchor) {
+      anchor.insertAdjacentElement('afterend', button);
+    }
     return true;
   }
 
