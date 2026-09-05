@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.21
+// @version      0.1.22
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.21
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.21
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.22
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.22
 // ==/UserScript==
 
 (function () {
@@ -2513,6 +2513,7 @@
       let pdfStarted = false;
       const cleanup = () => {
         window.clearTimeout(cleanupTimer);
+        localStorage.removeItem(QUOTE_PDF_HANDOFF_KEY);
         frame.remove();
         button.disabled = false;
         button.textContent = 'Download Quote PDF';
@@ -2919,6 +2920,7 @@
 
   function boot() {
     if (/\/Cloud\/ShoppingCartAdmin\//i.test(location.pathname)) {
+      if (window.parent !== window) return;
       continueQuotePdfFromAdmin();
       return;
     }
