@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.39
+// @version      0.1.40
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.39
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.39
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.40
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.40
 // ==/UserScript==
 
 (function () {
@@ -2636,10 +2636,12 @@
       document.body.appendChild(frame);
 
       let cleanupTimer = 0;
+      let fallbackTimer = 0;
       let adminOpened = false;
       let pdfStarted = false;
       const cleanup = () => {
         window.clearTimeout(cleanupTimer);
+        window.clearTimeout(fallbackTimer);
         localStorage.removeItem(QUOTE_PDF_HANDOFF_KEY);
         frame.remove();
         button.disabled = false;
@@ -2690,9 +2692,24 @@
         window.alert('Cin7 took too long to prepare the quote PDF.');
       }, 120000);
 
-      const backgroundUrl = new URL(location.href);
-      backgroundUrl.searchParams.set('lcQuotePdfBackground', '1');
-      frame.src = backgroundUrl.href;
+      const orderId = currentQuotePdfOrderId();
+      if (orderId) {
+        const adminUrl = new URL('https://go.cin7.com/Cloud/ShoppingCartAdmin/Orders/OrderDetail.aspx');
+        adminUrl.searchParams.set('idCustomerAppsLink', '1328006');
+        adminUrl.searchParams.set('idOrder', orderId);
+        adminUrl.searchParams.set('idWebSite', '27265');
+        frame.src = adminUrl.href;
+        fallbackTimer = window.setTimeout(() => {
+          if (pdfStarted || !frame.isConnected) return;
+          const backgroundUrl = new URL(location.href);
+          backgroundUrl.searchParams.set('lcQuotePdfBackground', '1');
+          frame.src = backgroundUrl.href;
+        }, 10000);
+      } else {
+        const backgroundUrl = new URL(location.href);
+        backgroundUrl.searchParams.set('lcQuotePdfBackground', '1');
+        frame.src = backgroundUrl.href;
+      }
     } catch (error) {
       button.disabled = false;
       button.textContent = 'Download Quote';
