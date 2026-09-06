@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.59
+// @version      0.1.60
 // @description  Adds Site Visit, Quote Review, HubSpot and customer photo workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -12,8 +12,8 @@
 // @connect      qvoacxmzsmulhnllfntfl.supabase.co
 // @connect      supabase.co
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.59
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.59
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.60
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.60
 // ==/UserScript==
 
 (function () {
@@ -3067,9 +3067,9 @@
       const panel = document.createElement('section');
       panel.style.cssText = 'width:min(1180px,calc(100vw - 40px));max-height:calc(100vh - 48px);display:flex;flex-direction:column;overflow:hidden;background:#fff;border:1px solid #b9c9dc;border-radius:10px;box-shadow:0 20px 60px rgba(7,28,58,.3);color:#183f3a;';
       const header = document.createElement('header');
-      header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:16px;padding:15px 18px;background:#00a4bd;color:#fff;';
+      header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:16px;padding:15px 18px;background:#063b78;color:#fff;';
       const heading = document.createElement('strong'); heading.textContent = 'Customer Photo Albums'; heading.style.fontSize = '19px';
-      const close = document.createElement('button'); close.type = 'button'; close.textContent = 'Close'; close.style.cssText = 'height:34px;padding:0 14px;border:1px solid #fff;border-radius:5px;background:#fff;color:#087d95;font-weight:700;cursor:pointer;'; close.onclick = closeCustomerAlbumPopup;
+      const close = document.createElement('button'); close.type = 'button'; close.textContent = 'Close'; close.style.cssText = 'height:34px;padding:0 14px;border:1px solid #fff;border-radius:5px;background:#fff;color:#063b78;font-weight:700;cursor:pointer;'; close.onclick = closeCustomerAlbumPopup;
       const search = document.createElement('input'); search.type = 'search'; search.placeholder = 'Search customer, email or linked number'; search.style.cssText = 'margin:14px 18px 4px;padding:11px 13px;border:1px solid #b9ced1;border-radius:8px;font:inherit;color:#183f3a;';
       const body = document.createElement('div'); body.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(285px,1fr));gap:13px;padding:14px 18px 18px;overflow:auto;';
       const render = () => {
@@ -3083,13 +3083,13 @@
           const details = document.createElement('div');
           const name = document.createElement('strong'); name.textContent = album.customer_name || 'Customer album'; name.style.cssText = 'display:block;font-size:16px;margin-bottom:5px;';
           const email = document.createElement('span'); email.textContent = album.customer_email || 'No email'; email.style.cssText = 'display:block;color:#58706d;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
-          const numbers = document.createElement('small'); numbers.textContent = [...(album.quote_numbers || []), ...(album.job_numbers || [])].join(', ') || 'No linked numbers'; numbers.style.cssText = 'display:block;margin-top:6px;color:#087d95;font-weight:700;';
+          const numbers = document.createElement('small'); numbers.textContent = [...(album.quote_numbers || []), ...(album.job_numbers || [])].join(', ') || 'No linked numbers'; numbers.style.cssText = 'display:block;margin-top:6px;color:#063b78;font-weight:700;';
           const count = document.createElement('small'); count.textContent = `${(album.photos || []).length} photo${(album.photos || []).length === 1 ? '' : 's'}`; count.style.cssText = 'display:block;margin-top:3px;color:#647a77;';
           details.append(name, email, numbers, count); card.append(preview, details);
           card.onclick = () => {
             body.replaceChildren(); search.style.display = 'none';
             const toolbar = document.createElement('div'); toolbar.style.cssText = 'grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;';
-            const back = document.createElement('button'); back.type = 'button'; back.textContent = '← All Albums'; back.style.cssText = 'padding:9px 13px;border:0;border-radius:6px;background:#00a4bd;color:#fff;font-weight:700;cursor:pointer;';
+            const back = document.createElement('button'); back.type = 'button'; back.textContent = '← All Albums'; back.style.cssText = 'padding:9px 13px;border:0;border-radius:6px;background:#063b78;color:#fff;font-weight:700;cursor:pointer;';
             const title = document.createElement('strong'); title.textContent = album.customer_name || 'Customer album';
             back.onclick = () => { search.style.display = 'block'; render(); }; toolbar.append(back, title); body.appendChild(toolbar);
             (album.photos || []).forEach((photo) => { if (!photo.url) return; const imageButton = document.createElement('button'); imageButton.type = 'button'; imageButton.style.cssText = 'padding:8px;border:1px solid #d5e1e5;border-radius:10px;background:#fff;cursor:zoom-in;'; const image = document.createElement('img'); image.src = photo.url; image.alt = photo.caption || photo.file_name || 'Customer photo'; image.style.cssText = 'display:block;width:100%;height:220px;object-fit:cover;border-radius:7px;'; imageButton.appendChild(image); imageButton.onclick = () => void showOmniPhotoEditor(photo, album.id, async () => { closeCustomerAlbumPopup(); await showCustomerAlbumsPopup(button); }); body.appendChild(imageButton); });
@@ -3392,7 +3392,7 @@
       viewAlbumsButton.id = VIEW_CUSTOMER_ALBUMS_BUTTON_ID;
       viewAlbumsButton.type = 'button';
       viewAlbumsButton.textContent = 'View Albums';
-      styleInlineButton(viewAlbumsButton, '#00a4bd');
+      styleInlineButton(viewAlbumsButton, '#063b78');
       wireActionButton(viewAlbumsButton);
     }
     const createdByLabel = Array.from(document.querySelectorAll('label, div, span, td'))
