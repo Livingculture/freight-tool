@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.48
+// @version      0.1.49
 // @description  Adds Site Visit, Quote Review, HubSpot and customer photo workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.48
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.48
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.49
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.49
 // ==/UserScript==
 
 (function () {
@@ -22,6 +22,8 @@
   const QUOTE_REVIEW_BUTTON_ID = 'lc-quote-review-inline-button-v1';
   const QUOTE_PDF_BUTTON_ID = 'lc-quote-pdf-download-button-v1';
   const CUSTOMER_PHOTOS_BUTTON_ID = 'lc-omni-customer-photos-button';
+  const VIEW_CUSTOMER_ALBUM_BUTTON_ID = 'lc-omni-view-customer-album-button';
+  const CUSTOMER_PHOTOS_ACTIONS_ID = 'lc-omni-customer-photo-actions';
   const ACTION_ROW_ID = 'lc-cin7-action-row-v1';
   const FLOATING_BAR_ID = 'lc-cin7-floating-actions-v1';
   const OVERLAY_ID = 'lc-site-visit-overlay-v2';
@@ -30,6 +32,7 @@
   const QUOTE_REVIEW_API_URL = 'https://living-culture-workflow.vercel.app/api/quote-reviews';
   const WORKFLOW_PLANNER_URL = 'https://living-culture-workflow.vercel.app/';
   const CUSTOMER_PHOTOS_API_URL = 'https://living-culture-workflow.vercel.app/api/customer-photos';
+  const CUSTOMER_PHOTOS_PAGE_URL = 'https://living-culture-workflow.vercel.app/customer-photos';
   const HUBSPOT_API_URL = 'https://living-culture-workflow.vercel.app/api/hubspot/create-deal';
   const HUBSPOT_LEAD_SOURCE_OPTIONS_URL = 'https://living-culture-workflow.vercel.app/api/hubspot/lead-source-options';
   const HUBSPOT_LEAD_SOURCE_CACHE_KEY = 'lc-hubspot-lead-source-options-v1';
@@ -2903,6 +2906,15 @@
         chooseCustomerPhotos(button);
         return;
       }
+      if (button.id === VIEW_CUSTOMER_ALBUM_BUTTON_ID) {
+        const draft = cin7Draft();
+        const url = new URL(CUSTOMER_PHOTOS_PAGE_URL);
+        if (draft.orderId) url.searchParams.set('quote', draft.orderId);
+        if (draft.customerName) url.searchParams.set('customer', draft.customerName);
+        if (draft.email) url.searchParams.set('email', draft.email);
+        window.open(url.toString(), '_blank', 'noopener,noreferrer');
+        return;
+      }
       if (button.id === BUTTON_ID) {
         openPanel();
         return;
@@ -2931,7 +2943,7 @@
     const handleEvent = (event) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
-      const button = target.closest(`#${CUSTOMER_PHOTOS_BUTTON_ID}, #${BUTTON_ID}, #${HUBSPOT_BUTTON_ID}, #${QUOTE_REVIEW_BUTTON_ID}, #${QUOTE_PDF_BUTTON_ID}`);
+      const button = target.closest(`#${CUSTOMER_PHOTOS_BUTTON_ID}, #${VIEW_CUSTOMER_ALBUM_BUTTON_ID}, #${BUTTON_ID}, #${HUBSPOT_BUTTON_ID}, #${QUOTE_REVIEW_BUTTON_ID}, #${QUOTE_PDF_BUTTON_ID}`);
       if (!button) return;
       event.preventDefault();
       event.stopPropagation();
@@ -3017,7 +3029,7 @@
 
   function addCustomerPhotosButton() {
     if (!isOmniPage() || !isSimpleSaleReady()) {
-      document.getElementById(CUSTOMER_PHOTOS_BUTTON_ID)?.remove();
+      document.getElementById(CUSTOMER_PHOTOS_ACTIONS_ID)?.remove();
       return;
     }
     let button = document.getElementById(CUSTOMER_PHOTOS_BUTTON_ID);
@@ -3032,6 +3044,15 @@
     button.title = 'Upload Customer Photos';
     button.style.background = '#063b78';
     button.style.borderColor = '#063b78';
+    let viewButton = document.getElementById(VIEW_CUSTOMER_ALBUM_BUTTON_ID);
+    if (!viewButton) {
+      viewButton = document.createElement('button');
+      viewButton.id = VIEW_CUSTOMER_ALBUM_BUTTON_ID;
+      viewButton.type = 'button';
+      viewButton.textContent = 'View Album';
+      styleInlineButton(viewButton, '#063b78');
+      wireActionButton(viewButton);
+    }
     const createdByLabel = Array.from(document.querySelectorAll('label, div, span, td'))
       .find((element) => normalizeLabel(element.textContent || '') === 'created by');
     let panel = createdByLabel?.parentElement || null;
@@ -3043,21 +3064,32 @@
     }
     if (!panel || panel === document.body) {
       button.style.display = 'none';
+      viewButton.style.display = 'none';
       return;
     }
     if (getComputedStyle(panel).position === 'static') panel.style.position = 'relative';
+    let actions = document.getElementById(CUSTOMER_PHOTOS_ACTIONS_ID);
+    if (!actions) {
+      actions = document.createElement('div');
+      actions.id = CUSTOMER_PHOTOS_ACTIONS_ID;
+    }
+    actions.style.cssText = 'position:absolute;right:18px;top:50%;transform:translateY(-50%);z-index:5;display:flex;align-items:center;justify-content:flex-end;gap:8px;margin:0;';
     button.style.display = 'inline-flex';
     button.style.alignItems = 'center';
     button.style.justifyContent = 'center';
-    button.style.position = 'absolute';
-    button.style.left = 'auto';
-    button.style.right = '18px';
-    button.style.top = '50%';
-    button.style.transform = 'translateY(-50%)';
-    button.style.zIndex = '5';
+    button.style.position = 'static';
+    button.style.transform = 'none';
     button.style.margin = '0';
     button.style.height = '36px';
-    if (button.parentElement !== panel) panel.appendChild(button);
+    viewButton.style.display = 'inline-flex';
+    viewButton.style.alignItems = 'center';
+    viewButton.style.justifyContent = 'center';
+    viewButton.style.position = 'static';
+    viewButton.style.transform = 'none';
+    viewButton.style.margin = '0';
+    viewButton.style.height = '36px';
+    actions.append(button, viewButton);
+    if (actions.parentElement !== panel) panel.appendChild(actions);
   }
 
   function styleInlineButton(button, background = '#05cbbf') {
