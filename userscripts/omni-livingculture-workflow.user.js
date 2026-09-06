@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.51
+// @version      0.1.52
 // @description  Adds Site Visit, Quote Review, HubSpot and customer photo workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.51
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.51
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.52
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.52
 // ==/UserScript==
 
 (function () {
@@ -2845,9 +2845,22 @@
     button.textContent = 'Preparing…';
     try {
       const lookupUrl = new URL(CUSTOMER_PHOTOS_API_URL);
-      lookupUrl.searchParams.set('quote', draft.orderId);
+      if (draft.email) lookupUrl.searchParams.set('email', draft.email);
+      else lookupUrl.searchParams.set('quote', draft.orderId);
       const lookup = await customerPhotosRequest({ url: lookupUrl.toString() });
-      let album = Array.isArray(lookup.albums) ? lookup.albums[0] : null;
+      const customerKey = clean(draft.customerName).toLowerCase();
+      const matchingAlbums = (Array.isArray(lookup.albums) ? lookup.albums : [])
+        .filter((item) => !draft.email || clean(item.customer_name).toLowerCase() === customerKey);
+      let album = matchingAlbums[0] || null;
+      if (matchingAlbums.length > 1) {
+        button.textContent = 'Combining albums…';
+        const merged = await customerPhotosRequest({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          data: JSON.stringify({ action: 'merge', primaryId: album.id, albumIds: matchingAlbums.map((item) => item.id) })
+        });
+        album = merged.album;
+      }
       if (!album) {
         button.textContent = 'Creating album…';
         const created = await customerPhotosRequest({
@@ -2858,12 +2871,28 @@
             customerEmail: draft.email,
             customerPhone: draft.phone,
             siteAddress: draft.address,
-            title: `${draft.orderId} - ${draft.customerName}`,
-            quoteNumbers: [draft.orderId],
-            jobNumbers: []
+            title: draft.customerName,
+            linkedNumbers: [draft.orderId]
           })
         });
         album = created.album;
+      } else {
+        const linkedNumbers = Array.from(new Set([...(album.quote_numbers || []), ...(album.job_numbers || []), draft.orderId].map(clean).filter(Boolean)));
+        const updated = await customerPhotosRequest({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          data: JSON.stringify({
+            id: album.id,
+            customerName: draft.customerName,
+            customerEmail: draft.email,
+            customerPhone: draft.phone || album.customer_phone,
+            siteAddress: album.site_address || draft.address,
+            title: draft.customerName,
+            notes: album.notes,
+            linkedNumbers
+          })
+        });
+        album = { ...album, ...updated.album };
       }
       if (!album?.id) throw new Error('Workflow could not create the customer photo album.');
 
@@ -2911,9 +2940,21 @@
     button.textContent = 'Loading…';
     try {
       const lookupUrl = new URL(CUSTOMER_PHOTOS_API_URL);
-      lookupUrl.searchParams.set('quote', draft.orderId);
+      if (draft.email) lookupUrl.searchParams.set('email', draft.email);
+      else lookupUrl.searchParams.set('quote', draft.orderId);
       const result = await customerPhotosRequest({ url: lookupUrl.toString() });
-      const album = Array.isArray(result.albums) ? result.albums[0] : null;
+      const customerKey = clean(draft.customerName).toLowerCase();
+      const matches = (Array.isArray(result.albums) ? result.albums : [])
+        .filter((item) => !draft.email || clean(item.customer_name).toLowerCase() === customerKey);
+      let album = matches[0] || null;
+      if (matches.length > 1) {
+        const merged = await customerPhotosRequest({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          data: JSON.stringify({ action: 'merge', primaryId: album.id, albumIds: matches.map((item) => item.id) })
+        });
+        album = merged.album;
+      }
       if (!album) {
         window.alert(`No photo album has been created for ${draft.orderId}.`);
         return;
