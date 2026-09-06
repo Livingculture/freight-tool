@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.52
+// @version      0.1.53
 // @description  Adds Site Visit, Quote Review, HubSpot and customer photo workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.52
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.52
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.53
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.53
 // ==/UserScript==
 
 (function () {
@@ -2926,6 +2926,69 @@
     picker.click();
   }
 
+  function customerPhotoBlob(url) {
+    return new Promise((resolve, reject) => GM_xmlhttpRequest({
+      method: 'GET', url, responseType: 'blob', timeout: 30000,
+      onload: (response) => response.status >= 200 && response.status < 300 ? resolve(response.response) : reject(new Error('Could not load the photo.')),
+      onerror: () => reject(new Error('Could not load the photo.')),
+      ontimeout: () => reject(new Error('The photo took too long to load.'))
+    }));
+  }
+
+  async function showOmniPhotoEditor(photo, albumId, refreshAlbum) {
+    document.getElementById('lc-omni-photo-editor')?.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'lc-omni-photo-editor';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;padding:18px;background:rgba(5,22,35,.86);font-family:Arial,sans-serif;box-sizing:border-box;';
+    const modal = document.createElement('section');
+    modal.style.cssText = 'width:min(1500px,97vw);height:95vh;display:grid;grid-template-rows:auto auto minmax(0,1fr) auto;background:#fff;border-radius:12px;overflow:hidden;color:#183f3a;box-shadow:0 25px 80px #0009;';
+    const header = document.createElement('header');
+    header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:13px 18px;border-bottom:1px solid #d5e1e5;';
+    header.innerHTML = '<div><strong style="font-size:19px">Mark up photo</strong><div style="color:#647a77;margin-top:3px">Select a line to move or delete it.</div></div>';
+    const close = document.createElement('button'); close.type = 'button'; close.textContent = 'Close'; close.style.cssText = 'padding:9px 14px;border:0;border-radius:6px;background:#063b78;color:#fff;font-weight:700;cursor:pointer;';
+    const tools = document.createElement('div'); tools.style.cssText = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 18px;background:#edf3f6;';
+    const stage = document.createElement('div'); stage.style.cssText = 'position:relative;min-height:0;display:flex;align-items:center;justify-content:center;overflow:auto;padding:10px;background:#263238;color:#fff;';
+    const canvas = document.createElement('canvas'); canvas.style.cssText = 'display:block;max-width:100%;max-height:100%;width:auto;height:auto;cursor:crosshair;touch-action:none;box-shadow:0 3px 20px #0008;';
+    const footer = document.createElement('footer'); footer.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:11px 18px;border-top:1px solid #d5e1e5;color:#647a77;';
+    footer.innerHTML = '<span>The original photo will remain in the album.</span>';
+    const save = document.createElement('button'); save.type = 'button'; save.textContent = 'Save annotated copy'; save.disabled = true; save.style.cssText = 'padding:10px 16px;border:0;border-radius:6px;background:#063b78;color:#fff;font-weight:700;cursor:pointer;';
+    header.appendChild(close); stage.appendChild(canvas); footer.appendChild(save); modal.append(header, tools, stage, footer); overlay.appendChild(modal); document.body.appendChild(overlay);
+
+    let image = null, marks = [], draft = null, selected = null, dragging = null, tool = 'measure', colour = '#ff3b30', labelBox = null;
+    const toolButton = (text, value) => { const button = document.createElement('button'); button.type = 'button'; button.textContent = text; button.style.cssText = 'padding:8px 11px;border:1px solid #9eb7bc;border-radius:6px;background:#fff;color:#183f3a;font-weight:700;cursor:pointer;'; button.onclick = () => { tool = value; [...tools.querySelectorAll('[data-tool]')].forEach((item) => item.style.background = '#fff'); button.style.background = '#09a8bc'; button.style.color = '#fff'; canvas.style.cursor = value === 'select' ? 'move' : 'crosshair'; }; button.dataset.tool = value; tools.appendChild(button); return button; };
+    const selectButton = toolButton('Select / Move', 'select'); const measureButton = toolButton('Measurement', 'measure'); toolButton('Line', 'line'); measureButton.click();
+    const colourLabel = document.createElement('label'); colourLabel.innerHTML = 'Colour '; colourLabel.style.fontWeight = '700'; const colourInput = document.createElement('input'); colourInput.type = 'color'; colourInput.value = colour; colourInput.oninput = () => { colour = colourInput.value; }; colourLabel.appendChild(colourInput); tools.appendChild(colourLabel);
+    const actionButton = (text, action) => { const button = document.createElement('button'); button.type = 'button'; button.textContent = text; button.style.cssText = 'padding:8px 11px;border:1px solid #9eb7bc;border-radius:6px;background:#fff;color:#183f3a;font-weight:700;cursor:pointer;'; button.onclick = action; tools.appendChild(button); return button; };
+    actionButton('Undo', () => { marks.pop(); selected = null; paint(); updateSave(); });
+    const deleteButton = actionButton('Delete selected', () => { if (selected === null) return; marks.splice(selected, 1); selected = null; paint(); updateSave(); }); deleteButton.disabled = true;
+    actionButton('Clear', () => { marks = []; selected = null; paint(); updateSave(); });
+
+    function updateSave() { save.disabled = !marks.length || !!labelBox; deleteButton.disabled = selected === null; }
+    function draw(mark, isSelected) {
+      const context = canvas.getContext('2d'), scale = Math.max(1, Math.min(canvas.width, canvas.height) / 900), angle = Math.atan2(mark.y2 - mark.y1, mark.x2 - mark.x1);
+      context.save(); context.lineCap = 'round';
+      if (isSelected) { context.strokeStyle = '#fff'; context.lineWidth = 11 * scale; context.setLineDash([10 * scale, 7 * scale]); context.beginPath(); context.moveTo(mark.x1, mark.y1); context.lineTo(mark.x2, mark.y2); context.stroke(); context.setLineDash([]); }
+      context.strokeStyle = mark.color; context.fillStyle = mark.color; context.lineWidth = 4 * scale; context.beginPath(); context.moveTo(mark.x1, mark.y1); context.lineTo(mark.x2, mark.y2); context.stroke();
+      if (mark.tool === 'measure') {
+        const arrow = 15 * scale; [[mark.x1, mark.y1, angle], [mark.x2, mark.y2, angle + Math.PI]].forEach(([x, y, direction]) => { context.beginPath(); context.moveTo(x, y); context.lineTo(x + Math.cos(direction - .55) * arrow, y + Math.sin(direction - .55) * arrow); context.moveTo(x, y); context.lineTo(x + Math.cos(direction + .55) * arrow, y + Math.sin(direction + .55) * arrow); context.stroke(); });
+        if (mark.label) { const size = 22 * scale, x = (mark.x1 + mark.x2) / 2, y = (mark.y1 + mark.y2) / 2; context.font = `bold ${size}px Arial`; context.textAlign = 'center'; context.textBaseline = 'middle'; const width = context.measureText(mark.label).width; context.fillStyle = 'rgba(255,255,255,.9)'; context.fillRect(x - width / 2 - 8 * scale, y - size / 2 - 4 * scale, width + 16 * scale, size + 8 * scale); context.fillStyle = mark.color; context.fillText(mark.label, x, y); }
+      }
+      if (isSelected) { context.fillStyle = '#fff'; context.strokeStyle = mark.color; context.lineWidth = 3 * scale; [[mark.x1, mark.y1], [mark.x2, mark.y2]].forEach(([x, y]) => { context.beginPath(); context.arc(x, y, 8 * scale, 0, Math.PI * 2); context.fill(); context.stroke(); }); }
+      context.restore();
+    }
+    function paint() { if (!image) return; const context = canvas.getContext('2d'); context.clearRect(0, 0, canvas.width, canvas.height); context.drawImage(image, 0, 0); marks.forEach((mark, index) => draw(mark, index === selected)); if (draft) draw(draft, false); }
+    function point(event) { const rect = canvas.getBoundingClientRect(); return { x: (event.clientX - rect.left) * canvas.width / rect.width, y: (event.clientY - rect.top) * canvas.height / rect.height }; }
+    function hit(x, y) { const tolerance = 14 * canvas.width / canvas.getBoundingClientRect().width; for (let index = marks.length - 1; index >= 0; index -= 1) { const mark = marks[index], length = (mark.x2 - mark.x1) ** 2 + (mark.y2 - mark.y1) ** 2, position = length ? Math.max(0, Math.min(1, ((x - mark.x1) * (mark.x2 - mark.x1) + (y - mark.y1) * (mark.y2 - mark.y1)) / length)) : 0; if (Math.hypot(x - mark.x1 - position * (mark.x2 - mark.x1), y - mark.y1 - position * (mark.y2 - mark.y1)) <= tolerance) return index; } return null; }
+    function askLabel(mark) { const rect = canvas.getBoundingClientRect(), x = rect.left + ((mark.x1 + mark.x2) / 2 / canvas.width) * rect.width, y = rect.top + ((mark.y1 + mark.y2) / 2 / canvas.height) * rect.height; labelBox = document.createElement('form'); labelBox.style.cssText = `position:fixed;z-index:2147483647;left:${Math.min(innerWidth - 190, Math.max(10, x + 12))}px;top:${Math.min(innerHeight - 60, Math.max(10, y - 20))}px;display:flex;gap:4px;width:180px;padding:5px;background:#fff;border:2px solid #09a8bc;border-radius:7px;box-shadow:0 4px 16px #0007;`; const input = document.createElement('input'); input.placeholder = 'e.g. 2400 mm'; input.style.cssText = 'width:112px;min-width:0;border:0;outline:0;padding:5px;font-weight:700;'; const yes = document.createElement('button'); yes.textContent = '✓'; const no = document.createElement('button'); no.type = 'button'; no.textContent = '×'; [yes, no].forEach((button) => button.style.cssText = 'width:25px;border:0;border-radius:4px;background:#063b78;color:#fff;font-weight:800;'); const cancel = () => { labelBox.remove(); labelBox = null; draft = null; paint(); updateSave(); }; labelBox.onsubmit = (event) => { event.preventDefault(); marks.push({ ...mark, label: input.value.trim() || 'Measurement' }); labelBox.remove(); labelBox = null; draft = null; paint(); updateSave(); }; no.onclick = cancel; input.onkeydown = (event) => { if (event.key === 'Escape') cancel(); }; labelBox.append(input, yes, no); document.body.appendChild(labelBox); input.focus(); updateSave(); }
+    canvas.onpointerdown = (event) => { if (labelBox) return; const value = point(event); canvas.setPointerCapture(event.pointerId); if (tool === 'select') { selected = hit(value.x, value.y); dragging = selected === null ? null : { index: selected, ...value }; paint(); updateSave(); return; } selected = null; draft = { tool, color: colour, x1: value.x, y1: value.y, x2: value.x, y2: value.y }; updateSave(); };
+    canvas.onpointermove = (event) => { const value = point(event); if (dragging) { const dx = value.x - dragging.x, dy = value.y - dragging.y, mark = marks[dragging.index]; Object.assign(mark, { x1: mark.x1 + dx, y1: mark.y1 + dy, x2: mark.x2 + dx, y2: mark.y2 + dy }); dragging.x = value.x; dragging.y = value.y; paint(); return; } if (draft) { draft.x2 = value.x; draft.y2 = value.y; paint(); } };
+    canvas.onpointerup = () => { if (dragging) { dragging = null; return; } if (!draft) return; if (Math.hypot(draft.x2 - draft.x1, draft.y2 - draft.y1) < 8) { draft = null; paint(); return; } if (draft.tool === 'measure') askLabel(draft); else { marks.push(draft); draft = null; paint(); updateSave(); } };
+    close.onclick = () => { labelBox?.remove(); overlay.remove(); };
+    overlay.onclick = (event) => { if (event.target === overlay) close.click(); };
+    save.onclick = () => { save.disabled = true; save.textContent = 'Saving…'; selected = null; paint(); canvas.toBlob(async (blob) => { try { if (!blob) throw new Error('Could not create the marked-up photo.'); const form = new FormData(), name = (photo.file_name || 'customer-photo').replace(/\.[^.]+$/, ''); form.set('albumId', albumId); form.set('caption', `Annotated - ${photo.caption || photo.file_name || 'customer photo'}`); form.append('photos', new File([blob], `${name}-annotated.png`, { type: 'image/png' })); await customerPhotosRequest({ method: 'POST', data: form }); overlay.remove(); await refreshAlbum(); } catch (error) { window.alert(error?.message || 'The marked-up photo could not be saved.'); save.textContent = 'Save annotated copy'; updateSave(); } }, 'image/png'); };
+    try { const blob = await customerPhotoBlob(photo.url), url = URL.createObjectURL(blob); image = new Image(); image.onload = () => { canvas.width = image.naturalWidth; canvas.height = image.naturalHeight; paint(); URL.revokeObjectURL(url); }; image.src = url; } catch (error) { window.alert(error?.message || 'Could not load the photo editor.'); overlay.remove(); }
+  }
+
   function closeCustomerAlbumPopup() {
     document.getElementById('lc-omni-customer-album-popup')?.remove();
   }
@@ -3012,11 +3075,10 @@
           image.title = 'Click to enlarge';
           image.style.cssText = 'display:block;width:100%;height:230px;object-fit:cover;border-radius:7px;background:#eef3f7;cursor:zoom-in;';
           image.addEventListener('click', () => {
-            previewImage.src = photo.url;
-            previewImage.alt = photo.caption || photo.file_name || 'Customer photo';
-            gallery.style.display = 'none';
-            preview.style.display = 'block';
-            panel.style.width = 'min(1400px,calc(100vw - 24px))';
+            void showOmniPhotoEditor(photo, album.id, async () => {
+              closeCustomerAlbumPopup();
+              await showCustomerAlbumPopup(button);
+            });
           });
           card.appendChild(image);
         }
