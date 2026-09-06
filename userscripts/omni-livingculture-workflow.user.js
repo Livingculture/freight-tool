@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.58
+// @version      0.1.59
 // @description  Adds Site Visit, Quote Review, HubSpot and customer photo workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -12,8 +12,8 @@
 // @connect      qvoacxmzsmulhnllfntfl.supabase.co
 // @connect      supabase.co
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.58
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.58
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.59
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.59
 // ==/UserScript==
 
 (function () {
@@ -25,6 +25,7 @@
   const QUOTE_PDF_BUTTON_ID = 'lc-quote-pdf-download-button-v1';
   const CUSTOMER_PHOTOS_BUTTON_ID = 'lc-omni-customer-photos-button';
   const VIEW_CUSTOMER_ALBUM_BUTTON_ID = 'lc-omni-view-customer-album-button';
+  const VIEW_CUSTOMER_ALBUMS_BUTTON_ID = 'lc-omni-view-customer-albums-button';
   const CUSTOMER_PHOTOS_ACTIONS_ID = 'lc-omni-customer-photo-actions';
   const ACTION_ROW_ID = 'lc-cin7-action-row-v1';
   const FLOATING_BAR_ID = 'lc-cin7-floating-actions-v1';
@@ -3053,6 +3054,56 @@
     document.getElementById('lc-omni-customer-album-popup')?.remove();
   }
 
+  async function showCustomerAlbumsPopup(button) {
+    button.disabled = true;
+    button.textContent = 'Loading…';
+    try {
+      const result = await customerPhotosRequest({ url: CUSTOMER_PHOTOS_API_URL });
+      const albums = Array.isArray(result.albums) ? result.albums : [];
+      closeCustomerAlbumPopup();
+      const overlay = document.createElement('div');
+      overlay.id = 'lc-omni-customer-album-popup';
+      overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(12,29,54,.55);font-family:Arial,sans-serif;box-sizing:border-box;';
+      const panel = document.createElement('section');
+      panel.style.cssText = 'width:min(1180px,calc(100vw - 40px));max-height:calc(100vh - 48px);display:flex;flex-direction:column;overflow:hidden;background:#fff;border:1px solid #b9c9dc;border-radius:10px;box-shadow:0 20px 60px rgba(7,28,58,.3);color:#183f3a;';
+      const header = document.createElement('header');
+      header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:16px;padding:15px 18px;background:#00a4bd;color:#fff;';
+      const heading = document.createElement('strong'); heading.textContent = 'Customer Photo Albums'; heading.style.fontSize = '19px';
+      const close = document.createElement('button'); close.type = 'button'; close.textContent = 'Close'; close.style.cssText = 'height:34px;padding:0 14px;border:1px solid #fff;border-radius:5px;background:#fff;color:#087d95;font-weight:700;cursor:pointer;'; close.onclick = closeCustomerAlbumPopup;
+      const search = document.createElement('input'); search.type = 'search'; search.placeholder = 'Search customer, email or linked number'; search.style.cssText = 'margin:14px 18px 4px;padding:11px 13px;border:1px solid #b9ced1;border-radius:8px;font:inherit;color:#183f3a;';
+      const body = document.createElement('div'); body.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(285px,1fr));gap:13px;padding:14px 18px 18px;overflow:auto;';
+      const render = () => {
+        const term = clean(search.value).toLowerCase(); body.replaceChildren();
+        const visible = albums.filter((album) => !term || [album.customer_name, album.customer_email, ...(album.quote_numbers || []), ...(album.job_numbers || [])].some((value) => clean(value).toLowerCase().includes(term)));
+        visible.forEach((album) => {
+          const card = document.createElement('button'); card.type = 'button'; card.style.cssText = 'display:grid;grid-template-columns:92px minmax(0,1fr);gap:12px;align-items:center;text-align:left;padding:10px;border:1px solid #d5e1e5;border-radius:10px;background:#fff;color:#183f3a;cursor:pointer;';
+          const preview = document.createElement('div'); preview.style.cssText = 'width:92px;height:78px;border-radius:7px;background:#edf3f6;overflow:hidden;display:flex;align-items:center;justify-content:center;color:#647a77;font-size:12px;';
+          const firstPhoto = (album.photos || []).find((photo) => photo.url);
+          if (firstPhoto) { const image = document.createElement('img'); image.src = firstPhoto.url; image.alt = ''; image.style.cssText = 'width:100%;height:100%;object-fit:cover;'; preview.appendChild(image); } else preview.textContent = 'No photos';
+          const details = document.createElement('div');
+          const name = document.createElement('strong'); name.textContent = album.customer_name || 'Customer album'; name.style.cssText = 'display:block;font-size:16px;margin-bottom:5px;';
+          const email = document.createElement('span'); email.textContent = album.customer_email || 'No email'; email.style.cssText = 'display:block;color:#58706d;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+          const numbers = document.createElement('small'); numbers.textContent = [...(album.quote_numbers || []), ...(album.job_numbers || [])].join(', ') || 'No linked numbers'; numbers.style.cssText = 'display:block;margin-top:6px;color:#087d95;font-weight:700;';
+          const count = document.createElement('small'); count.textContent = `${(album.photos || []).length} photo${(album.photos || []).length === 1 ? '' : 's'}`; count.style.cssText = 'display:block;margin-top:3px;color:#647a77;';
+          details.append(name, email, numbers, count); card.append(preview, details);
+          card.onclick = () => {
+            body.replaceChildren(); search.style.display = 'none';
+            const toolbar = document.createElement('div'); toolbar.style.cssText = 'grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;';
+            const back = document.createElement('button'); back.type = 'button'; back.textContent = '← All Albums'; back.style.cssText = 'padding:9px 13px;border:0;border-radius:6px;background:#00a4bd;color:#fff;font-weight:700;cursor:pointer;';
+            const title = document.createElement('strong'); title.textContent = album.customer_name || 'Customer album';
+            back.onclick = () => { search.style.display = 'block'; render(); }; toolbar.append(back, title); body.appendChild(toolbar);
+            (album.photos || []).forEach((photo) => { if (!photo.url) return; const imageButton = document.createElement('button'); imageButton.type = 'button'; imageButton.style.cssText = 'padding:8px;border:1px solid #d5e1e5;border-radius:10px;background:#fff;cursor:zoom-in;'; const image = document.createElement('img'); image.src = photo.url; image.alt = photo.caption || photo.file_name || 'Customer photo'; image.style.cssText = 'display:block;width:100%;height:220px;object-fit:cover;border-radius:7px;'; imageButton.appendChild(image); imageButton.onclick = () => void showOmniPhotoEditor(photo, album.id, async () => { closeCustomerAlbumPopup(); await showCustomerAlbumsPopup(button); }); body.appendChild(imageButton); });
+            if (!(album.photos || []).length) { const empty = document.createElement('p'); empty.textContent = 'No photos in this album.'; body.appendChild(empty); }
+          };
+          body.appendChild(card);
+        });
+        if (!visible.length) { const empty = document.createElement('p'); empty.textContent = albums.length ? 'No albums match this search.' : 'You do not have any customer photo albums yet.'; empty.style.cssText = 'grid-column:1/-1;padding:30px;text-align:center;color:#647a77;'; body.appendChild(empty); }
+      };
+      search.oninput = render; header.append(heading, close); panel.append(header, search, body); overlay.appendChild(panel); overlay.onclick = (event) => { if (event.target === overlay) closeCustomerAlbumPopup(); }; document.body.appendChild(overlay); render();
+    } catch (error) { window.alert(error?.message || 'The customer albums could not be loaded.'); }
+    finally { button.disabled = false; button.textContent = 'View Albums'; }
+  }
+
   async function showCustomerAlbumPopup(button) {
     const draft = cin7Draft();
     if (!draft.orderId) {
@@ -3193,6 +3244,10 @@
         void showCustomerAlbumPopup(button);
         return;
       }
+      if (button.id === VIEW_CUSTOMER_ALBUMS_BUTTON_ID) {
+        void showCustomerAlbumsPopup(button);
+        return;
+      }
       if (button.id === BUTTON_ID) {
         openPanel();
         return;
@@ -3221,7 +3276,7 @@
     const handleEvent = (event) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
-      const button = target.closest(`#${CUSTOMER_PHOTOS_BUTTON_ID}, #${VIEW_CUSTOMER_ALBUM_BUTTON_ID}, #${BUTTON_ID}, #${HUBSPOT_BUTTON_ID}, #${QUOTE_REVIEW_BUTTON_ID}, #${QUOTE_PDF_BUTTON_ID}`);
+      const button = target.closest(`#${CUSTOMER_PHOTOS_BUTTON_ID}, #${VIEW_CUSTOMER_ALBUM_BUTTON_ID}, #${VIEW_CUSTOMER_ALBUMS_BUTTON_ID}, #${BUTTON_ID}, #${HUBSPOT_BUTTON_ID}, #${QUOTE_REVIEW_BUTTON_ID}, #${QUOTE_PDF_BUTTON_ID}`);
       if (!button) return;
       event.preventDefault();
       event.stopPropagation();
@@ -3331,6 +3386,15 @@
       styleInlineButton(viewButton, '#063b78');
       wireActionButton(viewButton);
     }
+    let viewAlbumsButton = document.getElementById(VIEW_CUSTOMER_ALBUMS_BUTTON_ID);
+    if (!viewAlbumsButton) {
+      viewAlbumsButton = document.createElement('button');
+      viewAlbumsButton.id = VIEW_CUSTOMER_ALBUMS_BUTTON_ID;
+      viewAlbumsButton.type = 'button';
+      viewAlbumsButton.textContent = 'View Albums';
+      styleInlineButton(viewAlbumsButton, '#00a4bd');
+      wireActionButton(viewAlbumsButton);
+    }
     const createdByLabel = Array.from(document.querySelectorAll('label, div, span, td'))
       .find((element) => normalizeLabel(element.textContent || '') === 'created by');
     let panel = createdByLabel?.parentElement || null;
@@ -3343,6 +3407,7 @@
     if (!panel || panel === document.body) {
       button.style.display = 'none';
       viewButton.style.display = 'none';
+      viewAlbumsButton.style.display = 'none';
       return;
     }
     if (getComputedStyle(panel).position === 'static') panel.style.position = 'relative';
@@ -3366,7 +3431,14 @@
     viewButton.style.transform = 'none';
     viewButton.style.margin = '0';
     viewButton.style.height = '36px';
-    actions.append(button, viewButton);
+    viewAlbumsButton.style.display = 'inline-flex';
+    viewAlbumsButton.style.alignItems = 'center';
+    viewAlbumsButton.style.justifyContent = 'center';
+    viewAlbumsButton.style.position = 'static';
+    viewAlbumsButton.style.transform = 'none';
+    viewAlbumsButton.style.margin = '0';
+    viewAlbumsButton.style.height = '36px';
+    actions.append(button, viewButton, viewAlbumsButton);
     if (actions.parentElement !== panel) panel.appendChild(actions);
   }
 
