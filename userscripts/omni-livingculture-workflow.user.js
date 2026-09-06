@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.42
+// @version      0.1.43
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.42
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.42
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.43
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.43
 // ==/UserScript==
 
 (function () {
@@ -1108,7 +1108,12 @@
         method: 'GET',
         url: url.toString(),
         headers,
+        timeout: 15000,
         onload: (response) => {
+          if (response.status >= 500) {
+            reject(new Error('Workflow service is temporarily unavailable. Please try again shortly.'));
+            return;
+          }
           try {
             const data = JSON.parse(response.responseText || '{}');
             if (response.status >= 200 && response.status < 300 && data.ok) {
@@ -1117,10 +1122,11 @@
               reject(new Error(data.error || `Booking lookup failed (${response.status}).`));
             }
           } catch (error) {
-            reject(error);
+            reject(new Error(`Workflow service returned an unreadable response (${response.status || 'network error'}).`));
           }
         },
-        onerror: () => reject(new Error('Could not connect to workflow API.'))
+        onerror: () => reject(new Error('Could not connect to workflow service. Please try again shortly.')),
+        ontimeout: () => reject(new Error('Workflow service timed out. Please try again shortly.'))
       });
     });
   }
@@ -2350,7 +2356,12 @@
       url: WORKFLOW_API_URL,
       headers,
       data: JSON.stringify(payload),
+      timeout: 20000,
       onload: (response) => {
+        if (response.status >= 500) {
+          setMessage('Workflow service is temporarily unavailable. Please try again shortly.', true);
+          return;
+        }
         let data = {};
         try {
           data = JSON.parse(response.responseText || '{}');
@@ -2380,7 +2391,8 @@
           );
         }
       },
-      onerror: () => setMessage('Could not connect to workflow API.', true)
+      onerror: () => setMessage('Could not connect to workflow service. Please try again shortly.', true),
+      ontimeout: () => setMessage('Workflow service timed out. Please try again shortly.', true)
     });
   }
 
