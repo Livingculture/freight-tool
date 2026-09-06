@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.45
+// @version      0.1.46
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.45
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.45
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.46
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.46
 // ==/UserScript==
 
 (function () {
@@ -1209,12 +1209,11 @@
     const saveButton = findButtonByLabel('Save As Draft') || findButtonByLabel('Save');
     if (!saveButton || !isVisible(saveButton)) return;
     const buttons = [
-      document.getElementById(CUSTOMER_PHOTOS_BUTTON_ID),
       document.getElementById(BUTTON_ID),
       document.getElementById(QUOTE_REVIEW_BUTTON_ID),
       document.getElementById(HUBSPOT_BUTTON_ID),
       document.getElementById(QUOTE_PDF_BUTTON_ID)
-    ].filter((button) => button && (button.id === CUSTOMER_PHOTOS_BUTTON_ID || isVisible(button)));
+    ].filter((button) => button && isVisible(button));
     if (!buttons.length) return;
 
     const saveRect = saveButton.getBoundingClientRect();
@@ -1223,7 +1222,6 @@
     let left = window.scrollX + saveRect.left - gap - totalWidth;
     const top = window.scrollY + saveRect.top;
     buttons.forEach((button) => {
-      if (button.id === CUSTOMER_PHOTOS_BUTTON_ID) button.style.display = 'inline-flex';
       button.style.alignItems = 'center';
       button.style.justifyContent = 'center';
       const width = Math.max(button.getBoundingClientRect().width, button.offsetWidth, 64);
@@ -2954,7 +2952,32 @@
     }
     button.textContent = 'Photos';
     button.title = 'Customer Photos';
-    placeOmniActionButton(button, findOmniActionAnchor());
+    const createdByLabel = Array.from(document.querySelectorAll('label, div, span, td'))
+      .find((element) => normalizeLabel(element.textContent || '') === 'created by');
+    let panel = createdByLabel?.parentElement || null;
+    while (panel && panel !== document.body) {
+      const rect = panel.getBoundingClientRect();
+      const text = clean(panel.textContent || '');
+      if (rect.width >= 600 && rect.height >= 40 && rect.height <= 180 && /Processed By/i.test(text)) break;
+      panel = panel.parentElement;
+    }
+    if (!panel || panel === document.body) {
+      button.style.display = 'none';
+      return;
+    }
+    if (getComputedStyle(panel).position === 'static') panel.style.position = 'relative';
+    button.style.display = 'inline-flex';
+    button.style.alignItems = 'center';
+    button.style.justifyContent = 'center';
+    button.style.position = 'absolute';
+    button.style.left = 'auto';
+    button.style.right = '18px';
+    button.style.top = '50%';
+    button.style.transform = 'translateY(-50%)';
+    button.style.zIndex = '5';
+    button.style.margin = '0';
+    button.style.height = '36px';
+    if (button.parentElement !== panel) panel.appendChild(button);
   }
 
   function styleInlineButton(button, background = '#05cbbf') {
