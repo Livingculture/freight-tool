@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.44
+// @version      0.1.45
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.44
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.44
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.45
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.45
 // ==/UserScript==
 
 (function () {
@@ -1214,7 +1214,7 @@
       document.getElementById(QUOTE_REVIEW_BUTTON_ID),
       document.getElementById(HUBSPOT_BUTTON_ID),
       document.getElementById(QUOTE_PDF_BUTTON_ID)
-    ].filter((button) => button && isVisible(button));
+    ].filter((button) => button && (button.id === CUSTOMER_PHOTOS_BUTTON_ID || isVisible(button)));
     if (!buttons.length) return;
 
     const saveRect = saveButton.getBoundingClientRect();
@@ -1223,7 +1223,10 @@
     let left = window.scrollX + saveRect.left - gap - totalWidth;
     const top = window.scrollY + saveRect.top;
     buttons.forEach((button) => {
-      const width = button.getBoundingClientRect().width;
+      if (button.id === CUSTOMER_PHOTOS_BUTTON_ID) button.style.display = 'inline-flex';
+      button.style.alignItems = 'center';
+      button.style.justifyContent = 'center';
+      const width = Math.max(button.getBoundingClientRect().width, button.offsetWidth, 64);
       button.style.position = 'absolute';
       button.style.left = `${Math.round(left)}px`;
       button.style.top = `${Math.round(top)}px`;
@@ -2946,10 +2949,11 @@
       button = document.createElement('button');
       button.id = CUSTOMER_PHOTOS_BUTTON_ID;
       button.type = 'button';
-      button.textContent = 'Customer Photos';
       styleInlineButton(button, '#08a6bc');
       wireActionButton(button);
     }
+    button.textContent = 'Photos';
+    button.title = 'Customer Photos';
     placeOmniActionButton(button, findOmniActionAnchor());
   }
 
