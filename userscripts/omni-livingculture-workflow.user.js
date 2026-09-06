@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.46
+// @version      0.1.47
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.46
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.46
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.47
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.47
 // ==/UserScript==
 
 (function () {
@@ -2947,11 +2947,13 @@
       button = document.createElement('button');
       button.id = CUSTOMER_PHOTOS_BUTTON_ID;
       button.type = 'button';
-      styleInlineButton(button, '#08a6bc');
+      styleInlineButton(button, '#063b78');
       wireActionButton(button);
     }
-    button.textContent = 'Photos';
-    button.title = 'Customer Photos';
+    button.textContent = 'Upload Photos';
+    button.title = 'Upload Customer Photos';
+    button.style.background = '#063b78';
+    button.style.borderColor = '#063b78';
     const createdByLabel = Array.from(document.querySelectorAll('label, div, span, td'))
       .find((element) => normalizeLabel(element.textContent || '') === 'created by');
     let panel = createdByLabel?.parentElement || null;
