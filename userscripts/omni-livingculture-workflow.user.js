@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.56
+// @version      0.1.57
 // @description  Adds Site Visit, Quote Review, HubSpot and customer photo workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -12,8 +12,8 @@
 // @connect      qvoacxmzsmulhnllfntfl.supabase.co
 // @connect      supabase.co
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.56
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.56
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.57
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.57
 // ==/UserScript==
 
 (function () {
@@ -2963,7 +2963,7 @@
     header.appendChild(close); stage.appendChild(canvas); footer.appendChild(save); modal.append(header, tools, stage, footer); overlay.appendChild(modal); document.body.appendChild(overlay);
 
     let image = null, marks = [], draft = null, selected = null, dragging = null, tool = 'measure', colour = '#ff3b30', labelBox = null;
-    const toolButton = (text, value) => { const button = document.createElement('button'); button.type = 'button'; button.textContent = text; button.style.cssText = 'padding:8px 11px;border:1px solid #9eb7bc;border-radius:6px;background:#fff;color:#183f3a;font-weight:700;cursor:pointer;'; button.onclick = () => { tool = value; [...tools.querySelectorAll('[data-tool]')].forEach((item) => item.style.background = '#fff'); button.style.background = '#09a8bc'; button.style.color = '#fff'; canvas.style.cursor = value === 'select' ? 'move' : 'crosshair'; }; button.dataset.tool = value; tools.appendChild(button); return button; };
+    const toolButton = (text, value) => { const button = document.createElement('button'); button.type = 'button'; button.textContent = text; button.style.cssText = 'padding:8px 11px;border:1px solid #9eb7bc;border-radius:6px;background:#fff;color:#183f3a;font-weight:700;cursor:pointer;'; button.onclick = () => { tool = value; [...tools.querySelectorAll('[data-tool]')].forEach((item) => { item.style.background = '#fff'; item.style.color = '#183f3a'; }); button.style.background = '#09a8bc'; button.style.color = '#fff'; canvas.style.cursor = value === 'select' ? 'move' : 'crosshair'; }; button.dataset.tool = value; tools.appendChild(button); return button; };
     const selectButton = toolButton('Select / Move', 'select'); const measureButton = toolButton('Measurement', 'measure'); toolButton('Line', 'line'); toolButton('Text Note', 'text'); measureButton.click();
     const colourLabel = document.createElement('label'); colourLabel.innerHTML = 'Colour '; colourLabel.style.fontWeight = '700'; const colourInput = document.createElement('input'); colourInput.type = 'color'; colourInput.value = colour; colourInput.oninput = () => { colour = colourInput.value; }; colourLabel.appendChild(colourInput); tools.appendChild(colourLabel);
     const actionButton = (text, action) => { const button = document.createElement('button'); button.type = 'button'; button.textContent = text; button.style.cssText = 'padding:8px 11px;border:1px solid #9eb7bc;border-radius:6px;background:#fff;color:#183f3a;font-weight:700;cursor:pointer;'; button.onclick = action; tools.appendChild(button); return button; };
