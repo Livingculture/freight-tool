@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.55
+// @version      0.1.56
 // @description  Adds Site Visit, Quote Review, HubSpot and customer photo workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -9,9 +9,11 @@
 // @grant        GM_xmlhttpRequest
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
+// @connect      qvoacxmzsmulhnllfntfl.supabase.co
+// @connect      supabase.co
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.55
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.55
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.56
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.56
 // ==/UserScript==
 
 (function () {
@@ -2928,8 +2930,14 @@
 
   function customerPhotoBlob(url) {
     return new Promise((resolve, reject) => GM_xmlhttpRequest({
-      method: 'GET', url, responseType: 'blob', timeout: 30000,
-      onload: (response) => response.status >= 200 && response.status < 300 ? resolve(response.response) : reject(new Error('Could not load the photo.')),
+      method: 'GET', url, responseType: 'arraybuffer', timeout: 30000,
+      onload: (response) => {
+        const bytes = response.response;
+        if ((response.status < 200 || response.status >= 300) && !bytes?.byteLength) { reject(new Error(`Could not load the photo (${response.status || 'storage blocked'}).`)); return; }
+        if (!bytes?.byteLength) { reject(new Error('The photo file was empty.')); return; }
+        const contentType = /content-type:\s*([^;\r\n]+)/i.exec(response.responseHeaders || '')?.[1] || 'image/jpeg';
+        resolve(new Blob([bytes], { type: contentType }));
+      },
       onerror: () => reject(new Error('Could not load the photo.')),
       ontimeout: () => reject(new Error('The photo took too long to load.'))
     }));
