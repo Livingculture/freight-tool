@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.43
+// @version      0.1.44
 // @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.43
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.43
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.44
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.44
 // ==/UserScript==
 
 (function () {
@@ -21,6 +21,7 @@
   const HUBSPOT_BUTTON_ID = 'lc-hubspot-deal-inline-button-v1';
   const QUOTE_REVIEW_BUTTON_ID = 'lc-quote-review-inline-button-v1';
   const QUOTE_PDF_BUTTON_ID = 'lc-quote-pdf-download-button-v1';
+  const CUSTOMER_PHOTOS_BUTTON_ID = 'lc-omni-customer-photos-button';
   const ACTION_ROW_ID = 'lc-cin7-action-row-v1';
   const FLOATING_BAR_ID = 'lc-cin7-floating-actions-v1';
   const OVERLAY_ID = 'lc-site-visit-overlay-v2';
@@ -28,6 +29,7 @@
   const REP_OPTIONS_API_URL = 'https://living-culture-workflow.vercel.app/api/rep-options';
   const QUOTE_REVIEW_API_URL = 'https://living-culture-workflow.vercel.app/api/quote-reviews';
   const WORKFLOW_PLANNER_URL = 'https://living-culture-workflow.vercel.app/';
+  const CUSTOMER_PHOTOS_URL = 'https://living-culture-workflow.vercel.app/customer-photos';
   const HUBSPOT_API_URL = 'https://living-culture-workflow.vercel.app/api/hubspot/create-deal';
   const HUBSPOT_LEAD_SOURCE_OPTIONS_URL = 'https://living-culture-workflow.vercel.app/api/hubspot/lead-source-options';
   const HUBSPOT_LEAD_SOURCE_CACHE_KEY = 'lc-hubspot-lead-source-options-v1';
@@ -1207,6 +1209,7 @@
     const saveButton = findButtonByLabel('Save As Draft') || findButtonByLabel('Save');
     if (!saveButton || !isVisible(saveButton)) return;
     const buttons = [
+      document.getElementById(CUSTOMER_PHOTOS_BUTTON_ID),
       document.getElementById(BUTTON_ID),
       document.getElementById(QUOTE_REVIEW_BUTTON_ID),
       document.getElementById(HUBSPOT_BUTTON_ID),
@@ -2805,6 +2808,22 @@
     if (!button || button.disabled) return;
     if (!shouldHandleAction(button)) return;
     try {
+      if (button.id === CUSTOMER_PHOTOS_BUTTON_ID) {
+        const draft = cin7Draft();
+        const url = new URL(CUSTOMER_PHOTOS_URL);
+        const values = {
+          customer: draft.customerName,
+          email: draft.email,
+          phone: draft.phone,
+          address: draft.address,
+          quote: draft.orderId
+        };
+        Object.entries(values).forEach(([key, value]) => {
+          if (clean(value)) url.searchParams.set(key, clean(value));
+        });
+        window.open(url.toString(), '_blank', 'noopener,noreferrer');
+        return;
+      }
       if (button.id === BUTTON_ID) {
         openPanel();
         return;
@@ -2833,7 +2852,7 @@
     const handleEvent = (event) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
-      const button = target.closest(`#${BUTTON_ID}, #${HUBSPOT_BUTTON_ID}, #${QUOTE_REVIEW_BUTTON_ID}, #${QUOTE_PDF_BUTTON_ID}`);
+      const button = target.closest(`#${CUSTOMER_PHOTOS_BUTTON_ID}, #${BUTTON_ID}, #${HUBSPOT_BUTTON_ID}, #${QUOTE_REVIEW_BUTTON_ID}, #${QUOTE_PDF_BUTTON_ID}`);
       if (!button) return;
       event.preventDefault();
       event.stopPropagation();
@@ -2915,6 +2934,23 @@
     } else {
       anchor.insertAdjacentElement('afterend', button);
     }
+  }
+
+  function addCustomerPhotosButton() {
+    if (!isOmniPage() || !isSimpleSaleReady()) {
+      document.getElementById(CUSTOMER_PHOTOS_BUTTON_ID)?.remove();
+      return;
+    }
+    let button = document.getElementById(CUSTOMER_PHOTOS_BUTTON_ID);
+    if (!button) {
+      button = document.createElement('button');
+      button.id = CUSTOMER_PHOTOS_BUTTON_ID;
+      button.type = 'button';
+      button.textContent = 'Customer Photos';
+      styleInlineButton(button, '#08a6bc');
+      wireActionButton(button);
+    }
+    placeOmniActionButton(button, findOmniActionAnchor());
   }
 
   function styleInlineButton(button, background = '#05cbbf') {
@@ -3065,6 +3101,7 @@
   function runButtonPass() {
     buttonPassScheduled = false;
     observeOmniLayout();
+    addCustomerPhotosButton();
     addButton();
     addHubSpotButton();
     addQuoteReviewButton();
