@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.54
+// @version      0.1.55
 // @description  Adds Site Visit, Quote Review, HubSpot and customer photo workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.54
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.54
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.55
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.55
 // ==/UserScript==
 
 (function () {
@@ -2944,7 +2944,7 @@
     modal.style.cssText = 'width:min(1500px,97vw);height:95vh;display:grid;grid-template-rows:auto auto minmax(0,1fr) auto;background:#fff;border-radius:12px;overflow:hidden;color:#183f3a;box-shadow:0 25px 80px #0009;';
     const header = document.createElement('header');
     header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:13px 18px;border-bottom:1px solid #d5e1e5;';
-    header.innerHTML = '<div><strong style="font-size:19px">Mark up photo</strong><div style="color:#647a77;margin-top:3px">Select a line to move or delete it.</div></div>';
+    header.innerHTML = '<div><strong style="font-size:19px">Mark up photo</strong><div style="color:#647a77;margin-top:3px">Drag an end handle to adjust it, or drag the middle to move the whole line.</div></div>';
     const close = document.createElement('button'); close.type = 'button'; close.textContent = 'Close'; close.style.cssText = 'padding:9px 14px;border:0;border-radius:6px;background:#063b78;color:#fff;font-weight:700;cursor:pointer;';
     const tools = document.createElement('div'); tools.style.cssText = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 18px;background:#edf3f6;';
     const stage = document.createElement('div'); stage.style.cssText = 'position:relative;min-height:0;display:flex;align-items:center;justify-content:center;overflow:auto;padding:10px;background:#263238;color:#fff;';
@@ -2980,9 +2980,10 @@
     function paint() { if (!image) return; const context = canvas.getContext('2d'); context.clearRect(0, 0, canvas.width, canvas.height); context.drawImage(image, 0, 0); marks.forEach((mark, index) => draw(mark, index === selected)); if (draft) draw(draft, false); }
     function point(event) { const rect = canvas.getBoundingClientRect(); return { x: (event.clientX - rect.left) * canvas.width / rect.width, y: (event.clientY - rect.top) * canvas.height / rect.height }; }
     function hit(x, y) { const scale = canvas.width / canvas.getBoundingClientRect().width, tolerance = 14 * scale; for (let index = marks.length - 1; index >= 0; index -= 1) { const mark = marks[index]; if (mark.tool === 'text') { const width = Math.max(70, (mark.label?.length || 4) * 14) * scale; if (x >= mark.x1 - tolerance && x <= mark.x1 + width && y >= mark.y1 - 35 * scale && y <= mark.y1 + tolerance) return index; continue; } const length = (mark.x2 - mark.x1) ** 2 + (mark.y2 - mark.y1) ** 2, position = length ? Math.max(0, Math.min(1, ((x - mark.x1) * (mark.x2 - mark.x1) + (y - mark.y1) * (mark.y2 - mark.y1)) / length)) : 0; if (Math.hypot(x - mark.x1 - position * (mark.x2 - mark.x1), y - mark.y1 - position * (mark.y2 - mark.y1)) <= tolerance) return index; } return null; }
+    function endpoint(mark, x, y) { if (mark.tool === 'text') return null; const tolerance = 18 * canvas.width / canvas.getBoundingClientRect().width; if (Math.hypot(x - mark.x1, y - mark.y1) <= tolerance) return 1; if (Math.hypot(x - mark.x2, y - mark.y2) <= tolerance) return 2; return null; }
     function askLabel(mark, clientX, clientY) { const rect = canvas.getBoundingClientRect(), x = clientX ?? rect.left + ((mark.x1 + mark.x2) / 2 / canvas.width) * rect.width, y = clientY ?? rect.top + ((mark.y1 + mark.y2) / 2 / canvas.height) * rect.height; labelBox = document.createElement('form'); labelBox.style.cssText = `position:fixed;z-index:2147483647;left:${Math.min(innerWidth - 190, Math.max(10, x + 12))}px;top:${Math.min(innerHeight - 60, Math.max(10, y - 20))}px;display:flex;gap:4px;width:180px;padding:5px;background:#fff;border:2px solid #09a8bc;border-radius:7px;box-shadow:0 4px 16px #0007;`; const input = document.createElement('input'); input.placeholder = mark.tool === 'text' ? 'Type note' : 'e.g. 2400 mm'; input.style.cssText = 'width:112px;min-width:0;border:0;outline:0;padding:5px;font-weight:700;'; const yes = document.createElement('button'); yes.textContent = '✓'; const no = document.createElement('button'); no.type = 'button'; no.textContent = '×'; [yes, no].forEach((button) => button.style.cssText = 'width:25px;border:0;border-radius:4px;background:#063b78;color:#fff;font-weight:800;'); const cancel = () => { labelBox.remove(); labelBox = null; draft = null; paint(); updateSave(); }; labelBox.onsubmit = (event) => { event.preventDefault(); marks.push({ ...mark, label: input.value.trim() || (mark.tool === 'text' ? 'Note' : 'Measurement') }); labelBox.remove(); labelBox = null; draft = null; paint(); updateSave(); }; no.onclick = cancel; input.onkeydown = (event) => { if (event.key === 'Escape') cancel(); }; labelBox.append(input, yes, no); document.body.appendChild(labelBox); input.focus(); updateSave(); }
-    canvas.onpointerdown = (event) => { if (labelBox) return; const value = point(event); canvas.setPointerCapture(event.pointerId); if (tool === 'select') { selected = hit(value.x, value.y); dragging = selected === null ? null : { index: selected, ...value }; paint(); updateSave(); return; } selected = null; draft = { tool, color: colour, x1: value.x, y1: value.y, x2: value.x, y2: value.y }; if (tool === 'text') { askLabel(draft, event.clientX, event.clientY); return; } updateSave(); };
-    canvas.onpointermove = (event) => { const value = point(event); if (dragging) { const dx = value.x - dragging.x, dy = value.y - dragging.y, mark = marks[dragging.index]; Object.assign(mark, { x1: mark.x1 + dx, y1: mark.y1 + dy, x2: mark.x2 + dx, y2: mark.y2 + dy }); dragging.x = value.x; dragging.y = value.y; paint(); return; } if (draft) { draft.x2 = value.x; draft.y2 = value.y; paint(); } };
+    canvas.onpointerdown = (event) => { if (labelBox) return; const value = point(event); canvas.setPointerCapture(event.pointerId); if (tool === 'select') { selected = hit(value.x, value.y); dragging = selected === null ? null : { index: selected, endpoint: endpoint(marks[selected], value.x, value.y), ...value }; paint(); updateSave(); return; } selected = null; draft = { tool, color: colour, x1: value.x, y1: value.y, x2: value.x, y2: value.y }; if (tool === 'text') { askLabel(draft, event.clientX, event.clientY); return; } updateSave(); };
+    canvas.onpointermove = (event) => { const value = point(event); if (dragging) { const dx = value.x - dragging.x, dy = value.y - dragging.y, mark = marks[dragging.index]; if (dragging.endpoint === 1) Object.assign(mark, { x1: value.x, y1: value.y }); else if (dragging.endpoint === 2) Object.assign(mark, { x2: value.x, y2: value.y }); else Object.assign(mark, { x1: mark.x1 + dx, y1: mark.y1 + dy, x2: mark.x2 + dx, y2: mark.y2 + dy }); dragging.x = value.x; dragging.y = value.y; paint(); return; } if (draft) { draft.x2 = value.x; draft.y2 = value.y; paint(); } };
     canvas.onpointerup = () => { if (dragging) { dragging = null; return; } if (!draft) return; if (Math.hypot(draft.x2 - draft.x1, draft.y2 - draft.y1) < 8) { draft = null; paint(); return; } if (draft.tool === 'measure') askLabel(draft); else { marks.push(draft); draft = null; paint(); updateSave(); } };
     close.onclick = () => { labelBox?.remove(); overlay.remove(); };
     overlay.onclick = (event) => { if (event.target === overlay) close.click(); };
