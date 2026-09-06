@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.57
+// @version      0.1.58
 // @description  Adds Site Visit, Quote Review, HubSpot and customer photo workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -12,8 +12,8 @@
 // @connect      qvoacxmzsmulhnllfntfl.supabase.co
 // @connect      supabase.co
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.57
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.57
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.58
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.58
 // ==/UserScript==
 
 (function () {
@@ -2837,6 +2837,56 @@
     });
   }
 
+  const customerAlbumLinkAttempts = new Set();
+
+  async function linkExistingCustomerAlbumToQuote() {
+    if (!isOmniPage() || !isSimpleSaleReady()) return;
+    const draft = cin7Draft();
+    const quoteNumber = clean(draft.orderId);
+    const email = clean(draft.email).toLowerCase();
+    const customerName = clean(draft.customerName).toLowerCase();
+    if (!quoteNumber || !email || !customerName) return;
+    const attemptKey = `${quoteNumber.toLowerCase()}|${email}|${customerName}`;
+    if (customerAlbumLinkAttempts.has(attemptKey)) return;
+    customerAlbumLinkAttempts.add(attemptKey);
+    try {
+      const lookupUrl = new URL(CUSTOMER_PHOTOS_API_URL);
+      lookupUrl.searchParams.set('email', email);
+      const lookup = await customerPhotosRequest({ url: lookupUrl.toString() });
+      const matches = (Array.isArray(lookup.albums) ? lookup.albums : []).filter((album) =>
+        clean(album.customer_email).toLowerCase() === email && clean(album.customer_name).toLowerCase() === customerName
+      );
+      if (!matches.length) return;
+      let album = matches[0];
+      if (matches.length > 1) {
+        const merged = await customerPhotosRequest({
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          data: JSON.stringify({ action: 'merge', primaryId: album.id, albumIds: matches.map((item) => item.id) })
+        });
+        album = merged.album;
+      }
+      const linkedNumbers = Array.from(new Set([...(album.quote_numbers || []), ...(album.job_numbers || []), quoteNumber].map(clean).filter(Boolean)));
+      if ([...(album.quote_numbers || []), ...(album.job_numbers || [])].some((number) => clean(number).toLowerCase() === quoteNumber.toLowerCase())) return;
+      await customerPhotosRequest({
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        data: JSON.stringify({
+          id: album.id,
+          customerName: album.customer_name || draft.customerName,
+          customerEmail: album.customer_email || draft.email,
+          customerPhone: album.customer_phone || draft.phone,
+          siteAddress: album.site_address || draft.address,
+          title: album.customer_name || draft.customerName,
+          notes: album.notes,
+          linkedNumbers
+        })
+      });
+      console.info(`[LC Customer Photos] Linked ${quoteNumber} to the existing album for ${draft.customerName}.`);
+    } catch (error) {
+      customerAlbumLinkAttempts.delete(attemptKey);
+      console.warn('[LC Customer Photos] Automatic album linking will retry.', error);
+    }
+  }
+
   async function uploadCustomerPhotosFromOmni(button, files) {
     const draft = cin7Draft();
     if (!draft.orderId || !draft.customerName) {
@@ -3475,6 +3525,7 @@
     addQuotePdfButton();
     applyHubSpotApprovalGate();
     layoutOmniWorkflowButtons();
+    void linkExistingCustomerAlbumToQuote();
   }
 
   function scheduleButtonPass() {
