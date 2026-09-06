@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.50
+// @version      0.1.51
 // @description  Adds Site Visit, Quote Review, HubSpot and customer photo workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.50
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.50
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.51
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.51
 // ==/UserScript==
 
 (function () {
@@ -2924,7 +2924,7 @@
       overlay.id = 'lc-omni-customer-album-popup';
       overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(12,29,54,.5);font-family:Arial,sans-serif;box-sizing:border-box;';
       const panel = document.createElement('section');
-      panel.style.cssText = 'width:min(920px,calc(100vw - 40px));max-height:calc(100vh - 48px);display:flex;flex-direction:column;overflow:hidden;background:#fff;border:1px solid #b9c9dc;border-radius:10px;box-shadow:0 20px 60px rgba(7,28,58,.3);color:#172b4d;';
+      panel.style.cssText = 'width:min(1120px,calc(100vw - 40px));max-height:calc(100vh - 48px);display:flex;flex-direction:column;overflow:hidden;background:#fff;border:1px solid #b9c9dc;border-radius:10px;box-shadow:0 20px 60px rgba(7,28,58,.3);color:#172b4d;';
       const header = document.createElement('header');
       header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:16px;padding:15px 18px;background:#063b78;color:#fff;';
       const title = document.createElement('strong');
@@ -2935,8 +2935,23 @@
       close.textContent = 'Close';
       close.style.cssText = 'height:34px;padding:0 14px;border:1px solid #fff;border-radius:5px;background:#fff;color:#063b78;font-weight:700;cursor:pointer;';
       close.addEventListener('click', closeCustomerAlbumPopup);
+      const preview = document.createElement('div');
+      preview.style.cssText = 'display:none;position:relative;flex:1;min-height:0;padding:18px;background:#eef3f7;overflow:auto;text-align:center;';
+      const previewImage = document.createElement('img');
+      previewImage.alt = 'Customer photo preview';
+      previewImage.style.cssText = 'display:block;max-width:100%;max-height:calc(100vh - 150px);width:auto;height:auto;margin:0 auto;border-radius:8px;box-shadow:0 8px 30px rgba(7,28,58,.24);object-fit:contain;';
+      const back = document.createElement('button');
+      back.type = 'button';
+      back.textContent = 'Back to Album';
+      back.style.cssText = 'position:sticky;top:0;float:left;z-index:2;height:36px;padding:0 14px;border:0;border-radius:5px;background:#063b78;color:#fff;font-weight:700;cursor:pointer;';
       const gallery = document.createElement('div');
-      gallery.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px;padding:18px;overflow:auto;min-height:160px;';
+      gallery.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;padding:18px;overflow:auto;min-height:220px;';
+      back.addEventListener('click', () => {
+        preview.style.display = 'none';
+        gallery.style.display = 'grid';
+        panel.style.width = 'min(1120px,calc(100vw - 40px))';
+      });
+      preview.append(back, previewImage);
 
       const renderEmpty = () => {
         if (gallery.children.length) return;
@@ -2950,16 +2965,19 @@
         const card = document.createElement('article');
         card.style.cssText = 'display:flex;flex-direction:column;gap:8px;padding:9px;background:#fff;border:1px solid #d5e1e5;border-radius:10px;';
         if (photo.url) {
-          const link = document.createElement('a');
-          link.href = photo.url;
-          link.target = '_blank';
-          link.rel = 'noreferrer';
           const image = document.createElement('img');
           image.src = photo.url;
           image.alt = photo.caption || photo.file_name || 'Customer photo';
-          image.style.cssText = 'display:block;width:100%;height:170px;object-fit:cover;border-radius:7px;background:#eef3f7;';
-          link.appendChild(image);
-          card.appendChild(link);
+          image.title = 'Click to enlarge';
+          image.style.cssText = 'display:block;width:100%;height:230px;object-fit:cover;border-radius:7px;background:#eef3f7;cursor:zoom-in;';
+          image.addEventListener('click', () => {
+            previewImage.src = photo.url;
+            previewImage.alt = photo.caption || photo.file_name || 'Customer photo';
+            gallery.style.display = 'none';
+            preview.style.display = 'block';
+            panel.style.width = 'min(1400px,calc(100vw - 24px))';
+          });
+          card.appendChild(image);
         }
         const remove = document.createElement('button');
         remove.type = 'button';
@@ -2988,7 +3006,7 @@
       });
       renderEmpty();
       header.append(title, close);
-      panel.append(header, gallery);
+      panel.append(header, preview, gallery);
       overlay.appendChild(panel);
       overlay.addEventListener('click', (event) => { if (event.target === overlay) closeCustomerAlbumPopup(); });
       document.body.appendChild(overlay);
