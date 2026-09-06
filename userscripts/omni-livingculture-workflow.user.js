@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.47
-// @description  Adds Site Visit, Quote Review and HubSpot workflow buttons to Cin7 Omni quotes.
+// @version      0.1.48
+// @description  Adds Site Visit, Quote Review, HubSpot and customer photo workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @match        https://go.cin7.com/Cloud/ShoppingCartAdmin/*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.47
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.47
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.48
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.48
 // ==/UserScript==
 
 (function () {
@@ -29,7 +29,7 @@
   const REP_OPTIONS_API_URL = 'https://living-culture-workflow.vercel.app/api/rep-options';
   const QUOTE_REVIEW_API_URL = 'https://living-culture-workflow.vercel.app/api/quote-reviews';
   const WORKFLOW_PLANNER_URL = 'https://living-culture-workflow.vercel.app/';
-  const CUSTOMER_PHOTOS_URL = 'https://living-culture-workflow.vercel.app/customer-photos';
+  const CUSTOMER_PHOTOS_API_URL = 'https://living-culture-workflow.vercel.app/api/customer-photos';
   const HUBSPOT_API_URL = 'https://living-culture-workflow.vercel.app/api/hubspot/create-deal';
   const HUBSPOT_LEAD_SOURCE_OPTIONS_URL = 'https://living-culture-workflow.vercel.app/api/hubspot/lead-source-options';
   const HUBSPOT_LEAD_SOURCE_CACHE_KEY = 'lc-hubspot-lead-source-options-v1';
@@ -2805,24 +2805,102 @@
     return true;
   }
 
+  function customerPhotosRequest({ method = 'GET', url = CUSTOMER_PHOTOS_API_URL, headers = {}, data = null }) {
+    return new Promise((resolve, reject) => {
+      GM_xmlhttpRequest({
+        method,
+        url,
+        headers,
+        data,
+        timeout: 60000,
+        onload: (response) => {
+          const redirectedToLogin = /\/login(?:\?|$)/i.test(response.finalUrl || '');
+          let payload = null;
+          try { payload = JSON.parse(response.responseText || '{}'); } catch (error) {}
+          if (redirectedToLogin || response.status === 401 || response.status === 403) {
+            reject(new Error('Please open Workflow and sign in once, then try Upload Photos again.'));
+            return;
+          }
+          if (response.status < 200 || response.status >= 300 || !payload) {
+            reject(new Error(payload?.error || `Customer photo upload failed (${response.status || 'network error'}).`));
+            return;
+          }
+          resolve(payload);
+        },
+        onerror: () => reject(new Error('Could not connect to Workflow customer photos.')),
+        ontimeout: () => reject(new Error('Workflow took too long to upload the photos.'))
+      });
+    });
+  }
+
+  async function uploadCustomerPhotosFromOmni(button, files) {
+    const draft = cin7Draft();
+    if (!draft.orderId || !draft.customerName) {
+      window.alert('The quote number and customer name are required before uploading photos.');
+      return;
+    }
+    button.disabled = true;
+    button.textContent = 'Preparing…';
+    try {
+      const lookupUrl = new URL(CUSTOMER_PHOTOS_API_URL);
+      lookupUrl.searchParams.set('quote', draft.orderId);
+      const lookup = await customerPhotosRequest({ url: lookupUrl.toString() });
+      let album = Array.isArray(lookup.albums) ? lookup.albums[0] : null;
+      if (!album) {
+        button.textContent = 'Creating album…';
+        const created = await customerPhotosRequest({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          data: JSON.stringify({
+            customerName: draft.customerName,
+            customerEmail: draft.email,
+            customerPhone: draft.phone,
+            siteAddress: draft.address,
+            title: `${draft.orderId} - ${draft.customerName}`,
+            quoteNumbers: [draft.orderId],
+            jobNumbers: []
+          })
+        });
+        album = created.album;
+      }
+      if (!album?.id) throw new Error('Workflow could not create the customer photo album.');
+
+      button.textContent = 'Uploading…';
+      const form = new FormData();
+      form.set('albumId', album.id);
+      Array.from(files).forEach((file) => form.append('photos', file, file.name));
+      const result = await customerPhotosRequest({ method: 'POST', data: form });
+      const count = Array.isArray(result.photos) ? result.photos.length : files.length;
+      window.alert(`${count} photo${count === 1 ? '' : 's'} uploaded to ${draft.orderId} - ${draft.customerName}.`);
+    } catch (error) {
+      window.alert(error?.message || 'The customer photos could not be uploaded.');
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Upload Photos';
+    }
+  }
+
+  function chooseCustomerPhotos(button) {
+    const picker = document.createElement('input');
+    picker.type = 'file';
+    picker.accept = 'image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif';
+    picker.multiple = true;
+    picker.style.display = 'none';
+    picker.addEventListener('change', () => {
+      const files = picker.files;
+      picker.remove();
+      if (files?.length) void uploadCustomerPhotosFromOmni(button, files);
+    }, { once: true });
+    document.body.appendChild(picker);
+    picker.click();
+  }
+
   function handleActionButtonClick(button) {
     if (!button || button.disabled) return;
     if (!shouldHandleAction(button)) return;
     try {
       if (button.id === CUSTOMER_PHOTOS_BUTTON_ID) {
-        const draft = cin7Draft();
-        const url = new URL(CUSTOMER_PHOTOS_URL);
-        const values = {
-          customer: draft.customerName,
-          email: draft.email,
-          phone: draft.phone,
-          address: draft.address,
-          quote: draft.orderId
-        };
-        Object.entries(values).forEach(([key, value]) => {
-          if (clean(value)) url.searchParams.set(key, clean(value));
-        });
-        window.open(url.toString(), '_blank', 'noopener,noreferrer');
+        chooseCustomerPhotos(button);
         return;
       }
       if (button.id === BUTTON_ID) {
