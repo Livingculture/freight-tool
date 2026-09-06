@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.49
+// @version      0.1.50
 // @description  Adds Site Visit, Quote Review, HubSpot and customer photo workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -10,8 +10,8 @@
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.49
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.49
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.50
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.50
 // ==/UserScript==
 
 (function () {
@@ -32,7 +32,6 @@
   const QUOTE_REVIEW_API_URL = 'https://living-culture-workflow.vercel.app/api/quote-reviews';
   const WORKFLOW_PLANNER_URL = 'https://living-culture-workflow.vercel.app/';
   const CUSTOMER_PHOTOS_API_URL = 'https://living-culture-workflow.vercel.app/api/customer-photos';
-  const CUSTOMER_PHOTOS_PAGE_URL = 'https://living-culture-workflow.vercel.app/customer-photos';
   const HUBSPOT_API_URL = 'https://living-culture-workflow.vercel.app/api/hubspot/create-deal';
   const HUBSPOT_LEAD_SOURCE_OPTIONS_URL = 'https://living-culture-workflow.vercel.app/api/hubspot/lead-source-options';
   const HUBSPOT_LEAD_SOURCE_CACHE_KEY = 'lc-hubspot-lead-source-options-v1';
@@ -2898,6 +2897,109 @@
     picker.click();
   }
 
+  function closeCustomerAlbumPopup() {
+    document.getElementById('lc-omni-customer-album-popup')?.remove();
+  }
+
+  async function showCustomerAlbumPopup(button) {
+    const draft = cin7Draft();
+    if (!draft.orderId) {
+      window.alert('The quote number is required to view its photo album.');
+      return;
+    }
+    button.disabled = true;
+    button.textContent = 'Loading…';
+    try {
+      const lookupUrl = new URL(CUSTOMER_PHOTOS_API_URL);
+      lookupUrl.searchParams.set('quote', draft.orderId);
+      const result = await customerPhotosRequest({ url: lookupUrl.toString() });
+      const album = Array.isArray(result.albums) ? result.albums[0] : null;
+      if (!album) {
+        window.alert(`No photo album has been created for ${draft.orderId}.`);
+        return;
+      }
+
+      closeCustomerAlbumPopup();
+      const overlay = document.createElement('div');
+      overlay.id = 'lc-omni-customer-album-popup';
+      overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(12,29,54,.5);font-family:Arial,sans-serif;box-sizing:border-box;';
+      const panel = document.createElement('section');
+      panel.style.cssText = 'width:min(920px,calc(100vw - 40px));max-height:calc(100vh - 48px);display:flex;flex-direction:column;overflow:hidden;background:#fff;border:1px solid #b9c9dc;border-radius:10px;box-shadow:0 20px 60px rgba(7,28,58,.3);color:#172b4d;';
+      const header = document.createElement('header');
+      header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:16px;padding:15px 18px;background:#063b78;color:#fff;';
+      const title = document.createElement('strong');
+      title.textContent = `Photo Album · ${draft.orderId}`;
+      title.style.cssText = 'font-size:18px;';
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.textContent = 'Close';
+      close.style.cssText = 'height:34px;padding:0 14px;border:1px solid #fff;border-radius:5px;background:#fff;color:#063b78;font-weight:700;cursor:pointer;';
+      close.addEventListener('click', closeCustomerAlbumPopup);
+      const gallery = document.createElement('div');
+      gallery.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px;padding:18px;overflow:auto;min-height:160px;';
+
+      const renderEmpty = () => {
+        if (gallery.children.length) return;
+        const empty = document.createElement('p');
+        empty.textContent = 'No photos have been uploaded to this album.';
+        empty.style.cssText = 'grid-column:1/-1;padding:30px;text-align:center;color:#61758d;';
+        gallery.appendChild(empty);
+      };
+
+      (Array.isArray(album.photos) ? album.photos : []).forEach((photo) => {
+        const card = document.createElement('article');
+        card.style.cssText = 'display:flex;flex-direction:column;gap:8px;padding:9px;background:#fff;border:1px solid #d5e1e5;border-radius:10px;';
+        if (photo.url) {
+          const link = document.createElement('a');
+          link.href = photo.url;
+          link.target = '_blank';
+          link.rel = 'noreferrer';
+          const image = document.createElement('img');
+          image.src = photo.url;
+          image.alt = photo.caption || photo.file_name || 'Customer photo';
+          image.style.cssText = 'display:block;width:100%;height:170px;object-fit:cover;border-radius:7px;background:#eef3f7;';
+          link.appendChild(image);
+          card.appendChild(link);
+        }
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.textContent = 'Remove';
+        remove.style.cssText = 'align-self:flex-end;border:0;background:transparent;color:#b42318;font-weight:700;cursor:pointer;padding:4px 2px;';
+        remove.addEventListener('click', async () => {
+          if (!window.confirm('Remove this photo from the album?')) return;
+          remove.disabled = true;
+          remove.textContent = 'Removing…';
+          try {
+            await customerPhotosRequest({
+              method: 'DELETE',
+              headers: { 'Content-Type': 'application/json' },
+              data: JSON.stringify({ photoId: photo.id })
+            });
+            card.remove();
+            renderEmpty();
+          } catch (error) {
+            remove.disabled = false;
+            remove.textContent = 'Remove';
+            window.alert(error?.message || 'The photo could not be removed.');
+          }
+        });
+        card.appendChild(remove);
+        gallery.appendChild(card);
+      });
+      renderEmpty();
+      header.append(title, close);
+      panel.append(header, gallery);
+      overlay.appendChild(panel);
+      overlay.addEventListener('click', (event) => { if (event.target === overlay) closeCustomerAlbumPopup(); });
+      document.body.appendChild(overlay);
+    } catch (error) {
+      window.alert(error?.message || 'The customer photo album could not be loaded.');
+    } finally {
+      button.disabled = false;
+      button.textContent = 'View Album';
+    }
+  }
+
   function handleActionButtonClick(button) {
     if (!button || button.disabled) return;
     if (!shouldHandleAction(button)) return;
@@ -2907,12 +3009,7 @@
         return;
       }
       if (button.id === VIEW_CUSTOMER_ALBUM_BUTTON_ID) {
-        const draft = cin7Draft();
-        const url = new URL(CUSTOMER_PHOTOS_PAGE_URL);
-        if (draft.orderId) url.searchParams.set('quote', draft.orderId);
-        if (draft.customerName) url.searchParams.set('customer', draft.customerName);
-        if (draft.email) url.searchParams.set('email', draft.email);
-        window.open(url.toString(), '_blank', 'noopener,noreferrer');
+        void showCustomerAlbumPopup(button);
         return;
       }
       if (button.id === BUTTON_ID) {
