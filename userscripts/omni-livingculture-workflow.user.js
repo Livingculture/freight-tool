@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.62
+// @version      0.1.63
 // @description  Adds Site Visit, Quote Review, HubSpot and customer photo workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -2653,6 +2653,24 @@
       button.disabled = true;
       button.textContent = 'Downloading…';
 
+      // The Admin HTML already contains Cin7's signed Quote link. Fetching that
+      // HTML and then the PDF avoids waiting for the full Admin UI and all of its
+      // scripts to render. Keep the iframe route below as a compatibility fallback.
+      const orderId = currentQuotePdfOrderId();
+      if (orderId) {
+        try {
+          const signedPdfUrl = await requestAdminQuoteHref(orderId);
+          const pdfBuffer = await fetchSignedQuotePdf(signedPdfUrl);
+          saveQuotePdfBuffer(pdfBuffer, quoteNumber);
+          button.disabled = false;
+          button.textContent = 'Download Quote';
+          return;
+        } catch (error) {
+          // Some Cin7 sessions only expose the signed link after the Admin page
+          // renders. The hidden worker below handles those sessions.
+        }
+      }
+
       localStorage.setItem(QUOTE_PDF_HANDOFF_KEY, JSON.stringify({ quoteNumber, startedAt: Date.now() }));
       const frameName = `lc-quote-pdf-${Date.now()}`;
       const frame = document.createElement('iframe');
@@ -2720,7 +2738,6 @@
         window.alert('Cin7 took too long to prepare the quote PDF.');
       }, 120000);
 
-      const orderId = currentQuotePdfOrderId();
       if (orderId) {
         const adminUrl = new URL('https://go.cin7.com/Cloud/ShoppingCartAdmin/Orders/OrderDetail.aspx');
         adminUrl.searchParams.set('idCustomerAppsLink', '1328006');
