@@ -1,14 +1,14 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.44
+// @version      0.1.45
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @match        https://living-culture-email-helper.vercel.app/*
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-email-helper-compose.user.js?v=0.1.44
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-email-helper-compose.user.js?v=0.1.44
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-email-helper-compose.user.js
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-email-helper-compose.user.js
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-start
 // @grant        none
@@ -32,6 +32,32 @@
   let composePanel = null;
   let contactsPanel = null;
   let injectQueued = false;
+  const isOmniEmailPage = location.hostname === "go.cin7.com"
+    && /\/Cloud\/CRM\/ContactLog\.aspx$/i.test(location.pathname);
+
+  // This runs at document-start, before Omni paints its native composer. Keep the
+  // page transparent until the helper layout has taken ownership of the composer.
+  // Opacity is used instead of visibility so Omni's controls can still be measured.
+  if (isOmniEmailPage) {
+    const earlyStyle = document.createElement("style");
+    earlyStyle.id = "lc-omni-email-helper-early-style";
+    earlyStyle.textContent = `
+      html.lc-omni-email-helper-starting {
+        background: #fff !important;
+      }
+      html.lc-omni-email-helper-starting body {
+        opacity: 0 !important;
+        pointer-events: none !important;
+      }
+    `;
+    document.documentElement.classList.add("lc-omni-email-helper-starting");
+    document.documentElement.appendChild(earlyStyle);
+    setTimeout(() => document.documentElement.classList.remove("lc-omni-email-helper-starting"), 15000);
+  }
+
+  function revealEmailHelperPage() {
+    document.documentElement.classList.remove("lc-omni-email-helper-starting");
+  }
 
   if (location.hostname === "go.cin7.com") {
     ["preconnect", "dns-prefetch"].forEach((relation) => {
@@ -42,7 +68,7 @@
       (document.head || document.documentElement).appendChild(link);
     });
 
-    if (/\/Cloud\/CRM\/ContactLog\.aspx$/i.test(location.pathname)) {
+    if (isOmniEmailPage) {
       const warmHelper = () => {
         if (!document.body) return false;
         const panel = ensurePanel();
@@ -785,7 +811,10 @@
   }
 
   function buildThreeColumnLayout(panel) {
-    if (document.getElementById(LAYOUT_ID)) return true;
+    if (document.getElementById(LAYOUT_ID)) {
+      revealEmailHelperPage();
+      return true;
+    }
     composePanel = findComposePanel();
     contactsPanel = findContactsPanel();
     if (!composePanel || !contactsPanel || composePanel.contains(contactsPanel) || contactsPanel.contains(composePanel)) return false;
@@ -801,6 +830,7 @@
     composePanel.classList.add("lc-omni-compose-column");
     contactsPanel.classList.add("lc-omni-contacts-column");
     layout.append(composePanel, contactsPanel, panel);
+    revealEmailHelperPage();
     return true;
   }
 
