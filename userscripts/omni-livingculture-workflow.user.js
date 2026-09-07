@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.63
+// @version      0.1.64
 // @description  Adds Site Visit, Quote Review, HubSpot and customer photo workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -2653,14 +2653,19 @@
       button.disabled = true;
       button.textContent = 'Downloading…';
 
-      // The Admin HTML already contains Cin7's signed Quote link. Fetching that
-      // HTML and then the PDF avoids waiting for the full Admin UI and all of its
-      // scripts to render. Keep the iframe route below as a compatibility fallback.
+      // Try both non-rendering routes together. Do not let either route's network
+      // timeout delay the rendered Admin fallback by 15–30 seconds.
       const orderId = currentQuotePdfOrderId();
       if (orderId) {
         try {
-          const signedPdfUrl = await requestAdminQuoteHref(orderId);
-          const pdfBuffer = await fetchSignedQuotePdf(signedPdfUrl);
+          const directRoutes = quotePdfSidCandidates().slice(0, 6).map((sid) => requestQuotePdf(orderId, sid));
+          directRoutes.push(requestAdminQuoteHref(orderId).then(fetchSignedQuotePdf));
+          let fastTimer = 0;
+          const fastLimit = new Promise((resolve, reject) => {
+            fastTimer = window.setTimeout(() => reject(new Error('Fast PDF routes unavailable.')), 5000);
+          });
+          const pdfBuffer = await Promise.race([Promise.any(directRoutes), fastLimit]);
+          window.clearTimeout(fastTimer);
           saveQuotePdfBuffer(pdfBuffer, quoteNumber);
           button.disabled = false;
           button.textContent = 'Download Quote';
