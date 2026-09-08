@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture HubSpot Contrast & Colours
 // @namespace    livingculture-hubspot
-// @version      0.1.7
+// @version      0.1.8
 // @description  Adjusts HubSpot record text and changes deal-stage pills to softer pastel colours.
 // @author       Living Culture
 // @match        https://app.hubspot.com/*
@@ -19,11 +19,11 @@
   const STYLE_ID = 'lc-hubspot-contrast-colours';
   const STAGE_CLASS = 'lc-hubspot-pastel-stage';
   const CONTROLS_ID = 'lc-hubspot-colour-controls';
-  const SETTINGS_KEY = 'lcHubSpotColourSettingsV1';
+  const SETTINGS_KEY = 'lcHubSpotColourSettingsV2';
   const defaults = {
     quote: '#f8ddea', complete: '#fff0c2', deposit: '#dcefe3',
-    paid: '#e6e0f7', default: '#dfeef7', linkText: '#0091ae',
-    tableText: '#111111', pillText: '#111111', strength: 100
+    paid: '#e6e0f7', default: '#dfeef7', linkText: '#00a4bd',
+    tableText: '#33475b', pillText: '#111111', strength: 100
   };
   let settings = { ...defaults };
   try { settings = { ...defaults, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; } catch (error) {}
@@ -41,8 +41,8 @@
       [class*="IndexTable"] a:not([role="button"]),
       [role="grid"] [role="gridcell"] a:not([role="button"]),
       [role="table"] [role="cell"] a:not([role="button"]) {
-        color: var(--lc-hubspot-link-text, #0091ae) !important;
-        text-decoration-color: var(--lc-hubspot-link-text, #0091ae) !important;
+        color: var(--lc-hubspot-link-text, #00a4bd) !important;
+        text-decoration-color: var(--lc-hubspot-link-text, #00a4bd) !important;
       }
 
       table td, table th,
@@ -103,7 +103,7 @@
     else if (value.includes('complete')) background = settings.complete;
     else if (value.includes('deposit')) background = settings.deposit;
     else if (value.includes('paid') || value.includes('ready')) background = settings.paid;
-    return [mixWithWhite(background, Number(settings.strength)), settings.pillText];
+    return [mixWithWhite(background, Number(settings.strength)), mixWithWhite(settings.pillText, Number(settings.strength))];
   }
 
   function mixWithWhite(hex, strength) {
@@ -112,6 +112,11 @@
     const amount = Math.max(0, Math.min(100, strength)) / 100;
     const parts = [0, 2, 4].map((offset) => parseInt(value.slice(offset, offset + 2), 16));
     return `#${parts.map((part) => Math.round(255 - (255 - part) * amount).toString(16).padStart(2, '0')).join('')}`;
+  }
+
+  function applyThemeColours() {
+    document.documentElement.style.setProperty('--lc-hubspot-link-text', mixWithWhite(settings.linkText, Number(settings.strength)));
+    document.documentElement.style.setProperty('--lc-hubspot-table-text', mixWithWhite(settings.tableText, Number(settings.strength)));
   }
 
   function ensureControls() {
@@ -129,13 +134,12 @@
         <label>Record/link text <input type="color" data-setting="linkText"></label>
         <label>Other table text <input type="color" data-setting="tableText"></label>
         <label>Pill text <input type="color" data-setting="pillText"></label>
-        <label>Colour strength <input type="range" min="20" max="100" step="5" data-setting="strength"></label>
+        <label>All colour strength <input type="range" min="20" max="100" step="5" data-setting="strength"></label>
         <div class="lc-colour-actions"><button type="button" data-action="reset">Reset</button></div>
       </div>
       <button type="button" data-action="toggle">Colours</button>`;
     document.body.appendChild(root);
-    document.documentElement.style.setProperty('--lc-hubspot-link-text', settings.linkText);
-    document.documentElement.style.setProperty('--lc-hubspot-table-text', settings.tableText);
+    applyThemeColours();
     const syncInputs = () => root.querySelectorAll('[data-setting]').forEach((input) => { input.value = settings[input.dataset.setting]; });
     syncInputs();
     root.addEventListener('click', (event) => {
@@ -145,8 +149,7 @@
       if (action === 'reset') {
         settings = { ...defaults };
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-        document.documentElement.style.setProperty('--lc-hubspot-link-text', settings.linkText);
-        document.documentElement.style.setProperty('--lc-hubspot-table-text', settings.tableText);
+        applyThemeColours();
         syncInputs();
         colourDealStages();
       }
@@ -156,8 +159,7 @@
       if (!key) return;
       settings[key] = key === 'strength' ? Number(event.target.value) : event.target.value;
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-      document.documentElement.style.setProperty('--lc-hubspot-link-text', settings.linkText);
-      document.documentElement.style.setProperty('--lc-hubspot-table-text', settings.tableText);
+      applyThemeColours();
       colourDealStages();
     });
   }
