@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture HubSpot Contrast & Colours
 // @namespace    livingculture-hubspot
-// @version      0.1.14
+// @version      0.1.15
 // @description  Adjusts HubSpot record text and changes deal-stage pills to softer pastel colours.
 // @author       Living Culture
 // @match        https://app.hubspot.com/*
@@ -141,9 +141,9 @@
   function mixWithWhite(hex, strength) {
     const value = String(hex || '').replace('#', '');
     if (!/^[0-9a-f]{6}$/i.test(value)) return '#eeeeee';
-    const amount = Math.max(0, Math.min(100, strength)) / 100;
+    const amount = Math.max(0, Math.min(200, strength)) / 100;
     const parts = [0, 2, 4].map((offset) => parseInt(value.slice(offset, offset + 2), 16));
-    return `#${parts.map((part) => Math.round(255 - (255 - part) * amount).toString(16).padStart(2, '0')).join('')}`;
+    return `#${parts.map((part) => Math.max(0, Math.min(255, Math.round(255 - (255 - part) * amount))).toString(16).padStart(2, '0')).join('')}`;
   }
 
   function applyThemeColours() {
@@ -158,21 +158,21 @@
     root.innerHTML = `
       <div class="lc-colour-panel" hidden>
         <strong>Deal stage colours</strong>
-        <label>New Enquiry <span><input type="color" data-setting="newEnquiry"><input type="range" min="10" max="100" step="5" data-setting="newEnquiryStrength"></span></label>
-        <label>Quote sent <span><input type="color" data-setting="quote"><input type="range" min="10" max="100" step="5" data-setting="quoteStrength"></span></label>
-        <label>Followed up <span><input type="color" data-setting="followedUp"><input type="range" min="10" max="100" step="5" data-setting="followedUpStrength"></span></label>
-        <label>Waiting on Customer <span><input type="color" data-setting="waitingCustomer"><input type="range" min="10" max="100" step="5" data-setting="waitingCustomerStrength"></span></label>
-        <label>Site Visit <span><input type="color" data-setting="siteVisit"><input type="range" min="10" max="100" step="5" data-setting="siteVisitStrength"></span></label>
-        <label>Deposit / stock <span><input type="color" data-setting="deposit"><input type="range" min="10" max="100" step="5" data-setting="depositStrength"></span></label>
-        <label>Ready to Deliver <span><input type="color" data-setting="readyDeliver"><input type="range" min="10" max="100" step="5" data-setting="readyDeliverStrength"></span></label>
-        <label>Ready to Install <span><input type="color" data-setting="readyInstall"><input type="range" min="10" max="100" step="5" data-setting="readyInstallStrength"></span></label>
-        <label>Completed <span><input type="color" data-setting="complete"><input type="range" min="10" max="100" step="5" data-setting="completeStrength"></span></label>
-        <label>Closed Lost <span><input type="color" data-setting="closedLost"><input type="range" min="10" max="100" step="5" data-setting="closedLostStrength"></span></label>
-        <label>Other stages <span><input type="color" data-setting="default"><input type="range" min="10" max="100" step="5" data-setting="defaultStrength"></span></label>
+        <label>New Enquiry <span><input type="color" data-setting="newEnquiry"><input type="range" min="10" max="200" step="5" data-setting="newEnquiryStrength"></span></label>
+        <label>Quote sent <span><input type="color" data-setting="quote"><input type="range" min="10" max="200" step="5" data-setting="quoteStrength"></span></label>
+        <label>Followed up <span><input type="color" data-setting="followedUp"><input type="range" min="10" max="200" step="5" data-setting="followedUpStrength"></span></label>
+        <label>Waiting on Customer <span><input type="color" data-setting="waitingCustomer"><input type="range" min="10" max="200" step="5" data-setting="waitingCustomerStrength"></span></label>
+        <label>Site Visit <span><input type="color" data-setting="siteVisit"><input type="range" min="10" max="200" step="5" data-setting="siteVisitStrength"></span></label>
+        <label>Deposit / stock <span><input type="color" data-setting="deposit"><input type="range" min="10" max="200" step="5" data-setting="depositStrength"></span></label>
+        <label>Ready to Deliver <span><input type="color" data-setting="readyDeliver"><input type="range" min="10" max="200" step="5" data-setting="readyDeliverStrength"></span></label>
+        <label>Ready to Install <span><input type="color" data-setting="readyInstall"><input type="range" min="10" max="200" step="5" data-setting="readyInstallStrength"></span></label>
+        <label>Completed <span><input type="color" data-setting="complete"><input type="range" min="10" max="200" step="5" data-setting="completeStrength"></span></label>
+        <label>Closed Lost <span><input type="color" data-setting="closedLost"><input type="range" min="10" max="200" step="5" data-setting="closedLostStrength"></span></label>
+        <label>Other stages <span><input type="color" data-setting="default"><input type="range" min="10" max="200" step="5" data-setting="defaultStrength"></span></label>
         <label>Record/link text <input type="color" data-setting="linkText"></label>
         <label>Other table text <input type="color" data-setting="tableText"></label>
         <label>Pill text <input type="color" data-setting="pillText"></label>
-        <label>All colour strength <input type="range" min="20" max="100" step="5" data-setting="strength"></label>
+        <label>All colour strength <input type="range" min="10" max="200" step="5" data-setting="strength"></label>
         <div class="lc-colour-actions"><button type="button" data-action="reset">Reset</button></div>
       </div>
       <button type="button" data-action="toggle">Colours</button>`;
