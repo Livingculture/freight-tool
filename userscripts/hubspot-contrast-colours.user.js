@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture HubSpot Contrast & Colours
 // @namespace    livingculture-hubspot
-// @version      0.1.13
+// @version      0.1.14
 // @description  Adjusts HubSpot record text and changes deal-stage pills to softer pastel colours.
 // @author       Living Culture
 // @match        https://app.hubspot.com/*
@@ -24,12 +24,20 @@
   const STAGE_CLASS = 'lc-hubspot-pastel-stage';
   const CONTROLS_ID = 'lc-hubspot-colour-controls';
   const SETTINGS_KEY = 'lcHubSpotColourSettingsV4';
+  const STAGE_SETTING_KEYS = [
+    'newEnquiry', 'quote', 'followedUp', 'waitingCustomer', 'siteVisit',
+    'deposit', 'readyDeliver', 'readyInstall', 'complete', 'closedLost', 'default'
+  ];
   const defaults = {
     newEnquiry: '#dceafb', quote: '#f8ddea', followedUp: '#fff0c2',
     waitingCustomer: '#d9efec', siteVisit: '#f8e1d8', deposit: '#dcefe3',
     readyDeliver: '#e6e0f7', readyInstall: '#f7ddd5', complete: '#fff0c2',
     closedLost: '#e5e7eb', default: '#dfeef7', linkText: '#01a4bd',
-    tableText: '#01a4bd', pillText: '#111111', strength: 100
+    tableText: '#01a4bd', pillText: '#111111', strength: 100,
+    newEnquiryStrength: 100, quoteStrength: 100, followedUpStrength: 100,
+    waitingCustomerStrength: 100, siteVisitStrength: 100, depositStrength: 100,
+    readyDeliverStrength: 100, readyInstallStrength: 100, completeStrength: 100,
+    closedLostStrength: 100, defaultStrength: 100
   };
   let settings = { ...defaults };
   try { settings = { ...defaults, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; } catch (error) {}
@@ -100,8 +108,10 @@
       #${CONTROLS_ID} .lc-colour-panel { position:absolute!important; left:0!important; bottom:43px!important; width:260px!important; max-height:calc(100vh - 90px)!important; overflow-y:auto!important; padding:14px!important; border:1px solid #c8c8c8!important; border-radius:10px!important; background:#fff!important; color:#111!important; box-shadow:0 8px 28px rgba(0,0,0,.2)!important; }
       #${CONTROLS_ID} .lc-colour-panel[hidden] { display:none!important; }
       #${CONTROLS_ID} label { display:flex!important; align-items:center!important; justify-content:space-between!important; gap:12px!important; margin:8px 0!important; color:#111!important; }
+      #${CONTROLS_ID} label > span { display:flex!important; align-items:center!important; gap:5px!important; }
       #${CONTROLS_ID} input[type="color"] { width:44px!important; height:27px!important; padding:1px!important; border:1px solid #aaa!important; border-radius:5px!important; background:#fff!important; }
-      #${CONTROLS_ID} input[type="range"] { width:120px!important; }
+      #${CONTROLS_ID} input[type="range"] { width:82px!important; }
+      #${CONTROLS_ID} input[data-setting="strength"] { width:120px!important; }
       #${CONTROLS_ID} .lc-colour-actions { display:flex!important; justify-content:flex-end!important; margin-top:11px!important; }
     `;
     (document.head || document.documentElement).appendChild(style);
@@ -113,18 +123,19 @@
 
   function stageColours(label) {
     const value = label.toLowerCase();
-    let background = settings.default;
-    if (value.includes('closed') && value.includes('lost')) background = settings.closedLost;
-    else if (value.includes('readytoinstall') || (value.includes('ready') && value.includes('install'))) background = settings.readyInstall;
-    else if (value.includes('readytodeliver') || (value.includes('ready') && value.includes('deliver'))) background = settings.readyDeliver;
-    else if (value.includes('deposit') || value.includes('waitingforstock')) background = settings.deposit;
-    else if (value.includes('waiting') && value.includes('customer')) background = settings.waitingCustomer;
-    else if (value.includes('site') && value.includes('visit')) background = settings.siteVisit;
-    else if (value.includes('followed') && value.includes('up')) background = settings.followedUp;
-    else if (value.includes('new') && value.includes('enquiry')) background = settings.newEnquiry;
-    else if (value.includes('quote')) background = settings.quote;
-    else if (value.includes('complete')) background = settings.complete;
-    return [mixWithWhite(background, Number(settings.strength)), mixWithWhite(settings.pillText, Number(settings.strength))];
+    let key = 'default';
+    if (value.includes('closed') && value.includes('lost')) key = 'closedLost';
+    else if (value.includes('readytoinstall') || (value.includes('ready') && value.includes('install'))) key = 'readyInstall';
+    else if (value.includes('readytodeliver') || (value.includes('ready') && value.includes('deliver'))) key = 'readyDeliver';
+    else if (value.includes('deposit') || value.includes('waitingforstock')) key = 'deposit';
+    else if (value.includes('waiting') && value.includes('customer')) key = 'waitingCustomer';
+    else if (value.includes('site') && value.includes('visit')) key = 'siteVisit';
+    else if (value.includes('followed') && value.includes('up')) key = 'followedUp';
+    else if (value.includes('new') && value.includes('enquiry')) key = 'newEnquiry';
+    else if (value.includes('quote')) key = 'quote';
+    else if (value.includes('complete')) key = 'complete';
+    const intensity = Number(settings[`${key}Strength`] ?? settings.strength);
+    return [mixWithWhite(settings[key], intensity), mixWithWhite(settings.pillText, Number(settings.strength))];
   }
 
   function mixWithWhite(hex, strength) {
@@ -147,17 +158,17 @@
     root.innerHTML = `
       <div class="lc-colour-panel" hidden>
         <strong>Deal stage colours</strong>
-        <label>New Enquiry <input type="color" data-setting="newEnquiry"></label>
-        <label>Quote sent <input type="color" data-setting="quote"></label>
-        <label>Followed up <input type="color" data-setting="followedUp"></label>
-        <label>Waiting on Customer <input type="color" data-setting="waitingCustomer"></label>
-        <label>Site Visit <input type="color" data-setting="siteVisit"></label>
-        <label>Deposit / stock <input type="color" data-setting="deposit"></label>
-        <label>Ready to Deliver <input type="color" data-setting="readyDeliver"></label>
-        <label>Ready to Install <input type="color" data-setting="readyInstall"></label>
-        <label>Completed <input type="color" data-setting="complete"></label>
-        <label>Closed Lost <input type="color" data-setting="closedLost"></label>
-        <label>Other stages <input type="color" data-setting="default"></label>
+        <label>New Enquiry <span><input type="color" data-setting="newEnquiry"><input type="range" min="10" max="100" step="5" data-setting="newEnquiryStrength"></span></label>
+        <label>Quote sent <span><input type="color" data-setting="quote"><input type="range" min="10" max="100" step="5" data-setting="quoteStrength"></span></label>
+        <label>Followed up <span><input type="color" data-setting="followedUp"><input type="range" min="10" max="100" step="5" data-setting="followedUpStrength"></span></label>
+        <label>Waiting on Customer <span><input type="color" data-setting="waitingCustomer"><input type="range" min="10" max="100" step="5" data-setting="waitingCustomerStrength"></span></label>
+        <label>Site Visit <span><input type="color" data-setting="siteVisit"><input type="range" min="10" max="100" step="5" data-setting="siteVisitStrength"></span></label>
+        <label>Deposit / stock <span><input type="color" data-setting="deposit"><input type="range" min="10" max="100" step="5" data-setting="depositStrength"></span></label>
+        <label>Ready to Deliver <span><input type="color" data-setting="readyDeliver"><input type="range" min="10" max="100" step="5" data-setting="readyDeliverStrength"></span></label>
+        <label>Ready to Install <span><input type="color" data-setting="readyInstall"><input type="range" min="10" max="100" step="5" data-setting="readyInstallStrength"></span></label>
+        <label>Completed <span><input type="color" data-setting="complete"><input type="range" min="10" max="100" step="5" data-setting="completeStrength"></span></label>
+        <label>Closed Lost <span><input type="color" data-setting="closedLost"><input type="range" min="10" max="100" step="5" data-setting="closedLostStrength"></span></label>
+        <label>Other stages <span><input type="color" data-setting="default"><input type="range" min="10" max="100" step="5" data-setting="defaultStrength"></span></label>
         <label>Record/link text <input type="color" data-setting="linkText"></label>
         <label>Other table text <input type="color" data-setting="tableText"></label>
         <label>Pill text <input type="color" data-setting="pillText"></label>
@@ -184,9 +195,12 @@
     root.addEventListener('input', (event) => {
       const key = event.target.dataset.setting;
       if (!key) return;
-      settings[key] = key === 'strength' ? Number(event.target.value) : event.target.value;
+      const numeric = key === 'strength' || key.endsWith('Strength');
+      settings[key] = numeric ? Number(event.target.value) : event.target.value;
+      if (key === 'strength') STAGE_SETTING_KEYS.forEach((stageKey) => { settings[`${stageKey}Strength`] = settings.strength; });
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
       applyThemeColours();
+      if (key === 'strength') syncInputs();
       colourDealStages();
     });
   }
