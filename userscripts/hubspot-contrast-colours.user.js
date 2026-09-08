@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         Living Culture HubSpot Contrast & Colours
 // @namespace    livingculture-hubspot
-// @version      0.1.0
+// @version      0.1.1
 // @description  Makes HubSpot record text black and changes deal-stage pills to softer pastel colours.
 // @author       Living Culture
 // @match        https://app.hubspot.com/*
+// @match        https://*.hubspot.com/*
 // @run-at       document-start
 // @grant        none
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/hubspot-contrast-colours.user.js
@@ -33,6 +34,10 @@
     style.textContent = `
       /* Record links are the green text seen in HubSpot's CRM tables. */
       table a:not([role="button"]),
+      main a:not([role="button"]),
+      [role="main"] a:not([role="button"]),
+      [data-test-id*="table" i] a:not([role="button"]),
+      [class*="IndexTable"] a:not([role="button"]),
       [role="grid"] [role="gridcell"] a:not([role="button"]),
       [role="table"] [role="cell"] a:not([role="button"]) {
         color: #111 !important;
@@ -100,7 +105,7 @@
 
   function colourDealStages() {
     const headers = Array.from(document.querySelectorAll('th, [role="columnheader"]'));
-    for (const header of headers.filter((element) => clean(element.textContent).toLowerCase() === 'deal stage')) {
+    for (const header of headers.filter((element) => clean(element.textContent).toLowerCase().startsWith('deal stage'))) {
       const { index, ariaIndex } = columnParts(header);
       const table = header.closest('table, [role="grid"], [role="table"]');
       if (!table) continue;
@@ -119,6 +124,25 @@
         pill.style.setProperty('--lc-stage-bg', background);
         pill.style.setProperty('--lc-stage-text', text);
       }
+    }
+
+    // HubSpot also renders some list views as nested divs without table roles.
+    // Stage pills are compact, so identify those by their displayed stage text.
+    const stagePattern = /(opp\s*deal|quote[- ]?sent|deposit\s*paid|ready\s*to\s*deliver|completed)/i;
+    for (const element of Array.from(document.querySelectorAll('span, button, div'))) {
+      const label = clean(element.textContent);
+      if (!label || label.length > 90 || !stagePattern.test(label)) continue;
+      if (Array.from(element.children).some((child) => clean(child.textContent) === label)) continue;
+      const rect = element.getBoundingClientRect();
+      if (!rect.width || !rect.height || rect.width > 340 || rect.height > 55) continue;
+      const pill = element.parentElement && clean(element.parentElement.textContent) === label
+        && element.parentElement.getBoundingClientRect().height <= 55
+        ? element.parentElement
+        : element;
+      const [background, text] = stageColours(label);
+      pill.classList.add(STAGE_CLASS);
+      pill.style.setProperty('--lc-stage-bg', background);
+      pill.style.setProperty('--lc-stage-text', text);
     }
   }
 
