@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture HubSpot Contrast & Colours
 // @namespace    livingculture-hubspot
-// @version      0.1.3
+// @version      0.1.4
 // @description  Makes HubSpot record text black and changes deal-stage pills to softer pastel colours.
 // @author       Living Culture
 // @match        https://app.hubspot.com/*
@@ -116,11 +116,14 @@
 
   function outerPill(element, boundary = null) {
     const label = clean(element?.textContent);
+    const startingRect = element?.getBoundingClientRect();
+    const maximumWidth = Math.min(340, Math.max(80, (startingRect?.width || 0) + 48));
+    const maximumHeight = Math.min(55, Math.max(28, (startingRect?.height || 0) + 18));
     let pill = element;
     for (let node = element; node && node !== boundary; node = node.parentElement) {
       if (clean(node.textContent) !== label) break;
       const rect = node.getBoundingClientRect();
-      if (!rect.width || !rect.height || rect.width > 340 || rect.height > 55) break;
+      if (!rect.width || !rect.height || rect.width > maximumWidth || rect.height > maximumHeight) break;
       const style = getComputedStyle(node);
       const radius = parseFloat(style.borderRadius) || 0;
       const coloured = style.backgroundColor !== 'rgba(0, 0, 0, 0)' && style.backgroundColor !== 'transparent';
@@ -130,6 +133,14 @@
   }
 
   function colourDealStages() {
+    // Remove styling from a whole cell if an earlier scan selected it. Only the
+    // compact pill inside the cell should receive the pastel background.
+    document.querySelectorAll(`td.${STAGE_CLASS}, th.${STAGE_CLASS}, [role="gridcell"].${STAGE_CLASS}, [role="cell"].${STAGE_CLASS}`)
+      .forEach((cell) => {
+        cell.classList.remove(STAGE_CLASS);
+        cell.style.removeProperty('--lc-stage-bg');
+        cell.style.removeProperty('--lc-stage-text');
+      });
     const headers = Array.from(document.querySelectorAll('th, [role="columnheader"]'));
     for (const header of headers.filter((element) => clean(element.textContent).toLowerCase().startsWith('deal stage'))) {
       const { index, ariaIndex } = columnParts(header);
