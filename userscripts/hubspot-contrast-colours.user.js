@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture HubSpot Contrast & Colours
 // @namespace    livingculture-hubspot
-// @version      0.1.1
+// @version      0.1.2
 // @description  Makes HubSpot record text black and changes deal-stage pills to softer pastel colours.
 // @author       Living Culture
 // @match        https://app.hubspot.com/*
@@ -19,12 +19,12 @@
   const STYLE_ID = 'lc-hubspot-contrast-colours';
   const STAGE_CLASS = 'lc-hubspot-pastel-stage';
   const colours = {
-    quote: ['#f8ddea', '#5f173c'],
-    complete: ['#fff0c2', '#5c4610'],
-    deposit: ['#dcefe3', '#174d2d'],
-    paid: ['#e6e0f7', '#39266f'],
-    ready: ['#e6e0f7', '#39266f'],
-    default: ['#dfeef7', '#183f58']
+    quote: ['#f8ddea', '#111111'],
+    complete: ['#fff0c2', '#111111'],
+    deposit: ['#dcefe3', '#111111'],
+    paid: ['#e6e0f7', '#111111'],
+    ready: ['#e6e0f7', '#111111'],
+    default: ['#dfeef7', '#111111']
   };
 
   function addStyles() {
@@ -60,7 +60,17 @@
         box-shadow: none !important;
       }
       .${STAGE_CLASS}, .${STAGE_CLASS} * {
-        color: var(--lc-stage-text) !important;
+        color: #111 !important;
+      }
+      .${STAGE_CLASS} * {
+        background: transparent !important;
+        background-color: transparent !important;
+      }
+      .${STAGE_CLASS}::before, .${STAGE_CLASS}::after,
+      .${STAGE_CLASS} *::before, .${STAGE_CLASS} *::after {
+        background: transparent !important;
+        background-color: transparent !important;
+        color: #111 !important;
       }
     `;
     (document.head || document.documentElement).appendChild(style);
@@ -96,11 +106,27 @@
     const candidates = Array.from(cell.querySelectorAll('span, div, button'))
       .filter((element) => clean(element.textContent) === label)
       .filter((element) => !Array.from(element.children).some((child) => clean(child.textContent) === label));
-    return candidates.sort((a, b) => {
+    const leaf = candidates.sort((a, b) => {
       const aBox = a.getBoundingClientRect();
       const bBox = b.getBoundingClientRect();
       return aBox.width * aBox.height - bBox.width * bBox.height;
     })[0] || cell.firstElementChild || cell;
+    return outerPill(leaf, cell);
+  }
+
+  function outerPill(element, boundary = null) {
+    const label = clean(element?.textContent);
+    let pill = element;
+    for (let node = element; node && node !== boundary; node = node.parentElement) {
+      if (clean(node.textContent) !== label) break;
+      const rect = node.getBoundingClientRect();
+      if (!rect.width || !rect.height || rect.width > 340 || rect.height > 55) break;
+      const style = getComputedStyle(node);
+      const radius = parseFloat(style.borderRadius) || 0;
+      const coloured = style.backgroundColor !== 'rgba(0, 0, 0, 0)' && style.backgroundColor !== 'transparent';
+      if (radius >= 4 || coloured) pill = node;
+    }
+    return pill;
   }
 
   function colourDealStages() {
@@ -135,10 +161,7 @@
       if (Array.from(element.children).some((child) => clean(child.textContent) === label)) continue;
       const rect = element.getBoundingClientRect();
       if (!rect.width || !rect.height || rect.width > 340 || rect.height > 55) continue;
-      const pill = element.parentElement && clean(element.parentElement.textContent) === label
-        && element.parentElement.getBoundingClientRect().height <= 55
-        ? element.parentElement
-        : element;
+      const pill = outerPill(element);
       const [background, text] = stageColours(label);
       pill.classList.add(STAGE_CLASS);
       pill.style.setProperty('--lc-stage-bg', background);
