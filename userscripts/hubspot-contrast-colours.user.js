@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture HubSpot Contrast & Colours
 // @namespace    livingculture-hubspot
-// @version      0.1.9
+// @version      0.1.10
 // @description  Adjusts HubSpot record text and changes deal-stage pills to softer pastel colours.
 // @author       Living Culture
 // @match        https://app.hubspot.com/*
@@ -88,6 +88,7 @@
         color: var(--lc-stage-text, #111) !important;
       }
       #${CONTROLS_ID} { position:fixed!important; right:18px!important; bottom:18px!important; z-index:2147483646!important; font:600 13px Arial,sans-serif!important; color:#111!important; }
+      #${CONTROLS_ID}.lc-colours-docked { position:relative!important; right:auto!important; bottom:auto!important; display:inline-block!important; margin-left:8px!important; vertical-align:middle!important; }
       #${CONTROLS_ID} button { border:1px solid #aaa!important; border-radius:7px!important; background:#fff!important; color:#111!important; padding:8px 12px!important; font:inherit!important; cursor:pointer!important; box-shadow:0 2px 8px rgba(0,0,0,.14)!important; }
       #${CONTROLS_ID} > button[data-action="toggle"] { border-color:#ff5c35!important; background:#ff5c35!important; color:#fff!important; }
       #${CONTROLS_ID} .lc-colour-panel { position:absolute!important; right:0!important; bottom:43px!important; width:245px!important; padding:14px!important; border:1px solid #c8c8c8!important; border-radius:10px!important; background:#fff!important; color:#111!important; box-shadow:0 8px 28px rgba(0,0,0,.2)!important; }
@@ -170,6 +171,25 @@
       applyThemeColours();
       colourDealStages();
     });
+  }
+
+  function dockControls() {
+    const root = document.getElementById(CONTROLS_ID);
+    if (!root) return;
+    const counters = Array.from(document.querySelectorAll('span, div, p'))
+      .filter((element) => /^\d[\d,]*\s+deals$/i.test(clean(element.textContent)))
+      .filter((element) => {
+        const rect = element.getBoundingClientRect();
+        return rect.width > 20 && rect.width < 220 && rect.height > 10 && rect.height < 65;
+      });
+    const counter = counters.sort((a, b) => {
+      const aRect = a.getBoundingClientRect();
+      const bRect = b.getBoundingClientRect();
+      return bRect.width * bRect.height - aRect.width * aRect.height;
+    })[0];
+    if (!counter) return;
+    if (counter.nextElementSibling !== root) counter.insertAdjacentElement('afterend', root);
+    root.classList.add('lc-colours-docked');
   }
 
   function columnParts(header) {
@@ -269,6 +289,7 @@
     queueMicrotask(() => {
       scanQueued = false;
       ensureControls();
+      dockControls();
       colourDealStages();
     });
   }
