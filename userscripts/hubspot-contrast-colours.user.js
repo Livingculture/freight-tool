@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture HubSpot Contrast & Colours
 // @namespace    livingculture-hubspot
-// @version      0.1.10
+// @version      0.1.11
 // @description  Adjusts HubSpot record text and changes deal-stage pills to softer pastel colours.
 // @author       Living Culture
 // @match        https://app.hubspot.com/*
@@ -19,11 +19,11 @@
   const STYLE_ID = 'lc-hubspot-contrast-colours';
   const STAGE_CLASS = 'lc-hubspot-pastel-stage';
   const CONTROLS_ID = 'lc-hubspot-colour-controls';
-  const SETTINGS_KEY = 'lcHubSpotColourSettingsV2';
+  const SETTINGS_KEY = 'lcHubSpotColourSettingsV3';
   const defaults = {
     quote: '#f8ddea', complete: '#fff0c2', deposit: '#dcefe3',
-    paid: '#e6e0f7', default: '#dfeef7', linkText: '#00a4bd',
-    tableText: '#33475b', pillText: '#111111', strength: 100
+    paid: '#e6e0f7', default: '#dfeef7', linkText: '#01a4bd',
+    tableText: '#01a4bd', pillText: '#111111', strength: 100
   };
   let settings = { ...defaults };
   try { settings = { ...defaults, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; } catch (error) {}
@@ -41,16 +41,16 @@
       [class*="IndexTable"] a:not([role="button"]),
       [role="grid"] [role="gridcell"] a:not([role="button"]),
       [role="table"] [role="cell"] a:not([role="button"]) {
-        color: var(--lc-hubspot-link-text, #00a4bd) !important;
-        text-decoration-color: var(--lc-hubspot-link-text, #00a4bd) !important;
+        color: var(--lc-hubspot-link-text, #01a4bd) !important;
+        text-decoration-color: var(--lc-hubspot-link-text, #01a4bd) !important;
       }
       table a:not([role="button"]) *:not(svg):not(path),
       main a:not([role="button"]) *:not(svg):not(path),
       [role="main"] a:not([role="button"]) *:not(svg):not(path),
       [role="grid"] [role="gridcell"] a:not([role="button"]) *:not(svg):not(path),
       [role="table"] [role="cell"] a:not([role="button"]) *:not(svg):not(path) {
-        color: var(--lc-hubspot-link-text, #00a4bd) !important;
-        text-decoration-color: var(--lc-hubspot-link-text, #00a4bd) !important;
+        color: var(--lc-hubspot-link-text, #01a4bd) !important;
+        text-decoration-color: var(--lc-hubspot-link-text, #01a4bd) !important;
       }
 
       table td, table th,
@@ -58,13 +58,13 @@
       [role="grid"] [role="columnheader"],
       [role="table"] [role="cell"],
       [role="table"] [role="columnheader"] {
-        color: var(--lc-hubspot-table-text, #111) !important;
+        color: var(--lc-hubspot-table-text, #01a4bd) !important;
       }
 
       table td *:not(a):not(svg):not(path),
       [role="grid"] [role="gridcell"] *:not(a):not(svg):not(path),
       [role="table"] [role="cell"] *:not(a):not(svg):not(path) {
-        color: var(--lc-hubspot-table-text, #111) !important;
+        color: var(--lc-hubspot-table-text, #01a4bd) !important;
       }
 
       .${STAGE_CLASS} {
