@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture HubSpot Contrast & Colours
 // @namespace    livingculture-hubspot
-// @version      0.1.15
+// @version      0.1.16
 // @description  Adjusts HubSpot record text and changes deal-stage pills to softer pastel colours.
 // @author       Living Culture
 // @match        https://app.hubspot.com/*
@@ -209,7 +209,7 @@
     const root = document.getElementById(CONTROLS_ID);
     if (!root) return;
     const counters = Array.from(document.querySelectorAll('span, div, p'))
-      .filter((element) => /^\d[\d,]*\s+deals$/i.test(clean(element.textContent)))
+      .filter((element) => /^\d[\d,]*\s+(?:deals|tickets)$/i.test(clean(element.textContent)))
       .filter((element) => {
         const rect = element.getBoundingClientRect();
         return rect.width > 20 && rect.width < 220 && rect.height > 10 && rect.height < 65;
@@ -334,7 +334,7 @@
   // Watch from document-start. MutationObserver callbacks run before the next
   // browser paint, allowing new HubSpot rows to receive their colours without
   // first displaying the original bright pills.
-  const relevantText = /(deal\s*stage|opp\s*deal|quote[- ]?sent|deposit\s*paid|waitingforstock|ready\s*to|readyto|completed|new\s*enquiry|followed\s*up|waiting\s*on\s*customer|site\s*visit|closed\s*lost|\d[\d,]*\s+deals)/i;
+  const relevantText = /(deal\s*stage|opp\s*deal|quote[- ]?sent|deposit\s*paid|waitingforstock|ready\s*to|readyto|completed|new\s*enquiry|followed\s*up|waiting\s*on\s*customer|site\s*visit|closed\s*lost|\d[\d,]*\s+(?:deals|tickets))/i;
   new MutationObserver((mutations) => {
     const relevant = mutations.some((mutation) => Array.from(mutation.addedNodes).some((node) => {
       if (node.nodeType === Node.TEXT_NODE) return relevantText.test(clean(node.textContent));
