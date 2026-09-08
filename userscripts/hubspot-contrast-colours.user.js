@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture HubSpot Contrast & Colours
 // @namespace    livingculture-hubspot
-// @version      0.1.2
+// @version      0.1.3
 // @description  Makes HubSpot record text black and changes deal-stage pills to softer pastel colours.
 // @author       Living Culture
 // @match        https://app.hubspot.com/*
@@ -169,17 +169,24 @@
     }
   }
 
-  let timer = 0;
+  let scanQueued = false;
   function schedule() {
-    window.clearTimeout(timer);
-    timer = window.setTimeout(colourDealStages, 80);
+    if (scanQueued) return;
+    scanQueued = true;
+    queueMicrotask(() => {
+      scanQueued = false;
+      colourDealStages();
+    });
   }
 
   addStyles();
-  const start = () => {
-    colourDealStages();
-    new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true, characterData: true });
-  };
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
-  else start();
+  // Watch from document-start. MutationObserver callbacks run before the next
+  // browser paint, allowing new HubSpot rows to receive their colours without
+  // first displaying the original bright pills.
+  new MutationObserver(schedule).observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+    characterData: true
+  });
+  schedule();
 })();
