@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture HubSpot Contrast & Colours
 // @namespace    livingculture-hubspot
-// @version      0.1.4
+// @version      0.1.5
 // @description  Makes HubSpot record text black and changes deal-stage pills to softer pastel colours.
 // @author       Living Culture
 // @match        https://app.hubspot.com/*
@@ -18,14 +18,14 @@
 
   const STYLE_ID = 'lc-hubspot-contrast-colours';
   const STAGE_CLASS = 'lc-hubspot-pastel-stage';
-  const colours = {
-    quote: ['#f8ddea', '#111111'],
-    complete: ['#fff0c2', '#111111'],
-    deposit: ['#dcefe3', '#111111'],
-    paid: ['#e6e0f7', '#111111'],
-    ready: ['#e6e0f7', '#111111'],
-    default: ['#dfeef7', '#111111']
+  const CONTROLS_ID = 'lc-hubspot-colour-controls';
+  const SETTINGS_KEY = 'lcHubSpotColourSettingsV1';
+  const defaults = {
+    quote: '#f8ddea', complete: '#fff0c2', deposit: '#dcefe3',
+    paid: '#e6e0f7', default: '#dfeef7', text: '#111111', strength: 100
   };
+  let settings = { ...defaults };
+  try { settings = { ...defaults, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; } catch (error) {}
 
   function addStyles() {
     if (document.getElementById(STYLE_ID)) return;
@@ -60,7 +60,7 @@
         box-shadow: none !important;
       }
       .${STAGE_CLASS}, .${STAGE_CLASS} * {
-        color: #111 !important;
+        color: var(--lc-stage-text, #111) !important;
       }
       .${STAGE_CLASS} * {
         background: transparent !important;
@@ -70,8 +70,16 @@
       .${STAGE_CLASS} *::before, .${STAGE_CLASS} *::after {
         background: transparent !important;
         background-color: transparent !important;
-        color: #111 !important;
+        color: var(--lc-stage-text, #111) !important;
       }
+      #${CONTROLS_ID} { position:fixed!important; right:18px!important; bottom:18px!important; z-index:2147483646!important; font:600 13px Arial,sans-serif!important; color:#111!important; }
+      #${CONTROLS_ID} button { border:1px solid #aaa!important; border-radius:7px!important; background:#fff!important; color:#111!important; padding:8px 12px!important; font:inherit!important; cursor:pointer!important; box-shadow:0 2px 8px rgba(0,0,0,.14)!important; }
+      #${CONTROLS_ID} .lc-colour-panel { position:absolute!important; right:0!important; bottom:43px!important; width:245px!important; padding:14px!important; border:1px solid #c8c8c8!important; border-radius:10px!important; background:#fff!important; color:#111!important; box-shadow:0 8px 28px rgba(0,0,0,.2)!important; }
+      #${CONTROLS_ID} .lc-colour-panel[hidden] { display:none!important; }
+      #${CONTROLS_ID} label { display:flex!important; align-items:center!important; justify-content:space-between!important; gap:12px!important; margin:8px 0!important; color:#111!important; }
+      #${CONTROLS_ID} input[type="color"] { width:44px!important; height:27px!important; padding:1px!important; border:1px solid #aaa!important; border-radius:5px!important; background:#fff!important; }
+      #${CONTROLS_ID} input[type="range"] { width:120px!important; }
+      #${CONTROLS_ID} .lc-colour-actions { display:flex!important; justify-content:flex-end!important; margin-top:11px!important; }
     `;
     (document.head || document.documentElement).appendChild(style);
   }
@@ -82,12 +90,60 @@
 
   function stageColours(label) {
     const value = label.toLowerCase();
-    if (value.includes('quote')) return colours.quote;
-    if (value.includes('complete')) return colours.complete;
-    if (value.includes('deposit')) return colours.deposit;
-    if (value.includes('paid')) return colours.paid;
-    if (value.includes('ready')) return colours.ready;
-    return colours.default;
+    let background = settings.default;
+    if (value.includes('quote')) background = settings.quote;
+    else if (value.includes('complete')) background = settings.complete;
+    else if (value.includes('deposit')) background = settings.deposit;
+    else if (value.includes('paid') || value.includes('ready')) background = settings.paid;
+    return [mixWithWhite(background, Number(settings.strength)), settings.text];
+  }
+
+  function mixWithWhite(hex, strength) {
+    const value = String(hex || '').replace('#', '');
+    if (!/^[0-9a-f]{6}$/i.test(value)) return '#eeeeee';
+    const amount = Math.max(0, Math.min(100, strength)) / 100;
+    const parts = [0, 2, 4].map((offset) => parseInt(value.slice(offset, offset + 2), 16));
+    return `#${parts.map((part) => Math.round(255 - (255 - part) * amount).toString(16).padStart(2, '0')).join('')}`;
+  }
+
+  function ensureControls() {
+    if (!document.body || document.getElementById(CONTROLS_ID)) return;
+    const root = document.createElement('div');
+    root.id = CONTROLS_ID;
+    root.innerHTML = `
+      <div class="lc-colour-panel" hidden>
+        <strong>Deal stage colours</strong>
+        <label>Quote sent <input type="color" data-setting="quote"></label>
+        <label>Completed <input type="color" data-setting="complete"></label>
+        <label>Deposit / stock <input type="color" data-setting="deposit"></label>
+        <label>Paid / ready <input type="color" data-setting="paid"></label>
+        <label>Other stages <input type="color" data-setting="default"></label>
+        <label>Text <input type="color" data-setting="text"></label>
+        <label>Colour strength <input type="range" min="20" max="100" step="5" data-setting="strength"></label>
+        <div class="lc-colour-actions"><button type="button" data-action="reset">Reset</button></div>
+      </div>
+      <button type="button" data-action="toggle">Colours</button>`;
+    document.body.appendChild(root);
+    const syncInputs = () => root.querySelectorAll('[data-setting]').forEach((input) => { input.value = settings[input.dataset.setting]; });
+    syncInputs();
+    root.addEventListener('click', (event) => {
+      const action = event.target.closest('[data-action]')?.dataset.action;
+      const panel = root.querySelector('.lc-colour-panel');
+      if (action === 'toggle') panel.hidden = !panel.hidden;
+      if (action === 'reset') {
+        settings = { ...defaults };
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+        syncInputs();
+        colourDealStages();
+      }
+    });
+    root.addEventListener('input', (event) => {
+      const key = event.target.dataset.setting;
+      if (!key) return;
+      settings[key] = key === 'strength' ? Number(event.target.value) : event.target.value;
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+      colourDealStages();
+    });
   }
 
   function columnParts(header) {
@@ -186,6 +242,7 @@
     scanQueued = true;
     queueMicrotask(() => {
       scanQueued = false;
+      ensureControls();
       colourDealStages();
     });
   }
