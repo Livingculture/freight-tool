@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture HubSpot Contrast & Colours
 // @namespace    livingculture-hubspot
-// @version      0.1.11
+// @version      0.1.12
 // @description  Adjusts HubSpot record text and changes deal-stage pills to softer pastel colours.
 // @author       Living Culture
 // @match        https://app.hubspot.com/*
@@ -15,6 +15,10 @@
 
 (function () {
   'use strict';
+
+  // HubSpot embeds tools such as Breeze in same-domain frames. Only the main
+  // application should receive the colour controls and page-wide scanner.
+  if (window.top !== window.self) return;
 
   const STYLE_ID = 'lc-hubspot-contrast-colours';
   const STAGE_CLASS = 'lc-hubspot-pastel-stage';
@@ -88,7 +92,7 @@
         color: var(--lc-stage-text, #111) !important;
       }
       #${CONTROLS_ID} { position:fixed!important; right:18px!important; bottom:18px!important; z-index:2147483646!important; font:600 13px Arial,sans-serif!important; color:#111!important; }
-      #${CONTROLS_ID}.lc-colours-docked { position:relative!important; right:auto!important; bottom:auto!important; display:inline-block!important; margin-left:8px!important; vertical-align:middle!important; }
+      #${CONTROLS_ID}.lc-colours-docked { position:fixed!important; right:auto!important; bottom:auto!important; display:block!important; margin:0!important; }
       #${CONTROLS_ID} button { border:1px solid #aaa!important; border-radius:7px!important; background:#fff!important; color:#111!important; padding:8px 12px!important; font:inherit!important; cursor:pointer!important; box-shadow:0 2px 8px rgba(0,0,0,.14)!important; }
       #${CONTROLS_ID} > button[data-action="toggle"] { border-color:#ff5c35!important; background:#ff5c35!important; color:#fff!important; }
       #${CONTROLS_ID} .lc-colour-panel { position:absolute!important; right:0!important; bottom:43px!important; width:245px!important; padding:14px!important; border:1px solid #c8c8c8!important; border-radius:10px!important; background:#fff!important; color:#111!important; box-shadow:0 8px 28px rgba(0,0,0,.2)!important; }
@@ -188,8 +192,12 @@
       return bRect.width * bRect.height - aRect.width * aRect.height;
     })[0];
     if (!counter) return;
-    if (counter.nextElementSibling !== root) counter.insertAdjacentElement('afterend', root);
+    if (root.parentElement !== document.body) document.body.appendChild(root);
     root.classList.add('lc-colours-docked');
+    const rect = counter.getBoundingClientRect();
+    const buttonRect = root.querySelector('[data-action="toggle"]').getBoundingClientRect();
+    root.style.setProperty('left', `${Math.round(rect.right + 8)}px`, 'important');
+    root.style.setProperty('top', `${Math.round(rect.top + Math.max(0, (rect.height - buttonRect.height) / 2))}px`, 'important');
   }
 
   function columnParts(header) {
@@ -298,10 +306,17 @@
   // Watch from document-start. MutationObserver callbacks run before the next
   // browser paint, allowing new HubSpot rows to receive their colours without
   // first displaying the original bright pills.
-  new MutationObserver(schedule).observe(document.documentElement, {
+  const relevantText = /(deal\s*stage|opp\s*deal|quote[- ]?sent|deposit\s*paid|ready\s*to\s*deliver|completed|new\s*enquiry|followed\s*up|waiting\s*on\s*customer|site\s*visit|\d[\d,]*\s+deals)/i;
+  new MutationObserver((mutations) => {
+    const relevant = mutations.some((mutation) => Array.from(mutation.addedNodes).some((node) => {
+      if (node.nodeType === Node.TEXT_NODE) return relevantText.test(clean(node.textContent));
+      return node.nodeType === Node.ELEMENT_NODE && relevantText.test(clean(node.textContent));
+    }));
+    if (relevant) schedule();
+  }).observe(document.documentElement, {
     childList: true,
-    subtree: true,
-    characterData: true
+    subtree: true
   });
+  window.addEventListener('resize', dockControls, { passive: true });
   schedule();
 })();
