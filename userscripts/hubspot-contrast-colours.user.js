@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture HubSpot Contrast & Colours
 // @namespace    livingculture-hubspot
-// @version      0.1.8
+// @version      0.1.9
 // @description  Adjusts HubSpot record text and changes deal-stage pills to softer pastel colours.
 // @author       Living Culture
 // @match        https://app.hubspot.com/*
@@ -41,6 +41,14 @@
       [class*="IndexTable"] a:not([role="button"]),
       [role="grid"] [role="gridcell"] a:not([role="button"]),
       [role="table"] [role="cell"] a:not([role="button"]) {
+        color: var(--lc-hubspot-link-text, #00a4bd) !important;
+        text-decoration-color: var(--lc-hubspot-link-text, #00a4bd) !important;
+      }
+      table a:not([role="button"]) *:not(svg):not(path),
+      main a:not([role="button"]) *:not(svg):not(path),
+      [role="main"] a:not([role="button"]) *:not(svg):not(path),
+      [role="grid"] [role="gridcell"] a:not([role="button"]) *:not(svg):not(path),
+      [role="table"] [role="cell"] a:not([role="button"]) *:not(svg):not(path) {
         color: var(--lc-hubspot-link-text, #00a4bd) !important;
         text-decoration-color: var(--lc-hubspot-link-text, #00a4bd) !important;
       }
@@ -239,7 +247,7 @@
 
     // HubSpot also renders some list views as nested divs without table roles.
     // Stage pills are compact, so identify those by their displayed stage text.
-    const stagePattern = /(opp\s*deal|quote[- ]?sent|deposit\s*paid|ready\s*to\s*deliver|completed)/i;
+    const stagePattern = /(opp\s*deal|quote[- ]?sent|deposit\s*paid|ready\s*to\s*deliver|completed|new\s*enquiry|followed\s*up|waiting\s*on\s*customer|site\s*visit)/i;
     for (const element of Array.from(document.querySelectorAll('span, button, div'))) {
       const label = clean(element.textContent);
       if (!label || label.length > 90 || !stagePattern.test(label)) continue;
