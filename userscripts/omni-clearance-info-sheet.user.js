@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Clearance Info Sheet
 // @namespace    livingculture-omni
-// @version      0.1.8
+// @version      0.1.9
 // @description  Shows a Living Culture clearance product information sheet in Cin7 Omni and Cin7 Core.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -53,7 +53,7 @@
     const style = document.createElement('style');
     style.id = STYLE_ID;
     style.textContent = `
-      #${BUTTON_ID} { height:36px!important; margin:0!important; padding:0 14px!important; border:1px solid #6f42c1!important; border-radius:4px!important; background:#6f42c1!important; color:#fff!important; font:700 14px Arial,sans-serif!important; white-space:nowrap!important; cursor:pointer!important; vertical-align:middle!important; }
+      #${BUTTON_ID} { display:inline-flex!important; align-items:center!important; justify-content:center!important; height:36px!important; line-height:1!important; margin:0!important; padding:0 14px!important; border:1px solid #6f42c1!important; border-radius:4px!important; background:#6f42c1!important; color:#fff!important; font:700 14px Arial,sans-serif!important; white-space:nowrap!important; cursor:pointer!important; vertical-align:middle!important; }
       #${BUTTON_ID}:hover { background:#59339e!important; }
       #${BUTTON_ID}.lc-clearance-floating { position:fixed!important; top:112px!important; right:18px!important; z-index:2147483000!important; box-shadow:0 3px 12px rgba(0,0,0,.22)!important; }
       #${OVERLAY_ID} { position:fixed!important; inset:0!important; z-index:2147483645!important; display:flex!important; align-items:center!important; justify-content:center!important; padding:24px!important; background:rgba(8,24,45,.68)!important; font-family:Arial,sans-serif!important; color:#172b49!important; }
@@ -354,27 +354,16 @@
     if (button.parentElement !== parent) parent.appendChild(button);
     const parentRect = parent.getBoundingClientRect();
     const promoRect = promo.getBoundingClientRect();
-    const siteVisit = document.getElementById('lc-site-visit-inline-button-v2');
-    const quoteReview = document.getElementById('lc-quote-review-inline-button-v1');
     button.classList.remove('lc-clearance-floating');
     button.style.display = 'inline-flex';
+    button.style.alignItems = 'center';
+    button.style.justifyContent = 'center';
     button.style.position = 'absolute';
+    button.style.left = `${Math.round(promoRect.right - parentRect.left + 8)}px`;
     button.style.top = `${Math.round(promoRect.top - parentRect.top)}px`;
     button.style.height = `${Math.max(34, promoRect.height || 34)}px`;
+    button.style.lineHeight = '1';
     button.style.zIndex = '2147483602';
-
-    if (siteVisit && quoteReview && siteVisit.parentElement === parent && quoteReview.parentElement === parent) {
-      const siteRect = siteVisit.getBoundingClientRect();
-      const quoteRect = quoteReview.getBoundingClientRect();
-      const buttonWidth = Math.max(button.getBoundingClientRect().width, button.offsetWidth, 110);
-      const groupWidth = promoRect.width + 8 + buttonWidth;
-      const gapCenter = siteRect.right + (quoteRect.left - siteRect.right) / 2;
-      const groupLeft = Math.max(siteRect.right + 6, gapCenter - groupWidth / 2) - parentRect.left;
-      promo.style.left = `${Math.round(groupLeft)}px`;
-      button.style.left = `${Math.round(groupLeft + promoRect.width + 8)}px`;
-    } else {
-      button.style.left = `${Math.round(promoRect.right - parentRect.left + 8)}px`;
-    }
     return true;
   }
 
