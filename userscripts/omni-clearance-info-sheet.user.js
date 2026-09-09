@@ -1,10 +1,14 @@
 // ==UserScript==
-// @name         Omni Living Culture Clearance Info Sheet
+// @name         Cin7 Living Culture Clearance Info Sheet
 // @namespace    livingculture-omni
-// @version      0.1.7
-// @description  Shows an Omni-styled clearance product information sheet using the Living Culture Google Sheet.
+// @version      0.1.8
+// @description  Shows a Living Culture clearance product information sheet in Cin7 Omni and Cin7 Core.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
+// @match        https://inventory.dearsystems.com/*
+// @match        https://*.dearsystems.com/*
+// @match        https://*.cin7core.com/*
+// @match        https://*.cin7.com/*
 // @grant        GM_xmlhttpRequest
 // @connect      docs.google.com
 // @connect      *.googleusercontent.com
@@ -25,6 +29,7 @@
   const SHEET_EDIT_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit?gid=${SHEET_GID}#gid=${SHEET_GID}`;
   const STORE_URL = 'https://livingculture.co.nz';
   const BUTTON_ID = 'lc-omni-clearance-info-button';
+  const PROMO_BUTTON_ID = 'lc-promo-summary-inline-button';
   const OVERLAY_ID = 'lc-omni-clearance-info-overlay';
   const STYLE_ID = 'lc-omni-clearance-info-styles';
   const CACHE_KEY = 'lcOmniClearanceSheetCsvV1';
@@ -335,6 +340,44 @@
     return Boolean(element && element.getClientRects().length && getComputedStyle(element).visibility !== 'hidden');
   }
 
+  function isOmniQuotePage() {
+    return location.hostname === 'go.cin7.com' && /\/Cloud\/TransactionEntry\/TransactionEntry\.aspx/i.test(location.pathname);
+  }
+
+  function placeBesideCorePromo(button) {
+    const promo = document.getElementById(PROMO_BUTTON_ID) || Array.from(document.querySelectorAll('button, a'))
+      .find((element) => visible(element) && /^promo summary$/i.test(clean(element.textContent || element.value)));
+    if (!promo || !visible(promo) || !promo.parentElement) return false;
+
+    const parent = promo.parentElement;
+    if (getComputedStyle(parent).position === 'static') parent.style.position = 'relative';
+    if (button.parentElement !== parent) parent.appendChild(button);
+    const parentRect = parent.getBoundingClientRect();
+    const promoRect = promo.getBoundingClientRect();
+    const siteVisit = document.getElementById('lc-site-visit-inline-button-v2');
+    const quoteReview = document.getElementById('lc-quote-review-inline-button-v1');
+    button.classList.remove('lc-clearance-floating');
+    button.style.display = 'inline-flex';
+    button.style.position = 'absolute';
+    button.style.top = `${Math.round(promoRect.top - parentRect.top)}px`;
+    button.style.height = `${Math.max(34, promoRect.height || 34)}px`;
+    button.style.zIndex = '2147483602';
+
+    if (siteVisit && quoteReview && siteVisit.parentElement === parent && quoteReview.parentElement === parent) {
+      const siteRect = siteVisit.getBoundingClientRect();
+      const quoteRect = quoteReview.getBoundingClientRect();
+      const buttonWidth = Math.max(button.getBoundingClientRect().width, button.offsetWidth, 110);
+      const groupWidth = promoRect.width + 8 + buttonWidth;
+      const gapCenter = siteRect.right + (quoteRect.left - siteRect.right) / 2;
+      const groupLeft = Math.max(siteRect.right + 6, gapCenter - groupWidth / 2) - parentRect.left;
+      promo.style.left = `${Math.round(groupLeft)}px`;
+      button.style.left = `${Math.round(groupLeft + promoRect.width + 8)}px`;
+    } else {
+      button.style.left = `${Math.round(promoRect.right - parentRect.left + 8)}px`;
+    }
+    return true;
+  }
+
   function mountButton() {
     if (!document.body) return;
     let button = document.getElementById(BUTTON_ID);
@@ -348,15 +391,28 @@
       document.body.appendChild(button);
     }
 
-    const photoActions = document.getElementById('lc-omni-customer-photo-actions');
-    if (photoActions && visible(photoActions)) {
-      button.classList.remove('lc-clearance-floating');
-      if (button.parentElement !== photoActions) photoActions.prepend(button);
+    if (isOmniQuotePage()) {
+      const photoActions = document.getElementById('lc-omni-customer-photo-actions');
+      if (photoActions && visible(photoActions)) {
+        button.classList.remove('lc-clearance-floating');
+        button.style.display = 'inline-flex';
+        button.style.position = '';
+        button.style.left = '';
+        button.style.top = '';
+        button.style.zIndex = '';
+        if (button.parentElement !== photoActions) photoActions.prepend(button);
+        return;
+      }
+
+      if (button.parentElement !== document.body) document.body.appendChild(button);
+      button.style.display = 'inline-flex';
+      button.classList.add('lc-clearance-floating');
       return;
     }
 
-    if (button.parentElement !== document.body) document.body.appendChild(button);
-    button.classList.add('lc-clearance-floating');
+    if (placeBesideCorePromo(button)) return;
+    button.classList.remove('lc-clearance-floating');
+    button.style.display = 'none';
   }
 
   function ensureUi() {
