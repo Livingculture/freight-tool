@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         Omni Living Culture Clearance Info Sheet
 // @namespace    livingculture-omni
-// @version      0.1.1
+// @version      0.1.2
 // @description  Shows an Omni-styled clearance product information sheet using the Living Culture Google Sheet.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @grant        GM_xmlhttpRequest
 // @connect      docs.google.com
+// @connect      *.googleusercontent.com
 // @connect      livingculture.co.nz
 // @run-at       document-idle
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-clearance-info-sheet.user.js
@@ -17,7 +18,11 @@
 (function () {
   'use strict';
 
-  const SHEET_URL = 'https://docs.google.com/spreadsheets/d/1Y6r2-84sZYqtqDGKQwIWt9gT03BmjXloiuER8gHDqRY/export?format=csv&gid=2075613323';
+  const SHEET_ID = '1Y6r2-84sZYqtqDGKQwIWt9gT03BmjXloiuER8gHDqRY';
+  const SHEET_GID = '2075613323';
+  const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${SHEET_GID}`;
+  const SHEET_FALLBACK_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${SHEET_GID}`;
+  const SHEET_EDIT_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit?gid=${SHEET_GID}#gid=${SHEET_GID}`;
   const STORE_URL = 'https://livingculture.co.nz';
   const BUTTON_ID = 'lc-omni-clearance-info-button';
   const OVERLAY_ID = 'lc-omni-clearance-info-overlay';
@@ -130,12 +135,25 @@
         return { source: 'cached', age };
       }
       try {
-        const response = await request({ url: `${SHEET_URL}&_=${Date.now()}` });
-        if (/<!doctype|<html/i.test(response.responseText.slice(0, 300))) throw new Error('Google returned HTML');
-        const parsed = parseCsv(response.responseText);
+        let csv = '';
+        let lastError;
+        for (const url of [SHEET_URL, SHEET_FALLBACK_URL]) {
+          try {
+            const response = await request({ url: `${url}&_=${Date.now()}` });
+            csv = response.responseText || '';
+            if (/<!doctype|<html/i.test(csv.slice(0, 300))) throw new Error('Google returned HTML instead of CSV');
+            if (!parseCsv(csv).length) throw new Error('No clearance products found');
+            break;
+          } catch (error) {
+            csv = '';
+            lastError = error;
+          }
+        }
+        if (!csv) throw lastError || new Error('Google Sheet request failed');
+        const parsed = parseCsv(csv);
         if (!parsed.length) throw new Error('No clearance products found');
         rows = parsed;
-        localStorage.setItem(CACHE_KEY, response.responseText);
+        localStorage.setItem(CACHE_KEY, csv);
         localStorage.setItem(CACHE_TIME_KEY, String(Date.now()));
         return { source: 'live', age: 0 };
       } catch (error) {
@@ -243,7 +261,7 @@
     overlay.innerHTML = `
       <div class="lc-sheet" role="dialog" aria-modal="true" aria-label="Living Culture Clearance Information">
         <header class="lc-head"><div><h2>Living Culture Clearance Information</h2><div class="lc-subtitle">Current clearance products from the shared spreadsheet</div></div><div class="lc-head-actions"><button type="button" data-action="refresh">Refresh data</button> <button type="button" data-action="print">Print / Save PDF</button> <button type="button" class="lc-primary" data-action="close">Close</button></div></header>
-        <div class="lc-toolbar"><input data-filter="search" type="search" placeholder="Search product, SKU, reason or note…"><select data-filter="status"><option value="">All clearance types</option></select><select data-filter="discount"><option value="">All discounts</option></select><a class="lc-action" href="${SHEET_URL.replace('/export?format=csv', '/edit?')}" target="_blank" rel="noopener noreferrer">Open spreadsheet</a></div>
+        <div class="lc-toolbar"><input data-filter="search" type="search" placeholder="Search product, SKU, reason or note…"><select data-filter="status"><option value="">All clearance types</option></select><select data-filter="discount"><option value="">All discounts</option></select><a class="lc-action" href="${SHEET_EDIT_URL}" target="_blank" rel="noopener noreferrer">Open spreadsheet</a></div>
         <div class="lc-summary"><span class="lc-count">Loading…</span><span class="lc-source">Loading live spreadsheet data…</span></div>
         <main class="lc-grid"><div class="lc-empty">Loading clearance information…</div></main>
       </div>`;
