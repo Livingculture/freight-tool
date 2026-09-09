@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Clearance Info Sheet
 // @namespace    livingculture-omni
-// @version      0.1.6
+// @version      0.1.7
 // @description  Shows an Omni-styled clearance product information sheet using the Living Culture Google Sheet.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -9,7 +9,7 @@
 // @connect      docs.google.com
 // @connect      *.googleusercontent.com
 // @connect      livingculture.co.nz
-// @run-at       document-idle
+// @run-at       document-start
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-clearance-info-sheet.user.js
 // @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-clearance-info-sheet.user.js
 // @supportURL   https://github.com/Livingculture/freight-tool
@@ -44,7 +44,7 @@
     .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
 
   function addStyles() {
-    if (document.getElementById(STYLE_ID)) return;
+    if (!document.head || document.getElementById(STYLE_ID)) return;
     const style = document.createElement('style');
     style.id = STYLE_ID;
     style.textContent = `
@@ -359,8 +359,14 @@
     button.classList.add('lc-clearance-floating');
   }
 
-  addStyles();
-  mountButton();
-  new MutationObserver(mountButton).observe(document.documentElement, { childList: true, subtree: true });
-  window.setInterval(mountButton, 2500);
+  function ensureUi() {
+    addStyles();
+    mountButton();
+  }
+
+  ensureUi();
+  const uiObserver = new MutationObserver(ensureUi);
+  if (document.documentElement) uiObserver.observe(document.documentElement, { childList: true, subtree: true });
+  else document.addEventListener('DOMContentLoaded', () => uiObserver.observe(document.documentElement, { childList: true, subtree: true }), { once: true });
+  window.setInterval(ensureUi, 2500);
 })();

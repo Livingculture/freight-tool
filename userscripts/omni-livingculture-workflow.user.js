@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.64
+// @version      0.1.65
 // @description  Adds Site Visit, Quote Review, HubSpot and customer photo workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -1193,7 +1193,9 @@
       document.getElementById('lc-omni-containers-open') ||
       findButtonByLabel('Foshan Warehouse') ||
       findButtonByLabel('NZ Availability') ||
-      findButtonByLabel('LC Containers');
+      findButtonByLabel('LC Containers') ||
+      findButtonByLabel('Actions') ||
+      findButtonByLabel('Go to Admin');
   }
 
   function placeOmniActionButton(button, anchor) {
@@ -3403,7 +3405,7 @@
   }
 
   function addCustomerPhotosButton() {
-    if (!isOmniPage() || !isSimpleSaleReady()) {
+    if (!isOmniPage()) {
       document.getElementById(CUSTOMER_PHOTOS_ACTIONS_ID)?.remove();
       return;
     }
@@ -3543,7 +3545,7 @@
   }
 
   function addQuoteReviewButton() {
-    if (!isSimpleSaleReady()) {
+    if (!isOmniPage() && !isSimpleSaleReady()) {
       removeQuoteReviewButton();
       return;
     }
@@ -3609,7 +3611,7 @@
   }
 
   function addQuotePdfButton() {
-    if (!isOmniPage() || !isSimpleSaleReady()) {
+    if (!isOmniPage()) {
       document.getElementById(QUOTE_PDF_BUTTON_ID)?.remove();
       return;
     }
