@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.65
+// @version      0.1.66
 // @description  Adds Site Visit, Quote Review, HubSpot and customer photo workflow buttons to Cin7 Omni quotes.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -3676,7 +3676,11 @@
 
   hookNetworkForProductLines();
 
-  const observer = new MutationObserver(scheduleButtonPass);
+  let mutationRecoveryTimer = null;
+  const observer = new MutationObserver(() => {
+    window.clearTimeout(mutationRecoveryTimer);
+    mutationRecoveryTimer = window.setTimeout(scheduleButtonPass, 180);
+  });
   observer.observe(document.documentElement, { childList: true, subtree: true });
 
   window.addEventListener('resize', scheduleButtonPass);
