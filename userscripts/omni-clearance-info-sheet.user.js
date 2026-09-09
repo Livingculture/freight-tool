@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Clearance Info Sheet
 // @namespace    livingculture-omni
-// @version      0.1.10
+// @version      0.1.11
 // @description  Shows a Living Culture clearance product information sheet in Cin7 Omni and Cin7 Core.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -36,6 +36,16 @@
   const CACHE_TIME_KEY = 'lcOmniClearanceSheetTimeV1';
   const IMAGE_CACHE_KEY = 'lcOmniClearanceProductImagesV1';
   const VIEW_KEY = 'lcOmniClearanceViewV1';
+  const PRODUCT_OVERRIDES = {
+    hornbilloutdoorsofaset: {
+      image: 'https://cdn.shopify.com/s/files/1/0641/4555/5703/files/HornbillOutdoorSofaWithOttoman3PCS.jpg',
+      url: 'https://livingculture.co.nz/products/hornbill-outdoor-sofa-with-ottoman-3pcs'
+    },
+    auron5mroundmarketumbrella: {
+      image: 'https://cdn.shopify.com/s/files/1/0641/4555/5703/files/Auron_5m_Round_Market_Umbrella.jpg',
+      url: 'https://livingculture.co.nz/products/auron-5m-round-market-umbrella'
+    }
+  };
   const CACHE_MAX_AGE = 6 * 60 * 60 * 1000;
   let rows = [];
   let loadingPromise = null;
@@ -237,6 +247,12 @@
 
   async function findStoreProduct(name) {
     const key = compact(name);
+    const override = PRODUCT_OVERRIDES[key];
+    if (override) {
+      imageCache[key] = override;
+      localStorage.setItem(IMAGE_CACHE_KEY, JSON.stringify(imageCache));
+      return override;
+    }
     if (imageCache[key]) return imageCache[key];
     const sku = clean(name).match(/\bCS\d+(?:-\d+)?\b/i)?.[0];
     const query = sku || clean(name).replace(/\([^)]*\)/g, '').replace(/\bCS\d+(?:-\d+)?\b.*$/i, '').trim();
@@ -248,9 +264,18 @@
     try {
       const response = await request({ url: url.href, responseType: 'json' });
       const products = response.response?.resources?.results?.products || JSON.parse(response.responseText || '{}')?.resources?.results?.products || [];
-      const wanted = compact(query);
+      const ignoredWords = new Set(['outdoor', 'indoor', 'set', 'sofa', 'table', 'chair', 'umbrella', 'aluminium', 'manual', 'motorised', 'round', 'square', 'with', 'and', 'the', 'for']);
+      const tokens = (value) => clean(value).toLowerCase().split(/[^a-z0-9]+/)
+        .filter((word) => word.length > 1 && !ignoredWords.has(word) && !/^\d+(?:m|cm|mm)?$/.test(word));
+      const wantedTokens = tokens(query);
+      const ranked = products.map((entry) => {
+        const titleTokens = tokens(entry.title);
+        const shared = wantedTokens.filter((word) => titleTokens.includes(word)).length;
+        const firstNameMatches = !wantedTokens.length || titleTokens.includes(wantedTokens[0]);
+        return { entry, shared, score: wantedTokens.length ? shared / wantedTokens.length : 0, firstNameMatches };
+      }).sort((a, b) => b.score - a.score || b.shared - a.shared);
       const product = products.find((entry) => sku && (entry.variants || []).some((variant) => compact(variant.sku) === compact(sku)))
-        || products.sort((a, b) => Number(compact(b.title).includes(wanted)) - Number(compact(a.title).includes(wanted)))[0];
+        || ranked.find((candidate) => candidate.firstNameMatches && candidate.shared >= 1 && (candidate.score >= 0.34 || wantedTokens.length === 1))?.entry;
       if (!product) throw new Error('No storefront match');
       const result = {
         image: product.image || product.featured_image?.url || '',
