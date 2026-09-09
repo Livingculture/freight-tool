@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Clearance Info Sheet
 // @namespace    livingculture-omni
-// @version      0.1.0
+// @version      0.1.1
 // @description  Shows an Omni-styled clearance product information sheet using the Living Culture Google Sheet.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -42,8 +42,9 @@
     const style = document.createElement('style');
     style.id = STYLE_ID;
     style.textContent = `
-      #${BUTTON_ID} { height:34px!important; margin-left:8px!important; padding:0 14px!important; border:1px solid #063b78!important; border-radius:4px!important; background:#063b78!important; color:#fff!important; font:700 14px Arial,sans-serif!important; white-space:nowrap!important; cursor:pointer!important; vertical-align:middle!important; }
+      #${BUTTON_ID} { height:36px!important; margin:0!important; padding:0 14px!important; border:1px solid #063b78!important; border-radius:4px!important; background:#063b78!important; color:#fff!important; font:700 14px Arial,sans-serif!important; white-space:nowrap!important; cursor:pointer!important; vertical-align:middle!important; }
       #${BUTTON_ID}:hover { background:#052f61!important; }
+      #${BUTTON_ID}.lc-clearance-floating { position:fixed!important; top:112px!important; right:18px!important; z-index:2147483000!important; box-shadow:0 3px 12px rgba(0,0,0,.22)!important; }
       #${OVERLAY_ID} { position:fixed!important; inset:0!important; z-index:2147483645!important; display:flex!important; align-items:center!important; justify-content:center!important; padding:24px!important; background:rgba(8,24,45,.68)!important; font-family:Arial,sans-serif!important; color:#172b49!important; }
       #${OVERLAY_ID}[hidden] { display:none!important; }
       #${OVERLAY_ID} .lc-sheet { display:flex!important; flex-direction:column!important; width:min(1500px,96vw)!important; height:min(920px,94vh)!important; overflow:hidden!important; border:1px solid #b9cbe0!important; border-radius:14px!important; background:#eef4fb!important; box-shadow:0 22px 60px rgba(0,0,0,.32)!important; }
@@ -287,18 +288,27 @@
   }
 
   function mountButton() {
-    if (document.getElementById(BUTTON_ID)) return;
-    const controls = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]'));
-    const actions = controls.find((element) => visible(element) && /^actions$/i.test(clean(element.textContent || element.value)));
-    const anchor = actions || controls.find((element) => visible(element) && /^go to admin$/i.test(clean(element.textContent || element.value)));
-    if (!anchor?.parentElement) return;
-    const button = document.createElement('button');
-    button.id = BUTTON_ID;
-    button.type = 'button';
-    button.textContent = 'Clearance Info';
-    button.title = 'Open the Living Culture clearance product information sheet';
-    button.addEventListener('click', openSheet);
-    anchor.insertAdjacentElement('afterend', button);
+    if (!document.body) return;
+    let button = document.getElementById(BUTTON_ID);
+    if (!button) {
+      button = document.createElement('button');
+      button.id = BUTTON_ID;
+      button.type = 'button';
+      button.textContent = 'Clearance Info';
+      button.title = 'Open the Living Culture clearance product information sheet';
+      button.addEventListener('click', openSheet);
+      document.body.appendChild(button);
+    }
+
+    const photoActions = document.getElementById('lc-omni-customer-photo-actions');
+    if (photoActions && visible(photoActions)) {
+      button.classList.remove('lc-clearance-floating');
+      if (button.parentElement !== photoActions) photoActions.prepend(button);
+      return;
+    }
+
+    if (button.parentElement !== document.body) document.body.appendChild(button);
+    button.classList.add('lc-clearance-floating');
   }
 
   addStyles();
