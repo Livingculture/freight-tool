@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Clearance Info Sheet
 // @namespace    livingculture-omni
-// @version      0.1.5
+// @version      0.1.6
 // @description  Shows an Omni-styled clearance product information sheet using the Living Culture Google Sheet.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -68,11 +68,11 @@
       #${OVERLAY_ID} input, #${OVERLAY_ID} select { min-height:38px!important; border:1px solid #9fb5ce!important; border-radius:6px!important; background:#fff!important; color:#172b49!important; padding:0 11px!important; font:14px Arial,sans-serif!important; }
       #${OVERLAY_ID} .lc-summary { display:flex!important; align-items:center!important; gap:10px!important; padding:7px 18px!important; color:#526987!important; font-size:13px!important; }
       #${OVERLAY_ID} .lc-count { padding:5px 10px!important; border-radius:999px!important; background:#d9eff3!important; color:#075a68!important; font-weight:700!important; }
-      #${OVERLAY_ID} .lc-grid { flex:1 1 auto!important; display:grid!important; grid-template-columns:repeat(4,minmax(0,1fr))!important; align-content:start!important; gap:9px!important; overflow:auto!important; padding:0 18px 18px!important; }
-      #${OVERLAY_ID} .lc-card { display:grid!important; grid-template-columns:120px minmax(0,1fr)!important; min-height:158px!important; overflow:hidden!important; border:1px solid #c2d2e6!important; border-radius:8px!important; background:#fff!important; box-shadow:0 1px 5px rgba(13,48,87,.07)!important; }
-      #${OVERLAY_ID} .lc-image { display:flex!important; align-items:center!important; justify-content:center!important; min-height:158px!important; padding:5px!important; background:#f5f8fb!important; color:#8295ab!important; font-size:11px!important; text-align:center!important; }
-      #${OVERLAY_ID} .lc-image img { display:block!important; width:100%!important; height:100%!important; max-height:168px!important; object-fit:contain!important; }
-      #${OVERLAY_ID} .lc-info { display:flex!important; flex-direction:column!important; gap:5px!important; min-width:0!important; padding:9px!important; }
+      #${OVERLAY_ID} .lc-grid { flex:1 1 auto!important; display:grid!important; grid-template-columns:repeat(4,minmax(0,1fr))!important; grid-auto-rows:max-content!important; align-content:start!important; align-items:start!important; gap:9px!important; overflow:auto!important; padding:0 18px 18px!important; }
+      #${OVERLAY_ID} .lc-card { display:grid!important; grid-template-columns:120px minmax(0,1fr)!important; align-self:stretch!important; min-height:158px!important; height:auto!important; max-height:none!important; overflow:hidden!important; border:1px solid #c2d2e6!important; border-radius:8px!important; background:#fff!important; box-shadow:0 1px 5px rgba(13,48,87,.07)!important; }
+      #${OVERLAY_ID} .lc-image { display:flex!important; align-items:center!important; justify-content:center!important; min-height:158px!important; padding:5px!important; background:#fff!important; color:#8295ab!important; font-size:11px!important; text-align:center!important; }
+      #${OVERLAY_ID} .lc-image img { display:block!important; width:100%!important; height:auto!important; max-height:168px!important; object-fit:contain!important; }
+      #${OVERLAY_ID} .lc-info { display:flex!important; flex-direction:column!important; gap:5px!important; min-width:0!important; height:auto!important; max-height:none!important; overflow:visible!important; padding:9px!important; background:#fff!important; }
       #${OVERLAY_ID} .lc-badges { display:flex!important; flex-wrap:wrap!important; gap:6px!important; }
       #${OVERLAY_ID} .lc-badge { display:inline-flex!important; padding:4px 8px!important; border-radius:999px!important; background:#e8f1fb!important; color:#063b78!important; font-size:11px!important; font-weight:700!important; }
       #${OVERLAY_ID} .lc-badge.is-evergreen { background:#dff3ea!important; color:#176445!important; }
