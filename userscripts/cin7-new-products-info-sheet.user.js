@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture New Products Info Sheet
 // @namespace    livingculture-cin7
-// @version      0.1.0
+// @version      0.1.1
 // @description  Shows the Living Culture new-products spreadsheet in Cin7 Omni and Cin7 Core.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -52,7 +52,7 @@
     const style = document.createElement('style');
     style.id = STYLE_ID;
     style.textContent = `
-      #${BUTTON_ID}{display:inline-flex!important;align-items:center!important;justify-content:center!important;height:36px!important;line-height:1!important;margin:0!important;padding:0 14px!important;border:1px solid #07988d!important;border-radius:4px!important;background:#07988d!important;color:#fff!important;font:700 14px Arial,sans-serif!important;white-space:nowrap!important;cursor:pointer!important;}
+      #${BUTTON_ID}{display:inline-flex;align-items:center!important;justify-content:center!important;height:36px!important;line-height:1!important;margin:0!important;padding:0 14px!important;border:1px solid #07988d!important;border-radius:4px!important;background:#07988d!important;color:#fff!important;font:700 14px Arial,sans-serif!important;white-space:nowrap!important;cursor:pointer!important;}
       #${BUTTON_ID}:hover{background:#067c73!important;}
       #${BUTTON_ID}.lc-new-floating{position:fixed!important;top:156px!important;right:18px!important;z-index:2147483000!important;box-shadow:0 3px 12px rgba(0,0,0,.22)!important;}
       #${OVERLAY_ID}{position:fixed!important;inset:0!important;z-index:2147483645!important;display:flex!important;align-items:center!important;justify-content:center!important;padding:24px!important;background:rgba(8,24,45,.68)!important;font-family:Arial,sans-serif!important;color:#172b49!important;}
@@ -323,4 +323,10 @@
     if (isOmniQuotePage() && button?.isConnected) return;
     ensureUi();
   }, 2500);
+  window.addEventListener('lc:cin7-toolbar-settling', () => {
+    if (isOmniQuotePage()) return;
+    const button = document.getElementById(BUTTON_ID);
+    if (button) button.style.display = 'none';
+  });
+  window.addEventListener('lc:cin7-toolbar-ready', () => window.setTimeout(ensureUi, 60));
 })();

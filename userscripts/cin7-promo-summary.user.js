@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Promo Summary
 // @namespace    livingculture-cin7
-// @version      3.0
+// @version      3.1
 // @description  Compact grouped Living Culture promo summary inside Cin7 from the Summary tab.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
 // @match        https://inventory.dearsystems.com/*
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.0
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.0
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.1
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.1
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
@@ -43,7 +43,7 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
   const SITE_VISIT_BUTTON_ID = 'lc-site-visit-inline-button-v2';
   const QUOTE_REVIEW_BUTTON_ID = 'lc-quote-review-inline-button-v1';
   const TOP_ROW_SETTLE_MS = 1800;
-  const scriptStartedAt = Date.now();
+  let layoutSettlingUntil = Date.now() + TOP_ROW_SETTLE_MS;
   let revealRetryTimer = null;
   let positionScheduled = false;
   let lastLocationKey = `${window.location.href}|${document.title}`;
@@ -781,21 +781,35 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
     button.style.marginLeft = '0';
     button.style.marginBottom = '0';
 
-    const elapsed = Date.now() - scriptStartedAt;
-    if (elapsed < TOP_ROW_SETTLE_MS) {
+    const settleRemaining = layoutSettlingUntil - Date.now();
+    if (settleRemaining > 0) {
       button.style.visibility = 'hidden';
       button.style.opacity = '0';
       if (!revealRetryTimer) {
         revealRetryTimer = window.setTimeout(() => {
           revealRetryTimer = null;
           insertButtonNextToScan();
-        }, TOP_ROW_SETTLE_MS - elapsed + 80);
+        }, settleRemaining + 80);
       }
     } else {
+      const wasVisible = button.style.visibility === 'visible' && button.style.opacity === '1';
       button.style.visibility = 'visible';
       button.style.opacity = '1';
+      if (!wasVisible) window.dispatchEvent(new CustomEvent('lc:cin7-toolbar-ready'));
     }
     return true;
+  }
+
+  function beginLayoutSettle() {
+    layoutSettlingUntil = Date.now() + TOP_ROW_SETTLE_MS;
+    window.clearTimeout(revealRetryTimer);
+    revealRetryTimer = null;
+    const button = document.getElementById(INLINE_BUTTON_ID);
+    if (button) {
+      button.style.visibility = 'hidden';
+      button.style.opacity = '0';
+    }
+    window.dispatchEvent(new CustomEvent('lc:cin7-toolbar-settling'));
   }
 
   function insertButtonNextToScan() {
@@ -862,6 +876,8 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
 
       history[methodName] = function () {
         const result = original.apply(this, arguments);
+        lastLocationKey = `${window.location.href}|${document.title}`;
+        beginLayoutSettle();
         schedulePromoButtonRecovery();
         return result;
       };
@@ -876,10 +892,22 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
       const button = document.getElementById(INLINE_BUTTON_ID);
 
       if (key !== lastLocationKey || !button || !button.isConnected || !isElementVisible(button)) {
+        if (key !== lastLocationKey) beginLayoutSettle();
         lastLocationKey = key;
         schedulePromoButtonRecovery();
       }
     }, 1500);
+
+    window.addEventListener('hashchange', () => {
+      lastLocationKey = `${window.location.href}|${document.title}`;
+      beginLayoutSettle();
+      schedulePromoButtonRecovery();
+    });
+    window.addEventListener('popstate', () => {
+      lastLocationKey = `${window.location.href}|${document.title}`;
+      beginLayoutSettle();
+      schedulePromoButtonRecovery();
+    });
   }
 
   function createWidget() {
