@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Clearance Info Sheet
 // @namespace    livingculture-omni
-// @version      0.1.3
+// @version      0.1.4
 // @description  Shows an Omni-styled clearance product information sheet using the Living Culture Google Sheet.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -62,9 +62,11 @@
       #${OVERLAY_ID} input, #${OVERLAY_ID} select { min-height:38px!important; border:1px solid #9fb5ce!important; border-radius:6px!important; background:#fff!important; color:#172b49!important; padding:0 11px!important; font:14px Arial,sans-serif!important; }
       #${OVERLAY_ID} .lc-summary { display:flex!important; align-items:center!important; gap:10px!important; padding:10px 22px!important; color:#526987!important; font-size:13px!important; }
       #${OVERLAY_ID} .lc-count { padding:5px 10px!important; border-radius:999px!important; background:#d9eff3!important; color:#075a68!important; font-weight:700!important; }
-      #${OVERLAY_ID} .lc-grid { flex:1 1 auto!important; display:flex!important; flex-direction:column!important; gap:8px!important; overflow:auto!important; padding:0 22px 22px!important; }
-      #${OVERLAY_ID} .lc-card { display:grid!important; grid-template-columns:minmax(260px,2fr) minmax(170px,.8fr) minmax(150px,.7fr) minmax(220px,1.4fr) auto!important; align-items:center!important; gap:14px!important; min-height:70px!important; padding:12px 14px!important; border:1px solid #c2d2e6!important; border-radius:8px!important; background:#fff!important; box-shadow:0 1px 4px rgba(13,48,87,.07)!important; }
-      #${OVERLAY_ID} .lc-info { display:contents!important; }
+      #${OVERLAY_ID} .lc-grid { flex:1 1 auto!important; display:grid!important; grid-template-columns:repeat(3,minmax(0,1fr))!important; align-content:start!important; gap:14px!important; overflow:auto!important; padding:0 22px 22px!important; }
+      #${OVERLAY_ID} .lc-card { display:grid!important; grid-template-columns:160px minmax(0,1fr)!important; min-height:210px!important; overflow:hidden!important; border:1px solid #c2d2e6!important; border-radius:10px!important; background:#fff!important; box-shadow:0 2px 7px rgba(13,48,87,.08)!important; }
+      #${OVERLAY_ID} .lc-image { display:flex!important; align-items:center!important; justify-content:center!important; min-height:210px!important; padding:8px!important; background:#f5f8fb!important; color:#8295ab!important; font-size:12px!important; text-align:center!important; cursor:pointer!important; }
+      #${OVERLAY_ID} .lc-image img { display:block!important; width:100%!important; height:100%!important; max-height:230px!important; object-fit:contain!important; }
+      #${OVERLAY_ID} .lc-info { display:flex!important; flex-direction:column!important; gap:8px!important; min-width:0!important; padding:14px!important; }
       #${OVERLAY_ID} .lc-badges { display:flex!important; flex-wrap:wrap!important; gap:6px!important; }
       #${OVERLAY_ID} .lc-badge { display:inline-flex!important; padding:4px 8px!important; border-radius:999px!important; background:#e8f1fb!important; color:#063b78!important; font-size:11px!important; font-weight:700!important; }
       #${OVERLAY_ID} .lc-badge.is-evergreen { background:#dff3ea!important; color:#176445!important; }
@@ -75,7 +77,7 @@
       #${OVERLAY_ID} .lc-price strong { color:#063b78!important; }
       #${OVERLAY_ID} .lc-reason { color:#334b66!important; font-size:13px!important; line-height:1.4!important; }
       #${OVERLAY_ID} .lc-note { padding:7px 9px!important; border-left:3px solid #08a6bc!important; background:#f0fafb!important; color:#334b66!important; font-size:12px!important; }
-      #${OVERLAY_ID} .lc-card-actions { display:flex!important; align-items:center!important; justify-content:flex-end!important; gap:10px!important; }
+      #${OVERLAY_ID} .lc-card-actions { display:flex!important; align-items:center!important; justify-content:space-between!important; gap:10px!important; margin-top:auto!important; }
       #${OVERLAY_ID} .lc-card-actions a { color:#087f8c!important; font-size:13px!important; font-weight:700!important; }
       #${OVERLAY_ID} .lc-owner { color:#7a8ca1!important; font-size:11px!important; }
       #${OVERLAY_ID} .lc-view-image { min-height:32px!important; padding:0 11px!important; border-color:#6f42c1!important; color:#6f42c1!important; }
@@ -87,8 +89,8 @@
       #${OVERLAY_ID} .lc-preview-body { flex:1!important; min-height:0!important; display:flex!important; align-items:center!important; justify-content:center!important; padding:16px!important; background:#edf2f7!important; color:#526987!important; }
       #${OVERLAY_ID} .lc-preview-body img { display:block!important; width:100%!important; height:100%!important; object-fit:contain!important; }
       #${OVERLAY_ID} .lc-empty { grid-column:1/-1!important; padding:70px 20px!important; border:1px dashed #9fb5ce!important; border-radius:10px!important; background:#fff!important; text-align:center!important; color:#526987!important; }
-      @media(max-width:1000px){ #${OVERLAY_ID} .lc-card{grid-template-columns:minmax(220px,1.7fr) minmax(150px,.8fr) minmax(200px,1fr) auto!important;} #${OVERLAY_ID} .lc-price{display:none!important;} }
-      @media(max-width:720px){ #${OVERLAY_ID}{padding:0!important;} #${OVERLAY_ID} .lc-sheet{width:100vw!important;height:100vh!important;border-radius:0!important;} #${OVERLAY_ID} .lc-toolbar{grid-template-columns:1fr 1fr!important;} #${OVERLAY_ID} .lc-toolbar input{grid-column:1/-1!important;} #${OVERLAY_ID} .lc-grid{padding:0 12px 12px!important;} #${OVERLAY_ID} .lc-card{grid-template-columns:1fr auto!important;} #${OVERLAY_ID} .lc-badges,#${OVERLAY_ID} .lc-reason{display:none!important;} }
+      @media(max-width:1100px){ #${OVERLAY_ID} .lc-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;} }
+      @media(max-width:720px){ #${OVERLAY_ID}{padding:0!important;} #${OVERLAY_ID} .lc-sheet{width:100vw!important;height:100vh!important;border-radius:0!important;} #${OVERLAY_ID} .lc-toolbar{grid-template-columns:1fr 1fr!important;} #${OVERLAY_ID} .lc-toolbar input{grid-column:1/-1!important;} #${OVERLAY_ID} .lc-grid{grid-template-columns:1fr!important;padding:0 12px 12px!important;} }
       @media print { body > *:not(#${OVERLAY_ID}){display:none!important;} #${OVERLAY_ID}{position:static!important;display:block!important;padding:0!important;background:#fff!important;} #${OVERLAY_ID} .lc-sheet{width:100%!important;height:auto!important;border:0!important;box-shadow:none!important;} #${OVERLAY_ID} .lc-toolbar,#${OVERLAY_ID} .lc-head-actions{display:none!important;} #${OVERLAY_ID} .lc-grid{display:grid!important;grid-template-columns:repeat(2,1fr)!important;overflow:visible!important;} #${OVERLAY_ID} .lc-card{break-inside:avoid!important;} }
     `;
     document.head.appendChild(style);
@@ -186,12 +188,14 @@
     const statusClass = /evergreen/i.test(item.status) ? 'is-evergreen' : /promo/i.test(item.status) ? 'is-promo' : '';
     return `
       <article class="lc-card" data-product-id="${item.id}" data-product-name="${escapeHtml(item.name)}">
+        <div class="lc-image" data-action="view-image">${cached.image ? `<img src="${escapeHtml(cached.image)}" alt="${escapeHtml(item.name)}">` : '<span>Loading image…</span>'}</div>
         <div class="lc-info">
-          <h3>${escapeHtml(item.name)}</h3>
           <div class="lc-badges"><span class="lc-badge ${statusClass}">${escapeHtml(item.status)}</span>${item.discount ? `<span class="lc-badge lc-discount">${escapeHtml(item.discount)}% off</span>` : ''}</div>
-          ${(item.rrp || item.clearancePrice) ? `<div class="lc-price">${item.rrp ? `<span>RRP <strong>${escapeHtml(money(item.rrp))}</strong></span>` : ''}${item.clearancePrice ? `<span>Clearance <strong>${escapeHtml(money(item.clearancePrice))}</strong></span>` : ''}</div>` : '<div class="lc-price">—</div>'}
-          <div class="lc-reason">${item.reason ? `<strong>Reason:</strong> ${escapeHtml(item.reason)}` : ''}${item.note ? `<div class="lc-note">${escapeHtml(item.note)}</div>` : ''}<div class="lc-owner">Owner: ${escapeHtml(item.owner || '—')}</div></div>
-          <div class="lc-card-actions"><button type="button" class="lc-view-image" data-action="view-image">View image</button><a href="${escapeHtml(cached.url || searchUrl(item.name))}" target="_blank" rel="noopener noreferrer">Website</a></div>
+          <h3>${escapeHtml(item.name)}</h3>
+          ${(item.rrp || item.clearancePrice) ? `<div class="lc-price">${item.rrp ? `<span>RRP <strong>${escapeHtml(money(item.rrp))}</strong></span>` : ''}${item.clearancePrice ? `<span>Clearance <strong>${escapeHtml(money(item.clearancePrice))}</strong></span>` : ''}</div>` : ''}
+          ${item.reason ? `<div class="lc-reason"><strong>Reason:</strong> ${escapeHtml(item.reason)}</div>` : ''}
+          ${item.note ? `<div class="lc-note">${escapeHtml(item.note)}</div>` : ''}
+          <div class="lc-card-actions"><button type="button" class="lc-view-image" data-action="view-image">Larger image</button><a href="${escapeHtml(cached.url || searchUrl(item.name))}" target="_blank" rel="noopener noreferrer">Website</a><span class="lc-owner">Owner: ${escapeHtml(item.owner || '—')}</span></div>
         </div>
       </article>`;
   }
@@ -210,6 +214,7 @@
     overlay.querySelector('.lc-count').textContent = `${filtered.length} product${filtered.length === 1 ? '' : 's'}`;
     const grid = overlay.querySelector('.lc-grid');
     grid.innerHTML = filtered.length ? filtered.map(cardHtml).join('') : '<div class="lc-empty">No clearance products match those filters.</div>';
+    observeProductCards(grid);
   }
 
   async function findStoreProduct(name) {
@@ -240,6 +245,23 @@
       imageCache[key] = { image: '', url: searchUrl(name) };
       return imageCache[key];
     }
+  }
+
+  function observeProductCards(grid) {
+    const observer = new IntersectionObserver((entries) => entries.forEach(async (entry) => {
+      if (!entry.isIntersecting) return;
+      observer.unobserve(entry.target);
+      const name = entry.target.dataset.productName;
+      const result = await findStoreProduct(name);
+      if (!entry.target.isConnected) return;
+      const image = entry.target.querySelector('.lc-image');
+      image.innerHTML = result.image
+        ? `<img src="${escapeHtml(result.image)}" alt="${escapeHtml(name)}">`
+        : '<span>Image not found</span>';
+      const website = entry.target.querySelector('.lc-card-actions a');
+      if (website) website.href = result.url;
+    }), { root: grid, rootMargin: '180px' });
+    grid.querySelectorAll('.lc-card').forEach((card) => observer.observe(card));
   }
 
   async function showProductImage(overlay, card) {
