@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture New Products Info Sheet
 // @namespace    livingculture-cin7
-// @version      0.1.2
+// @version      0.1.3
 // @description  Shows the Living Culture new-products spreadsheet in Cin7 Omni and Cin7 Core.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -26,7 +26,7 @@
   const SHEET_ID = '1Y6r2-84sZYqtqDGKQwIWt9gT03BmjXloiuER8gHDqRY';
   const SHEET_GID = '2039854859';
   const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${SHEET_GID}`;
-  const SHEET_GVIZ_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&headers=1&range=A1:F&gid=${SHEET_GID}`;
+  const SHEET_GVIZ_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&headers=1&range=A1:H&gid=${SHEET_GID}`;
   const SHEET_EDIT_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit?gid=${SHEET_GID}#gid=${SHEET_GID}`;
   const BUTTON_ID = 'lc-cin7-new-products-button';
   const CLEARANCE_BUTTON_ID = 'lc-omni-clearance-info-button';
@@ -35,16 +35,25 @@
   const STYLE_ID = 'lc-cin7-new-products-styles';
   const CSV_CACHE_KEY = 'lcCin7NewProductsCsvV1';
   const CSV_TIME_KEY = 'lcCin7NewProductsCsvTimeV1';
-  const IMAGE_CACHE_KEY = 'lcCin7NewProductsImagesV1';
+  const IMAGE_CACHE_KEY = 'lcCin7NewProductsImagesV2';
   const VIEW_KEY = 'lcCin7NewProductsViewV1';
   const CACHE_MAX_AGE = 2 * 60 * 60 * 1000;
   let products = [];
   let loadingPromise = null;
   let imageCache = {};
+  let imageCacheSaveTimer = null;
+  const imageQueue = [];
+  const imageRequests = new Map();
+  let activeImageLoads = 0;
+  const MAX_IMAGE_LOADS = 3;
   try { imageCache = JSON.parse(localStorage.getItem(IMAGE_CACHE_KEY) || '{}'); } catch (error) {}
 
   const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim();
-  const normaliseImageUrl = (value) => clean(value).replace(/^http:\/\/(?:www\.)?livingculture\.co\.nz\//i, 'https://livingculture.co.nz/');
+  const normaliseImageUrl = (value) => {
+    const url = clean(value);
+    if (url.startsWith('//')) return `https:${url}`;
+    return url.replace(/^http:\/\/(?:www\.)?livingculture\.co\.nz\//i, 'https://livingculture.co.nz/');
+  };
   const escapeHtml = (value) => String(value || '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
@@ -76,8 +85,8 @@
       #${OVERLAY_ID} .np-count{padding:5px 10px!important;border-radius:999px!important;background:#d9eff3!important;color:#075a68!important;font-weight:700!important;}
       #${OVERLAY_ID} .np-grid{flex:1 1 auto!important;display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;grid-auto-rows:max-content!important;align-content:start!important;align-items:start!important;gap:9px!important;overflow:auto!important;padding:0 18px 18px!important;}
       #${OVERLAY_ID} .np-card{display:grid!important;grid-template-columns:112px minmax(0,1fr)!important;align-self:stretch!important;min-height:150px!important;height:auto!important;overflow:hidden!important;border:1px solid #c2d2e6!important;border-radius:8px!important;background:#fff!important;box-shadow:0 1px 5px rgba(13,48,87,.07)!important;}
-      #${OVERLAY_ID} .np-image{display:flex!important;align-items:center!important;justify-content:center!important;min-height:150px!important;padding:5px!important;background:#fff!important;color:#8295ab!important;font-size:11px!important;text-align:center!important;}
-      #${OVERLAY_ID} .np-image img{display:block!important;width:100%!important;height:auto!important;max-height:160px!important;object-fit:contain!important;}
+      #${OVERLAY_ID} .np-image{display:flex!important;align-items:center!important;justify-content:center!important;height:150px!important;min-height:150px!important;max-height:150px!important;overflow:hidden!important;box-sizing:border-box!important;padding:5px!important;background:#fff!important;color:#8295ab!important;font-size:11px!important;text-align:center!important;}
+      #${OVERLAY_ID} .np-image img{display:block!important;width:100%!important;height:100%!important;object-fit:contain!important;}
       #${OVERLAY_ID} .np-info{display:flex!important;flex-direction:column!important;gap:6px!important;min-width:0!important;padding:9px!important;background:#fff!important;}
       #${OVERLAY_ID} h3{margin:0!important;color:#172b49!important;font-size:14px!important;line-height:1.25!important;}
       #${OVERLAY_ID} .np-badges{display:flex!important;flex-wrap:wrap!important;gap:5px!important;}
@@ -89,7 +98,7 @@
       #${OVERLAY_ID} .np-card-actions a{color:#087f8c!important;font-size:13px!important;font-weight:700!important;}
       #${OVERLAY_ID} .np-grid.is-list{display:flex!important;flex-direction:column!important;gap:6px!important;}
       #${OVERLAY_ID} .np-grid.is-list .np-card{grid-template-columns:64px minmax(0,1fr)!important;min-height:68px!important;}
-      #${OVERLAY_ID} .np-grid.is-list .np-image{width:64px!important;min-height:68px!important;height:68px!important;padding:3px!important;}
+      #${OVERLAY_ID} .np-grid.is-list .np-image{width:64px!important;min-height:68px!important;height:68px!important;max-height:68px!important;padding:3px!important;}
       #${OVERLAY_ID} .np-grid.is-list .np-image img{max-height:62px!important;}
       #${OVERLAY_ID} .np-grid.is-list .np-info{display:grid!important;grid-template-columns:minmax(260px,1.7fr) minmax(125px,.7fr) minmax(145px,.7fr) minmax(130px,.7fr) auto!important;align-items:center!important;gap:10px!important;padding:7px 10px!important;}
       #${OVERLAY_ID} .np-grid.is-list h3{grid-column:1!important;grid-row:1!important;}
@@ -181,36 +190,77 @@
   function productCard(item) {
     const image = normaliseImageUrl(item.image || imageCache[item.url] || '');
     return `<article class="np-card" data-url="${escapeHtml(item.url)}" data-name="${escapeHtml(item.name)}">
-      <div class="np-image">${image ? `<img src="${escapeHtml(image)}" alt="${escapeHtml(item.name)}">` : '<span>Loading image…</span>'}</div>
+      <div class="np-image">${image ? `<img src="${escapeHtml(image)}" alt="${escapeHtml(item.name)}" loading="lazy" decoding="async" fetchpriority="low">` : '<span>Loading image…</span>'}</div>
       <div class="np-info"><div class="np-badges"><span class="np-badge ${/pre.?order/i.test(item.eta) ? 'is-preorder' : ''}">${escapeHtml(item.eta || 'New')}</span></div><h3>${escapeHtml(item.name)}</h3><div class="np-sku">${escapeHtml(item.sku || 'Code pending')}</div>${item.size ? `<div class="np-size">Size/colour: ${escapeHtml(item.size)}</div>` : '<div class="np-size"></div>'}<div class="np-card-actions">${item.url ? `<a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">Website</a>` : ''}</div></div>
     </article>`;
   }
 
-  async function resolveProductImage(card) {
+  function saveImageCacheSoon() {
+    window.clearTimeout(imageCacheSaveTimer);
+    imageCacheSaveTimer = window.setTimeout(() => localStorage.setItem(IMAGE_CACHE_KEY, JSON.stringify(imageCache)), 350);
+  }
+
+  function productDataUrl(rawUrl) {
+    const url = new URL(rawUrl);
+    const match = url.pathname.match(/^(.*\/products\/[^/]+)/i);
+    if (!match) return '';
+    const variant = url.searchParams.get('variant');
+    url.pathname = `${match[1]}.js`;
+    url.search = variant ? `?variant=${encodeURIComponent(variant)}` : '';
+    return url.href;
+  }
+
+  function resolveProductImage(card) {
     const url = card.dataset.url;
-    if (!url) return '';
-    if (Object.prototype.hasOwnProperty.call(imageCache, url)) return normaliseImageUrl(imageCache[url]);
-    try {
-      const response = await request(url);
-      const doc = new DOMParser().parseFromString(response.responseText || '', 'text/html');
-      const image = normaliseImageUrl(doc.querySelector('meta[property="og:image:secure_url"],meta[property="og:image"]')?.content || '');
-      imageCache[url] = image;
-      localStorage.setItem(IMAGE_CACHE_KEY, JSON.stringify(imageCache));
-      return image;
-    } catch (error) {
-      imageCache[url] = '';
-      return '';
+    if (!url) return Promise.resolve('');
+    if (Object.prototype.hasOwnProperty.call(imageCache, url)) return Promise.resolve(normaliseImageUrl(imageCache[url]));
+    if (imageRequests.has(url)) return imageRequests.get(url);
+    const pending = (async () => {
+      try {
+        const dataUrl = productDataUrl(url);
+        if (!dataUrl) throw new Error('Not a product page');
+        const response = await request(dataUrl);
+        const product = JSON.parse(response.responseText || '{}');
+        const variantId = new URL(url).searchParams.get('variant');
+        const variant = variantId && (product.variants || []).find((item) => String(item.id) === variantId);
+        const image = normaliseImageUrl(variant?.featured_image?.src || product.featured_image || product.images?.[0] || '');
+        imageCache[url] = image;
+        saveImageCacheSoon();
+        return image;
+      } catch (error) {
+        imageCache[url] = '';
+        saveImageCacheSoon();
+        return '';
+      }
+    })().finally(() => imageRequests.delete(url));
+    imageRequests.set(url, pending);
+    return pending;
+  }
+
+  function drainImageQueue() {
+    while (activeImageLoads < MAX_IMAGE_LOADS && imageQueue.length) {
+      const card = imageQueue.shift();
+      if (!card?.isConnected || card.querySelector('img')) continue;
+      activeImageLoads += 1;
+      resolveProductImage(card).then((image) => {
+        if (!card.isConnected) return;
+        card.querySelector('.np-image').innerHTML = image
+          ? `<img src="${escapeHtml(image)}" alt="${escapeHtml(card.dataset.name)}" loading="lazy" decoding="async" fetchpriority="low">`
+          : '<span>Image unavailable</span>';
+      }).finally(() => {
+        activeImageLoads -= 1;
+        drainImageQueue();
+      });
     }
   }
 
   function observeCards(grid) {
-    const observer = new IntersectionObserver((entries) => entries.forEach(async (entry) => {
+    const observer = new IntersectionObserver((entries) => entries.forEach((entry) => {
       if (!entry.isIntersecting) return;
       observer.unobserve(entry.target);
       if (entry.target.querySelector('img')) return;
-      const image = await resolveProductImage(entry.target);
-      if (!entry.target.isConnected) return;
-      entry.target.querySelector('.np-image').innerHTML = image ? `<img src="${escapeHtml(image)}" alt="${escapeHtml(entry.target.dataset.name)}">` : '<span>Image unavailable</span>';
+      imageQueue.push(entry.target);
+      drainImageQueue();
     }), { root: grid, rootMargin: '180px' });
     grid.querySelectorAll('.np-card').forEach((card) => observer.observe(card));
   }
@@ -335,10 +385,20 @@
   function ensureUi() { addStyles(); mountButton(); }
   ensureUi();
   let recoveryTimer = null;
-  const observer = new MutationObserver(() => { clearTimeout(recoveryTimer); recoveryTimer = setTimeout(ensureUi, 180); });
+  const observer = new MutationObserver((mutations) => {
+    const overlay = document.getElementById(OVERLAY_ID);
+    if (overlay && !overlay.hidden) return;
+    if (mutations.every((mutation) => mutation.target.closest?.(`#${OVERLAY_ID}`))) return;
+    const button = document.getElementById(BUTTON_ID);
+    if (button?.isConnected && visible(button)) return;
+    clearTimeout(recoveryTimer);
+    recoveryTimer = setTimeout(ensureUi, 180);
+  });
   if (document.documentElement) observer.observe(document.documentElement, { childList: true, subtree: true });
   else document.addEventListener('DOMContentLoaded', () => observer.observe(document.documentElement, { childList: true, subtree: true }), { once: true });
   window.setInterval(() => {
+    const overlay = document.getElementById(OVERLAY_ID);
+    if (overlay && !overlay.hidden) return;
     const button = document.getElementById(BUTTON_ID);
     if (isOmniQuotePage() && button?.isConnected) return;
     ensureUi();
