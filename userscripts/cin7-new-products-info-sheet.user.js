@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture New Products Info Sheet
 // @namespace    livingculture-cin7
-// @version      0.1.1
+// @version      0.1.2
 // @description  Shows the Living Culture new-products spreadsheet in Cin7 Omni and Cin7 Core.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -11,6 +11,7 @@
 // @match        https://*.cin7.com/*
 // @grant        GM_xmlhttpRequest
 // @connect      docs.google.com
+// @connect      googleusercontent.com
 // @connect      *.googleusercontent.com
 // @connect      livingculture.co.nz
 // @run-at       document-start
@@ -25,6 +26,7 @@
   const SHEET_ID = '1Y6r2-84sZYqtqDGKQwIWt9gT03BmjXloiuER8gHDqRY';
   const SHEET_GID = '2039854859';
   const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${SHEET_GID}`;
+  const SHEET_GVIZ_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&headers=1&range=A1:F&gid=${SHEET_GID}`;
   const SHEET_EDIT_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit?gid=${SHEET_GID}#gid=${SHEET_GID}`;
   const BUTTON_ID = 'lc-cin7-new-products-button';
   const CLEARANCE_BUTTON_ID = 'lc-omni-clearance-info-button';
@@ -121,7 +123,14 @@
     const headers = data[0].map(clean);
     return data.slice(1).map((cells, index) => {
       const item = Object.fromEntries(headers.map((header, column) => [header, clean(cells[column])]));
-      return { id: index, eta: item.ETA, sku: item['CS Code'], name: item['Product Name'], size: item['Size/Color'], url: item['NZ Web Link'], image: item['Drive Link'] };
+      const sku = item['CS Code'];
+      const name = item['Product Name'];
+      let eta = item.ETA;
+      // Google Visualization treats text ETAs as blank when the same column also
+      // contains dates. Restore the two text groups used by this sheet.
+      if (!eta && /^CS2645[12]$/i.test(sku)) eta = 'In Stock';
+      else if (!eta && !sku && name) eta = 'Pre-order';
+      return { id: index, eta: eta || 'ETA pending', sku, name, size: item['Size/Color'], url: item['NZ Web Link'], image: item['Drive Link'] };
     }).filter((item) => item.name);
   }
 
@@ -141,11 +150,22 @@
       const age = Date.now() - Number(localStorage.getItem(CSV_TIME_KEY) || 0);
       if (!force && cached && age < CACHE_MAX_AGE) { products = parseCsv(cached); return { source: 'cached', age }; }
       try {
-        const response = await request(`${SHEET_URL}&_=${Date.now()}`);
-        const csv = response.responseText || '';
-        if (/<!doctype|<html/i.test(csv.slice(0, 300))) throw new Error('Google returned HTML instead of CSV');
+        let csv = '';
+        let lastError;
+        for (const url of [SHEET_URL, SHEET_GVIZ_URL]) {
+          try {
+            const response = await request(`${url}&_=${Date.now()}`);
+            csv = response.responseText || '';
+            if (/<!doctype|<html/i.test(csv.slice(0, 300))) throw new Error('Google returned HTML instead of CSV');
+            if (!parseCsv(csv).length) throw new Error('No new products found');
+            break;
+          } catch (error) {
+            csv = '';
+            lastError = error;
+          }
+        }
+        if (!csv) throw lastError || new Error('Google Sheet request failed');
         products = parseCsv(csv);
-        if (!products.length) throw new Error('No new products found');
         localStorage.setItem(CSV_CACHE_KEY, csv);
         localStorage.setItem(CSV_TIME_KEY, String(Date.now()));
         return { source: 'live', age: 0 };
