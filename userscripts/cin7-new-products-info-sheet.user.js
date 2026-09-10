@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture New Products Info Sheet
 // @namespace    livingculture-cin7
-// @version      0.1.3
+// @version      0.1.4
 // @description  Shows the Living Culture new-products spreadsheet in Cin7 Omni and Cin7 Core.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -22,6 +22,10 @@
 
 (function () {
   'use strict';
+
+  // Temporarily disabled until Living Culture approves release.
+  const FEATURE_ENABLED = false;
+  if (!FEATURE_ENABLED) return;
 
   const SHEET_ID = '1Y6r2-84sZYqtqDGKQwIWt9gT03BmjXloiuER8gHDqRY';
   const SHEET_GID = '2039854859';
