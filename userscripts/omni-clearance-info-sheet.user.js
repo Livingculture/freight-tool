@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Clearance Info Sheet
 // @namespace    livingculture-omni
-// @version      0.1.13
+// @version      0.1.14
 // @description  Shows a Living Culture clearance product information sheet in Cin7 Omni and Cin7 Core.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -22,8 +22,8 @@
 (function () {
   'use strict';
 
-  // Temporarily disabled until Living Culture approves release.
-  const FEATURE_ENABLED = false;
+  // Release availability switch.
+  const FEATURE_ENABLED = true;
   if (!FEATURE_ENABLED) return;
 
   const SHEET_ID = '1Y6r2-84sZYqtqDGKQwIWt9gT03BmjXloiuER8gHDqRY';
