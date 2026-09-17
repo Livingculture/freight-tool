@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 WeCom Payment Message Sender
 // @namespace    livingculture
-// @version      4.6
+// @version      4.7
 // @description  Sends a WeCom payment message from Cin7 invoice/payment screen only.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -40,16 +40,17 @@
     'AKL-Jaine',
     'AKL-Pakjira',
     'PEN-Steve',
+    'PEN-Tamara',
     'AKL-Vitalii',
     'CHCH-Bronwyn',
     'CHCH-Jake',
-    'CHCH-Marty',
+    'CHCH-Sach',
     'CHCH-Tim',
     'HAM-Linet',
     'HAM-Malcolm',
     'NPE-Chris',
     'NPE-Kirsty',
-    'TGA-Dennis',
+    'TGA-Sindin',
     'TGA-Jason',
     'WHG-Yash'
   ];
