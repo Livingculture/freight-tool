@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.66
-// @description  Adds Site Visit, Quote Review, HubSpot and customer photo workflow buttons to Cin7 Omni quotes.
+// @version      0.1.67
+// @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @match        https://go.cin7.com/Cloud/ShoppingCartAdmin/*
@@ -31,6 +31,7 @@
   const FLOATING_BAR_ID = 'lc-cin7-floating-actions-v1';
   const OVERLAY_ID = 'lc-site-visit-overlay-v2';
   const WORKFLOW_API_URL = 'https://living-culture-workflow.vercel.app/api/site-visits';
+  const OMNI_ORDER_SYNC_API_URL = 'https://living-culture-workflow.vercel.app/api/omni/orders';
   const REP_OPTIONS_API_URL = 'https://living-culture-workflow.vercel.app/api/rep-options';
   const QUOTE_REVIEW_API_URL = 'https://living-culture-workflow.vercel.app/api/quote-reviews';
   const WORKFLOW_PLANNER_URL = 'https://living-culture-workflow.vercel.app/';
@@ -80,6 +81,9 @@
   let siteVisitBookingsCache = { key: '', bookings: [] };
   let delegatedClickHandlerInstalled = false;
   let lastHandledAction = { id: '', at: 0 };
+  let omniOrderSyncTimer = null;
+  let omniOrderSyncInFlight = false;
+  let lastOmniOrderSyncDigest = '';
   const TIME_OPTIONS = (() => {
     const options = [''];
     for (let hour = 8; hour <= 20; hour += 1) {
@@ -135,13 +139,14 @@
   }
 
   function omniHeadingDraft() {
-    if (!isOmniPage()) return { customerName: '', orderId: '' };
+    if (!isOmniPage()) return { customerName: '', orderId: '', documentType: '' };
     const pageText = clean(document.body?.innerText || document.body?.textContent || '');
-    const pageMatch = pageText.match(/(?:Edit|New)\s+(?:Quote|Sales Order)\s*-\s*(.+?)\s*-\s*((?:NZSO-?\d+|SFOR\d+(?:-[A-Z0-9]+)?))\b/i);
+    const pageMatch = pageText.match(/(?:Edit|New)\s+(Quote|Sales Order)\s*-\s*(.+?)\s*-\s*((?:NZSO-?\d+|SFOR\d+(?:-[A-Z0-9]+)?))\b/i);
     if (pageMatch) {
       return {
-        customerName: clean(pageMatch[1]),
-        orderId: extractOrderId(pageMatch[2])
+        customerName: clean(pageMatch[2]),
+        orderId: extractOrderId(pageMatch[3]),
+        documentType: /sales order/i.test(pageMatch[1]) ? 'sales-order' : 'quote'
       };
     }
     const headings = Array.from(document.querySelectorAll('h1, h2, h3, [role="heading"]'))
@@ -155,7 +160,8 @@
     const customerMatch = heading.match(/^(?:Edit|New)\s+(?:Quote|Sales Order)\s*-\s*(.+?)\s*-\s*(?:NZSO-?\d+|SFOR\d+(?:-[A-Z0-9]+)?)\b/i);
     return {
       customerName: clean(customerMatch?.[1] || ''),
-      orderId
+      orderId,
+      documentType: /sales order/i.test(heading) ? 'sales-order' : /quote/i.test(heading) ? 'quote' : ''
     };
   }
 
@@ -1603,6 +1609,91 @@
       notes,
       sourceUrl: draft.sourceUrl
     };
+  }
+
+  function omniWorkflowSnapshot() {
+    if (!isOmniPage()) return null;
+    const heading = omniHeadingDraft();
+    if (!/^NZSO-\d+$/i.test(heading.orderId) || !heading.documentType) return null;
+    const draft = cin7Draft();
+    const labelled = (...labels) => labels
+      .map(label => readOmniControlByLabel(label) || readValueNearLabel(label))
+      .map(clean)
+      .find(Boolean) || '';
+    const bodyText = clean(document.body?.innerText || document.body?.textContent || '');
+    const branch = bodyText.match(/\bBranch\s*:\s*([A-Z]{2,5})\b/i)?.[1]?.toUpperCase() || deriveBranchFromRep(draft.placedBy);
+    const paymentStatus = labelled('Payment Status', 'Paid Status');
+    const dispatchedValue = labelled('Fully Dispatched', 'Dispatched Date', 'Dispatch Date');
+    const stockValue = labelled('Stock Status', 'Stock Ready', 'In Stock');
+    const internalComments = readMultilineNearLabel('Internal Comments');
+    const deliveryInstructions = readMultilineNearLabel('Delivery Instructions');
+
+    return {
+      orderNumber: heading.orderId,
+      documentType: heading.documentType,
+      secondaryType: labelled('Secondary Type'),
+      customerName: heading.customerName || draft.customerName,
+      address: draft.address,
+      phone: draft.phone,
+      email: draft.email,
+      salesRep: draft.placedBy,
+      branch,
+      product: draft.product,
+      notes: draft.comments,
+      internalComments,
+      deliveryInstructions,
+      total: readMoneyNearLabels(['Invoiced Total', 'Acceptance Total', 'Order Total', 'Grand Total', 'Total']),
+      createdDate: labelled('Created Date'),
+      invoiceDate: labelled('Invoice Date'),
+      fullyDispatched: Boolean(dispatchedValue && !/^(?:no|false|0|-+)$/i.test(dispatchedValue)),
+      paid: /\bpaid\b/i.test(paymentStatus) && !/\bunpaid\b/i.test(paymentStatus),
+      stockReady: stockValue ? /\b(?:ready|available|in stock|yes|true)\b/i.test(stockValue) : null,
+      sourceUrl: window.location.href
+    };
+  }
+
+  function syncOmniWorkflowRecord(options = {}) {
+    const payload = omniWorkflowSnapshot();
+    if (!payload) return;
+    const digest = JSON.stringify(payload);
+    if (!options.force && (digest === lastOmniOrderSyncDigest || omniOrderSyncInFlight)) return;
+
+    omniOrderSyncInFlight = true;
+    const headers = { 'Content-Type': 'application/json' };
+    if (API_KEY) headers.Authorization = `Bearer ${API_KEY}`;
+    GM_xmlhttpRequest({
+      method: 'POST',
+      url: OMNI_ORDER_SYNC_API_URL,
+      headers,
+      data: digest,
+      timeout: 20000,
+      onload: (response) => {
+        omniOrderSyncInFlight = false;
+        if (response.status >= 200 && response.status < 300) {
+          lastOmniOrderSyncDigest = digest;
+          return;
+        }
+        console.warn(`[LC Workflow] Omni order sync failed (${response.status}).`);
+      },
+      onerror: () => {
+        omniOrderSyncInFlight = false;
+        console.warn('[LC Workflow] Could not connect to the Omni order sync service.');
+      },
+      ontimeout: () => {
+        omniOrderSyncInFlight = false;
+        console.warn('[LC Workflow] Omni order sync timed out.');
+      }
+    });
+  }
+
+  function scheduleOmniWorkflowSync(delay = 1200, force = false) {
+    if (!isOmniPage()) return;
+    if (omniOrderSyncTimer && !force) return;
+    window.clearTimeout(omniOrderSyncTimer);
+    omniOrderSyncTimer = window.setTimeout(() => {
+      omniOrderSyncTimer = null;
+      syncOmniWorkflowRecord({ force });
+    }, delay);
   }
 
   function copyTextToClipboard(text) {
@@ -3642,6 +3733,7 @@
     applyHubSpotApprovalGate();
     layoutOmniWorkflowButtons();
     void linkExistingCustomerAlbumToQuote();
+    scheduleOmniWorkflowSync();
   }
 
   function scheduleButtonPass() {
@@ -3666,6 +3758,16 @@
     setTimeout(scheduleButtonPass, 1500);
     setTimeout(scheduleButtonPass, 3000);
     setTimeout(scheduleButtonPass, 6000);
+    if (isOmniPage()) {
+      document.addEventListener('click', (event) => {
+        const target = event.target instanceof Element ? event.target.closest('button, a, input[type="button"], input[type="submit"]') : null;
+        const label = normalizeLabel(target?.value || target?.textContent || '');
+        if (!/^(?:save|save & email|save back to list|save to admin|approve|approve & email|approve back to list)$/.test(label)) return;
+        lastOmniOrderSyncDigest = '';
+        scheduleOmniWorkflowSync(1800, true);
+        window.setTimeout(() => scheduleOmniWorkflowSync(300, true), 4500);
+      }, true);
+    }
   }
 
   if (document.readyState === 'loading') {
