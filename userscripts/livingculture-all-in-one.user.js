@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture All-in-One (Test)
 // @namespace    livingculture
-// @version      0.1.2
+// @version      0.1.3
 // @description  Test bundle for the approved Living Culture Omni, Cin7 Core, Gmail, HubSpot and website tools.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -62,6 +62,7 @@
 // @resource     gmailQuotePdfs https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-omni-quote-pdfs.user.js?v=0.1.7
 // @resource     emailHelperOnly https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-email-helper-only.user.js?v=0.1.1
 // @resource     quoteMemo https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-memo-info.user.js?v=0.1.2
+// @resource     pergolaGuide https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-pergola-modification-guide.user.js?v=0.1.0
 // @resource     hubspotColours https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/hubspot-contrast-colours.user.js?v=0.1.16
 // @resource     clearanceInfo https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-clearance-info-sheet.user.js?v=0.1.14
 // @resource     newProducts https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-new-products-info-sheet.user.js?v=0.1.5
@@ -109,13 +110,14 @@
     { resource: 'gmailQuotePdfs', file: 'gmail-omni-quote-pdfs.user.js', runAt: 'idle', enabled: isOmniQuote || isOmniShoppingAdmin || isGmail },
     { resource: 'emailHelperOnly', file: 'omni-email-helper-only.user.js', runAt: 'start', enabled: isOmniContactLog || isEmailHelper },
     { resource: 'quoteMemo', file: 'omni-quote-memo-info.user.js', runAt: 'idle', enabled: isOmniQuote },
+    { resource: 'pergolaGuide', file: 'omni-pergola-modification-guide.user.js', runAt: 'idle', enabled: isOmniQuote },
     { resource: 'hubspotColours', file: 'hubspot-contrast-colours.user.js', runAt: 'start', enabled: isHubSpot },
     { resource: 'clearanceInfo', file: 'omni-clearance-info-sheet.user.js', runAt: 'start', enabled: isCin7Core },
     { resource: 'newProducts', file: 'cin7-new-products-info-sheet.user.js', runAt: 'start', enabled: isCin7Core },
     { resource: 'wecomPayment', file: 'cin7-wecom-payment-message.user.js', runAt: 'idle', enabled: isCin7Core }
   ];
 
-  const status = { version: '0.1.1', loaded: [], skipped: [], errors: [] };
+  const status = { version: '0.1.3', loaded: [], skipped: [], errors: [] };
   window.__lcAllInOneStatus = status;
 
   function execute(component) {
