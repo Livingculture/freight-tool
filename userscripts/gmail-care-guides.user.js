@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Living Culture Care Guides
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.15
+// @version      0.1.16
 // @description  Attaches Living Culture care guide PDFs to Gmail compose windows.
 // @author       Living Culture
 // @match        https://mail.google.com/*
@@ -9,8 +9,8 @@
 // @grant        GM_registerMenuCommand
 // @connect      cin7-pdf-attachments.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.15
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.15
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.16
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.16
 // ==/UserScript==
 
 (function () {
@@ -108,47 +108,33 @@
     return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
   }
 
-  function openAttachmentPicker(event) {
-    event?.preventDefault();
-    event?.stopPropagation();
-    event?.stopImmediatePropagation();
+  function attachQuoteFiles(picker) {
     const composeRoot = activeComposeRoot();
     if (!composeRoot) {
       window.alert("Open a Gmail compose or reply box first.");
+      picker.value = "";
       return;
     }
-    const picker = document.createElement("input");
-    picker.type = "file";
-    picker.multiple = true;
-    picker.setAttribute("aria-hidden", "true");
-    picker.style.cssText = "position:fixed;left:-10000px;top:-10000px;width:1px;height:1px;opacity:0";
-    picker.addEventListener("change", () => {
-      const files = Array.from(picker.files || []);
-      if (!files.length) {
-        picker.remove();
-        return;
-      }
-      const localInputs = Array.from(composeRoot.querySelectorAll('input[type="file"]'));
-      const allInputs = localInputs.length ? localInputs : Array.from(document.querySelectorAll('input[type="file"]'));
-      const gmailInput = allInputs.reverse().find((candidate) => candidate !== picker && !candidate.disabled);
-      const transfer = new DataTransfer();
-      files.forEach((file) => transfer.items.add(file));
-      if (gmailInput) {
-        gmailInput.files = transfer.files;
-        gmailInput.dispatchEvent(new Event("input", { bubbles: true }));
-        gmailInput.dispatchEvent(new Event("change", { bubbles: true }));
-      } else {
-        const dropTarget = activeComposeBody() || composeRoot;
-        ["dragenter", "dragover", "drop"].forEach((type) => {
-          const dropEvent = new Event(type, { bubbles: true, cancelable: true });
-          Object.defineProperty(dropEvent, "dataTransfer", { value: transfer });
-          dropTarget.dispatchEvent(dropEvent);
-        });
-      }
-      picker.remove();
-    }, { once: true });
-    document.body.appendChild(picker);
-    picker.click();
+    const files = Array.from(picker.files || []);
+    if (!files.length) return;
+    const localInputs = Array.from(composeRoot.querySelectorAll('input[type="file"]'));
+    const allInputs = localInputs.length ? localInputs : Array.from(document.querySelectorAll('input[type="file"]'));
+    const gmailInput = allInputs.reverse().find((candidate) => candidate !== picker && !candidate.disabled);
+    const transfer = new DataTransfer();
+    files.forEach((file) => transfer.items.add(file));
+    if (gmailInput) {
+      gmailInput.files = transfer.files;
+      gmailInput.dispatchEvent(new Event("input", { bubbles: true }));
+      gmailInput.dispatchEvent(new Event("change", { bubbles: true }));
+    } else {
+      const dropTarget = activeComposeBody() || composeRoot;
+      ["dragenter", "dragover", "drop"].forEach((type) => {
+        const dropEvent = new Event(type, { bubbles: true, cancelable: true });
+        Object.defineProperty(dropEvent, "dataTransfer", { value: transfer });
+        dropTarget.dispatchEvent(dropEvent);
+      });
+    }
+    picker.value = "";
   }
 
   function ensureToolbar() {
@@ -164,17 +150,24 @@
       document.body.appendChild(toolbar);
     }
     let attachButton = document.getElementById(ATTACH_BUTTON_ID);
-    if (!attachButton) {
-      attachButton = document.createElement("button");
+    if (!attachButton || attachButton.tagName !== "LABEL" || attachButton.dataset.lcHandlerVersion !== "3") {
+      const previous = attachButton;
+      attachButton = document.createElement("label");
       attachButton.id = ATTACH_BUTTON_ID;
-      attachButton.type = "button";
-      attachButton.textContent = "📎 Add Quote";
+      attachButton.dataset.lcHandlerVersion = "3";
       attachButton.title = "Add a quote using Gmail's attachment picker";
-      toolbar.appendChild(attachButton);
-    }
-    if (attachButton.dataset.lcHandlerVersion !== "2") {
-      attachButton.dataset.lcHandlerVersion = "2";
-      attachButton.addEventListener("click", openAttachmentPicker, true);
+      const text = document.createElement("span");
+      text.textContent = "📎 Add Quote";
+      const picker = document.createElement("input");
+      picker.type = "file";
+      picker.multiple = true;
+      picker.title = "Select the quote file to attach";
+      picker.setAttribute("aria-label", "Select quote files to attach");
+      picker.style.cssText = "position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer";
+      picker.addEventListener("change", () => attachQuoteFiles(picker));
+      attachButton.append(text, picker);
+      if (previous) previous.replaceWith(attachButton);
+      else toolbar.appendChild(attachButton);
     }
     ["lc-gmail-drawings-button", BUTTON_ID, ATTACH_BUTTON_ID].forEach((id) => {
       const item = document.getElementById(id);
@@ -487,6 +480,11 @@
         white-space: nowrap !important;
       }
       #${ATTACH_BUTTON_ID} {
+        position: relative !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        overflow: hidden;
         height: 28px;
         border: 1px solid #e64a19;
         border-radius: 15px;
@@ -496,6 +494,7 @@
         font: 700 12px Arial, sans-serif;
         cursor: pointer;
         box-shadow: 0 4px 12px rgba(20, 31, 38, .22);
+        box-sizing: border-box;
       }
       #${ATTACH_BUTTON_ID}:hover { background: #d84315; }
       #${PANEL_ID} {

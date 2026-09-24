@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Living Culture Drawings
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.9
+// @version      0.1.10
 // @description  Selects Living Culture pergola drawings from Google Drive and attaches them to Gmail drafts.
 // @author       Living Culture
 // @match        https://mail.google.com/*
@@ -10,8 +10,8 @@
 // @connect      drive.google.com
 // @connect      drive.usercontent.google.com
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.9
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.9
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.10
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.10
 // @supportURL   https://github.com/Livingculture/freight-tool
 // ==/UserScript==
 
@@ -113,47 +113,33 @@
     return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
   }
 
-  function openAttachmentPicker(event) {
-    event?.preventDefault();
-    event?.stopPropagation();
-    event?.stopImmediatePropagation();
+  function attachQuoteFiles(picker) {
     const composeRoot = activeComposeRoot();
     if (!composeRoot) {
       alert("Open a Gmail compose or reply box first.");
+      picker.value = "";
       return;
     }
-    const picker = document.createElement("input");
-    picker.type = "file";
-    picker.multiple = true;
-    picker.setAttribute("aria-hidden", "true");
-    picker.style.cssText = "position:fixed;left:-10000px;top:-10000px;width:1px;height:1px;opacity:0";
-    picker.addEventListener("change", () => {
-      const files = Array.from(picker.files || []);
-      if (!files.length) {
-        picker.remove();
-        return;
-      }
-      const localInputs = Array.from(composeRoot.querySelectorAll('input[type="file"]'));
-      const allInputs = localInputs.length ? localInputs : Array.from(document.querySelectorAll('input[type="file"]'));
-      const gmailInput = allInputs.reverse().find((candidate) => candidate !== picker && !candidate.disabled);
-      const transfer = new DataTransfer();
-      files.forEach((file) => transfer.items.add(file));
-      if (gmailInput) {
-        gmailInput.files = transfer.files;
-        gmailInput.dispatchEvent(new Event("input", { bubbles: true }));
-        gmailInput.dispatchEvent(new Event("change", { bubbles: true }));
-      } else {
-        const dropTarget = activeComposeBody() || composeRoot;
-        ["dragenter", "dragover", "drop"].forEach((type) => {
-          const dropEvent = new Event(type, { bubbles: true, cancelable: true });
-          Object.defineProperty(dropEvent, "dataTransfer", { value: transfer });
-          dropTarget.dispatchEvent(dropEvent);
-        });
-      }
-      picker.remove();
-    }, { once: true });
-    document.body.appendChild(picker);
-    picker.click();
+    const files = Array.from(picker.files || []);
+    if (!files.length) return;
+    const localInputs = Array.from(composeRoot.querySelectorAll('input[type="file"]'));
+    const allInputs = localInputs.length ? localInputs : Array.from(document.querySelectorAll('input[type="file"]'));
+    const gmailInput = allInputs.reverse().find((candidate) => candidate !== picker && !candidate.disabled);
+    const transfer = new DataTransfer();
+    files.forEach((file) => transfer.items.add(file));
+    if (gmailInput) {
+      gmailInput.files = transfer.files;
+      gmailInput.dispatchEvent(new Event("input", { bubbles: true }));
+      gmailInput.dispatchEvent(new Event("change", { bubbles: true }));
+    } else {
+      const dropTarget = activeComposeBody() || composeRoot;
+      ["dragenter", "dragover", "drop"].forEach((type) => {
+        const dropEvent = new Event(type, { bubbles: true, cancelable: true });
+        Object.defineProperty(dropEvent, "dataTransfer", { value: transfer });
+        dropTarget.dispatchEvent(dropEvent);
+      });
+    }
+    picker.value = "";
   }
 
   function ensureToolbar() {
@@ -169,17 +155,24 @@
       document.body.appendChild(toolbar);
     }
     let attachButton = document.getElementById(ATTACH_BUTTON_ID);
-    if (!attachButton) {
-      attachButton = document.createElement("button");
+    if (!attachButton || attachButton.tagName !== "LABEL" || attachButton.dataset.lcHandlerVersion !== "3") {
+      const previous = attachButton;
+      attachButton = document.createElement("label");
       attachButton.id = ATTACH_BUTTON_ID;
-      attachButton.type = "button";
-      attachButton.textContent = "📎 Add Quote";
+      attachButton.dataset.lcHandlerVersion = "3";
       attachButton.title = "Add a quote using Gmail's attachment picker";
-      toolbar.appendChild(attachButton);
-    }
-    if (attachButton.dataset.lcHandlerVersion !== "2") {
-      attachButton.dataset.lcHandlerVersion = "2";
-      attachButton.addEventListener("click", openAttachmentPicker, true);
+      const text = document.createElement("span");
+      text.textContent = "📎 Add Quote";
+      const picker = document.createElement("input");
+      picker.type = "file";
+      picker.multiple = true;
+      picker.title = "Select the quote file to attach";
+      picker.setAttribute("aria-label", "Select quote files to attach");
+      picker.style.cssText = "position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer";
+      picker.addEventListener("change", () => attachQuoteFiles(picker));
+      attachButton.append(text, picker);
+      if (previous) previous.replaceWith(attachButton);
+      else toolbar.appendChild(attachButton);
     }
     [BUTTON_ID, "lc-gmail-care-guides-button", ATTACH_BUTTON_ID].forEach((id) => {
       const item = document.getElementById(id);
@@ -421,7 +414,7 @@
       #${TOOLBAR_ID}{position:fixed;z-index:2147483646;display:none;visibility:hidden;align-items:center;gap:8px;max-width:calc(100vw - 16px);transition:none!important}
       #${TOOLBAR_ID}>button{position:static!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;white-space:nowrap!important}
       #${BUTTON_ID}{height:28px;border:1px solid #0d6f78;border-radius:15px;background:#fff;color:#0d6f78;padding:0 11px;font:700 12px Arial,sans-serif;cursor:pointer;box-shadow:0 4px 12px rgba(20,31,38,.18)}
-      #${ATTACH_BUTTON_ID}{height:28px;border:1px solid #e64a19;border-radius:15px;background:#f4511e;color:#fff;padding:0 12px;font:700 12px Arial,sans-serif;cursor:pointer;box-shadow:0 4px 12px rgba(20,31,38,.22)}
+      #${ATTACH_BUTTON_ID}{position:relative!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;overflow:hidden;height:28px;border:1px solid #e64a19;border-radius:15px;background:#f4511e;color:#fff;padding:0 12px;font:700 12px Arial,sans-serif;cursor:pointer;box-shadow:0 4px 12px rgba(20,31,38,.22);box-sizing:border-box}
       #${ATTACH_BUTTON_ID}:hover{background:#d84315}
       #${PANEL_ID}{display:none;position:fixed!important;z-index:2147483647!important;top:50%!important;left:50%!important;right:auto!important;bottom:auto!important;transform:translate(-50%,-50%)!important;width:430px!important;height:auto!important;min-height:170px!important;max-width:calc(100vw - 30px)!important;overflow:visible!important;opacity:1!important;visibility:visible!important;border:1px solid #abc9c6!important;border-radius:9px!important;background:#fff!important;box-shadow:0 18px 45px rgba(20,45,48,.28)!important;color:#18343a!important;font:13px Arial,sans-serif!important}
       #${PANEL_ID} .lc-gd-head{display:flex!important;min-height:24px!important;align-items:center!important;justify-content:space-between!important;padding:12px 14px!important;border-bottom:1px solid #dce9e7!important;background:#0d6f78!important;color:#fff!important;border-radius:8px 8px 0 0!important;font-size:15px!important}
