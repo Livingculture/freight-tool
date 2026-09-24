@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.70
+// @version      0.1.71
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -2641,7 +2641,11 @@
       const entry = Array.from(params.entries()).find(([key]) => key.toLowerCase() === wanted.toLowerCase());
       if (entry && /^\d+$/.test(entry[1])) return entry[1];
     }
-    return '';
+    const hiddenOrderId = Array.from(document.querySelectorAll('input[type="hidden"]'))
+      .find((input) => /(?:^|[_$-])(?:orderid|idorder)(?:$|[_$-])/i.test(input.name || input.id || '') && /^\d+$/.test(input.value || ''));
+    if (hiddenOrderId) return hiddenOrderId.value;
+    const htmlMatch = (document.documentElement?.innerHTML || '').match(/(?:OrderId|idOrder)\D{0,40}(\d{4,})/i);
+    return htmlMatch?.[1] || '';
   }
 
   function quotePdfSidCandidates() {
@@ -2780,11 +2784,8 @@
 
   async function downloadCurrentQuotePdf(button) {
     const quoteNumber = omniHeadingDraft().orderId || extractOrderId(document.body?.innerText || '');
-    const adminControl = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]'))
-      .filter(isVisible)
-      .find((element) => normalizeLabel(element.value || element.textContent || '') === 'go to admin');
-    if (!quoteNumber || !adminControl) {
-      window.alert('Cin7\'s Go to Admin control could not be found for this quote.');
+    if (!quoteNumber) {
+      window.alert('The NZSO quote number could not be found on this page.');
       return;
     }
     try {
@@ -2794,10 +2795,11 @@
       // Try both non-rendering routes together. Do not let either route's network
       // timeout delay the rendered Admin fallback by 15–30 seconds.
       const orderId = currentQuotePdfOrderId();
-      if (orderId) {
+      const sidCandidates = quotePdfSidCandidates().slice(0, 6);
+      if (orderId || sidCandidates.length) {
         try {
-          const directRoutes = quotePdfSidCandidates().slice(0, 6).map((sid) => requestQuotePdf(orderId, sid));
-          directRoutes.push(requestAdminQuoteHref(orderId).then(fetchSignedQuotePdf));
+          const directRoutes = sidCandidates.map((sid) => requestQuotePdf(orderId, sid));
+          if (orderId) directRoutes.push(requestAdminQuoteHref(orderId).then(fetchSignedQuotePdf));
           let fastTimer = 0;
           const fastLimit = new Promise((resolve, reject) => {
             fastTimer = window.setTimeout(() => reject(new Error('Fast PDF routes unavailable.')), 5000);
@@ -2812,6 +2814,13 @@
           // Some Cin7 sessions only expose the signed link after the Admin page
           // renders. The hidden worker below handles those sessions.
         }
+      }
+
+      if (!orderId) {
+        button.disabled = false;
+        button.textContent = 'Download Quote';
+        window.alert('Cin7\'s internal order ID could not be found for this quote. Refresh the quote and try again.');
+        return;
       }
 
       localStorage.setItem(QUOTE_PDF_HANDOFF_KEY, JSON.stringify({ quoteNumber, startedAt: Date.now() }));
