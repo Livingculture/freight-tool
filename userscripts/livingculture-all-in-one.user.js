@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture All-in-One (Test)
 // @namespace    livingculture
-// @version      0.1.12
+// @version      0.1.13
 // @description  Test bundle for the approved Living Culture Omni, Cin7 Core, Gmail, HubSpot and website tools.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -55,8 +55,8 @@
 // @resource     hideOrderSettings https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-hide-order-settings.user.js?v=0.1.2
 // @resource     emailHelperCompose https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-email-helper-compose.user.js?v=0.1.45
 // @resource     pdfAttachments https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-pdf-attachments.user.js?v=0.4.9
-// @resource     gmailDrawings https://raw.githubusercontent.com/Livingculture/freight-tool/c4a256e0f1b52449833f14b99562e461fa31e105/userscripts/gmail-drawings.user.js
-// @resource     gmailCareGuides https://raw.githubusercontent.com/Livingculture/freight-tool/c4a256e0f1b52449833f14b99562e461fa31e105/userscripts/gmail-care-guides.user.js
+// @resource     gmailDrawings https://raw.githubusercontent.com/Livingculture/freight-tool/5cfdc85ac29c63e790d00de32166762814b77337/userscripts/gmail-drawings.user.js
+// @resource     gmailCareGuides https://raw.githubusercontent.com/Livingculture/freight-tool/5cfdc85ac29c63e790d00de32166762814b77337/userscripts/gmail-care-guides.user.js
 // @resource     hubspotShortcut https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-hubspot-shortcut.user.js?v=0.2.0
 // @resource     workflow https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.71
 // @resource     gmailHubspotAttachments https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-attachments.user.js?v=0.1.6
@@ -119,7 +119,7 @@
     { resource: 'wecomPayment', file: 'cin7-wecom-payment-message.user.js', runAt: 'idle', enabled: isCin7Core }
   ];
 
-  const status = { version: '0.1.12', loaded: [], skipped: [], errors: [] };
+  const status = { version: '0.1.13', loaded: [], skipped: [], errors: [] };
   window.__lcAllInOneStatus = status;
 
   function execute(component) {
