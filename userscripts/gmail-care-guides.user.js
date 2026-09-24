@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Living Culture Care Guides
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.14
+// @version      0.1.15
 // @description  Attaches Living Culture care guide PDFs to Gmail compose windows.
 // @author       Living Culture
 // @match        https://mail.google.com/*
@@ -9,8 +9,8 @@
 // @grant        GM_registerMenuCommand
 // @connect      cin7-pdf-attachments.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.14
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.14
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.15
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.15
 // ==/UserScript==
 
 (function () {
@@ -111,27 +111,44 @@
   function openAttachmentPicker(event) {
     event?.preventDefault();
     event?.stopPropagation();
+    event?.stopImmediatePropagation();
     const composeRoot = activeComposeRoot();
     if (!composeRoot) {
       window.alert("Open a Gmail compose or reply box first.");
       return;
     }
-    const selector = '[command="+Att"], [data-tooltip*="Attach files" i], [aria-label*="Attach files" i]';
-    const localControls = Array.from(composeRoot.querySelectorAll(selector));
-    const controls = localControls.length ? localControls : Array.from(document.querySelectorAll(selector));
-    const nativeControl = controls.reverse().find(visible);
-    if (nativeControl) {
-      nativeControl.click();
-      return;
-    }
-    const localInputs = Array.from(composeRoot.querySelectorAll('input[type="file"]'));
-    const inputs = localInputs.length ? localInputs : Array.from(document.querySelectorAll('input[type="file"]'));
-    const input = inputs.reverse().find((candidate) => !candidate.disabled);
-    if (input) {
-      input.click();
-      return;
-    }
-    window.alert("Gmail's attachment picker could not be found. Try clicking the normal paperclip once.");
+    const picker = document.createElement("input");
+    picker.type = "file";
+    picker.multiple = true;
+    picker.setAttribute("aria-hidden", "true");
+    picker.style.cssText = "position:fixed;left:-10000px;top:-10000px;width:1px;height:1px;opacity:0";
+    picker.addEventListener("change", () => {
+      const files = Array.from(picker.files || []);
+      if (!files.length) {
+        picker.remove();
+        return;
+      }
+      const localInputs = Array.from(composeRoot.querySelectorAll('input[type="file"]'));
+      const allInputs = localInputs.length ? localInputs : Array.from(document.querySelectorAll('input[type="file"]'));
+      const gmailInput = allInputs.reverse().find((candidate) => candidate !== picker && !candidate.disabled);
+      const transfer = new DataTransfer();
+      files.forEach((file) => transfer.items.add(file));
+      if (gmailInput) {
+        gmailInput.files = transfer.files;
+        gmailInput.dispatchEvent(new Event("input", { bubbles: true }));
+        gmailInput.dispatchEvent(new Event("change", { bubbles: true }));
+      } else {
+        const dropTarget = activeComposeBody() || composeRoot;
+        ["dragenter", "dragover", "drop"].forEach((type) => {
+          const dropEvent = new Event(type, { bubbles: true, cancelable: true });
+          Object.defineProperty(dropEvent, "dataTransfer", { value: transfer });
+          dropTarget.dispatchEvent(dropEvent);
+        });
+      }
+      picker.remove();
+    }, { once: true });
+    document.body.appendChild(picker);
+    picker.click();
   }
 
   function ensureToolbar() {
@@ -153,8 +170,11 @@
       attachButton.type = "button";
       attachButton.textContent = "📎 Add Quote";
       attachButton.title = "Add a quote using Gmail's attachment picker";
-      attachButton.addEventListener("click", openAttachmentPicker);
       toolbar.appendChild(attachButton);
+    }
+    if (attachButton.dataset.lcHandlerVersion !== "2") {
+      attachButton.dataset.lcHandlerVersion = "2";
+      attachButton.addEventListener("click", openAttachmentPicker, true);
     }
     ["lc-gmail-drawings-button", BUTTON_ID, ATTACH_BUTTON_ID].forEach((id) => {
       const item = document.getElementById(id);
