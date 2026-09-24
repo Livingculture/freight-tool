@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Living Culture Care Guides
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.10
+// @version      0.1.11
 // @description  Attaches Living Culture care guide PDFs to Gmail compose windows.
 // @author       Living Culture
 // @match        https://mail.google.com/*
@@ -9,8 +9,8 @@
 // @grant        GM_registerMenuCommand
 // @connect      cin7-pdf-attachments.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.10
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.10
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.11
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.11
 // ==/UserScript==
 
 (function () {
@@ -20,6 +20,8 @@
   const EMBEDDED_TOOL_TOKEN = "fXlAMocbHnglrq02Vg4WZY0xbHaPsA+b";
   const BUTTON_ID = "lc-gmail-care-guides-button";
   const PANEL_ID = "lc-gmail-care-guides-panel";
+  const TOOLBAR_ID = "lc-gmail-attachment-toolbar";
+  const ATTACH_BUTTON_ID = "lc-gmail-native-attachments-button";
 
   const state = {
     files: [],
@@ -97,6 +99,71 @@
   function activeComposeRoot() {
     const body = activeComposeBody();
     return body?.closest('div[role="dialog"], div[role="listitem"]') || body;
+  }
+
+  function visible(element) {
+    if (!element) return false;
+    const rect = element.getBoundingClientRect();
+    const style = window.getComputedStyle(element);
+    return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+  }
+
+  function openAttachmentPicker(event) {
+    event?.preventDefault();
+    event?.stopPropagation();
+    const composeRoot = activeComposeRoot();
+    if (!composeRoot) {
+      window.alert("Open a Gmail compose or reply box first.");
+      return;
+    }
+    const nativeControl = Array.from(composeRoot.querySelectorAll('[command="+Att"], [data-tooltip*="Attach files" i], [aria-label*="Attach files" i]'))
+      .find(visible);
+    if (nativeControl) {
+      nativeControl.click();
+      return;
+    }
+    const localInputs = Array.from(composeRoot.querySelectorAll('input[type="file"]'));
+    const inputs = localInputs.length ? localInputs : Array.from(document.querySelectorAll('input[type="file"]'));
+    const input = inputs.reverse().find((candidate) => !candidate.disabled);
+    if (input) {
+      input.click();
+      return;
+    }
+    window.alert("Gmail's attachment picker could not be found. Try clicking the normal paperclip once.");
+  }
+
+  function ensureToolbar() {
+    let toolbar = document.getElementById(TOOLBAR_ID);
+    if (!toolbar) {
+      toolbar = document.createElement("div");
+      toolbar.id = TOOLBAR_ID;
+      toolbar.setAttribute("role", "toolbar");
+      toolbar.setAttribute("aria-label", "Living Culture email attachments");
+      document.body.appendChild(toolbar);
+    }
+    let attachButton = document.getElementById(ATTACH_BUTTON_ID);
+    if (!attachButton) {
+      attachButton = document.createElement("button");
+      attachButton.id = ATTACH_BUTTON_ID;
+      attachButton.type = "button";
+      attachButton.textContent = "📎 Add Attachments";
+      attachButton.title = "Add files using Gmail's attachment picker";
+      attachButton.addEventListener("click", openAttachmentPicker);
+      toolbar.appendChild(attachButton);
+    }
+    ["lc-gmail-drawings-button", BUTTON_ID, ATTACH_BUTTON_ID].forEach((id) => {
+      const item = document.getElementById(id);
+      if (item) toolbar.appendChild(item);
+    });
+    return toolbar;
+  }
+
+  function assistantPromptTop(composeRoot) {
+    const labelled = Array.from(composeRoot.querySelectorAll("[aria-label], [placeholder]"))
+      .find((element) => /describe your change/i.test(`${element.getAttribute("aria-label") || ""} ${element.getAttribute("placeholder") || ""}`));
+    const textNode = labelled || Array.from(composeRoot.querySelectorAll("div, span"))
+      .find((element) => !element.children.length && String(element.textContent || "").replace(/\s+/g, " ").trim() === "Describe your change");
+    return visible(textNode) ? textNode.getBoundingClientRect().top : null;
   }
 
   function insertNodeIntoCompose(node) {
@@ -365,11 +432,6 @@
     style.id = "lc-gmail-care-styles";
     style.textContent = `
       #${BUTTON_ID} {
-        position: fixed;
-        left: 0;
-        top: 0;
-        z-index: 2147483646;
-        display: none;
         height: 28px;
         border: 1px solid #0d6f78;
         border-radius: 15px;
@@ -382,6 +444,33 @@
         user-select: none;
         box-shadow: 0 4px 12px rgba(20, 31, 38, .20);
       }
+      #${TOOLBAR_ID} {
+        position: fixed;
+        z-index: 2147483646;
+        display: none;
+        align-items: center;
+        gap: 8px;
+        max-width: calc(100vw - 16px);
+      }
+      #${TOOLBAR_ID} > button {
+        position: static !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        white-space: nowrap !important;
+      }
+      #${ATTACH_BUTTON_ID} {
+        height: 28px;
+        border: 1px solid #e64a19;
+        border-radius: 15px;
+        background: #f4511e;
+        color: #fff;
+        padding: 0 12px;
+        font: 700 12px Arial, sans-serif;
+        cursor: pointer;
+        box-shadow: 0 4px 12px rgba(20, 31, 38, .22);
+      }
+      #${ATTACH_BUTTON_ID}:hover { background: #d84315; }
       #${PANEL_ID} {
         display: none;
         position: fixed;
@@ -498,7 +587,7 @@
     button.addEventListener("touchstart", toggle, true);
     button.addEventListener("click", toggle, true);
     button.onclick = toggle;
-    document.body.appendChild(button);
+    ensureToolbar().appendChild(button);
     syncButtonToCompose();
 
     if (!menuRegistered && typeof GM_registerMenuCommand === "function") {
@@ -510,28 +599,26 @@
   function syncButtonToCompose() {
     const button = document.getElementById(BUTTON_ID);
     if (!button) return;
-
+    const toolbar = ensureToolbar();
     const composeRoot = activeComposeRoot();
     if (!composeRoot) {
-      button.style.display = "none";
+      toolbar.style.display = "none";
       if (state.open) closePanel();
       return;
     }
 
     const rect = composeRoot.getBoundingClientRect();
     if (!rect.width || !rect.height) {
-      button.style.display = "none";
+      toolbar.style.display = "none";
       return;
     }
-
-    const buttonWidth = button.offsetWidth || 96;
-    const left = Math.min(rect.right - buttonWidth - 34, window.innerWidth - buttonWidth - 12);
-    const top = Math.min(rect.bottom - 42, window.innerHeight - 54);
-    button.style.left = `${Math.max(8, left)}px`;
-    button.style.top = `${Math.max(8, top)}px`;
-    button.style.display = "inline-flex";
-    button.style.alignItems = "center";
-    button.style.justifyContent = "center";
+    toolbar.style.display = "flex";
+    const width = toolbar.offsetWidth || 310;
+    const height = toolbar.offsetHeight || 28;
+    const promptTop = assistantPromptTop(composeRoot);
+    const top = promptTop === null ? rect.bottom - height - 56 : promptTop - height - 12;
+    toolbar.style.left = `${Math.max(8, Math.min(rect.right - width - 10, window.innerWidth - width - 8))}px`;
+    toolbar.style.top = `${Math.max(8, Math.min(top, window.innerHeight - height - 8))}px`;
   }
 
   function boot() {

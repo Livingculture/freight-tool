@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Living Culture Drawings
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.4
+// @version      0.1.5
 // @description  Selects Living Culture pergola drawings from Google Drive and attaches them to Gmail drafts.
 // @author       Living Culture
 // @match        https://mail.google.com/*
@@ -10,8 +10,8 @@
 // @connect      drive.google.com
 // @connect      drive.usercontent.google.com
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.4
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.4
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.5
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.5
 // @supportURL   https://github.com/Livingculture/freight-tool
 // ==/UserScript==
 
@@ -21,6 +21,8 @@
   const ROOT_FOLDER_ID = "1Tcxn7LceZztaoWUmgsNZgml18s2LZORj";
   const FOLDER_MIME = "application/vnd.google-apps.folder";
   const BUTTON_ID = "lc-gmail-drawings-button";
+  const TOOLBAR_ID = "lc-gmail-attachment-toolbar";
+  const ATTACH_BUTTON_ID = "lc-gmail-native-attachments-button";
   const PANEL_ID = "lc-gmail-drawings-panel";
   const STYLE_ID = "lc-gmail-drawings-styles";
   const state = { levels: [], selected: null, loaded: false, loading: false, preparing: false, busy: false, status: "", error: false, open: false };
@@ -102,6 +104,71 @@
   function activeComposeRoot() {
     const body = activeComposeBody();
     return body?.closest('div[role="dialog"], div[role="listitem"]') || body;
+  }
+
+  function visible(element) {
+    if (!element) return false;
+    const rect = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+  }
+
+  function openAttachmentPicker(event) {
+    event?.preventDefault();
+    event?.stopPropagation();
+    const composeRoot = activeComposeRoot();
+    if (!composeRoot) {
+      alert("Open a Gmail compose or reply box first.");
+      return;
+    }
+    const nativeControl = Array.from(composeRoot.querySelectorAll('[command="+Att"], [data-tooltip*="Attach files" i], [aria-label*="Attach files" i]'))
+      .find(visible);
+    if (nativeControl) {
+      nativeControl.click();
+      return;
+    }
+    const localInputs = Array.from(composeRoot.querySelectorAll('input[type="file"]'));
+    const inputs = localInputs.length ? localInputs : Array.from(document.querySelectorAll('input[type="file"]'));
+    const input = inputs.reverse().find((candidate) => !candidate.disabled);
+    if (input) {
+      input.click();
+      return;
+    }
+    alert("Gmail's attachment picker could not be found. Try clicking the normal paperclip once.");
+  }
+
+  function ensureToolbar() {
+    let toolbar = document.getElementById(TOOLBAR_ID);
+    if (!toolbar) {
+      toolbar = document.createElement("div");
+      toolbar.id = TOOLBAR_ID;
+      toolbar.setAttribute("role", "toolbar");
+      toolbar.setAttribute("aria-label", "Living Culture email attachments");
+      document.body.appendChild(toolbar);
+    }
+    let attachButton = document.getElementById(ATTACH_BUTTON_ID);
+    if (!attachButton) {
+      attachButton = document.createElement("button");
+      attachButton.id = ATTACH_BUTTON_ID;
+      attachButton.type = "button";
+      attachButton.textContent = "📎 Add Attachments";
+      attachButton.title = "Add files using Gmail's attachment picker";
+      attachButton.addEventListener("click", openAttachmentPicker);
+      toolbar.appendChild(attachButton);
+    }
+    [BUTTON_ID, "lc-gmail-care-guides-button", ATTACH_BUTTON_ID].forEach((id) => {
+      const item = document.getElementById(id);
+      if (item) toolbar.appendChild(item);
+    });
+    return toolbar;
+  }
+
+  function assistantPromptTop(composeRoot) {
+    const labelled = Array.from(composeRoot.querySelectorAll("[aria-label], [placeholder]"))
+      .find((element) => /describe your change/i.test(`${element.getAttribute("aria-label") || ""} ${element.getAttribute("placeholder") || ""}`));
+    const textNode = labelled || Array.from(composeRoot.querySelectorAll("div, span"))
+      .find((element) => !element.children.length && clean(element.textContent) === "Describe your change");
+    return visible(textNode) ? textNode.getBoundingClientRect().top : null;
   }
 
   function currentFiles() {
@@ -326,7 +393,11 @@
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
-      #${BUTTON_ID}{position:fixed;z-index:2147483646;display:none;height:28px;border:1px solid #0d6f78;border-radius:15px;background:#fff;color:#0d6f78;padding:0 11px;font:700 12px Arial,sans-serif;cursor:pointer;box-shadow:0 4px 12px rgba(20,31,38,.18)}
+      #${TOOLBAR_ID}{position:fixed;z-index:2147483646;display:none;align-items:center;gap:8px;max-width:calc(100vw - 16px)}
+      #${TOOLBAR_ID}>button{position:static!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;white-space:nowrap!important}
+      #${BUTTON_ID}{height:28px;border:1px solid #0d6f78;border-radius:15px;background:#fff;color:#0d6f78;padding:0 11px;font:700 12px Arial,sans-serif;cursor:pointer;box-shadow:0 4px 12px rgba(20,31,38,.18)}
+      #${ATTACH_BUTTON_ID}{height:28px;border:1px solid #e64a19;border-radius:15px;background:#f4511e;color:#fff;padding:0 12px;font:700 12px Arial,sans-serif;cursor:pointer;box-shadow:0 4px 12px rgba(20,31,38,.22)}
+      #${ATTACH_BUTTON_ID}:hover{background:#d84315}
       #${PANEL_ID}{display:none;position:fixed!important;z-index:2147483647!important;top:50%!important;left:50%!important;right:auto!important;bottom:auto!important;transform:translate(-50%,-50%)!important;width:430px!important;height:auto!important;min-height:170px!important;max-width:calc(100vw - 30px)!important;overflow:visible!important;opacity:1!important;visibility:visible!important;border:1px solid #abc9c6!important;border-radius:9px!important;background:#fff!important;box-shadow:0 18px 45px rgba(20,45,48,.28)!important;color:#18343a!important;font:13px Arial,sans-serif!important}
       #${PANEL_ID} .lc-gd-head{display:flex!important;min-height:24px!important;align-items:center!important;justify-content:space-between!important;padding:12px 14px!important;border-bottom:1px solid #dce9e7!important;background:#0d6f78!important;color:#fff!important;border-radius:8px 8px 0 0!important;font-size:15px!important}
       #${PANEL_ID} .lc-gd-head button{border:0!important;background:transparent!important;color:#fff!important;font:700 22px Arial!important;cursor:pointer!important}
@@ -347,29 +418,21 @@
   function syncButton() {
     const button = document.getElementById(BUTTON_ID);
     if (!button) return;
-    const careButton = document.getElementById("lc-gmail-care-guides-button");
-    const careRect = careButton?.getBoundingClientRect();
-    const width = button.offsetWidth || 76;
-    const careStyle = careButton ? getComputedStyle(careButton) : null;
-    if (careRect?.width && careRect?.height && careStyle?.display !== "none" && careStyle?.visibility !== "hidden") {
-      button.style.left = `${Math.max(8, careRect.left - width - 8)}px`;
-      button.style.top = `${careRect.top}px`;
-      button.style.display = "inline-flex";
-      button.style.alignItems = "center";
-      return;
-    }
-
+    const toolbar = ensureToolbar();
     const compose = activeComposeRoot();
     if (!compose) {
-      button.style.display = "none";
+      toolbar.style.display = "none";
       if (state.open) closePanel();
       return;
     }
     const rect = compose.getBoundingClientRect();
-    button.style.left = `${Math.max(8, Math.min(rect.right - width - 140, window.innerWidth - width - 120))}px`;
-    button.style.top = `${Math.max(8, Math.min(rect.bottom - 42, window.innerHeight - 54))}px`;
-    button.style.display = "inline-flex";
-    button.style.alignItems = "center";
+    toolbar.style.display = "flex";
+    const width = toolbar.offsetWidth || 310;
+    const height = toolbar.offsetHeight || 28;
+    const promptTop = assistantPromptTop(compose);
+    const top = promptTop === null ? rect.bottom - height - 56 : promptTop - height - 12;
+    toolbar.style.left = `${Math.max(8, Math.min(rect.right - width - 10, window.innerWidth - width - 8))}px`;
+    toolbar.style.top = `${Math.max(8, Math.min(top, window.innerHeight - height - 8))}px`;
   }
 
   function boot() {
@@ -385,7 +448,7 @@
         if (state.open) closePanel();
         else openPanel();
       }, true);
-      document.body.appendChild(button);
+      ensureToolbar().appendChild(button);
       if (typeof GM_registerMenuCommand === "function") GM_registerMenuCommand("Open Drawings", openPanel);
     }
     syncButton();
