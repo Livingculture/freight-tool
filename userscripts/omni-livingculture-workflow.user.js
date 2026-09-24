@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.69
+// @version      0.1.70
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -220,7 +220,10 @@
       element.classList.toggle(HUBSPOT_GATE_CLASS, !unlocked);
     });
 
-    document.getElementById(QUOTE_PDF_BUTTON_ID)?.classList.toggle(HUBSPOT_GATE_CLASS, !unlocked);
+    // Downloading the customer's quote is available to every Omni user. The
+    // HubSpot completion flag is browser-local, so gating this button made it
+    // disappear for colleagues who opened the same quote on another computer.
+    document.getElementById(QUOTE_PDF_BUTTON_ID)?.classList.remove(HUBSPOT_GATE_CLASS);
   }
 
   function deriveBranchFromRep(repName) {
@@ -3759,6 +3762,7 @@
       styleInlineButton(button, '#087f8c');
       wireActionButton(button);
     }
+    button.classList.remove(HUBSPOT_GATE_CLASS);
     placeOmniActionButton(button, hubspotButton);
   }
 
