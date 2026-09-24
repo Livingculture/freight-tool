@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Living Culture Care Guides
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.13
+// @version      0.1.14
 // @description  Attaches Living Culture care guide PDFs to Gmail compose windows.
 // @author       Living Culture
 // @match        https://mail.google.com/*
@@ -9,8 +9,8 @@
 // @grant        GM_registerMenuCommand
 // @connect      cin7-pdf-attachments.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.13
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.13
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.14
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.14
 // ==/UserScript==
 
 (function () {
@@ -141,6 +141,9 @@
       toolbar.id = TOOLBAR_ID;
       toolbar.setAttribute("role", "toolbar");
       toolbar.setAttribute("aria-label", "Living Culture email attachments");
+      toolbar.style.position = "fixed";
+      toolbar.style.display = "none";
+      toolbar.style.visibility = "hidden";
       document.body.appendChild(toolbar);
     }
     let attachButton = document.getElementById(ATTACH_BUTTON_ID);
@@ -450,9 +453,11 @@
         position: fixed;
         z-index: 2147483646;
         display: none;
+        visibility: hidden;
         align-items: center;
         gap: 8px;
         max-width: calc(100vw - 16px);
+        transition: none !important;
       }
       #${TOOLBAR_ID} > button {
         position: static !important;
@@ -605,6 +610,9 @@
     const composeRoot = activeComposeRoot();
     if (!composeRoot) {
       toolbar.style.display = "none";
+      toolbar.style.visibility = "hidden";
+      delete toolbar.dataset.lcLayoutKey;
+      delete toolbar.dataset.lcReadyAt;
       if (state.open) closePanel();
       return;
     }
@@ -621,6 +629,14 @@
     const top = promptTop === null ? rect.bottom - height - 56 : promptTop - height - 12;
     toolbar.style.left = `${Math.max(8, Math.min(rect.right - width - 10, window.innerWidth - width - 8))}px`;
     toolbar.style.top = `${Math.max(8, Math.min(top, window.innerHeight - height - 8))}px`;
+    const buttonSet = Array.from(toolbar.children).map((item) => item.id).join("|");
+    const layoutKey = `${Math.round(rect.right)}:${Math.round(rect.bottom)}:${Math.round(promptTop || 0)}:${buttonSet}`;
+    if (toolbar.dataset.lcLayoutKey !== layoutKey) {
+      toolbar.dataset.lcLayoutKey = layoutKey;
+      toolbar.dataset.lcReadyAt = String(Date.now() + (promptTop === null ? 1500 : 300));
+      toolbar.style.visibility = "hidden";
+    }
+    if (Date.now() >= Number(toolbar.dataset.lcReadyAt || 0)) toolbar.style.visibility = "visible";
   }
 
   function boot() {

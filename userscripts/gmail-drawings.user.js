@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Living Culture Drawings
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.7
+// @version      0.1.8
 // @description  Selects Living Culture pergola drawings from Google Drive and attaches them to Gmail drafts.
 // @author       Living Culture
 // @match        https://mail.google.com/*
@@ -10,8 +10,8 @@
 // @connect      drive.google.com
 // @connect      drive.usercontent.google.com
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.7
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.7
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.8
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.8
 // @supportURL   https://github.com/Livingculture/freight-tool
 // ==/UserScript==
 
@@ -146,6 +146,9 @@
       toolbar.id = TOOLBAR_ID;
       toolbar.setAttribute("role", "toolbar");
       toolbar.setAttribute("aria-label", "Living Culture email attachments");
+      toolbar.style.position = "fixed";
+      toolbar.style.display = "none";
+      toolbar.style.visibility = "hidden";
       document.body.appendChild(toolbar);
     }
     let attachButton = document.getElementById(ATTACH_BUTTON_ID);
@@ -395,7 +398,7 @@
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
-      #${TOOLBAR_ID}{position:fixed;z-index:2147483646;display:none;align-items:center;gap:8px;max-width:calc(100vw - 16px)}
+      #${TOOLBAR_ID}{position:fixed;z-index:2147483646;display:none;visibility:hidden;align-items:center;gap:8px;max-width:calc(100vw - 16px);transition:none!important}
       #${TOOLBAR_ID}>button{position:static!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;white-space:nowrap!important}
       #${BUTTON_ID}{height:28px;border:1px solid #0d6f78;border-radius:15px;background:#fff;color:#0d6f78;padding:0 11px;font:700 12px Arial,sans-serif;cursor:pointer;box-shadow:0 4px 12px rgba(20,31,38,.18)}
       #${ATTACH_BUTTON_ID}{height:28px;border:1px solid #e64a19;border-radius:15px;background:#f4511e;color:#fff;padding:0 12px;font:700 12px Arial,sans-serif;cursor:pointer;box-shadow:0 4px 12px rgba(20,31,38,.22)}
@@ -424,6 +427,9 @@
     const compose = activeComposeRoot();
     if (!compose) {
       toolbar.style.display = "none";
+      toolbar.style.visibility = "hidden";
+      delete toolbar.dataset.lcLayoutKey;
+      delete toolbar.dataset.lcReadyAt;
       if (state.open) closePanel();
       return;
     }
@@ -435,6 +441,14 @@
     const top = promptTop === null ? rect.bottom - height - 56 : promptTop - height - 12;
     toolbar.style.left = `${Math.max(8, Math.min(rect.right - width - 10, window.innerWidth - width - 8))}px`;
     toolbar.style.top = `${Math.max(8, Math.min(top, window.innerHeight - height - 8))}px`;
+    const buttonSet = Array.from(toolbar.children).map((item) => item.id).join("|");
+    const layoutKey = `${Math.round(rect.right)}:${Math.round(rect.bottom)}:${Math.round(promptTop || 0)}:${buttonSet}`;
+    if (toolbar.dataset.lcLayoutKey !== layoutKey) {
+      toolbar.dataset.lcLayoutKey = layoutKey;
+      toolbar.dataset.lcReadyAt = String(Date.now() + (promptTop === null ? 1500 : 300));
+      toolbar.style.visibility = "hidden";
+    }
+    if (Date.now() >= Number(toolbar.dataset.lcReadyAt || 0)) toolbar.style.visibility = "visible";
   }
 
   function boot() {
