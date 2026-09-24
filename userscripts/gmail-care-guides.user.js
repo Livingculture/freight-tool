@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Living Culture Care Guides
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.12
+// @version      0.1.13
 // @description  Attaches Living Culture care guide PDFs to Gmail compose windows.
 // @author       Living Culture
 // @match        https://mail.google.com/*
@@ -9,8 +9,8 @@
 // @grant        GM_registerMenuCommand
 // @connect      cin7-pdf-attachments.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.12
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.12
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.13
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.13
 // ==/UserScript==
 
 (function () {
@@ -116,8 +116,10 @@
       window.alert("Open a Gmail compose or reply box first.");
       return;
     }
-    const nativeControl = Array.from(composeRoot.querySelectorAll('[command="+Att"], [data-tooltip*="Attach files" i], [aria-label*="Attach files" i]'))
-      .find(visible);
+    const selector = '[command="+Att"], [data-tooltip*="Attach files" i], [aria-label*="Attach files" i]';
+    const localControls = Array.from(composeRoot.querySelectorAll(selector));
+    const controls = localControls.length ? localControls : Array.from(document.querySelectorAll(selector));
+    const nativeControl = controls.reverse().find(visible);
     if (nativeControl) {
       nativeControl.click();
       return;

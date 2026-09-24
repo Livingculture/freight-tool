@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Living Culture Drawings
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.6
+// @version      0.1.7
 // @description  Selects Living Culture pergola drawings from Google Drive and attaches them to Gmail drafts.
 // @author       Living Culture
 // @match        https://mail.google.com/*
@@ -10,8 +10,8 @@
 // @connect      drive.google.com
 // @connect      drive.usercontent.google.com
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.6
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.6
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.7
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.7
 // @supportURL   https://github.com/Livingculture/freight-tool
 // ==/UserScript==
 
@@ -121,8 +121,10 @@
       alert("Open a Gmail compose or reply box first.");
       return;
     }
-    const nativeControl = Array.from(composeRoot.querySelectorAll('[command="+Att"], [data-tooltip*="Attach files" i], [aria-label*="Attach files" i]'))
-      .find(visible);
+    const selector = '[command="+Att"], [data-tooltip*="Attach files" i], [aria-label*="Attach files" i]';
+    const localControls = Array.from(composeRoot.querySelectorAll(selector));
+    const controls = localControls.length ? localControls : Array.from(document.querySelectorAll(selector));
+    const nativeControl = controls.reverse().find(visible);
     if (nativeControl) {
       nativeControl.click();
       return;
