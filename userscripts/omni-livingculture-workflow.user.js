@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.68
+// @version      0.1.69
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -28,8 +28,7 @@
   const VIEW_CUSTOMER_ALBUMS_BUTTON_ID = 'lc-omni-view-customer-albums-button';
   const CUSTOMER_PHOTOS_ACTIONS_ID = 'lc-omni-customer-photo-actions';
   const ACTION_ROW_ID = 'lc-cin7-action-row-v1';
-  const COMPACT_TOOLS_BUTTON_ID = 'lc-omni-compact-tools-button';
-  const COMPACT_TOOLS_MENU_ID = 'lc-omni-compact-tools-menu';
+  const OMNI_TOOLS_BAR_ID = 'lc-omni-workflow-tools-bar';
   const FLOATING_BAR_ID = 'lc-cin7-floating-actions-v1';
   const OVERLAY_ID = 'lc-site-visit-overlay-v2';
   const WORKFLOW_API_URL = 'https://living-culture-workflow.vercel.app/api/site-visits';
@@ -1208,6 +1207,7 @@
 
   function placeOmniActionButton(button, anchor) {
     if (!button || !anchor || !isVisible(anchor)) return false;
+    if (button.parentElement?.id === OMNI_TOOLS_BAR_ID) return true;
     const rect = anchor.getBoundingClientRect();
     button.style.position = 'absolute';
     button.style.left = `${window.scrollX + rect.right + 8}px`;
@@ -1219,78 +1219,11 @@
     return true;
   }
 
-  function closeCompactToolsMenu() {
-    document.getElementById(COMPACT_TOOLS_MENU_ID)?.remove();
-  }
-
-  function compactToolsButton(actionButtons, rightAnchor) {
-    let button = document.getElementById(COMPACT_TOOLS_BUTTON_ID);
-    if (!button) {
-      button = document.createElement('button');
-      button.id = COMPACT_TOOLS_BUTTON_ID;
-      button.type = 'button';
-      button.textContent = 'LC Tools';
-      button.title = 'Open Living Culture workflow tools';
-      styleInlineButton(button, '#063b78');
-      button.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        const existing = document.getElementById(COMPACT_TOOLS_MENU_ID);
-        if (existing) {
-          existing.remove();
-          return;
-        }
-        const menu = document.createElement('div');
-        menu.id = COMPACT_TOOLS_MENU_ID;
-        menu.setAttribute('role', 'menu');
-        menu.style.cssText = 'position:absolute;z-index:2147483602;display:flex;flex-direction:column;gap:6px;width:190px;padding:8px;background:#fff;border:1px solid #9fb4cf;border-radius:8px;box-shadow:0 12px 32px rgba(7,28,58,.28);';
-        const currentButtons = Array.isArray(button._lcActionButtons) ? button._lcActionButtons : [];
-        currentButtons.forEach((original) => {
-          const item = document.createElement('button');
-          item.type = 'button';
-          item.textContent = clean(original.textContent || original.value || 'Workflow tool');
-          item.disabled = Boolean(original.disabled);
-          item.style.cssText = `display:flex;align-items:center;min-height:36px;width:100%;padding:7px 11px;border:1px solid ${original.style.borderColor || '#b9c9dc'};border-radius:5px;background:${original.style.background || '#063b78'};color:${original.style.color || '#fff'};font:700 13px Arial,sans-serif;text-align:left;cursor:${item.disabled ? 'not-allowed' : 'pointer'};opacity:${item.disabled ? '.58' : '1'};`;
-          item.addEventListener('click', () => {
-            closeCompactToolsMenu();
-            if (!original.disabled) original.click();
-          });
-          menu.appendChild(item);
-        });
-        document.body.appendChild(menu);
-        const rect = button.getBoundingClientRect();
-        const menuWidth = 190;
-        menu.style.left = `${Math.max(8, Math.min(window.scrollX + rect.right - menuWidth, window.scrollX + window.innerWidth - menuWidth - 8))}px`;
-        menu.style.top = `${Math.max(window.scrollY + 8, window.scrollY + rect.top - menu.offsetHeight - 8)}px`;
-      });
-      document.body.appendChild(button);
-    }
-    button._lcActionButtons = actionButtons;
-    button.style.display = 'inline-flex';
-    button.style.alignItems = 'center';
-    button.style.justifyContent = 'center';
-    button.style.position = 'absolute';
-    button.style.zIndex = '56';
-    button.style.margin = '0';
-    button.style.height = `${Math.max(34, rightAnchor.getBoundingClientRect().height || 34)}px`;
-    return button;
-  }
-
   function visibleOmniControl(label) {
     const target = normalizeLabel(label);
     return Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a, [role="button"]'))
       .filter((element) => isVisible(element))
       .find((element) => normalizeLabel(element.value || element.textContent || '') === target) || null;
-  }
-
-  function rightmostOmniActionEdge(rightLimit) {
-    const labels = ['LC Containers', 'NZ Availability', 'Foshan Warehouse', 'Go to Admin', 'Actions', 'Cancel'];
-    return labels
-      .map(visibleOmniControl)
-      .filter(Boolean)
-      .map((element) => element.getBoundingClientRect().right)
-      .filter((right) => right < rightLimit)
-      .reduce((largest, right) => Math.max(largest, right), 12);
   }
 
   function leftmostOmniSaveButton() {
@@ -1299,6 +1232,19 @@
       .map(visibleOmniControl)
       .filter(Boolean)
       .sort((left, right) => left.getBoundingClientRect().left - right.getBoundingClientRect().left)[0] || null;
+  }
+
+  function omniFooterPanel(saveButton) {
+    let element = saveButton?.parentElement || null;
+    while (element && element !== document.body) {
+      const rect = element.getBoundingClientRect();
+      const text = clean(element.textContent || '');
+      if (rect.width >= window.innerWidth * 0.72 && rect.height >= 48 && rect.height <= 220 && /(?:Branch|Total|Save|Approve)/i.test(text)) {
+        return element;
+      }
+      element = element.parentElement;
+    }
+    return null;
   }
 
   function layoutOmniWorkflowButtons() {
@@ -1313,42 +1259,33 @@
     ].filter(Boolean);
     if (!buttons.length) return;
 
-    buttons.forEach((button) => {
-      button.style.display = 'inline-flex';
-      button.style.paddingLeft = '14px';
-      button.style.paddingRight = '14px';
-    });
-    const saveRect = saveButton.getBoundingClientRect();
-    const gap = 8;
-    const totalWidth = buttons.reduce((sum, button) => sum + button.getBoundingClientRect().width, 0) + gap * (buttons.length - 1);
-    const leftEdge = rightmostOmniActionEdge(saveRect.left) + gap;
-    const availableWidth = Math.max(0, saveRect.left - gap - leftEdge);
-
-    if (totalWidth > availableWidth) {
-      buttons.forEach((button) => { button.style.display = 'none'; });
-      const compact = compactToolsButton(buttons, saveButton);
-      const compactWidth = Math.max(compact.getBoundingClientRect().width, compact.offsetWidth, 84);
-      compact.style.left = `${Math.round(window.scrollX + saveRect.left - gap - compactWidth)}px`;
-      compact.style.top = `${Math.round(window.scrollY + saveRect.top)}px`;
-      return;
+    let toolsBar = document.getElementById(OMNI_TOOLS_BAR_ID);
+    if (!toolsBar) {
+      toolsBar = document.createElement('div');
+      toolsBar.id = OMNI_TOOLS_BAR_ID;
+      document.body.appendChild(toolsBar);
     }
+    const footer = omniFooterPanel(saveButton);
+    const footerRect = (footer || saveButton).getBoundingClientRect();
+    const barHeight = 38;
+    const barTop = Math.max(0, window.scrollY + footerRect.top - barHeight - 7);
+    const barLeft = footer ? window.scrollX + footerRect.left : window.scrollX + 12;
+    const barWidth = footer ? footerRect.width : Math.max(300, window.innerWidth - 24);
+    toolsBar.style.cssText = `position:absolute;left:${Math.round(barLeft)}px;top:${Math.round(barTop)}px;z-index:56;box-sizing:border-box;display:flex;align-items:center;justify-content:center;gap:8px;width:${Math.round(barWidth)}px;height:${barHeight}px;margin:0;padding:0 8px;background:transparent;pointer-events:none;`;
 
-    closeCompactToolsMenu();
-    document.getElementById(COMPACT_TOOLS_BUTTON_ID)?.remove();
-    let left = window.scrollX + saveRect.left - gap - totalWidth;
-    const top = window.scrollY + saveRect.top;
-    buttons.forEach((button) => {
-      button.style.alignItems = 'center';
-      button.style.justifyContent = 'center';
-      const width = Math.max(button.getBoundingClientRect().width, button.offsetWidth, 64);
-      button.style.position = 'absolute';
-      button.style.left = `${Math.round(left)}px`;
-      button.style.top = `${Math.round(top)}px`;
-      button.style.zIndex = '56';
+    buttons.forEach((button, index) => {
+      button.style.display = 'inline-flex';
+      button.style.position = 'static';
+      button.style.left = '';
+      button.style.top = '';
+      button.style.zIndex = '';
       button.style.margin = '0';
-      button.style.height = `${Math.max(34, saveRect.height || 34)}px`;
-      if (button.parentElement !== document.body) document.body.appendChild(button);
-      left += width + gap;
+      button.style.height = '36px';
+      button.style.paddingLeft = window.innerWidth < 1180 ? '9px' : '14px';
+      button.style.paddingRight = window.innerWidth < 1180 ? '9px' : '14px';
+      button.style.fontSize = window.innerWidth < 1180 ? '12px' : '14px';
+      button.style.pointerEvents = 'auto';
+      if (button.parentElement !== toolsBar || toolsBar.children[index] !== button) toolsBar.appendChild(button);
     });
   }
 
@@ -1358,6 +1295,8 @@
     document.querySelectorAll('textarea').forEach(element => omniLayoutResizeObserver.observe(element));
     const anchor = findOmniActionAnchor();
     if (anchor) omniLayoutResizeObserver.observe(anchor);
+    const saveButton = leftmostOmniSaveButton();
+    if (saveButton) omniLayoutResizeObserver.observe(omniFooterPanel(saveButton) || saveButton);
   }
 
   function placeActionButton(button, slot) {
