@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Living Culture Drawings
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.5
+// @version      0.1.6
 // @description  Selects Living Culture pergola drawings from Google Drive and attaches them to Gmail drafts.
 // @author       Living Culture
 // @match        https://mail.google.com/*
@@ -10,8 +10,8 @@
 // @connect      drive.google.com
 // @connect      drive.usercontent.google.com
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.5
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.5
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.6
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.6
 // @supportURL   https://github.com/Livingculture/freight-tool
 // ==/UserScript==
 
@@ -151,8 +151,8 @@
       attachButton = document.createElement("button");
       attachButton.id = ATTACH_BUTTON_ID;
       attachButton.type = "button";
-      attachButton.textContent = "📎 Add Attachments";
-      attachButton.title = "Add files using Gmail's attachment picker";
+      attachButton.textContent = "📎 Add Quote";
+      attachButton.title = "Add a quote using Gmail's attachment picker";
       attachButton.addEventListener("click", openAttachmentPicker);
       toolbar.appendChild(attachButton);
     }

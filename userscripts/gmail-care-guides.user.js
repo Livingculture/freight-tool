@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Living Culture Care Guides
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.11
+// @version      0.1.12
 // @description  Attaches Living Culture care guide PDFs to Gmail compose windows.
 // @author       Living Culture
 // @match        https://mail.google.com/*
@@ -9,8 +9,8 @@
 // @grant        GM_registerMenuCommand
 // @connect      cin7-pdf-attachments.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.11
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.11
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.12
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.12
 // ==/UserScript==
 
 (function () {
@@ -146,8 +146,8 @@
       attachButton = document.createElement("button");
       attachButton.id = ATTACH_BUTTON_ID;
       attachButton.type = "button";
-      attachButton.textContent = "📎 Add Attachments";
-      attachButton.title = "Add files using Gmail's attachment picker";
+      attachButton.textContent = "📎 Add Quote";
+      attachButton.title = "Add a quote using Gmail's attachment picker";
       attachButton.addEventListener("click", openAttachmentPicker);
       toolbar.appendChild(attachButton);
     }
