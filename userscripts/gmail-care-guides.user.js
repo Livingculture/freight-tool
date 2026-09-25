@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Living Culture Care Guides
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.20
+// @version      0.1.21
 // @description  Attaches Living Culture care guide PDFs to Gmail compose windows.
 // @author       Living Culture
 // @match        https://mail.google.com/*
@@ -9,8 +9,8 @@
 // @grant        GM_registerMenuCommand
 // @connect      cin7-pdf-attachments.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.20
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.20
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.21
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.21
 // ==/UserScript==
 
 (function () {
@@ -21,6 +21,7 @@
   const BUTTON_ID = "lc-gmail-care-guides-button";
   const PANEL_ID = "lc-gmail-care-guides-panel";
   const TOOLBAR_ID = "lc-gmail-attachment-toolbar";
+  const ATTACH_HINT_ID = "lc-gmail-add-quote-hint";
 
   const state = {
     files: [],
@@ -105,6 +106,28 @@
     const rect = element.getBoundingClientRect();
     const style = window.getComputedStyle(element);
     return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+  }
+
+  function removeAttachmentHint() {
+    document.getElementById(ATTACH_HINT_ID)?.remove();
+  }
+
+  function syncAttachmentHint() {
+    const selector = '[command="+Att"], [data-tooltip*="Attach files" i], [aria-label*="Attach files" i]';
+    const control = Array.from(document.querySelectorAll(selector)).filter(visible).at(-1);
+    if (!control?.parentElement) {
+      removeAttachmentHint();
+      return;
+    }
+    let hint = document.getElementById(ATTACH_HINT_ID);
+    if (!hint) {
+      hint = document.createElement("span");
+      hint.id = ATTACH_HINT_ID;
+      hint.textContent = "Add Quote →";
+      hint.setAttribute("aria-hidden", "true");
+      hint.style.cssText = "display:inline-flex;align-items:center;height:28px;margin:0 5px;padding:0 10px;border-radius:14px;background:#f4511e;color:#fff;font:700 12px Arial,sans-serif;white-space:nowrap;pointer-events:none;box-shadow:0 3px 9px rgba(20,31,38,.20);box-sizing:border-box;vertical-align:middle";
+    }
+    if (hint.parentElement !== control.parentElement || hint.nextSibling !== control) control.before(hint);
   }
 
   function ensureToolbar() {
@@ -564,6 +587,7 @@
       toolbar.style.visibility = "hidden";
       delete toolbar.dataset.lcLayoutKey;
       delete toolbar.dataset.lcReadyAt;
+      removeAttachmentHint();
       if (state.open) closePanel();
       return;
     }
@@ -590,6 +614,7 @@
     if (Date.now() >= Number(toolbar.dataset.lcReadyAt || 0)) {
       toolbar.style.visibility = "visible";
     }
+    syncAttachmentHint();
   }
 
   function boot() {

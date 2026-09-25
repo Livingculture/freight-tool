@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Living Culture Drawings
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.14
+// @version      0.1.15
 // @description  Selects Living Culture pergola drawings from Google Drive and attaches them to Gmail drafts.
 // @author       Living Culture
 // @match        https://mail.google.com/*
@@ -10,8 +10,8 @@
 // @connect      drive.google.com
 // @connect      drive.usercontent.google.com
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.14
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.14
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.15
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.15
 // @supportURL   https://github.com/Livingculture/freight-tool
 // ==/UserScript==
 
@@ -22,6 +22,7 @@
   const FOLDER_MIME = "application/vnd.google-apps.folder";
   const BUTTON_ID = "lc-gmail-drawings-button";
   const TOOLBAR_ID = "lc-gmail-attachment-toolbar";
+  const ATTACH_HINT_ID = "lc-gmail-add-quote-hint";
   const PANEL_ID = "lc-gmail-drawings-panel";
   const STYLE_ID = "lc-gmail-drawings-styles";
   const state = { levels: [], selected: null, loaded: false, loading: false, preparing: false, busy: false, status: "", error: false, open: false };
@@ -110,6 +111,28 @@
     const rect = element.getBoundingClientRect();
     const style = getComputedStyle(element);
     return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+  }
+
+  function removeAttachmentHint() {
+    document.getElementById(ATTACH_HINT_ID)?.remove();
+  }
+
+  function syncAttachmentHint() {
+    const selector = '[command="+Att"], [data-tooltip*="Attach files" i], [aria-label*="Attach files" i]';
+    const control = Array.from(document.querySelectorAll(selector)).filter(visible).at(-1);
+    if (!control?.parentElement) {
+      removeAttachmentHint();
+      return;
+    }
+    let hint = document.getElementById(ATTACH_HINT_ID);
+    if (!hint) {
+      hint = document.createElement("span");
+      hint.id = ATTACH_HINT_ID;
+      hint.textContent = "Add Quote →";
+      hint.setAttribute("aria-hidden", "true");
+      hint.style.cssText = "display:inline-flex;align-items:center;height:28px;margin:0 5px;padding:0 10px;border-radius:14px;background:#f4511e;color:#fff;font:700 12px Arial,sans-serif;white-space:nowrap;pointer-events:none;box-shadow:0 3px 9px rgba(20,31,38,.20);box-sizing:border-box;vertical-align:middle";
+    }
+    if (hint.parentElement !== control.parentElement || hint.nextSibling !== control) control.before(hint);
   }
 
   function ensureToolbar() {
@@ -391,6 +414,7 @@
       toolbar.style.visibility = "hidden";
       delete toolbar.dataset.lcLayoutKey;
       delete toolbar.dataset.lcReadyAt;
+      removeAttachmentHint();
       if (state.open) closePanel();
       return;
     }
@@ -412,6 +436,7 @@
     if (Date.now() >= Number(toolbar.dataset.lcReadyAt || 0)) {
       toolbar.style.visibility = "visible";
     }
+    syncAttachmentHint();
   }
 
   function boot() {
