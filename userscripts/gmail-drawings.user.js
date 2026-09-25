@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Living Culture Drawings
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.10
+// @version      0.1.11
 // @description  Selects Living Culture pergola drawings from Google Drive and attaches them to Gmail drafts.
 // @author       Living Culture
 // @match        https://mail.google.com/*
@@ -10,8 +10,8 @@
 // @connect      drive.google.com
 // @connect      drive.usercontent.google.com
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.10
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.10
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.11
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.11
 // @supportURL   https://github.com/Livingculture/freight-tool
 // ==/UserScript==
 
@@ -155,12 +155,13 @@
       document.body.appendChild(toolbar);
     }
     let attachButton = document.getElementById(ATTACH_BUTTON_ID);
-    if (!attachButton || attachButton.tagName !== "LABEL" || attachButton.dataset.lcHandlerVersion !== "3") {
+    if (!attachButton || attachButton.tagName !== "LABEL" || attachButton.dataset.lcHandlerVersion !== "4") {
       const previous = attachButton;
       attachButton = document.createElement("label");
       attachButton.id = ATTACH_BUTTON_ID;
-      attachButton.dataset.lcHandlerVersion = "3";
+      attachButton.dataset.lcHandlerVersion = "4";
       attachButton.title = "Add a quote using Gmail's attachment picker";
+      attachButton.style.cssText = "position:relative;display:inline-flex;align-items:center;justify-content:center;overflow:hidden;height:28px;border:1px solid #e64a19;border-radius:15px;background:#f4511e;color:#fff;padding:0 12px;font:700 12px Arial,sans-serif;cursor:pointer;box-shadow:0 4px 12px rgba(20,31,38,.22);box-sizing:border-box;white-space:nowrap";
       const text = document.createElement("span");
       text.textContent = "📎 Add Quote";
       const picker = document.createElement("input");
@@ -168,7 +169,19 @@
       picker.multiple = true;
       picker.title = "Select the quote file to attach";
       picker.setAttribute("aria-label", "Select quote files to attach");
-      picker.style.cssText = "position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer";
+      picker.style.cssText = "position:absolute;z-index:3;inset:0;display:block;width:100%;height:100%;opacity:0;cursor:pointer";
+      picker.addEventListener("pointerdown", (event) => {
+        event.stopPropagation();
+        if (typeof picker.showPicker === "function") {
+          try {
+            picker.showPicker();
+            event.preventDefault();
+          } catch {
+            // Allow the input's normal click action to open the picker instead.
+          }
+        }
+      }, true);
+      picker.addEventListener("click", (event) => event.stopPropagation(), true);
       picker.addEventListener("change", () => attachQuoteFiles(picker));
       attachButton.append(text, picker);
       if (previous) previous.replaceWith(attachButton);
