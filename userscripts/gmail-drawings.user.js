@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Living Culture Drawings
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.12
+// @version      0.1.13
 // @description  Selects Living Culture pergola drawings from Google Drive and attaches them to Gmail drafts.
 // @author       Living Culture
 // @match        https://mail.google.com/*
@@ -10,8 +10,8 @@
 // @connect      drive.google.com
 // @connect      drive.usercontent.google.com
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.12
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.12
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.13
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.13
 // @supportURL   https://github.com/Livingculture/freight-tool
 // ==/UserScript==
 
@@ -113,40 +113,35 @@
     return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
   }
 
-  function hideNativeAttachmentControl() {
-    const control = document.querySelector('[data-lc-native-quote-control="true"]');
-    if (!control) return;
-    control.style.setProperty("pointer-events", "none", "important");
-    control.style.setProperty("visibility", "hidden", "important");
-  }
-
-  function positionNativeAttachmentControl(placeholder) {
-    if (!placeholder || !visible(placeholder)) {
-      hideNativeAttachmentControl();
-      return;
+  function enhanceNativeAttachmentControl() {
+    const previouslyMoved = document.querySelector('[data-lc-native-quote-control="true"]');
+    if (previouslyMoved) {
+      ["position", "left", "top", "right", "bottom", "width", "height", "margin", "transform", "opacity", "visibility", "pointer-events", "z-index"]
+        .forEach((property) => previouslyMoved.style.removeProperty(property));
+      delete previouslyMoved.dataset.lcNativeQuoteControl;
     }
     const selector = '[command="+Att"], [data-tooltip*="Attach files" i], [aria-label*="Attach files" i]';
     const candidates = Array.from(document.querySelectorAll(selector))
-      .filter((item) => !item.closest(`#${TOOLBAR_ID}`) && (item.dataset.lcNativeQuoteControl === "true" || visible(item)));
-    let control = document.querySelector('[data-lc-native-quote-control="true"]');
-    if (!control?.isConnected) control = candidates.at(-1) || null;
+      .filter((item) => !item.closest(`#${TOOLBAR_ID}`) && visible(item));
+    const control = candidates.at(-1) || null;
     if (!control) return;
-    const rect = placeholder.getBoundingClientRect();
-    control.dataset.lcNativeQuoteControl = "true";
+
+    control.dataset.lcAddQuoteNative = "true";
     control.title = "Add Quote";
-    control.style.setProperty("position", "fixed", "important");
-    control.style.setProperty("left", `${rect.left}px`, "important");
-    control.style.setProperty("top", `${rect.top}px`, "important");
-    control.style.setProperty("right", "auto", "important");
-    control.style.setProperty("bottom", "auto", "important");
-    control.style.setProperty("width", `${rect.width}px`, "important");
-    control.style.setProperty("height", `${rect.height}px`, "important");
-    control.style.setProperty("margin", "0", "important");
-    control.style.setProperty("transform", "none", "important");
-    control.style.setProperty("opacity", "0.001", "important");
-    control.style.setProperty("visibility", "visible", "important");
-    control.style.setProperty("pointer-events", "auto", "important");
-    control.style.setProperty("z-index", "2147483647", "important");
+    const nativeStyles = {
+      display: "inline-flex", "align-items": "center", "justify-content": "center", gap: "5px",
+      width: "auto", "min-width": "105px", height: "30px", margin: "0 4px", "border-radius": "15px",
+      background: "#f4511e", color: "#fff", padding: "0 10px", "box-sizing": "border-box",
+      opacity: "1", visibility: "visible", cursor: "pointer", "box-shadow": "0 3px 9px rgba(20,31,38,.22)"
+    };
+    Object.entries(nativeStyles).forEach(([property, value]) => control.style.setProperty(property, value, "important"));
+    if (!control.querySelector(':scope > [data-lc-add-quote-label="true"]')) {
+      const label = document.createElement("span");
+      label.dataset.lcAddQuoteLabel = "true";
+      label.textContent = "Add Quote";
+      label.style.cssText = "display:inline;color:#fff;font:700 12px Arial,sans-serif;white-space:nowrap;pointer-events:none";
+      control.appendChild(label);
+    }
   }
 
   function ensureToolbar() {
@@ -161,26 +156,8 @@
       toolbar.style.visibility = "hidden";
       document.body.appendChild(toolbar);
     }
-    let attachButton = document.getElementById(ATTACH_BUTTON_ID);
-    if (!attachButton || attachButton.tagName !== "LABEL" || attachButton.dataset.lcHandlerVersion !== "4") {
-      const previous = attachButton;
-      attachButton = document.createElement("label");
-      attachButton.id = ATTACH_BUTTON_ID;
-      attachButton.dataset.lcHandlerVersion = "4";
-      attachButton.title = "Add a quote using Gmail's attachment picker";
-      attachButton.style.cssText = "position:relative;display:inline-flex;align-items:center;justify-content:center;overflow:hidden;height:28px;border:1px solid #e64a19;border-radius:15px;background:#f4511e;color:#fff;padding:0 12px;font:700 12px Arial,sans-serif;cursor:pointer;box-shadow:0 4px 12px rgba(20,31,38,.22);box-sizing:border-box;white-space:nowrap";
-      if (previous) previous.replaceWith(attachButton);
-      else toolbar.appendChild(attachButton);
-    }
-    if (attachButton.dataset.lcAttachmentMode !== "gmail-native") {
-      attachButton.dataset.lcAttachmentMode = "gmail-native";
-      attachButton.replaceChildren();
-      const text = document.createElement("span");
-      text.textContent = "📎 Add Quote";
-      attachButton.appendChild(text);
-      attachButton.style.pointerEvents = "none";
-    }
-    [BUTTON_ID, "lc-gmail-care-guides-button", ATTACH_BUTTON_ID].forEach((id) => {
+    document.getElementById(ATTACH_BUTTON_ID)?.remove();
+    [BUTTON_ID, "lc-gmail-care-guides-button"].forEach((id) => {
       const item = document.getElementById(id);
       if (item) toolbar.appendChild(item);
     });
@@ -420,8 +397,9 @@
       #${TOOLBAR_ID}{position:fixed;z-index:2147483646;display:none;visibility:hidden;align-items:center;gap:8px;max-width:calc(100vw - 16px);transition:none!important}
       #${TOOLBAR_ID}>button{position:static!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;white-space:nowrap!important}
       #${BUTTON_ID}{height:28px;border:1px solid #0d6f78;border-radius:15px;background:#fff;color:#0d6f78;padding:0 11px;font:700 12px Arial,sans-serif;cursor:pointer;box-shadow:0 4px 12px rgba(20,31,38,.18)}
-      #${ATTACH_BUTTON_ID}{position:relative!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;overflow:hidden;height:28px;border:1px solid #e64a19;border-radius:15px;background:#f4511e;color:#fff;padding:0 12px;font:700 12px Arial,sans-serif;cursor:pointer;box-shadow:0 4px 12px rgba(20,31,38,.22);box-sizing:border-box}
-      #${ATTACH_BUTTON_ID}:hover{background:#d84315}
+      [data-lc-add-quote-native="true"]{display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:5px!important;width:auto!important;min-width:105px!important;height:30px!important;margin:0 4px!important;border-radius:15px!important;background:#f4511e!important;color:#fff!important;padding:0 10px!important;box-sizing:border-box!important;opacity:1!important;visibility:visible!important;cursor:pointer!important;box-shadow:0 3px 9px rgba(20,31,38,.22)!important}
+      [data-lc-add-quote-native="true"]:hover{background:#d84315!important}
+      [data-lc-add-quote-label="true"]{display:inline!important;color:#fff!important;font:700 12px Arial,sans-serif!important;white-space:nowrap!important;pointer-events:none!important}
       #${PANEL_ID}{display:none;position:fixed!important;z-index:2147483647!important;top:50%!important;left:50%!important;right:auto!important;bottom:auto!important;transform:translate(-50%,-50%)!important;width:430px!important;height:auto!important;min-height:170px!important;max-width:calc(100vw - 30px)!important;overflow:visible!important;opacity:1!important;visibility:visible!important;border:1px solid #abc9c6!important;border-radius:9px!important;background:#fff!important;box-shadow:0 18px 45px rgba(20,45,48,.28)!important;color:#18343a!important;font:13px Arial,sans-serif!important}
       #${PANEL_ID} .lc-gd-head{display:flex!important;min-height:24px!important;align-items:center!important;justify-content:space-between!important;padding:12px 14px!important;border-bottom:1px solid #dce9e7!important;background:#0d6f78!important;color:#fff!important;border-radius:8px 8px 0 0!important;font-size:15px!important}
       #${PANEL_ID} .lc-gd-head button{border:0!important;background:transparent!important;color:#fff!important;font:700 22px Arial!important;cursor:pointer!important}
@@ -449,7 +427,6 @@
       toolbar.style.visibility = "hidden";
       delete toolbar.dataset.lcLayoutKey;
       delete toolbar.dataset.lcReadyAt;
-      hideNativeAttachmentControl();
       if (state.open) closePanel();
       return;
     }
@@ -470,10 +447,8 @@
     }
     if (Date.now() >= Number(toolbar.dataset.lcReadyAt || 0)) {
       toolbar.style.visibility = "visible";
-      positionNativeAttachmentControl(document.getElementById(ATTACH_BUTTON_ID));
-    } else {
-      hideNativeAttachmentControl();
     }
+    enhanceNativeAttachmentControl();
   }
 
   function boot() {
