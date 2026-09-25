@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Living Culture Drawings
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.11
+// @version      0.1.12
 // @description  Selects Living Culture pergola drawings from Google Drive and attaches them to Gmail drafts.
 // @author       Living Culture
 // @match        https://mail.google.com/*
@@ -10,8 +10,8 @@
 // @connect      drive.google.com
 // @connect      drive.usercontent.google.com
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.11
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.11
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.12
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.12
 // @supportURL   https://github.com/Livingculture/freight-tool
 // ==/UserScript==
 
@@ -113,33 +113,40 @@
     return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
   }
 
-  function attachQuoteFiles(picker) {
-    const composeRoot = activeComposeRoot();
-    if (!composeRoot) {
-      alert("Open a Gmail compose or reply box first.");
-      picker.value = "";
+  function hideNativeAttachmentControl() {
+    const control = document.querySelector('[data-lc-native-quote-control="true"]');
+    if (!control) return;
+    control.style.setProperty("pointer-events", "none", "important");
+    control.style.setProperty("visibility", "hidden", "important");
+  }
+
+  function positionNativeAttachmentControl(placeholder) {
+    if (!placeholder || !visible(placeholder)) {
+      hideNativeAttachmentControl();
       return;
     }
-    const files = Array.from(picker.files || []);
-    if (!files.length) return;
-    const localInputs = Array.from(composeRoot.querySelectorAll('input[type="file"]'));
-    const allInputs = localInputs.length ? localInputs : Array.from(document.querySelectorAll('input[type="file"]'));
-    const gmailInput = allInputs.reverse().find((candidate) => candidate !== picker && !candidate.disabled);
-    const transfer = new DataTransfer();
-    files.forEach((file) => transfer.items.add(file));
-    if (gmailInput) {
-      gmailInput.files = transfer.files;
-      gmailInput.dispatchEvent(new Event("input", { bubbles: true }));
-      gmailInput.dispatchEvent(new Event("change", { bubbles: true }));
-    } else {
-      const dropTarget = activeComposeBody() || composeRoot;
-      ["dragenter", "dragover", "drop"].forEach((type) => {
-        const dropEvent = new Event(type, { bubbles: true, cancelable: true });
-        Object.defineProperty(dropEvent, "dataTransfer", { value: transfer });
-        dropTarget.dispatchEvent(dropEvent);
-      });
-    }
-    picker.value = "";
+    const selector = '[command="+Att"], [data-tooltip*="Attach files" i], [aria-label*="Attach files" i]';
+    const candidates = Array.from(document.querySelectorAll(selector))
+      .filter((item) => !item.closest(`#${TOOLBAR_ID}`) && (item.dataset.lcNativeQuoteControl === "true" || visible(item)));
+    let control = document.querySelector('[data-lc-native-quote-control="true"]');
+    if (!control?.isConnected) control = candidates.at(-1) || null;
+    if (!control) return;
+    const rect = placeholder.getBoundingClientRect();
+    control.dataset.lcNativeQuoteControl = "true";
+    control.title = "Add Quote";
+    control.style.setProperty("position", "fixed", "important");
+    control.style.setProperty("left", `${rect.left}px`, "important");
+    control.style.setProperty("top", `${rect.top}px`, "important");
+    control.style.setProperty("right", "auto", "important");
+    control.style.setProperty("bottom", "auto", "important");
+    control.style.setProperty("width", `${rect.width}px`, "important");
+    control.style.setProperty("height", `${rect.height}px`, "important");
+    control.style.setProperty("margin", "0", "important");
+    control.style.setProperty("transform", "none", "important");
+    control.style.setProperty("opacity", "0.001", "important");
+    control.style.setProperty("visibility", "visible", "important");
+    control.style.setProperty("pointer-events", "auto", "important");
+    control.style.setProperty("z-index", "2147483647", "important");
   }
 
   function ensureToolbar() {
@@ -162,30 +169,16 @@
       attachButton.dataset.lcHandlerVersion = "4";
       attachButton.title = "Add a quote using Gmail's attachment picker";
       attachButton.style.cssText = "position:relative;display:inline-flex;align-items:center;justify-content:center;overflow:hidden;height:28px;border:1px solid #e64a19;border-radius:15px;background:#f4511e;color:#fff;padding:0 12px;font:700 12px Arial,sans-serif;cursor:pointer;box-shadow:0 4px 12px rgba(20,31,38,.22);box-sizing:border-box;white-space:nowrap";
-      const text = document.createElement("span");
-      text.textContent = "📎 Add Quote";
-      const picker = document.createElement("input");
-      picker.type = "file";
-      picker.multiple = true;
-      picker.title = "Select the quote file to attach";
-      picker.setAttribute("aria-label", "Select quote files to attach");
-      picker.style.cssText = "position:absolute;z-index:3;inset:0;display:block;width:100%;height:100%;opacity:0;cursor:pointer";
-      picker.addEventListener("pointerdown", (event) => {
-        event.stopPropagation();
-        if (typeof picker.showPicker === "function") {
-          try {
-            picker.showPicker();
-            event.preventDefault();
-          } catch {
-            // Allow the input's normal click action to open the picker instead.
-          }
-        }
-      }, true);
-      picker.addEventListener("click", (event) => event.stopPropagation(), true);
-      picker.addEventListener("change", () => attachQuoteFiles(picker));
-      attachButton.append(text, picker);
       if (previous) previous.replaceWith(attachButton);
       else toolbar.appendChild(attachButton);
+    }
+    if (attachButton.dataset.lcAttachmentMode !== "gmail-native") {
+      attachButton.dataset.lcAttachmentMode = "gmail-native";
+      attachButton.replaceChildren();
+      const text = document.createElement("span");
+      text.textContent = "📎 Add Quote";
+      attachButton.appendChild(text);
+      attachButton.style.pointerEvents = "none";
     }
     [BUTTON_ID, "lc-gmail-care-guides-button", ATTACH_BUTTON_ID].forEach((id) => {
       const item = document.getElementById(id);
@@ -456,6 +449,7 @@
       toolbar.style.visibility = "hidden";
       delete toolbar.dataset.lcLayoutKey;
       delete toolbar.dataset.lcReadyAt;
+      hideNativeAttachmentControl();
       if (state.open) closePanel();
       return;
     }
@@ -474,7 +468,12 @@
       toolbar.dataset.lcReadyAt = String(Date.now() + (promptTop === null ? 1500 : 300));
       toolbar.style.visibility = "hidden";
     }
-    if (Date.now() >= Number(toolbar.dataset.lcReadyAt || 0)) toolbar.style.visibility = "visible";
+    if (Date.now() >= Number(toolbar.dataset.lcReadyAt || 0)) {
+      toolbar.style.visibility = "visible";
+      positionNativeAttachmentControl(document.getElementById(ATTACH_BUTTON_ID));
+    } else {
+      hideNativeAttachmentControl();
+    }
   }
 
   function boot() {
