@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Product Availability
 // @namespace    livingculture-omni
-// @version      0.1.0
+// @version      0.1.1
 // @description  Adds an NZ Availability button beside LC Containers on Cin7 Omni.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-product-availability.user.js
@@ -14,7 +14,7 @@
 (function () {
   'use strict';
 
-  const PRODUCT_AVAILABILITY_URL = 'https://inventory.dearsystems.com/Stock';
+  const PRODUCT_AVAILABILITY_URL = 'https://go.cin7.com/Cloud/ShoppingCartAdmin/Products/ProductsList.aspx?idWebSite=27265&idCustomerAppsLink=1327992';
   const BUTTON_ID = 'lc-omni-product-availability-button';
   const CONTAINER_BUTTON_ID = 'lc-omni-containers-open';
 
