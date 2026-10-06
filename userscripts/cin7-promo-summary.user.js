@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Promo Summary
 // @namespace    livingculture-cin7
-// @version      3.3
+// @version      3.4
 // @description  Compact grouped Living Culture promo summary inside Cin7 from the Summary tab.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
 // @match        https://inventory.dearsystems.com/*
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.3
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.3
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.4
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.4
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
@@ -71,8 +71,17 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
 
     return safe.replace(
       /(https?:\/\/[^\s<]+)/gi,
-      '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
+      url => `<a href="${url}" target="_blank" rel="noopener noreferrer" title="${url}">${isOmniQuote ? (/drive\.google\.com/i.test(url) ? 'Open supporting documents' : 'Open link') : url}</a>`
     );
+  }
+
+  function readablePromoText(value) {
+    if (!isOmniQuote) return linkify(value);
+    const paragraphs = String(value || '')
+      .replace(/\s+(?=(?:T&Cs?:|North Island\b|South Island\b|Offer valid\b|Clearance items\b|In the event\b|Customers\b))/gi, '\n')
+      .replace(/\.\s+(?=[A-Z])/g, '.\n')
+      .split(/\n+/).map(clean).filter(Boolean);
+    return paragraphs.map(paragraph => `<p class="readable-text">${linkify(paragraph)}</p>`).join('');
   }
 
   function parseCsvRows(csvText) {
@@ -586,7 +595,7 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
     if (!hasDiscounts) {
       return `
         <div class="detail-box">
-          <div>${linkify(text) || '<span class="blank">No category details</span>'}</div>
+          <div>${readablePromoText(text) || '<span class="blank">No category details</span>'}</div>
         </div>
       `;
     }
@@ -596,7 +605,7 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
         ${offers.map(item => `
           <div class="offer">
             ${item.discount ? `<div class="discount">${escapeHtml(item.discount)}</div>` : '<div></div>'}
-            <div class="offer-name">${item.name ? linkify(item.name) : '<span class="blank">No offer text</span>'}</div>
+            <div class="offer-name">${item.name ? readablePromoText(item.name) : '<span class="blank">No offer text</span>'}</div>
           </div>
         `).join('')}
       </div>
@@ -714,7 +723,7 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
             <div class="details">
               <div class="detail-box">
                 <h3 class="label-title">Note / T&Cs</h3>
-                <div>${linkify(row.note)}</div>
+                <div>${readablePromoText(row.note)}</div>
               </div>
             </div>
           ` : ''}
@@ -1332,6 +1341,17 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
         .offer-name{color:#172b49}
         .detail-box{border-color:#dce3eb;border-radius:4px;background:#f5f7fb}
         .detail-box div{color:#425b78}
+        .promo-body{padding:16px 18px;gap:16px}
+        .title{font-size:18px;line-height:1.35}
+        .date{font-size:13px;color:#334b66}
+        .label-title{font-size:12px;text-transform:none;color:#334b66;margin-bottom:8px}
+        .detail-box{background:#fff;padding:14px;border-color:#c4d3e5}
+        .detail-box div,.offer-name{font-size:16px;line-height:1.6;color:#172b49;font-weight:400;white-space:normal}
+        .readable-text{max-width:72ch;margin:0 0 10px;overflow-wrap:anywhere}
+        .readable-text:last-child{margin-bottom:0}
+        .offer{padding:12px;background:#fff}
+        .discount{font-size:13px;padding:6px 9px}
+        .details a{font-size:14px}
         .empty{border-color:#c4d3e5;border-radius:6px;color:#526987;box-shadow:none}
         @media(max-width:760px){.controls{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}#lc-promo-search{grid-column:1 / -1}.merge-label{white-space:normal}.panel{height:88vh}.count{text-align:left}}
       `;
