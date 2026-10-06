@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Website Shortcuts
 // @namespace    livingculture-omni
-// @version      0.1.29
+// @version      0.1.30
 // @description  Adds Living Culture website shortcuts to the grey space between Cin7 Omni quote sections.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @match        https://livingculture.co.nz/*
@@ -162,15 +162,15 @@
     const pending = new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
         method: 'GET',
-        url: `https://livingculture.co.nz/collections/${family.toLowerCase()}-pergola/products.json?limit=250`,
+        url: `https://livingculture.co.nz/collections/${family === 'Blinds' ? 'blinds' : `${family.toLowerCase()}-pergola`}/products.json?limit=250`,
         timeout: 15000,
         onload: response => {
           try {
             if (response.status < 200 || response.status >= 300) throw new Error('Website products could not be loaded.');
             const products = JSON.parse(response.responseText).products;
             if (!Array.isArray(products)) throw new Error('Website products could not be read.');
-            const matches = products.filter(product => product.title.startsWith(`${family} `) && /louvre roof/i.test(product.title));
-            if (!matches.length) throw new Error('No pergola products were found.');
+            const matches = products.filter(product => family === 'Blinds' ? /blind/i.test(product.title) : product.title.startsWith(`${family} `) && /louvre roof/i.test(product.title));
+            if (!matches.length) throw new Error('No matching products were found.');
             resolve(matches);
           } catch (error) { reject(error); }
         },
@@ -185,6 +185,7 @@
   let closePergolaPicker = null;
 
   async function selectPergola(shortcut, trigger) {
+    const isBlinds = shortcut.label === 'Blinds';
     if (trigger.getAttribute('aria-expanded') === 'true') { closePergolaPicker?.(); return; }
     closePergolaPicker?.(false);
     const root = document.createElement('div');
@@ -198,6 +199,7 @@
       button{cursor:pointer}.close{border:0;background:transparent;color:#fff;font-size:20px;width:26px;height:26px}
       .fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;padding:10px}label{display:grid;gap:4px;font-size:12px;font-weight:700}select{width:100%;min-width:0;height:32px;border:1px solid #9db3d2;border-radius:4px;background:#fff;padding:0 5px;font:12px Arial}
       label:has(#model){grid-column:1 / -1}#status,#retry{grid-column:1 / -1}
+      #blind-options{display:contents}
       #status{margin:0;color:#526987}#status.error{color:#a32d22}#retry{height:34px;border:1px solid #13377e;border-radius:4px;background:#fff;color:#13377e;font-weight:700}
       [hidden]{display:none!important}
     </style><div class="shade"><section class="dialog" role="dialog" aria-labelledby="title"><header><h2 id="title"></h2><button class="close" aria-label="Close">&times;</button></header><div class="fields"><p id="status" role="status">Loading products...</p><label>Mounting<select id="mount" disabled><option value="">Select mounting</option><option value="free">Freestanding</option><option value="wall">Wall Mounted</option></select></label><label>Model<select id="model" disabled></select></label><label>Size<select id="size" disabled></select></label><label>Colour<select id="colour" disabled></select></label><button id="retry" hidden>Retry</button></div></section></div>`;
@@ -248,6 +250,13 @@
     shadow.querySelector('.close').focus();
     const mount = shadow.getElementById('mount'), model = shadow.getElementById('model');
     const size = shadow.getElementById('size'), colour = shadow.getElementById('colour'), status = shadow.getElementById('status');
+    const blindOptions = document.createElement('div');
+    blindOptions.id = 'blind-options';
+    model.closest('label').insertAdjacentElement('afterend', blindOptions);
+    if (isBlinds) {
+      [mount, size, colour].forEach(select => { select.closest('label').hidden = true; });
+      model.closest('label').firstChild.textContent = 'Blind';
+    }
     let products = [], selectedProduct = null;
     const fill = (select, placeholder, options) => {
       select.replaceChildren(new Option(placeholder, ''), ...options.map(option => new Option(option.label, option.value)));
@@ -259,8 +268,49 @@
       const option = selectedProduct?.options.find(option => new RegExp(name, 'i').test(option.name));
       return option ? `option${option.position}` : null;
     };
+    const openVariant = variant => {
+      const url = new URL(`https://livingculture.co.nz/products/${selectedProduct.handle}`);
+      url.searchParams.set('variant', variant.id);
+      if (!openShortcut({ label: shortcut.label, url: url.href })) return false;
+      window.dispatchEvent(new CustomEvent('lc:omni-add-sku', { detail: { sku: clean(variant.sku).toUpperCase() } }));
+      close();
+      return true;
+    };
+    const chooseBlind = () => {
+      blindOptions.replaceChildren();
+      if (!selectedProduct) return;
+      const options = [...selectedProduct.options].sort((a, b) => a.position - b.position);
+      const selects = options.map(option => {
+        const label = document.createElement('label');
+        label.textContent = /colou?r/i.test(option.name) ? 'Colour' : option.name;
+        const select = document.createElement('select');
+        select.dataset.option = `option${option.position}`;
+        select.setAttribute('aria-label', label.textContent);
+        label.appendChild(select); blindOptions.appendChild(label);
+        return select;
+      });
+      const matching = count => variants().filter(variant => selects.slice(0, count).every(select => variant[select.dataset.option] === select.value));
+      const refresh = start => {
+        for (let index = start; index < selects.length; index += 1) {
+          const values = index === start ? [...new Set(matching(index).map(variant => variant[selects[index].dataset.option]).filter(Boolean))] : [];
+          fill(selects[index], `Select ${options[index].name.toLowerCase()}`, values.map(value => ({ label: value, value })));
+        }
+      };
+      selects.forEach((select, index) => {
+        select.onchange = () => {
+          if (index < selects.length - 1) { refresh(index + 1); return; }
+          if (selects.some(select => !select.value)) return;
+          const matches = matching(selects.length);
+          if (matches.length !== 1) { status.hidden = false; status.className = 'error'; status.textContent = 'This selection does not identify one SKU.'; return; }
+          if (!openVariant(matches[0])) select.value = '';
+        };
+      });
+      refresh(0);
+    };
     const chooseModel = () => {
       selectedProduct = products.find(product => String(product.id) === model.value);
+      model.title = selectedProduct?.title || '';
+      if (isBlinds) { chooseBlind(); return; }
       const key = optionKey('size');
       const sizes = [...new Set(variants().map(variant => variant[key]).filter(Boolean))];
       fill(size, 'Select size', sizes.map(value => ({ label: value, value })));
@@ -282,12 +332,7 @@
       if (!size.value || !colour.value) return;
       const matches = variants().filter(variant => variant[optionKey('size')] === size.value && variant[optionKey('colou?r')] === colour.value);
       if (matches.length !== 1) { status.hidden = false; status.className = 'error'; status.textContent = 'This selection does not identify one SKU.'; return; }
-      const variant = matches[0];
-      const url = new URL(`https://livingculture.co.nz/products/${selectedProduct.handle}`);
-      url.searchParams.set('variant', variant.id);
-      if (!openShortcut({ label: shortcut.label, url: url.href })) { colour.value = ''; return; }
-      window.dispatchEvent(new CustomEvent('lc:omni-add-sku', { detail: { sku: clean(variant.sku).toUpperCase() } }));
-      close();
+      if (!openVariant(matches[0])) colour.value = '';
     };
     const load = async () => {
       status.hidden = false; status.className = ''; status.textContent = 'Loading products...';
@@ -295,7 +340,11 @@
       try {
         products = await loadPergolas(shortcut.label);
         if (!root.isConnected) return;
-        mount.disabled = false; status.hidden = true; mount.focus();
+        status.hidden = true;
+        if (isBlinds) {
+          fill(model, 'Select blind', products.map(product => ({ value: String(product.id), label: product.title })));
+          model.focus();
+        } else { mount.disabled = false; mount.focus(); }
       } catch (error) {
         status.className = 'error'; status.textContent = error.message;
         shadow.getElementById('retry').hidden = false;
@@ -314,13 +363,13 @@
       const button = document.createElement('button');
       button.type = 'button';
       button.textContent = shortcut.label;
-      if (['Tasman', 'Atlantic', 'Baltic', 'Caspian'].includes(shortcut.label)) {
+      if (['Tasman', 'Atlantic', 'Baltic', 'Caspian', 'Blinds'].includes(shortcut.label)) {
         button.setAttribute('aria-haspopup', 'dialog');
         button.setAttribute('aria-expanded', 'false');
         button.setAttribute('aria-controls', 'lc-omni-pergola-picker');
       }
       button.addEventListener('click', () => {
-        if (['Tasman', 'Atlantic', 'Baltic', 'Caspian'].includes(shortcut.label)) void selectPergola(shortcut, button);
+        if (['Tasman', 'Atlantic', 'Baltic', 'Caspian', 'Blinds'].includes(shortcut.label)) void selectPergola(shortcut, button);
         else openShortcut(shortcut);
       });
       bar.appendChild(button);
