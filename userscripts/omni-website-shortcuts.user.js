@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Website Shortcuts
 // @namespace    livingculture-omni
-// @version      0.1.30
+// @version      0.1.31
 // @description  Adds Living Culture website shortcuts to the grey space between Cin7 Omni quote sections.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @match        https://livingculture.co.nz/*
@@ -25,6 +25,15 @@
 
   const BAR_ID = 'lc-omni-website-shortcuts';
   const SLOT_ID = 'lc-omni-website-shortcut-slot';
+  const websitePopups = new Set();
+  document.addEventListener('pointerdown', event => {
+    // SKU insertion dispatches synthetic pointer events; only a real click dismisses the window.
+    if (!event.isTrusted) return;
+    for (const popup of websitePopups) {
+      if (!popup.closed) popup.close();
+      websitePopups.delete(popup);
+    }
+  }, true);
   const SHORTCUTS = [
     {
       label: 'Tasman',
@@ -149,6 +158,7 @@
     const popup = window.open(shortcut.url, `lc_omni_${shortcut.label.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`, `popup=yes,width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`);
     if (!popup) window.alert(`Chrome blocked the ${shortcut.label} popup. Please allow popups for Cin7 Omni and try again.`);
     else {
+      websitePopups.add(popup);
       try { popup.moveTo(left, top); } catch (error) { /* Browser positioning from window.open is sufficient. */ }
       popup.focus();
     }
