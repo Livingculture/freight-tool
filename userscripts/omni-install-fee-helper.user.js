@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Installation Fee Helper
 // @namespace    livingculture-omni
-// @version      0.1.15
+// @version      0.1.16
 // @description  Automatically matches pergola and blind installation fees in Cin7 Omni, with a manual installation fee picker.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-install-fee-helper.user.js
@@ -20,10 +20,12 @@
   const ROOT_ID = 'lc-omni-install-fee-root';
   const BUTTON_ID = 'lc-omni-install-fee-button';
   const CACHE_KEY = 'lc-omni-install-fees-v1';
+  const CACHE_TIME_KEY = `${CACHE_KEY}:loaded-at`;
   let items = [];
   let addingMatchedFees = false;
   let observedQuoteKey = '', observedSince = 0, processedQuoteKey = '';
   let feesLoading = null;
+  let automaticFeesTimer = null;
   const maskedOptionStyles = new WeakMap();
 
   function dimensions(text) {
@@ -230,13 +232,34 @@
       const loaded = parseCsv(raw);
       if (!loaded.length) throw new Error('No installation fees found');
       items = loaded;
-      localStorage.setItem(CACHE_KEY, raw);
+      try {
+        localStorage.setItem(CACHE_KEY, raw);
+        localStorage.setItem(CACHE_TIME_KEY, String(Date.now()));
+      } catch (_) { /* Pricing remains usable when browser storage is unavailable. */ }
       if (source) source.textContent = 'Google Sheet pricing loaded';
     } catch (error) {
-      items = parseCsv(localStorage.getItem(CACHE_KEY) || '');
+      try { items = parseCsv(localStorage.getItem(CACHE_KEY) || ''); } catch (_) { items = []; }
       if (source) source.textContent = items.length ? 'Using cached Google Sheet pricing' : error.message;
     }
     filterRows();
+  }
+  function prepareFees() {
+    if (items.length) return Promise.resolve();
+    if (feesLoading) return feesLoading;
+    try {
+      const age = Date.now() - Number(localStorage.getItem(CACHE_TIME_KEY) || 0);
+      if (age >= 0 && age < 15 * 60 * 1000) {
+        items = parseCsv(localStorage.getItem(CACHE_KEY) || '');
+        if (items.length) {
+          const source = document.getElementById(ROOT_ID)?.shadowRoot?.getElementById('source');
+          if (source) source.textContent = 'Recent Google Sheet pricing loaded';
+          filterRows();
+          return Promise.resolve();
+        }
+      }
+    } catch (_) { /* Fetch live pricing if the cache cannot be read. */ }
+    feesLoading = loadItems().finally(() => { feesLoading = null; });
+    return feesLoading;
   }
   function money(value) {
     const number = Number(String(value).replace(/[^\d.-]/g, ''));
@@ -553,10 +576,7 @@
     button.disabled = true;
     try {
       const initialKey = quoteKey();
-      if (!items.length) {
-        if (!feesLoading) feesLoading = loadItems().finally(() => { feesLoading = null; });
-        await feesLoading;
-      }
+      if (!items.length) await prepareFees();
       if (!items.length) throw new Error('Installation pricing could not be loaded. Open Install Fees to retry.');
       if (initialKey !== quoteKey() || editingQuote() || !memoRequiresInstallation(quoteMemoText())) return;
       const plan = matchedFeePlan(quoteLines(), items);
@@ -573,6 +593,13 @@
       button.disabled = false;
     }
   }
+  function scheduleAutomaticFees(delay = 100) {
+    if (automaticFeesTimer !== null) return;
+    automaticFeesTimer = setTimeout(() => {
+      automaticFeesTimer = null;
+      checkAutomaticFees();
+    }, delay);
+  }
   function checkAutomaticFees() {
     if (addingMatchedFees || document.hidden || editingQuote()) return;
     if (document.getElementById(ROOT_ID)?.shadowRoot?.getElementById('modal')?.classList.contains('open')) return;
@@ -581,8 +608,11 @@
     if (!lines.some(assemblyProduct)) return;
     const key = quoteKey();
     if (key === processedQuoteKey) return;
-    if (key !== observedQuoteKey) { observedQuoteKey = key; observedSince = Date.now(); return; }
-    if (Date.now() - observedSince < 1000) return;
+    if (key !== observedQuoteKey) {
+      observedQuoteKey = key; observedSince = Date.now(); scheduleAutomaticFees(300); return;
+    }
+    const remaining = 300 - (Date.now() - observedSince);
+    if (remaining > 0) { scheduleAutomaticFees(remaining); return; }
     void addMatchedFees().catch(error => {
       processedQuoteKey = quoteKey();
       toast(error.message || 'Could not add matching installation fees.', true);
@@ -639,8 +669,10 @@
     button.style.height = `${Math.max(34, rect.height)}px`;
   }
   function refreshQuoteUi() { placeButton(); hideEmptyOptions(); }
-  function boot() { ensureRoot(); refreshQuoteUi(); }
-  boot(); setInterval(refreshQuoteUi, 1500); new MutationObserver(refreshQuoteUi).observe(document.body, { childList:true, subtree:true });
-  setInterval(checkAutomaticFees, 750);
+  function boot() { ensureRoot(); refreshQuoteUi(); void prepareFees(); scheduleAutomaticFees(); }
+  boot(); setInterval(refreshQuoteUi, 1500);
+  new MutationObserver(() => { refreshQuoteUi(); scheduleAutomaticFees(); }).observe(document.body, { childList:true, characterData:true, subtree:true });
+  for (const event of ['input', 'change', 'focusout']) document.addEventListener(event, () => scheduleAutomaticFees(), true);
+  setInterval(checkAutomaticFees, 500);
   window.addEventListener('resize', placeButton); window.addEventListener('scroll', placeButton, { passive:true });
 })();

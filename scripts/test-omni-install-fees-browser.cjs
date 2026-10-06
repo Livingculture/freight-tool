@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const { chromium } = require('playwright');
 const blindCase = process.argv.includes('--blind');
+const cachedPricing = process.argv.includes('--cached');
 const feeCode = blindCase ? 'AS10140' : 'AS10037';
 const feeName = blindCase ? 'Assembly Motorised Blind Under 4m' : 'Assembly Freestanding Motorised Pergola Tasman Up to 16m2';
 const price = blindCase ? '500' : '2000';
@@ -32,7 +33,11 @@ const price = blindCase ? '500' : '2000';
       row.children[2].textContent = '3m';
     });
     await page.evaluate(({ keyboardSelection, mode, feeCode, feeName, price }) => {
-      window.GM_xmlhttpRequest = options => setTimeout(() => options.onload({ status: 200, responseText: `Product Code,Name,Price\n${feeCode},${feeName},${price}` }), 10);
+      window.sheetRequests = 0;
+      window.GM_xmlhttpRequest = options => {
+        window.sheetRequests += 1;
+        setTimeout(() => options.onload({ status: 200, responseText: `Product Code,Name,Price\n${feeCode},${feeName},${price}` }), 10);
+      };
       for (const cell of document.querySelectorAll('td.code')) cell.addEventListener('click', () => {
         if (cell.querySelector('input')) return;
         cell.innerHTML = '<input>';
@@ -89,6 +94,10 @@ const price = blindCase ? '500' : '2000';
         window.priceEdits = (window.priceEdits || 0) + 1;
       });
     }, { keyboardSelection, mode, feeCode, feeName, price });
+    if (cachedPricing) await page.evaluate(({ feeCode, feeName, price }) => {
+      localStorage.setItem('lc-omni-install-fees-v1', `Product Code,Name,Price\n${feeCode},${feeName},${price}`);
+      localStorage.setItem('lc-omni-install-fees-v1:loaded-at', String(Date.now() - 60000));
+    }, { feeCode, feeName, price });
     await page.addScriptTag({ content: fs.readFileSync(path.join(__dirname, '../userscripts/omni-install-fee-helper.user.js'), 'utf8') });
     const placeholders = await page.locator('#option-placeholders').evaluate(row => [...row.children].slice(2, 5).map(cell => ({ text: cell.textContent, color: getComputedStyle(cell).color })));
     assert.deepEqual(placeholders.map(cell => cell.text), ['#N/A', '#N/A', '#N/A'], 'Keep native saved values unchanged');
@@ -98,6 +107,7 @@ const price = blindCase ? '500' : '2000';
     assert.notEqual(placeholders[2].color, 'rgba(0, 0, 0, 0)', 'Only Option1 and Option2 placeholders are hidden');
     assert.notEqual(await page.locator('body > table tr').nth(1).locator('td').nth(2).evaluate(cell => getComputedStyle(cell).color), 'rgba(0, 0, 0, 0)', 'Keep real size values visible');
     await page.waitForTimeout(2200);
+    assert.equal(await page.evaluate(() => window.sheetRequests), cachedPricing ? 0 : 1, 'Prepare fees before installation is requested');
     assert.equal(await page.locator('body > table td.code').filter({ hasText: feeCode }).count(), 0, 'Blank memo must not add fees');
     await page.locator('#memo').fill('No installation required');
     await page.evaluate(() => document.activeElement.blur());
@@ -114,7 +124,9 @@ const price = blindCase ? '500' : '2000';
       cell.parentElement.children[5].querySelector('input').value = '1';
     }, feeCode);
     await page.evaluate(() => document.activeElement.blur());
+    const startedAt = Date.now();
     await page.waitForFunction(price => document.querySelector('td.code')?.parentElement.children[6].querySelector('input').value === price, price);
+    const insertionMs = Date.now() - startedAt;
     await page.waitForFunction(() => !document.getElementById('lc-omni-install-fee-button').disabled);
     const values = await page.locator('td.code').first().evaluate(cell => ({
       code: cell.textContent, quantity: cell.parentElement.children[5].querySelector('input').value,
@@ -122,6 +134,7 @@ const price = blindCase ? '500' : '2000';
     }));
     assert.deepEqual(values, { code: feeCode, quantity: '2', price });
     assert.equal(await page.evaluate(() => window.quantityEdits || 0), 0, 'Do not edit a quantity already filled correctly by Omni');
+    assert.equal(await page.evaluate(() => window.sheetRequests), cachedPricing ? 0 : 1, 'Insertion does not refetch prepared pricing');
     if (mode === 'dismissed') assert.equal(await page.evaluate(() => window.priceEdits || 0), 0, 'Do not edit an already-correct native price');
     assert.equal(await page.evaluate(() => Boolean(window.prematureEnter)), false, 'Never commit the code before search results arrive');
     assert.equal(await page.locator('#lc-omni-install-fee-root').locator('#modal').evaluate(modal => modal.classList.contains('open')), false);
@@ -144,7 +157,7 @@ const price = blindCase ? '500' : '2000';
     await page.waitForFunction(() => !document.getElementById('lc-omni-install-fee-button').disabled);
     assert.equal(await page.locator('#lc-omni-install-fee-root').locator('#toast').evaluate(toast => toast.classList.contains('error')), false);
     await page.screenshot({ path: '/tmp/lc-install-fees-auto.png' });
-    console.log(`PASS browser (${blindCase ? 'blinds' : 'pergolas'}, ${mode}): automatic Enter, delayed autocomplete, memo gate, quantity increase, incomplete-row recovery`);
+    console.log(`PASS browser (${blindCase ? 'blinds' : 'pergolas'}, ${mode}, ${cachedPricing ? 'cached' : 'prefetched'}): first insertion ${insertionMs}ms including simulated 1400ms Omni lookup; memo gate, quantity increase, incomplete-row recovery`);
     await page.close();
     }
   } finally {
