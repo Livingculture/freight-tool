@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Custom Product Helper
 // @namespace    livingculture-omni
-// @version      0.1.9
+// @version      0.1.10
 // @description  Shows Living Culture custom products and adds the selected SKU to the next empty Cin7 Omni product line.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-custom-product-helper.user.js
@@ -49,8 +49,30 @@
   function request(url) { return new Promise((resolve,reject)=>GM_xmlhttpRequest({method:'GET',url:`${url}${url.includes('?')?'&':'?'}cache=${Date.now()}`,timeout:20000,onload:r=>r.status>=200&&r.status<300?resolve(r.responseText||''):reject(new Error(`Product source returned ${r.status}`)),onerror:()=>reject(new Error('Could not load custom products')),ontimeout:()=>reject(new Error('Custom product request timed out'))})); }
   async function load() {
     status('Loading custom products…');
-    try { let raw=await request(DATA_URL),parsed=parse(raw);if(!parsed.length){const script=await request(BACKUP_URL);raw=script.match(/const RAW_DATA = `([\s\S]*?)`;\s*\n/)?.[1]||'';parsed=parse(raw);}if(!parsed.length) throw new Error('No custom products found'); items=parsed; localStorage.setItem(CACHE_KEY,raw); status('Live product list loaded'); }
-    catch(error){ items=parse(localStorage.getItem(CACHE_KEY)||''); status(items.length?'Using saved product list':error.message,true); }
+    try { items = parse(localStorage.getItem(CACHE_KEY) || ''); } catch (error) {}
+    render();
+    let raw = '', parsed = [], source = '';
+    try {
+      raw = await request(DATA_URL);
+      if (/<!doctype|<html/i.test(raw)) throw new Error('Google document requires access');
+      parsed = parse(raw);
+      if (parsed.length) source = 'Live product list loaded';
+    } catch (error) { /* The GitHub list is available independently of Google access. */ }
+    if (!parsed.length) {
+      try {
+        const script = await request(BACKUP_URL);
+        raw = script.match(/const RAW_DATA = `([\s\S]*?)`;\s*\n/)?.[1] || '';
+        parsed = parse(raw);
+        if (parsed.length) source = 'GitHub saved product list (Google Doc unavailable)';
+      } catch (error) {}
+    }
+    if (parsed.length) {
+      items = parsed;
+      try { localStorage.setItem(CACHE_KEY, raw); } catch (error) {}
+      status(source);
+    } else {
+      status(items.length ? 'Using saved product list - sources unavailable' : 'Could not load custom products from Google or GitHub. Reopen to retry.', !items.length);
+    }
     render();
   }
   function status(message,error=false){ const e=document.getElementById(ROOT_ID)?.shadowRoot?.getElementById('status'); if(e){e.textContent=message;e.classList.toggle('error',error);} }
