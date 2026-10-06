@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Product Availability
 // @namespace    livingculture-omni
-// @version      0.1.3
+// @version      0.1.4
 // @description  Checks Omni products-page stock for all SKUs on the current quote.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-product-availability.user.js
@@ -129,6 +129,7 @@
       iframe{position:fixed;left:-2000px;top:0;width:1400px;height:900px;border:0} @media(max-width:600px){header{align-items:flex-start;flex-direction:column}.actions{flex-wrap:wrap}}
     </style><div class="shade"><section class="panel" role="dialog" aria-modal="true" aria-labelledby="title"><header><h2 id="title">Quote Stock</h2><div class="actions"><button id="refresh">Refresh</button><a id="products" target="_blank" rel="noopener">Open Products</a><button class="close" aria-label="Close">&times;</button></div></header><div class="info"><span>All Branches</span><span id="progress" role="status"></span></div><div class="wrap"><table><thead><tr><th>SKU</th><th>Product</th><th>Quote Qty</th><th>Stock Avail</th><th>SOH</th><th>Virtual</th><th>Holding</th><th>Incoming</th><th>Supplier</th><th>Shortfall</th></tr></thead><tbody></tbody></table></div></section></div>`;
     shadow.getElementById('products').href = PRODUCT_AVAILABILITY_URL;
+    shadow.getElementById('title').textContent = 'Available Stock';
     shadow.querySelector('.info span').textContent = 'Omni Products';
     const inlineStyle = document.createElement('style');
     inlineStyle.textContent = ':host{display:block;width:100%;min-width:0;margin:12px 0}.shade{position:static;display:block;padding:0;background:none}.panel{width:100%;max-height:none;border-radius:0;border-top:1px solid #c4d3e5}header{padding:9px 12px;background:#eef3fa;color:#13377e}h2{font-size:15px}.info{padding:8px 12px}.wrap{padding:0 12px 12px}';

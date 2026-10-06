@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Promo Summary
 // @namespace    livingculture-cin7
-// @version      3.1
+// @version      3.2
 // @description  Compact grouped Living Culture promo summary inside Cin7 from the Summary tab.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
 // @match        https://inventory.dearsystems.com/*
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.1
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.1
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.2
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.2
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
@@ -39,6 +39,7 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
   let sourceLabel = 'Loading Summary tab...';
 
   const INLINE_BUTTON_ID = 'lc-promo-summary-inline-button';
+  const isOmniQuote = location.hostname === 'go.cin7.com' && /\/Cloud\/TransactionEntry\/TransactionEntry\.aspx/i.test(location.pathname);
   const ACTION_ROW_ID = 'lc-cin7-action-row-v1';
   const SITE_VISIT_BUTTON_ID = 'lc-site-visit-inline-button-v2';
   const QUOTE_REVIEW_BUTTON_ID = 'lc-quote-review-inline-button-v1';
@@ -845,6 +846,20 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
       });
 
       button.addEventListener('click', openModal);
+    }
+
+    if (isOmniQuote) {
+      const clearance = document.getElementById('lc-omni-clearance-info-button');
+      const actions = document.getElementById('lc-omni-customer-photo-actions');
+      if (!actions || clearance?.parentElement !== actions) return false;
+      if (clearance.previousElementSibling !== button) clearance.insertAdjacentElement('beforebegin', button);
+      applyInlineButtonSizing(button, clearance);
+      button.style.position = 'static';
+      button.style.margin = '0';
+      button.style.height = '36px';
+      button.style.visibility = 'visible';
+      button.style.opacity = '1';
+      return true;
     }
 
     if (positionButtonBetweenSiteVisitAndQuoteReview(button)) return true;
