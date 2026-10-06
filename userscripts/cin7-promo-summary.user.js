@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Promo Summary
 // @namespace    livingculture-cin7
-// @version      3.2
+// @version      3.3
 // @description  Compact grouped Living Culture promo summary inside Cin7 from the Summary tab.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
 // @match        https://inventory.dearsystems.com/*
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.2
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.2
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.3
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.3
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
@@ -1303,6 +1303,49 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
     document.body.appendChild(root);
 
     const shadow = root.shadowRoot;
+
+    if (isOmniQuote) {
+      const style = document.createElement('style');
+      style.textContent = `
+        :host{color:#172b49}
+        #lc-promo-modal{align-items:center;justify-content:center;padding:16px;background:rgba(8,24,45,.55)}
+        .panel{width:900px;max-width:100%;height:min(82vh,780px);border:1px solid #9db3d2;border-radius:6px;background:#eef3fa;box-shadow:0 12px 36px #0005}
+        .omni-header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;background:#13377e;color:#fff}
+        .omni-header h1{margin:0;font:700 18px Arial,sans-serif}
+        .omni-close{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid #fff;border-radius:4px;background:#fff;color:#13377e;font-size:22px;cursor:pointer}
+        .controls{grid-template-columns:minmax(0,1fr) 135px auto 65px;border-color:#c4d3e5;background:#fff}
+        #lc-promo-search,#lc-promo-filter{min-width:0;border-color:#9db3d2;border-radius:4px;color:#172b49}
+        #lc-promo-search:focus,#lc-promo-filter:focus{border-color:#13377e;box-shadow:0 0 0 2px #13377e22}
+        input[type=checkbox]{accent-color:#13377e}
+        .merge-label,.date,.label-title,.small{color:#526987;letter-spacing:0}
+        .count,a{color:#13377e}
+        .source{background:#f5f7fb;border-color:#c4d3e5;color:#526987}
+        .content{min-height:0}
+        .promo{border-color:#c4d3e5;border-radius:6px;box-shadow:none}
+        .promo-head{background:#fff;border-color:#dce3eb}
+        .title{color:#13377e;font-weight:700}
+        .week-range{background:#e5edf8;color:#13377e;border-radius:4px}
+        .tag,.pill,.discount{border-radius:4px}
+        .tag.always{color:#6132a8;background:#eee7fa}
+        .offer{min-width:0;border-color:#dce3eb;border-radius:4px;background:#f5f7fb}
+        .discount{background:#eee7fa;color:#6132a8}
+        .offer-name{color:#172b49}
+        .detail-box{border-color:#dce3eb;border-radius:4px;background:#f5f7fb}
+        .detail-box div{color:#425b78}
+        .empty{border-color:#c4d3e5;border-radius:6px;color:#526987;box-shadow:none}
+        @media(max-width:760px){.controls{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}#lc-promo-search{grid-column:1 / -1}.merge-label{white-space:normal}.panel{height:88vh}.count{text-align:left}}
+      `;
+      shadow.appendChild(style);
+      const heading = document.createElement('header');
+      heading.className = 'omni-header';
+      heading.innerHTML = '<h1 id="lc-omni-promo-title">Promo Summary</h1><button type="button" class="omni-close" aria-label="Close">&times;</button>';
+      const panel = shadow.querySelector('.panel');
+      panel.prepend(heading);
+      panel.setAttribute('role', 'dialog');
+      panel.setAttribute('aria-modal', 'true');
+      panel.setAttribute('aria-labelledby', 'lc-omni-promo-title');
+      heading.querySelector('button').addEventListener('click', closeModal);
+    }
 
     shadow.getElementById('lc-promo-modal').addEventListener('click', event => {
       if (event.target === shadow.getElementById('lc-promo-modal')) closeModal();
