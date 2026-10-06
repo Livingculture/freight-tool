@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Installation Fee Helper
 // @namespace    livingculture-omni
-// @version      0.1.7
+// @version      0.1.8
 // @description  Loads Living Culture installation fees and adds the selected SKU and price to Cin7 Omni.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-install-fee-helper.user.js
@@ -21,6 +21,76 @@
   const BUTTON_ID = 'lc-omni-install-fee-button';
   const CACHE_KEY = 'lc-omni-install-fees-v1';
   let items = [];
+  let addingMatchedFees = false;
+
+  function dimensions(text) {
+    const match = String(text || '').match(/(\d+(?:\.\d+)?)\s*(mm|cm|m)?\s*[x\u00d7]\s*(\d+(?:\.\d+)?)\s*(mm|cm|m)?\b/i);
+    if (!match) return null;
+    const unit = match[4] || match[2] || 'm';
+    const metres = (value, units) => Number(value) / (units === 'mm' ? 1000 : units === 'cm' ? 100 : 1);
+    const width = metres(match[1], (match[2] || unit).toLowerCase());
+    const length = metres(match[3], (match[4] || unit).toLowerCase());
+    return width > 0 && length > 0 ? { width, length, area: Math.round(width * length * 10000) / 10000 } : null;
+  }
+  function pergolaDetails(text, sizeText = '') {
+    const model = clean(text).match(/\b(mediterranean[ -]*(?:pro[ -]*max|sky)|atlantic|baltic|caspian|caribbean|tasman|pacific|dover)\b/i)?.[0];
+    const mounting = /\bfree[ -]?standing\b/i.test(text) ? 'freestanding' : /\bwall[ -]*(?:mount(?:ed)?|mout)\b/i.test(text) ? 'wall' : '';
+    const operation = /\bmanual\b/i.test(text) ? 'manual' : /\b(?:motori[sz]ed|lotorised)\b/i.test(text) ? 'motorised' : '';
+    const size = dimensions(sizeText) || dimensions(text);
+    if (!model || !mounting || !operation || !size) return null;
+    return { model: model.toLowerCase().replace(/[ -]/g, ''), mounting, operation, ...size };
+  }
+  function matchingFee(line, fees) {
+    const details = pergolaDetails(line.name, line.options);
+    if (!details || !/\bpergola\b/i.test(line.name) || /^AS/i.test(line.code)) return null;
+    const matches = fees.filter(item => {
+      const fee = pergolaDetails(item.name, line.options);
+      if (!fee || fee.model !== details.model || fee.mounting !== details.mounting || fee.operation !== details.operation) return false;
+      const range = item.name.match(/(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*m(?:\u00b2|2|\^2)/i);
+      if (range) return details.area >= Number(range[1]) && details.area <= Number(range[2]);
+      const upper = item.name.match(/up\s+to\s+(\d+(?:\.\d+)?)\s*m(?:\u00b2|2|\^2)/i);
+      if (upper) return details.area <= Number(upper[1]);
+      // Pacific fees list exact footprints rather than area bands.
+      return item.name.split('/').some(part => {
+        const size = dimensions(part);
+        return size && ((size.width === details.width && size.length === details.length) || (size.width === details.length && size.length === details.width));
+      });
+    });
+    return matches.length === 1 ? { ...matches[0], area: details.area } : null;
+  }
+  function quoteLines() {
+    for (const row of pageElements('table tr')) {
+      const headings = [...row.children].map(cell => clean(cell.textContent).toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^\d+/, ''));
+      if (!headings.includes('code') || !headings.includes('product') || !headings.includes('qtyordered')) continue;
+      const read = (line, key) => {
+        const cell = line.children[headings.indexOf(key)];
+        return clean(cell?.querySelector('input,textarea,select')?.value || cell?.textContent);
+      };
+      return [...row.closest('table').querySelectorAll('tr')].filter(line => line !== row).map(line => ({
+        code: read(line, 'code'), name: read(line, 'product'),
+        options: ['option1', 'option2', 'option3'].map(key => read(line, key)).join(' '),
+        quantity: Number(read(line, 'qtyordered').replace(/,/g, ''))
+      })).filter(line => line.code && line.quantity > 0);
+    }
+    return [];
+  }
+  function matchedFeePlan(lines, fees) {
+    const required = new Map();
+    const unmatched = [];
+    for (const line of lines) {
+      if (/^AS/i.test(line.code) || !/\bpergola\b/i.test(line.name)) continue;
+      const fee = matchingFee(line, fees);
+      if (!fee) { unmatched.push(line); continue; }
+      const existing = required.get(fee.code);
+      if (existing) existing.quantity += line.quantity;
+      else required.set(fee.code, { ...fee, quantity: line.quantity });
+    }
+    for (const line of lines) {
+      const fee = required.get(line.code.toUpperCase());
+      if (fee) fee.quantity -= line.quantity;
+    }
+    return { fees: [...required.values()].filter(fee => fee.quantity > 0), unmatched };
+  }
 
   function clean(value) { return String(value || '').replace(/\s+/g, ' ').trim(); }
   function visible(element) {
@@ -113,7 +183,9 @@
       lastGroup = itemGroup;
       return `${heading}<tr><td><button type="button" data-index="${filtered.indexOf(item)}">Add</button></td><td class="code">${escapeHtml(item.code)}</td><td>${escapeHtml(item.name)}</td><td class="price">$${escapeHtml(money(item.price))}</td></tr>`;
     }).join('');
-    shadow.getElementById('rows').querySelectorAll('button').forEach(button => button.addEventListener('click', () => addItem(filtered[Number(button.dataset.index)])));
+    shadow.getElementById('rows').querySelectorAll('button').forEach(button => button.addEventListener('click', () => {
+      if (!addingMatchedFees) void addItem(filtered[Number(button.dataset.index)]);
+    }));
   }
   function exactElement(text) {
     const wanted = clean(text).toLowerCase();
@@ -147,12 +219,12 @@
     const active = document.activeElement;
     if (active && (/^(INPUT|TEXTAREA)$/i.test(active.tagName) || active.isContentEditable)) {
       const rect = active.getBoundingClientRect();
-      if (Math.abs(rect.left + rect.width / 2 - x) < 260 && Math.abs(rect.top + rect.height / 2 - y) < 90) return active;
+      if (x >= rect.left - 12 && x <= rect.right + 12 && y >= rect.top - 12 && y <= rect.bottom + 12) return active;
     }
     return pageElements('input:not([type="hidden"]), textarea, [contenteditable="true"]')
       .map(field => ({ field, rect: field.getBoundingClientRect() }))
-      .filter(item => Math.abs(item.rect.left + item.rect.width / 2 - x) < 260 && Math.abs(item.rect.top + item.rect.height / 2 - y) < 90)
-      .sort((a, b) => Math.abs(a.rect.top + a.rect.height / 2 - y) - Math.abs(b.rect.top + b.rect.height / 2 - y))[0]?.field || null;
+      .filter(item => x >= item.rect.left - 12 && x <= item.rect.right + 12 && Math.abs(item.rect.top + item.rect.height / 2 - y) < 90)
+      .sort((a, b) => Math.hypot(a.rect.left + a.rect.width / 2 - x, a.rect.top + a.rect.height / 2 - y) - Math.hypot(b.rect.left + b.rect.width / 2 - x, b.rect.top + b.rect.height / 2 - y))[0]?.field || null;
   }
   function emptyCodeField() {
     const code = header('Code');
@@ -248,7 +320,8 @@
   }
   async function addItem(item) {
     const empty = emptyCodeField();
-    if (!empty) { toast('No empty Omni product line was found.', true); return; }
+    if (!empty) { toast('No empty Omni product line was found.', true); return false; }
+    const targetRow = empty.field.closest('tr');
     close();
     const rowY = empty.rect.top + empty.rect.height / 2;
     clickAt(empty.rect.left + empty.rect.width / 2, rowY);
@@ -257,16 +330,34 @@
       await new Promise(resolve => setTimeout(resolve, 40));
       codeInput = fieldNear(empty.rect.left + empty.rect.width / 2, rowY);
     }
-    if (!codeInput) { toast('Could not open the Omni Code search field.', true); return; }
+    if (!codeInput) { toast('Could not open the Omni Code search field.', true); return false; }
     setValue(codeInput, item.code);
-    await chooseDropdown(item.code, codeInput);
+    const selected = await chooseDropdown(item.code, codeInput);
     const product = header('Product');
+    let productSelected = false;
     for (let attempt = 0; attempt < 15; attempt += 1) {
       await new Promise(resolve => setTimeout(resolve, 60));
       if (!product) break;
       const productCell = document.elementFromPoint(product.left + product.width / 2, rowY)?.closest('td');
       const value = clean(productCell?.textContent);
-      if (value && !/^search/i.test(value)) break;
+      if (value && !/^search/i.test(value)) { productSelected = true; break; }
+    }
+    if (!selected || !productSelected) { toast(`Could not confirm ${item.code} in Omni. Check the line before trying again.`, true); return false; }
+    if (item.quantity) {
+      const quantity = header('Qty Ordered');
+      if (!quantity) { toast('Could not find the installation quantity field.', true); return false; }
+      const x = quantity.left + quantity.width / 2;
+      clickAt(x, rowY);
+      let quantityInput = null;
+      for (let attempt = 0; attempt < 10 && !quantityInput; attempt += 1) {
+        await new Promise(resolve => setTimeout(resolve, 40));
+        quantityInput = fieldNear(x, rowY);
+      }
+      if (!quantityInput || (targetRow?.isConnected && quantityInput.closest('tr') && quantityInput.closest('tr') !== targetRow)) {
+        toast('Could not set the installation quantity. Check the new line.', true); return false;
+      }
+      setValue(quantityInput, String(item.quantity));
+      sendKey(quantityInput, 'Tab', 9);
     }
     const price = header('Unit Price') || header('Price');
     if (price) {
@@ -277,7 +368,34 @@
         await new Promise(resolve => setTimeout(resolve, 40));
         priceInput = fieldNear(x, rowY);
       }
-      if (priceInput) setValue(priceInput, String(item.price).replace(/[^\d.]/g, ''));
+      if (priceInput && (!targetRow?.isConnected || !priceInput.closest('tr') || priceInput.closest('tr') === targetRow)) {
+        setValue(priceInput, String(item.price).replace(/[^\d.]/g, ''));
+        sendKey(priceInput, 'Tab', 9);
+      } else { toast('Could not set the chart price. Check the installation line.', true); return false; }
+    } else { toast('Could not find the installation price field.', true); return false; }
+    return true;
+  }
+  async function addMatchedFees() {
+    if (addingMatchedFees) return;
+    addingMatchedFees = true;
+    const button = getButton();
+    button.disabled = true;
+    try {
+      await loadItems();
+      const plan = matchedFeePlan(quoteLines(), items);
+      let added = 0;
+      for (const fee of plan.fees) {
+        if (!await addItem(fee)) return;
+        added += 1;
+      }
+      const shadow = ensureRoot().shadowRoot;
+      shadow.getElementById('modal').classList.add('open');
+      const result = added ? `Added ${added} matching installation fee${added === 1 ? '' : 's'}.` : 'No additional matching installation fees needed.';
+      shadow.getElementById('source').textContent += ` | ${result}${plan.unmatched.length ? ` ${plan.unmatched.length} pergola line(s) need manual selection: ${plan.unmatched.map(line => line.code).join(', ')}.` : ''}`;
+      toast(result, false);
+    } finally {
+      addingMatchedFees = false;
+      button.disabled = false;
     }
   }
   function close() { document.getElementById(ROOT_ID)?.shadowRoot?.getElementById('modal')?.classList.remove('open'); }
@@ -285,7 +403,7 @@
     const shadow = ensureRoot().shadowRoot;
     shadow.getElementById('modal').classList.add('open');
     shadow.getElementById('search').focus();
-    loadItems();
+    void addMatchedFees().catch(error => toast(error.message || 'Could not add matching installation fees.', true));
   }
   function ensureRoot() {
     let root = document.getElementById(ROOT_ID);
