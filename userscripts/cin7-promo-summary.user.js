@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Promo Summary
 // @namespace    livingculture-cin7
-// @version      3.5
+// @version      3.6
 // @description  Compact grouped Living Culture promo summary inside Cin7 from the Summary tab.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
 // @match        https://inventory.dearsystems.com/*
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.5
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.5
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.6
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.6
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
@@ -77,8 +77,8 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
 
   function readablePromoText(value) {
     if (!isOmniQuote) return linkify(value);
-    const paragraphs = String(value || '')
-      .replace(/\s+(?=(?:T&Cs?:|North Island\b|South Island\b|Offer valid\b|Clearance items\b|In the event\b|Customers\b))/gi, '\n')
+    const paragraphs = clean(value)
+      .replace(/\s+(?=(?:T&Cs?:|North Island\b|South Island\b|Offer valid\b|In the event\b|Customers\b))/gi, '\n')
       .replace(/\.\s+(?=[A-Z])/g, '.\n')
       .split(/\n+/).map(clean).filter(Boolean);
     return paragraphs.map(paragraph => `<p class="readable-text">${linkify(paragraph)}</p>`).join('');
@@ -1347,7 +1347,7 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
         .label-title{font-size:12px;text-transform:none;color:#334b66;margin-bottom:8px}
         .detail-box{background:#fff;padding:14px;border-color:#c4d3e5}
         .detail-box div,.offer-name{font-size:16px;line-height:1.6;color:#172b49;font-weight:400;white-space:normal}
-        .readable-text{max-width:72ch;margin:0 0 10px;overflow-wrap:anywhere}
+        .readable-text{max-width:72ch;margin:0 0 3px;overflow-wrap:anywhere}
         .readable-text:last-child{margin-bottom:0}
         .offer{padding:12px;background:#fff}
         .discount{font-size:13px;padding:6px 9px}
@@ -1355,9 +1355,9 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
         .controls,.source{display:none}
         .title{font-size:16px}
         .promo-head{border-bottom:0;padding:12px 14px 6px}
-        .promo-body{padding:8px 14px 14px;gap:12px}
+        .promo-body{padding:6px 14px 12px;gap:8px}
         .detail-box{padding:0;border:0;border-radius:0;background:transparent}
-        .detail-box div,.offer-name{font-size:13px;line-height:1.55}
+        .detail-box div,.offer-name{font-size:13px;line-height:1.3}
         .details a{font-size:13px}
         .offer{padding:0;border:0;border-radius:0;background:transparent}
         .discount{font-size:11px}
