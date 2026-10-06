@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Custom Product Helper
 // @namespace    livingculture-omni
-// @version      0.1.7
+// @version      0.1.8
 // @description  Shows Living Culture custom products and adds the selected SKU to the next empty Cin7 Omni product line.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-custom-product-helper.user.js
@@ -70,6 +70,13 @@
     const sku=clean(event.data?.sku).toUpperCase();
     if(event.data?.type!=='lc-omni-add-sku'||!sku||!/^[A-Z0-9][A-Z0-9()-]*(?:-[A-Z0-9]+)*$/i.test(sku))return;
     add({code:sku});
+  });
+
+  window.addEventListener('lc:omni-add-sku', event => {
+    const sku = clean(event.detail?.sku).toUpperCase();
+    if (!sku || !/^[A-Z0-9][A-Z0-9()-]*(?:-[A-Z0-9]+)*$/i.test(sku)) return;
+    if (!emptyCodeCell()) { window.alert('No empty Omni product line was found. Add a new line and select the pergola again.'); return; }
+    void add({ code: sku }).catch(error => window.alert(`Could not add the pergola: ${error.message}`));
   });
 
   function close(){document.getElementById(ROOT_ID)?.shadowRoot?.getElementById('modal')?.classList.remove('open');}
