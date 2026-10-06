@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Promo Summary
 // @namespace    livingculture-cin7
-// @version      3.4
+// @version      3.5
 // @description  Compact grouped Living Culture promo summary inside Cin7 from the Summary tab.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
 // @match        https://inventory.dearsystems.com/*
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.4
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.4
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.5
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.5
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
@@ -742,7 +742,7 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
     modal.classList.add('open');
     loadPromoData();
 
-    setTimeout(() => search?.focus(), 80);
+    setTimeout(() => (isOmniQuote ? root.shadowRoot.querySelector('.omni-close') : search)?.focus(), 80);
   }
 
   function closeModal() {
@@ -1352,6 +1352,16 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
         .offer{padding:12px;background:#fff}
         .discount{font-size:13px;padding:6px 9px}
         .details a{font-size:14px}
+        .controls,.source{display:none}
+        .title{font-size:16px}
+        .promo-head{border-bottom:0;padding:12px 14px 6px}
+        .promo-body{padding:8px 14px 14px;gap:12px}
+        .detail-box{padding:0;border:0;border-radius:0;background:transparent}
+        .detail-box div,.offer-name{font-size:13px;line-height:1.55}
+        .details a{font-size:13px}
+        .offer{padding:0;border:0;border-radius:0;background:transparent}
+        .discount{font-size:11px}
+        .readable-text{max-width:none}
         .empty{border-color:#c4d3e5;border-radius:6px;color:#526987;box-shadow:none}
         @media(max-width:760px){.controls{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}#lc-promo-search{grid-column:1 / -1}.merge-label{white-space:normal}.panel{height:88vh}.count{text-align:left}}
       `;
