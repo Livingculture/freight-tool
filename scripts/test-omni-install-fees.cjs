@@ -4,10 +4,16 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync(require('node:path').join(__dirname, '../userscripts/omni-install-fee-helper.user.js'), 'utf8');
 const context = vm.createContext({});
-for (const name of ['clean', 'dimensions', 'pergolaDetails', 'matchingFee', 'matchedFeePlan', 'parseCsvLine', 'parseCsv']) {
+for (const name of ['clean', 'dimensions', 'pergolaDetails', 'matchingFee', 'matchedFeePlan', 'parseCsvLine', 'parseCsv', 'memoRequiresInstallation']) {
   const start = source.indexOf(`  function ${name}(`);
   const end = source.indexOf('\n  function ', start + 1);
   vm.runInContext(source.slice(start, end), context);
+}
+for (const memo of ['', 'No installation required', 'Installation is not required', 'Installation is not included', 'Without installation', 'Installation required. Installation is not included.']) {
+  assert.equal(context.memoRequiresInstallation(memo), false);
+}
+for (const memo of ['Installation required', 'INSTALLATION REQUIRED', 'Installation: required', 'Instalation required\n\nTerms and conditions']) {
+  assert.equal(context.memoRequiresInstallation(memo), true);
 }
 const fees = context.parseCsv(`Product Code,Name,Price
 AS10037,Assembly Freestanding Motorised Pergola Tasman Up to 16m²,2000

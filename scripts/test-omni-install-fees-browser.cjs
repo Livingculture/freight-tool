@@ -10,6 +10,7 @@ const { chromium } = require('playwright');
     const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
     await page.route('https://go.cin7.com/**', route => route.fulfill({ contentType: 'text/html', body: `
       <style>td,th{width:160px;height:42px;border:1px solid #ddd}table{border-collapse:collapse}input{width:130px}button{height:36px}</style>
+      <label for="memo">Delivery Instructions</label><textarea id="memo" aria-label="Delivery Instructions"></textarea>
       <table><tr><th>Code</th><th>Product</th><th>Option1</th><th>Option2</th><th>Option3</th><th>Qty Ordered</th><th>Unit Price</th></tr>
       <tr><td>CS123</td><td>Tasman Motorised Freestanding Pergola</td><td>4 x 3m</td><td>Black</td><td></td><td>2</td><td>9999</td></tr>
       ${Array.from({ length: 3 }, () => '<tr><td class="code">Search...</td><td class="product">Search...</td><td></td><td></td><td></td><td><input value=""></td><td><input value=""></td></tr>').join('')}
@@ -50,10 +51,17 @@ const { chromium } = require('playwright');
         });
       });
     }, keyboardSelection);
+    await page.addScriptTag({ content: fs.readFileSync(path.join(__dirname, '../userscripts/omni-install-fee-helper.user.js'), 'utf8') });
+    await page.waitForTimeout(2200);
+    assert.equal(await page.locator('body > table td.code').filter({ hasText: 'AS10037' }).count(), 0, 'Blank memo must not add fees');
+    await page.locator('#memo').fill('No installation required');
+    await page.evaluate(() => document.activeElement.blur());
+    await page.waitForTimeout(2200);
+    assert.equal(await page.locator('body > table td.code').filter({ hasText: 'AS10037' }).count(), 0, 'No installation required must not add fees');
+    await page.locator('#memo').fill('Installation required\n\nTerms and conditions');
     await page.locator('body > table tr').nth(1).locator('td').nth(5).evaluate(cell => {
       cell.innerHTML = '<input value="2">'; cell.firstChild.focus();
     });
-    await page.addScriptTag({ content: fs.readFileSync(path.join(__dirname, '../userscripts/omni-install-fee-helper.user.js'), 'utf8') });
     await page.waitForTimeout(2200);
     assert.equal(await page.locator('body > table td.code').filter({ hasText: 'AS10037' }).count(), 0, 'Do not interrupt editing');
     await page.evaluate(() => document.activeElement.blur());
@@ -71,7 +79,12 @@ const { chromium } = require('playwright');
     await page.locator('#lc-omni-install-fee-button').click();
     assert.equal(await page.locator('body > table td.code').filter({ hasText: 'AS10037' }).count(), 1);
     await page.locator('#lc-omni-install-fee-root').locator('.close').click();
+    await page.locator('#memo').fill('No installation required');
     await page.locator('body > table tr').nth(1).locator('input').fill('3');
+    await page.evaluate(() => document.activeElement.blur());
+    await page.waitForTimeout(2200);
+    assert.equal(await page.locator('body > table td.code').filter({ hasText: 'AS10037' }).count(), 1, 'Removing installation requirement prevents further fees');
+    await page.locator('#memo').fill('Installation required');
     await page.evaluate(() => document.activeElement.blur());
     await page.waitForFunction(() => [...document.querySelectorAll('body > table td.code')]
       .filter(cell => cell.textContent === 'AS10037')
@@ -79,7 +92,7 @@ const { chromium } = require('playwright');
     await page.waitForFunction(() => !document.getElementById('lc-omni-install-fee-button').disabled);
     assert.equal(await page.locator('#lc-omni-install-fee-root').locator('#toast').evaluate(toast => toast.classList.contains('error')), false);
     await page.screenshot({ path: '/tmp/lc-install-fees-auto.png' });
-    console.log(`PASS browser: automatic fill, editing deferral, quantity increase, no popup, no duplicate, no false error (${keyboardSelection ? 'keyboard selection + row movement' : 'dropdown selection'})`);
+    console.log(`PASS browser: memo requirement, negation, requirement removed/restored, automatic fill, editing deferral, quantity increase (${keyboardSelection ? 'keyboard selection + row movement' : 'dropdown selection'})`);
     await page.close();
     }
   } finally {

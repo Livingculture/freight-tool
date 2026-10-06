@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Installation Fee Helper
 // @namespace    livingculture-omni
-// @version      0.1.9
+// @version      0.1.10
 // @description  Automatically matches pergola installation fees in Cin7 Omni, with a manual installation fee picker.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-install-fee-helper.user.js
@@ -410,11 +410,35 @@
     const focused = active?.shadowRoot?.activeElement || active;
     return Boolean(focused && (/^(INPUT|TEXTAREA|SELECT)$/i.test(focused.tagName) || focused.isContentEditable));
   }
+  function memoRequiresInstallation(text) {
+    const memo = clean(text);
+    if (/\b(?:no\s+instal{1,2}ation\s+required|instal{1,2}ation\s+(?:is\s+)?not\s+(?:required|included)|without\s+instal{1,2}ation)\b/i.test(memo)) return false;
+    return /\binstal{1,2}ation\s*[:\-]?\s+required\b/i.test(memo);
+  }
+  function quoteMemoText() {
+    let field = document.querySelector('textarea[aria-label="Delivery Instructions"], input[aria-label="Delivery Instructions"]');
+    if (!field) {
+      const label = document.querySelector('[data-lc-delivery-label]') || pageElements('label,td,span,div')
+        .filter(element => /^delivery instructions[:*]?$/i.test(clean(element.textContent)))
+        .sort((a, b) => a.children.length - b.children.length)[0];
+      if (!label) return '';
+      field = label.querySelector('textarea,input:not([type="hidden"]),[contenteditable="true"]') ||
+        (label.htmlFor && document.getElementById(label.htmlFor));
+      if (!field) {
+        const rect = label.getBoundingClientRect();
+        field = pageElements('textarea,input:not([type="hidden"]),[contenteditable="true"]')
+          .map(element => ({ element, bounds: element.getBoundingClientRect() }))
+          .filter(item => item.bounds.top >= rect.top - 10 && item.bounds.top <= rect.bottom + 70 && item.bounds.right > rect.left)
+          .sort((a, b) => Math.abs(a.bounds.top - rect.bottom) - Math.abs(b.bounds.top - rect.bottom))[0]?.element;
+      }
+    }
+    return field ? clean(field.value ?? field.textContent) : '';
+  }
   function quoteKey() {
-    return JSON.stringify([location.href, quoteLines()]);
+    return JSON.stringify([location.href, quoteMemoText(), quoteLines()]);
   }
   async function addMatchedFees() {
-    if (addingMatchedFees) return;
+    if (addingMatchedFees || !memoRequiresInstallation(quoteMemoText())) return;
     addingMatchedFees = true;
     const button = getButton();
     button.disabled = true;
@@ -425,10 +449,10 @@
         await feesLoading;
       }
       if (!items.length) throw new Error('Installation pricing could not be loaded. Open Install Fees to retry.');
-      if (initialKey !== quoteKey() || editingQuote()) return;
+      if (initialKey !== quoteKey() || editingQuote() || !memoRequiresInstallation(quoteMemoText())) return;
       const plan = matchedFeePlan(quoteLines(), items);
       for (const fee of plan.fees) {
-        if (editingQuote()) return;
+        if (editingQuote() || !memoRequiresInstallation(quoteMemoText())) return;
         // Recheck after each insertion; Omni may rerender the entire quote table.
         const stillNeeded = matchedFeePlan(quoteLines(), items).fees.find(item => item.code === fee.code);
         if (!stillNeeded) continue;
@@ -443,6 +467,7 @@
   function checkAutomaticFees() {
     if (addingMatchedFees || document.hidden || editingQuote()) return;
     if (document.getElementById(ROOT_ID)?.shadowRoot?.getElementById('modal')?.classList.contains('open')) return;
+    if (!memoRequiresInstallation(quoteMemoText())) return;
     const lines = quoteLines();
     if (!lines.some(line => !/^AS/i.test(line.code) && /\bpergola\b/i.test(line.name))) return;
     const key = quoteKey();

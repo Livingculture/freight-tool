@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Quote Memo Info
 // @namespace    livingculture-omni
-// @version      0.1.8
+// @version      0.1.9
 // @description  Fills selected quote wording into Omni Delivery Instructions for display on the quote PDF.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-memo-info.user.js?v=0.1.8
@@ -17,14 +17,18 @@
   const ROOT_ID = 'lc-omni-quote-memo-root';
   const BUTTON_ID = 'lc-omni-quote-memo-button';
   const MEMOS = [
-    ['Custom Made Terms and Conditions', 'Installation required quotes', `Please include relevant after care information when sending the quote as this is usually something discussed during the enquiry.
+    ['Custom Made Terms and Conditions', 'Installation required quotes', `Installation required
+
+Please include relevant after care information when sending the quote as this is usually something discussed during the enquiry.
 
 Dimensions and colour of each custom item:
 
 Installation charges are based on ground floor installations. Other installations are on a case-by-case basis.
 
 Extra charges may be incurred for extra work required in materials and labour outside of a standard basic installation or should any unexpected issues arise during installation. This will be discussed with you and invoiced same-day.`],
-    ['Installation Required Pre-Order Items', 'Installation required', `This is an initial quote. Please send through some photos of the area if you haven’t already done so.
+    ['Installation Required Pre-Order Items', 'Installation required', `Installation required
+
+This is an initial quote. Please send through some photos of the area if you haven’t already done so.
 
 This is a Pre-Order item - ETA ______ weeks, pending no shipping delays.
 
