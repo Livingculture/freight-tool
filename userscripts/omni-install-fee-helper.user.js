@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Omni Living Culture Installation Fee Helper
 // @namespace    livingculture-omni
-// @version      0.1.8
-// @description  Loads Living Culture installation fees and adds the selected SKU and price to Cin7 Omni.
+// @version      0.1.9
+// @description  Automatically matches pergola installation fees in Cin7 Omni, with a manual installation fee picker.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-install-fee-helper.user.js
 // @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-install-fee-helper.user.js
@@ -22,6 +22,8 @@
   const CACHE_KEY = 'lc-omni-install-fees-v1';
   let items = [];
   let addingMatchedFees = false;
+  let observedQuoteKey = '', observedSince = 0, processedQuoteKey = '';
+  let feesLoading = null;
 
   function dimensions(text) {
     const match = String(text || '').match(/(\d+(?:\.\d+)?)\s*(mm|cm|m)?\s*[x\u00d7]\s*(\d+(?:\.\d+)?)\s*(mm|cm|m)?\b/i);
@@ -58,21 +60,27 @@
     });
     return matches.length === 1 ? { ...matches[0], area: details.area } : null;
   }
-  function quoteLines() {
+  function quoteTableInfo() {
     for (const row of pageElements('table tr')) {
       const headings = [...row.children].map(cell => clean(cell.textContent).toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^\d+/, ''));
       if (!headings.includes('code') || !headings.includes('product') || !headings.includes('qtyordered')) continue;
-      const read = (line, key) => {
-        const cell = line.children[headings.indexOf(key)];
-        return clean(cell?.querySelector('input,textarea,select')?.value || cell?.textContent);
-      };
-      return [...row.closest('table').querySelectorAll('tr')].filter(line => line !== row).map(line => ({
-        code: read(line, 'code'), name: read(line, 'product'),
-        options: ['option1', 'option2', 'option3'].map(key => read(line, key)).join(' '),
-        quantity: Number(read(line, 'qtyordered').replace(/,/g, ''))
-      })).filter(line => line.code && line.quantity > 0);
+      return { table: row.closest('table'), headingRow: row, headings };
     }
-    return [];
+    return null;
+  }
+  function cellValue(line, headings, key) {
+    const cell = line.children[headings.indexOf(key)];
+    return clean(cell?.querySelector('input,textarea,select')?.value || cell?.textContent);
+  }
+  function quoteLines() {
+    const info = quoteTableInfo();
+    if (!info) return [];
+    const { table, headingRow, headings } = info;
+    return [...table.querySelectorAll('tr')].filter(line => line !== headingRow).map(line => ({
+        code: cellValue(line, headings, 'code'), name: cellValue(line, headings, 'product'),
+        options: ['option1', 'option2', 'option3'].map(key => cellValue(line, headings, key)).join(' '),
+        quantity: Number(cellValue(line, headings, 'qtyordered').replace(/,/g, ''))
+      })).filter(line => line.code && line.quantity > 0);
   }
   function matchedFeePlan(lines, fees) {
     const required = new Map();
@@ -255,10 +263,11 @@
       .filter(item => /^search\.{0,3}$/i.test(item.value) || /search/i.test(item.placeholder))
       .sort((a, b) => a.rect.top - b.rect.top || a.field.children.length - b.field.children.length)[0] || null;
   }
-  async function chooseDropdown(sku, input) {
+  async function chooseDropdown(sku, input, confirmed = () => false) {
     const wanted = sku.toLowerCase();
     for (let attempt = 0; attempt < 60; attempt += 1) {
       await new Promise(resolve => setTimeout(resolve, 60));
+      if (confirmed()) return true;
       if (attempt === 7) {
         sendKey(input, 'ArrowDown', 40);
         sendKey(input, 'Enter', 13);
@@ -321,9 +330,21 @@
   async function addItem(item) {
     const empty = emptyCodeField();
     if (!empty) { toast('No empty Omni product line was found.', true); return false; }
-    const targetRow = empty.field.closest('tr');
+    empty.field.scrollIntoView({ block: 'nearest' });
+    empty.rect = empty.field.getBoundingClientRect();
+    let targetRow = empty.field.closest('tr');
+    const previousRows = new Set(quoteTableInfo()?.table.querySelectorAll('tr') || []);
+    const confirmedRow = () => {
+      const info = quoteTableInfo();
+      if (!info) return null;
+      const matches = row => row?.isConnected && cellValue(row, info.headings, 'code').toUpperCase() === item.code.toUpperCase() &&
+        Boolean(cellValue(row, info.headings, 'product')) && !/^search/i.test(cellValue(row, info.headings, 'product'));
+      if (matches(targetRow)) return targetRow;
+      const candidates = [...info.table.querySelectorAll('tr')].filter(row => !previousRows.has(row) && matches(row));
+      return candidates.length === 1 ? candidates[0] : null;
+    };
     close();
-    const rowY = empty.rect.top + empty.rect.height / 2;
+    let rowY = empty.rect.top + empty.rect.height / 2;
     clickAt(empty.rect.left + empty.rect.width / 2, rowY);
     let codeInput = null;
     for (let attempt = 0; attempt < 10 && !codeInput; attempt += 1) {
@@ -332,17 +353,18 @@
     }
     if (!codeInput) { toast('Could not open the Omni Code search field.', true); return false; }
     setValue(codeInput, item.code);
-    const selected = await chooseDropdown(item.code, codeInput);
-    const product = header('Product');
-    let productSelected = false;
-    for (let attempt = 0; attempt < 15; attempt += 1) {
+    await chooseDropdown(item.code, codeInput, confirmedRow);
+    let insertedRow = null;
+    for (let attempt = 0; attempt < 30; attempt += 1) {
       await new Promise(resolve => setTimeout(resolve, 60));
-      if (!product) break;
-      const productCell = document.elementFromPoint(product.left + product.width / 2, rowY)?.closest('td');
-      const value = clean(productCell?.textContent);
-      if (value && !/^search/i.test(value)) { productSelected = true; break; }
+      insertedRow = confirmedRow();
+      if (insertedRow) break;
     }
-    if (!selected || !productSelected) { toast(`Could not confirm ${item.code} in Omni. Check the line before trying again.`, true); return false; }
+    if (!insertedRow) { toast(`Could not confirm ${item.code} in Omni. Check the line before trying again.`, true); return false; }
+    targetRow = insertedRow;
+    targetRow.scrollIntoView({ block: 'nearest' });
+    const rowRect = targetRow.getBoundingClientRect();
+    rowY = rowRect.top + rowRect.height / 2;
     if (item.quantity) {
       const quantity = header('Qty Ordered');
       if (!quantity) { toast('Could not find the installation quantity field.', true); return false; }
@@ -358,7 +380,14 @@
       }
       setValue(quantityInput, String(item.quantity));
       sendKey(quantityInput, 'Tab', 9);
+      quantityInput.blur();
     }
+    const currentRow = confirmedRow();
+    if (!currentRow) { toast(`Could not locate ${item.code} after Omni updated the line. Check its price.`, true); return false; }
+    targetRow = currentRow;
+    targetRow.scrollIntoView({ block: 'nearest' });
+    const currentRect = targetRow.getBoundingClientRect();
+    rowY = currentRect.top + currentRect.height / 2;
     const price = header('Unit Price') || header('Price');
     if (price) {
       const x = price.left + price.width / 2;
@@ -371,9 +400,18 @@
       if (priceInput && (!targetRow?.isConnected || !priceInput.closest('tr') || priceInput.closest('tr') === targetRow)) {
         setValue(priceInput, String(item.price).replace(/[^\d.]/g, ''));
         sendKey(priceInput, 'Tab', 9);
+        priceInput.blur();
       } else { toast('Could not set the chart price. Check the installation line.', true); return false; }
     } else { toast('Could not find the installation price field.', true); return false; }
     return true;
+  }
+  function editingQuote() {
+    const active = document.activeElement;
+    const focused = active?.shadowRoot?.activeElement || active;
+    return Boolean(focused && (/^(INPUT|TEXTAREA|SELECT)$/i.test(focused.tagName) || focused.isContentEditable));
+  }
+  function quoteKey() {
+    return JSON.stringify([location.href, quoteLines()]);
   }
   async function addMatchedFees() {
     if (addingMatchedFees) return;
@@ -381,29 +419,47 @@
     const button = getButton();
     button.disabled = true;
     try {
-      await loadItems();
-      const plan = matchedFeePlan(quoteLines(), items);
-      let added = 0;
-      for (const fee of plan.fees) {
-        if (!await addItem(fee)) return;
-        added += 1;
+      const initialKey = quoteKey();
+      if (!items.length) {
+        if (!feesLoading) feesLoading = loadItems().finally(() => { feesLoading = null; });
+        await feesLoading;
       }
-      const shadow = ensureRoot().shadowRoot;
-      shadow.getElementById('modal').classList.add('open');
-      const result = added ? `Added ${added} matching installation fee${added === 1 ? '' : 's'}.` : 'No additional matching installation fees needed.';
-      shadow.getElementById('source').textContent += ` | ${result}${plan.unmatched.length ? ` ${plan.unmatched.length} pergola line(s) need manual selection: ${plan.unmatched.map(line => line.code).join(', ')}.` : ''}`;
-      toast(result, false);
+      if (!items.length) throw new Error('Installation pricing could not be loaded. Open Install Fees to retry.');
+      if (initialKey !== quoteKey() || editingQuote()) return;
+      const plan = matchedFeePlan(quoteLines(), items);
+      for (const fee of plan.fees) {
+        if (editingQuote()) return;
+        // Recheck after each insertion; Omni may rerender the entire quote table.
+        const stillNeeded = matchedFeePlan(quoteLines(), items).fees.find(item => item.code === fee.code);
+        if (!stillNeeded) continue;
+        if (!await addItem(stillNeeded)) { processedQuoteKey = quoteKey(); return; }
+      }
+      processedQuoteKey = quoteKey();
     } finally {
       addingMatchedFees = false;
       button.disabled = false;
     }
+  }
+  function checkAutomaticFees() {
+    if (addingMatchedFees || document.hidden || editingQuote()) return;
+    if (document.getElementById(ROOT_ID)?.shadowRoot?.getElementById('modal')?.classList.contains('open')) return;
+    const lines = quoteLines();
+    if (!lines.some(line => !/^AS/i.test(line.code) && /\bpergola\b/i.test(line.name))) return;
+    const key = quoteKey();
+    if (key === processedQuoteKey) return;
+    if (key !== observedQuoteKey) { observedQuoteKey = key; observedSince = Date.now(); return; }
+    if (Date.now() - observedSince < 1000) return;
+    void addMatchedFees().catch(error => {
+      processedQuoteKey = quoteKey();
+      toast(error.message || 'Could not add matching installation fees.', true);
+    });
   }
   function close() { document.getElementById(ROOT_ID)?.shadowRoot?.getElementById('modal')?.classList.remove('open'); }
   function open() {
     const shadow = ensureRoot().shadowRoot;
     shadow.getElementById('modal').classList.add('open');
     shadow.getElementById('search').focus();
-    void addMatchedFees().catch(error => toast(error.message || 'Could not add matching installation fees.', true));
+    void loadItems().then(() => { processedQuoteKey = ''; });
   }
   function ensureRoot() {
     let root = document.getElementById(ROOT_ID);
@@ -450,5 +506,6 @@
   }
   function boot() { ensureRoot(); placeButton(); }
   boot(); setInterval(placeButton, 1500); new MutationObserver(placeButton).observe(document.body, { childList:true, subtree:true });
+  setInterval(checkAutomaticFees, 750);
   window.addEventListener('resize', placeButton); window.addEventListener('scroll', placeButton, { passive:true });
 })();
