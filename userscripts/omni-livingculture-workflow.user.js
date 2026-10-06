@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.71
+// @version      0.1.72
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -1269,15 +1269,21 @@
       document.body.appendChild(toolsBar);
     }
     const footer = omniFooterPanel(saveButton);
-    const footerRect = (footer || saveButton).getBoundingClientRect();
-    const barHeight = 38;
-    const barTop = Math.max(0, window.scrollY + footerRect.top - barHeight - 7);
-    const barLeft = footer ? window.scrollX + footerRect.left : window.scrollX + 12;
-    const barWidth = footer ? footerRect.width : Math.max(300, window.innerWidth - 24);
-    toolsBar.style.cssText = `position:absolute;left:${Math.round(barLeft)}px;top:${Math.round(barTop)}px;z-index:56;box-sizing:border-box;display:flex;align-items:center;justify-content:center;gap:8px;width:${Math.round(barWidth)}px;height:${barHeight}px;margin:0;padding:0 8px;background:transparent;pointer-events:none;`;
+    const anchor = footer || saveButton.parentElement;
+    if (!anchor || anchor === document.body) return;
+    if (toolsBar.parentElement !== anchor.parentElement || toolsBar.nextElementSibling !== anchor) {
+      anchor.insertAdjacentElement('beforebegin', toolsBar);
+    }
+    toolsBar.style.cssText = 'position:relative;box-sizing:border-box;display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;min-height:38px;margin:7px 0;padding:0 8px;background:transparent;';
 
     buttons.forEach((button, index) => {
       button.style.display = 'inline-flex';
+      button.style.setProperty('align-items', 'center', 'important');
+      button.style.setProperty('justify-content', 'center', 'important');
+      button.style.setProperty('text-align', 'center', 'important');
+      button.style.setProperty('padding', '0 14px', 'important');
+      button.style.boxSizing = 'border-box';
+      button.style.flex = '0 0 auto';
       button.style.position = 'static';
       button.style.left = '';
       button.style.top = '';
@@ -3590,7 +3596,7 @@
     while (panel && panel !== document.body) {
       const rect = panel.getBoundingClientRect();
       const text = clean(panel.textContent || '');
-      if (rect.width >= 600 && rect.height >= 40 && rect.height <= 180 && /Processed By/i.test(text)) break;
+      if (rect.width >= Math.min(600, window.innerWidth * 0.72) && rect.height >= 40 && rect.height <= 320 && /Processed By/i.test(text)) break;
       panel = panel.parentElement;
     }
     if (!panel || panel === document.body) {
@@ -3605,7 +3611,7 @@
       actions = document.createElement('div');
       actions.id = CUSTOMER_PHOTOS_ACTIONS_ID;
     }
-    actions.style.cssText = 'position:absolute;right:18px;top:50%;transform:translateY(-50%);z-index:5;display:flex;align-items:center;justify-content:flex-end;gap:8px;margin:0;';
+    actions.style.cssText = 'position:relative;clear:both;box-sizing:border-box;display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px;width:100%;flex:0 0 100%;margin:12px 0 0;padding:0;';
     button.style.display = 'inline-flex';
     button.style.alignItems = 'center';
     button.style.justifyContent = 'center';
@@ -3627,11 +3633,17 @@
     viewAlbumsButton.style.transform = 'none';
     viewAlbumsButton.style.margin = '0';
     viewAlbumsButton.style.height = '36px';
-    actions.append(button, viewButton, viewAlbumsButton);
+    [button, viewButton, viewAlbumsButton].forEach((control) => {
+      if (control.parentElement !== actions) actions.appendChild(control);
+    });
     if (actions.parentElement !== panel) panel.appendChild(actions);
   }
 
   function styleInlineButton(button, background = '#05cbbf') {
+    button.style.display = 'inline-flex';
+    button.style.setProperty('align-items', 'center', 'important');
+    button.style.setProperty('justify-content', 'center', 'important');
+    button.style.setProperty('text-align', 'center', 'important');
     button.style.background = background;
     button.style.color = '#fff';
     button.style.border = `1px solid ${background}`;

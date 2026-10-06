@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture New Products Info Sheet
 // @namespace    livingculture-cin7
-// @version      0.1.5
+// @version      0.1.6
 // @description  Shows the Living Culture new-products spreadsheet in Cin7 Omni and Cin7 Core.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -355,12 +355,15 @@
       const actions = document.getElementById('lc-omni-customer-photo-actions');
       if (actions && visible(actions)) {
         button.classList.remove('lc-new-floating');
-        button.style.position = '';
+        button.style.display = 'inline-flex';
+        button.style.position = 'static';
         button.style.left = '';
         button.style.top = '';
         button.style.zIndex = '';
         const clearance = document.getElementById(CLEARANCE_BUTTON_ID);
-        if (clearance?.parentElement === actions) clearance.insertAdjacentElement('afterend', button);
+        if (clearance?.parentElement === actions) {
+          if (clearance.nextElementSibling !== button) clearance.insertAdjacentElement('afterend', button);
+        }
         else if (button.parentElement !== actions) actions.prepend(button);
         return;
       }
@@ -394,7 +397,10 @@
     if (overlay && !overlay.hidden) return;
     if (mutations.every((mutation) => mutation.target.closest?.(`#${OVERLAY_ID}`))) return;
     const button = document.getElementById(BUTTON_ID);
-    if (button?.isConnected && visible(button)) return;
+    const actions = document.getElementById('lc-omni-customer-photo-actions');
+    const clearance = document.getElementById(CLEARANCE_BUTTON_ID);
+    if (button?.isConnected && visible(button) && (!isOmniQuotePage() ||
+      (button.parentElement === actions && clearance?.nextElementSibling === button))) return;
     clearTimeout(recoveryTimer);
     recoveryTimer = setTimeout(ensureUi, 180);
   });
@@ -403,8 +409,6 @@
   window.setInterval(() => {
     const overlay = document.getElementById(OVERLAY_ID);
     if (overlay && !overlay.hidden) return;
-    const button = document.getElementById(BUTTON_ID);
-    if (isOmniQuotePage() && button?.isConnected) return;
     ensureUi();
   }, 2500);
   window.addEventListener('lc:cin7-toolbar-settling', () => {
