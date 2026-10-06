@@ -1,12 +1,14 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.80
+// @version      0.1.81
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @match        https://go.cin7.com/Cloud/ShoppingCartAdmin/*
 // @grant        GM_xmlhttpRequest
+// @grant        GM_getResourceText
+// @resource     staffReps https://raw.githubusercontent.com/Livingculture/freight-tool/3cc7c5d5391066307b53282bd4cd89a63adc99ea/userscripts/livingculture-reps.json
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @connect      qvoacxmzsmulhnllfntfl.supabase.co
@@ -33,7 +35,6 @@
   const OVERLAY_ID = 'lc-site-visit-overlay-v2';
   const WORKFLOW_API_URL = 'https://living-culture-workflow.vercel.app/api/site-visits';
   const OMNI_ORDER_SYNC_API_URL = 'https://living-culture-workflow.vercel.app/api/omni/orders';
-  const REP_OPTIONS_API_URL = 'https://living-culture-workflow.vercel.app/api/rep-options';
   const QUOTE_REVIEW_API_URL = 'https://living-culture-workflow.vercel.app/api/quote-reviews';
   const WORKFLOW_PLANNER_URL = 'https://living-culture-workflow.vercel.app/';
   const CUSTOMER_PHOTOS_API_URL = 'https://living-culture-workflow.vercel.app/api/customer-photos';
@@ -62,7 +63,7 @@
   const API_KEY = '';
   const STATUSES = ['To be confirmed', 'Site Visit Confirmed', 'Completed', 'Hold'];
   const POPUP_STATUSES = ['To be confirmed', 'Site Visit Confirmed'];
-  const VISIT_BY = ['', 'Ian', 'Steve', 'Jaine', 'Vitalii', 'Pakjira', 'Blair', 'James', 'Ian/Steve', 'Ian/Jaine', 'Ian/Vitalii', 'Ian/Pakjira', 'Vitalii/James', 'Blair/James'];
+  const VISIT_BY = JSON.parse(GM_getResourceText('staffReps'));
   const LC_BRANCHES = [
     ['', 'LC Branch'],
     ['AKL', 'AKL · Wairau'],
@@ -75,8 +76,7 @@
   ];
   let apiProductCache = [];
   let apiLineItemCache = [];
-  let workflowRepOptions = [];
-  let repOptionsLoadPromise = null;
+  const workflowRepOptions = VISIT_BY;
   let hubSpotLeadSourceOptionsPromise = null;
   let omniLayoutResizeObserver = null;
   let siteVisitBookingsCache = { key: '', bookings: [] };
@@ -1067,28 +1067,8 @@
   }
 
   function loadRepOptions() {
-    if (repOptionsLoadPromise) return repOptionsLoadPromise;
-    repOptionsLoadPromise = new Promise((resolve) => {
-      GM_xmlhttpRequest({
-        method: 'GET',
-        url: REP_OPTIONS_API_URL,
-        onload: (response) => {
-          try {
-            const data = JSON.parse(response.responseText || '{}');
-            const reps = Array.isArray(data.reps) ? data.reps.map(clean).filter(Boolean) : [];
-            if (response.status >= 200 && response.status < 300 && reps.length) {
-              workflowRepOptions = Array.from(new Set(reps)).sort((left, right) => left.localeCompare(right));
-              refreshVisitBySelects();
-            }
-          } catch (_error) {
-            // Keep the built-in fallback list if Workflow is not reachable or login is required.
-          }
-          resolve(workflowRepOptions);
-        },
-        onerror: () => resolve(workflowRepOptions)
-      });
-    });
-    return repOptionsLoadPromise;
+    refreshVisitBySelects();
+    return Promise.resolve(workflowRepOptions);
   }
 
   function sameVisitor(left, right) {
@@ -1494,7 +1474,8 @@
       readValueNearLabel('Created By') ||
       readValueNearLabel('Sales rep') ||
       readValueNearLabel('Processed By');
-    if (!rep || /^[A-Z]{2,5}\s*[-–—]/i.test(rep)) return rep;
+    if (!rep) return rep;
+    if (/^[A-Z]{2,5}\s*[-–—]/i.test(rep)) return quoteCreatorVisitor(rep) || rep;
     const branch = clean(document.body?.innerText || document.body?.textContent || '')
       .match(/\bBranch\s*:\s*([A-Z]{2,5})\b/i)?.[1]?.toUpperCase() || '';
     const proposed = branch ? `${branch}-${rep}` : rep;
@@ -1506,7 +1487,7 @@
       const optionBranch = clean(parts[0]).toUpperCase();
       return optionName.toLowerCase() === rep.toLowerCase() && (!branch || optionBranch === branch);
     });
-    return byName || proposed;
+    return byName || quoteCreatorVisitor(rep) || proposed;
   }
 
   function readCin7CommentsTextarea() {
@@ -2610,7 +2591,7 @@
           </div>
           <div class="lc-sv-grid">
             <div class="lc-sv-field"><label>Order ID</label><input id="lcSvOrder" /></div>
-            <div class="lc-sv-field"><label>Placed By</label><input id="lcSvPlacedBy" /></div>
+            <div class="lc-sv-field"><label>Placed By</label><input id="lcSvPlacedBy" list="lcWorkflowReps" /><datalist id="lcWorkflowReps">${workflowRepOptions.map(rep => `<option value="${escapeHtml(rep)}"></option>`).join('')}</datalist></div>
           </div>
           <div class="lc-sv-field"><label>Customer Name</label><input id="lcSvCustomer" /></div>
           <div class="lc-sv-field"><label>Address</label><textarea id="lcSvAddress"></textarea></div>

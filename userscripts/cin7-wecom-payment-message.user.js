@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 WeCom Payment Message Sender
 // @namespace    livingculture
-// @version      4.7
+// @version      4.8
 // @description  Sends a WeCom payment message from Cin7 invoice/payment screen only.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -14,6 +14,8 @@
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
+// @grant        GM_getResourceText
+// @resource     staffReps https://raw.githubusercontent.com/Livingculture/freight-tool/3cc7c5d5391066307b53282bd4cd89a63adc99ea/userscripts/livingculture-reps.json
 // @connect      qyapi.weixin.qq.com
 // ==/UserScript==
 
@@ -34,26 +36,7 @@
   const CIN7_FONT = 'inherit';
   const USER_POINTER_WINDOW_MS = 1500;
 
-  const SEND_AS_REPS = [
-    'AKL-Blair',
-    'AKL-Daniel',
-    'AKL-Jaine',
-    'AKL-Pakjira',
-    'PEN-Steve',
-    'PEN-Tamara',
-    'AKL-Vitalii',
-    'CHCH-Bronwyn',
-    'CHCH-Jake',
-    'CHCH-Sach',
-    'CHCH-Tim',
-    'HAM-Linet',
-    'HAM-Malcolm',
-    'NPE-Chris',
-    'NPE-Kirsty',
-    'TGA-Sindin',
-    'TGA-Jason',
-    'WHG-Yash'
-  ];
+  const SEND_AS_REPS = JSON.parse(GM_getResourceText('staffReps'));
 
   function clean(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
