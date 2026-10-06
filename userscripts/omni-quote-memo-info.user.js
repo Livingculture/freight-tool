@@ -1,11 +1,11 @@
 // ==UserScript==
 // @name         Omni Living Culture Quote Memo Info
 // @namespace    livingculture-omni
-// @version      0.1.7
+// @version      0.1.8
 // @description  Fills selected quote wording into Omni Delivery Instructions for display on the quote PDF.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-memo-info.user.js?v=0.1.7
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-memo-info.user.js?v=0.1.7
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-memo-info.user.js?v=0.1.8
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-memo-info.user.js?v=0.1.8
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
 // @grant        none
@@ -80,6 +80,8 @@ Extra charges may be incurred for extra work required in materials and labour ou
   };
 
   function deliveryLabel() {
+    const mounted = document.querySelector('[data-lc-delivery-label]');
+    if (mounted && visible(mounted)) return mounted;
     const labelText = element => clean(Array.from(element.childNodes)
       .filter(node => node.nodeType === Node.TEXT_NODE)
       .map(node => node.textContent)
@@ -91,7 +93,9 @@ Extra charges may be incurred for extra work required in materials and labour ou
       .sort((left, right) => left.children.length - right.children.length || left.getBoundingClientRect().height - right.getBoundingClientRect().height)[0] || null;
   }
 
+  let memoField = null;
   function deliveryField() {
+    if (memoField?.isConnected && visible(memoField)) return memoField;
     const label = deliveryLabel();
     if (!label) return null;
     const contained = label.querySelector?.('textarea, input:not([type="hidden"]), [contenteditable="true"]');
@@ -185,13 +189,26 @@ Extra charges may be incurred for extra work required in materials and labour ou
     expandDeliveryField(deliveryField());
     const label = deliveryLabel();
     if (!label || document.getElementById(BUTTON_ID)) return;
+    const field = deliveryField();
+    memoField = field;
+    label.dataset.lcDeliveryLabel = '1';
+    for (const node of [...label.childNodes]) {
+      if (node.nodeType !== Node.TEXT_NODE || !/^delivery instructions[:*]*$/i.test(clean(node.textContent))) continue;
+      const hiddenLabel = document.createElement('span');
+      hiddenLabel.hidden = true;
+      hiddenLabel.textContent = node.textContent;
+      node.replaceWith(hiddenLabel);
+    }
     const button = document.createElement('button');
     button.id = BUTTON_ID;
     button.type = 'button';
     button.textContent = 'Quote Memo Info';
-    button.style.cssText = 'margin-left:10px;padding:6px 10px;border:1px solid #0b3978;border-radius:5px;color:#fff;background:#0b3978;font:700 12px Arial,sans-serif;cursor:pointer;';
-    button.addEventListener('click', () => document.getElementById(ROOT_ID).shadowRoot.querySelector('.shade').classList.add('open'));
-    const field = deliveryField();
+    button.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;height:28px;min-width:132px;margin:0;padding:0 10px;border:1px solid #0b3978;border-radius:4px;color:#fff;background:#0b3978;font:700 12px Arial,sans-serif;line-height:1;vertical-align:top;white-space:nowrap;cursor:pointer;';
+    button.addEventListener('click', event => {
+      event.preventDefault();
+      document.getElementById(ROOT_ID).shadowRoot.querySelector('.shade').classList.add('open');
+    });
+    if (field && !field.getAttribute('aria-label') && !field.getAttribute('aria-labelledby')) field.setAttribute('aria-label', 'Delivery Instructions');
     if (field && label.contains(field)) label.insertBefore(button, field);
     else label.appendChild(button);
   }
