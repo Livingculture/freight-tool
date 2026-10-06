@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Installation Fee Helper
 // @namespace    livingculture-omni
-// @version      0.1.10
+// @version      0.1.11
 // @description  Automatically matches pergola installation fees in Cin7 Omni, with a manual installation fee picker.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-install-fee-helper.user.js
@@ -94,6 +94,7 @@
       else required.set(fee.code, { ...fee, quantity: line.quantity });
     }
     for (const line of lines) {
+      if (!line.name || /^search\.{0,3}$/i.test(line.name)) continue;
       const fee = required.get(line.code.toUpperCase());
       if (fee) fee.quantity -= line.quantity;
     }
@@ -234,7 +235,7 @@
       .filter(item => x >= item.rect.left - 12 && x <= item.rect.right + 12 && Math.abs(item.rect.top + item.rect.height / 2 - y) < 90)
       .sort((a, b) => Math.hypot(a.rect.left + a.rect.width / 2 - x, a.rect.top + a.rect.height / 2 - y) - Math.hypot(b.rect.left + b.rect.width / 2 - x, b.rect.top + b.rect.height / 2 - y))[0]?.field || null;
   }
-  function emptyCodeField() {
+  function emptyCodeField(sku = '') {
     const code = header('Code');
     if (!code) return null;
     const codeHeader = exactElement('Code');
@@ -246,6 +247,14 @@
       const cells = Array.from(table.querySelectorAll('tr')).slice(1)
         .map(row => row.children[columnIndex])
         .filter(cell => cell && visible(cell));
+      const productIndex = Array.from(headerRow.children).findIndex(cell => clean(cell.textContent).replace(/[^a-z]/gi, '').toLowerCase() === 'product');
+      const unfinished = sku && cells.find(cell => {
+        const value = clean(cell.querySelector('input,textarea')?.value || cell.textContent);
+        const product = cell.parentElement.children[productIndex];
+        const name = clean(product?.querySelector('input,textarea')?.value || product?.textContent);
+        return value.toUpperCase() === sku.toUpperCase() && product && (!name || /^search\.{0,3}$/i.test(name));
+      });
+      if (unfinished) return { field: unfinished, rect: unfinished.getBoundingClientRect() };
       const emptyCell = cells.find(cell => {
         const value = clean(cell.querySelector('input,textarea')?.value || cell.textContent);
         return !value || /^search\.{0,3}$/i.test(value);
@@ -265,34 +274,27 @@
   }
   async function chooseDropdown(sku, input, confirmed = () => false) {
     const wanted = sku.toLowerCase();
-    for (let attempt = 0; attempt < 60; attempt += 1) {
+    let lastSelectionAt = 0;
+    for (let attempt = 0; attempt < 200; attempt += 1) {
       await new Promise(resolve => setTimeout(resolve, 60));
       if (confirmed()) return true;
-      if (attempt === 7) {
-        sendKey(input, 'ArrowDown', 40);
-        sendKey(input, 'Enter', 13);
-      }
+      if (!input.isConnected) continue;
       const inputRect = input.getBoundingClientRect();
-      const option = pageElements('[role="option"], li, a, div, span')
+      const quoteTable = quoteTableInfo()?.table;
+      const option = pageElements('[role="option"], li, a, div, span, td')
+        .filter(element => element.closest('table') !== quoteTable)
         .filter(element => {
           const value = clean(element.textContent).toLowerCase();
-          return value === wanted || value.startsWith(`${wanted} `) || value.startsWith(`${wanted}-`) || value.startsWith(`${wanted}\n`);
+          return value === wanted || value.startsWith(`${wanted} `);
         })
         .filter(element => {
           const rect = element.getBoundingClientRect();
-          return rect.top >= inputRect.bottom - 8 && rect.top < inputRect.bottom + 420 && rect.right > inputRect.left - 80 && rect.left < inputRect.right + 520;
+          return rect.height <= 120 && rect.top >= inputRect.top - 420 && rect.top < inputRect.bottom + 420 && rect.right > inputRect.left - 80 && rect.left < inputRect.right + 520;
         })
         .sort((a, b) => a.children.length - b.children.length || a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0];
-      if (option) {
-        let target = option;
-        while (target.parentElement && target.parentElement !== document.body) {
-          const parent = target.parentElement;
-          const rect = target.getBoundingClientRect();
-          const parentRect = parent.getBoundingClientRect();
-          if (parentRect.top < inputRect.bottom - 10 || parentRect.top > inputRect.bottom + 420 || parentRect.height > 100) break;
-          if (parentRect.width >= Math.max(inputRect.width, rect.width) && clean(parent.textContent).toLowerCase().includes(wanted)) target = parent;
-          else break;
-        }
+      if (option && Date.now() - lastSelectionAt >= 600) {
+        const target = option.closest('[role="option"],li,.ui-menu-item,tr,a') || option;
+        lastSelectionAt = Date.now();
         target.scrollIntoView({ block: 'nearest' });
         const rect = target.getBoundingClientRect();
         const x = rect.left + Math.min(28, rect.width / 2);
@@ -301,17 +303,16 @@
           const EventType = type === 'pointerdown' && window.PointerEvent ? PointerEvent : MouseEvent;
           target.dispatchEvent(new EventType(type, { bubbles:true, cancelable:true, clientX:x, clientY:y }));
         });
-        await new Promise(resolve => setTimeout(resolve, 120));
-        if (document.activeElement === input && clean(input.value) === sku) {
+        await new Promise(resolve => setTimeout(resolve, 300));
+        if (confirmed()) return true;
+        // Only use Enter while a matching result is actually present.
+        if (input.isConnected && visible(target) && clean(input.value).toLowerCase() === wanted) {
           sendKey(input, 'ArrowDown', 40);
           sendKey(input, 'Enter', 13);
         }
-        return true;
       }
     }
-    sendKey(input, 'ArrowDown', 40);
-    sendKey(input, 'Enter', 13);
-    return false;
+    return Boolean(confirmed());
   }
   function sendKey(input, key, code) {
     input.focus();
@@ -328,7 +329,7 @@
     setTimeout(() => element.classList.remove('show'), 2600);
   }
   async function addItem(item) {
-    const empty = emptyCodeField();
+    const empty = emptyCodeField(item.code);
     if (!empty) { toast('No empty Omni product line was found.', true); return false; }
     empty.field.scrollIntoView({ block: 'nearest' });
     empty.rect = empty.field.getBoundingClientRect();

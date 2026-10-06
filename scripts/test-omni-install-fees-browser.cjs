@@ -26,15 +26,22 @@ const { chromium } = require('playwright');
         if (keyboardSelection) {
           input.addEventListener('keydown', event => {
             if (event.key !== 'Enter') return;
+            if (!document.getElementById('option')) {
+              window.prematureEnter = true;
+              cell.textContent = input.value;
+              return;
+            }
             cell.textContent = input.value;
             cell.parentElement.querySelector('.product').textContent = 'Assembly Freestanding Motorised Pergola Tasman Up to 16m2';
             const spacer = document.createElement('tr');
             spacer.innerHTML = '<td colspan="7" style="height:100px">Quote rerender moved the new fee row</td>';
             cell.parentElement.before(spacer);
+            document.getElementById('option')?.remove();
           });
-          return;
         }
         input.addEventListener('input', () => {
+          setTimeout(() => {
+          if (!input.isConnected) return;
           document.getElementById('option')?.remove();
           const rect = input.getBoundingClientRect();
           const option = document.createElement('div');
@@ -43,11 +50,13 @@ const { chromium } = require('playwright');
           option.textContent = input.value;
           option.style.cssText = `position:fixed;top:${rect.bottom}px;left:${rect.left}px;width:180px;height:32px;background:white;z-index:100`;
           option.addEventListener('click', () => {
+            if (keyboardSelection) return;
             cell.textContent = option.textContent;
             cell.parentElement.querySelector('.product').textContent = 'Assembly Freestanding Motorised Pergola Tasman Up to 16m2';
             option.remove();
           });
           document.body.append(option);
+          }, 1400);
         });
       });
     }, keyboardSelection);
@@ -64,6 +73,10 @@ const { chromium } = require('playwright');
     });
     await page.waitForTimeout(2200);
     assert.equal(await page.locator('body > table td.code').filter({ hasText: 'AS10037' }).count(), 0, 'Do not interrupt editing');
+    if (keyboardSelection) await page.locator('body > table td.code').first().evaluate(cell => {
+      cell.textContent = 'AS10037';
+      cell.parentElement.children[5].querySelector('input').value = '1';
+    });
     await page.evaluate(() => document.activeElement.blur());
     await page.waitForFunction(() => document.querySelector('td.code')?.parentElement.children[6].querySelector('input').value === '2000');
     await page.waitForFunction(() => !document.getElementById('lc-omni-install-fee-button').disabled);
@@ -72,6 +85,7 @@ const { chromium } = require('playwright');
       price: cell.parentElement.children[6].querySelector('input').value
     }));
     assert.deepEqual(values, { code: 'AS10037', quantity: '2', price: '2000' });
+    assert.equal(await page.evaluate(() => Boolean(window.prematureEnter)), false, 'Never commit the code before search results arrive');
     assert.equal(await page.locator('#lc-omni-install-fee-root').locator('#modal').evaluate(modal => modal.classList.contains('open')), false);
     assert.equal(await page.locator('#lc-omni-install-fee-root').locator('#toast').evaluate(toast => toast.classList.contains('error')), false);
     await page.waitForTimeout(2200);
@@ -92,7 +106,7 @@ const { chromium } = require('playwright');
     await page.waitForFunction(() => !document.getElementById('lc-omni-install-fee-button').disabled);
     assert.equal(await page.locator('#lc-omni-install-fee-root').locator('#toast').evaluate(toast => toast.classList.contains('error')), false);
     await page.screenshot({ path: '/tmp/lc-install-fees-auto.png' });
-    console.log(`PASS browser: memo requirement, negation, requirement removed/restored, automatic fill, editing deferral, quantity increase (${keyboardSelection ? 'keyboard selection + row movement' : 'dropdown selection'})`);
+    console.log(`PASS browser: delayed autocomplete, no premature Enter, memo gate, quantity increase (${keyboardSelection ? 'unfinished-row recovery + keyboard selection + row movement' : 'dropdown selection'})`);
     await page.close();
     }
   } finally {

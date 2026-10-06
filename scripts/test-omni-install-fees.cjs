@@ -39,6 +39,7 @@ for (const product of [tasman('8x8m'), tasman('4.01x4m'), line('Tasman Motorised
 }
 assert.equal(context.matchingFee(tasman('4x3m'), [...fees, fees[0]]), null, 'Ambiguous fees must not be selected');
 const existing = { code: 'AS10037', name: fees[0].name, quantity: 1 };
+assert.equal(context.matchedFeePlan([tasman('4x3m'), { ...existing, name: '' }], fees).fees[0].quantity, 1, 'Code-only rows are not completed fees');
 assert.equal(context.matchedFeePlan([tasman('4x3m'), existing], fees).fees.length, 0);
 const multiple = context.matchedFeePlan([{ ...tasman('4x3m'), quantity: 2 }, tasman('4x3m'), existing], fees);
 assert.equal(multiple.fees[0].quantity, 2);
