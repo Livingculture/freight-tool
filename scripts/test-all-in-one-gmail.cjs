@@ -1,12 +1,11 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 const { chromium } = require('playwright');
+execFileSync(process.execPath, [path.join(__dirname, 'bundle-all-in-one-gmail.cjs'), '--check']);
 const directory = path.join(__dirname, '../userscripts');
 const loader = fs.readFileSync(path.join(directory, 'livingculture-all-in-one.user.js'), 'utf8');
-const resources = Object.fromEntries([...loader.matchAll(/^\/\/ @resource\s+(\w+)\s+\S+\/([^/?]+)(?:\?.*)?$/gm)]
-  .filter(([, name]) => name.startsWith('gmail'))
-  .map(([, name, file]) => [name, fs.readFileSync(path.join(directory, file), 'utf8')]));
 
 (async () => {
   const browser = await chromium.launch({ headless: true });
@@ -14,10 +13,12 @@ const resources = Object.fromEntries([...loader.matchAll(/^\/\/ @resource\s+(\w+
     const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
-    await page.route('https://mail.google.com/**', route => route.fulfill({ body: '<html><body></body></html>', contentType: 'text/html' }));
-    await page.goto('https://mail.google.com/mail/u/0/');
-    await page.evaluate(resources => {
-      window.GM_getResourceText = name => resources[name];
+    await page.route('https://mail.google.com/**', route => route.fulfill({
+      body: `<html><head><meta charset="utf-8"><script nonce="lc-test">${loader}</script></head><body></body></html>`, contentType: 'text/html',
+      headers: { 'Content-Security-Policy': "script-src 'nonce-lc-test'; style-src 'unsafe-inline'" }
+    }));
+    await page.addInitScript(() => {
+      window.GM_getResourceText = () => { throw new Error('Gmail must not need remote code resources'); };
       window.GM_getValue = (_, fallback) => fallback;
       window.GM_setValue = () => {};
       window.GM_registerMenuCommand = () => {};
@@ -28,13 +29,14 @@ const resources = Object.fromEntries([...loader.matchAll(/^\/\/ @resource\s+(\w+
           : JSON.stringify({ files: [] });
         setTimeout(() => options.onload({ status: 200, responseText }), 0);
       };
-    }, resources);
-    await page.addScriptTag({ content: loader });
+    });
+    await page.goto('https://mail.google.com/mail/u/0/');
     assert.deepEqual(await page.evaluate(() => window.__lcAllInOneStatus.errors), []);
     assert.equal(await page.evaluate(() => window.__lcAllInOneStatus.loaded.length), 4);
     await page.locator('#lc-gmail-drawings-button').waitFor({ state: 'visible' });
     await page.locator('#lc-gmail-care-guides-button').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#lc-gmail-add-quote-hint').count(), 0);
+    await page.screenshot({ path: '/tmp/lc-all-in-one-gmail-inbox.png' });
     // Gmail creates compose windows after the userscript has already started.
     await page.evaluate(() => {
       const compose = document.createElement('div');
@@ -57,7 +59,7 @@ const resources = Object.fromEntries([...loader.matchAll(/^\/\/ @resource\s+(\w+
     assert(await page.locator('#lc-gmail-attachment-toolbar').isVisible());
     assert.equal(await page.locator('#lc-gmail-add-quote-hint').count(), 0);
     assert.deepEqual(errors, []);
-    console.log('PASS: Gmail tools load; Drawings and Care Guides remain visible in the inbox and compose. Paperclip label follows compose. Popups open without sending email.');
+    console.log('PASS: Gmail tools load under strict CSP without remote code resources; Drawings, Care Guides and paperclip label work. No emails sent.');
   } finally {
     await browser.close();
   }

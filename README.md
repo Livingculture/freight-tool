@@ -32,6 +32,8 @@ Install this link once in Tampermonkey on every computer. After that, Tampermonk
 
 The all-in-one script loads the approved Omni, Cin7 Core, Gmail, HubSpot, and website helpers from GitHub. In Omni, use the workflow buttons such as `Site Visit`, `Quote Review`, `HubSpot Deal`, `Download Quote`, `Install Fees`, `Custom Products`, and `LC Freight`.
 
+Gmail helpers are embedded directly to avoid runtime code evaluation under strict page security. After editing a Gmail helper, run `node scripts/bundle-all-in-one-gmail.cjs` and verify with `node scripts/test-all-in-one-gmail.cjs` before releasing the all-in-one installer.
+
 Until the hosted service is commissioned, keep the Freight Costing desktop app running locally when using `LC Freight`.
 
 On Living Culture product pages, click `Copy SKU` to copy the current product SKU.
