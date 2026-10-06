@@ -167,6 +167,13 @@
         font-weight: 800;
       }
 
+      .links a.primary-install {
+        color: #fff;
+        background: var(--teal);
+        border-color: var(--teal);
+        font-size: 18px;
+      }
+
       .note {
         border-left: 5px solid var(--teal);
         background: #edf8f6;
@@ -242,12 +249,10 @@
         <div class="grid">
           <div class="card"><strong>Hosted Freight Costing service</strong>Calculates freight from the LC Freight button in Cin7.</div>
           <div class="card"><strong>Freight Costing app</strong>Desktop fallback only, supplied when needed.</div>
-          <div class="card"><strong>Tampermonkey</strong>Chrome extension that runs the browser helpers.</div>
-          <div class="card"><strong>LC Freight</strong>Adds the freight panel inside Cin7.</div>
-          <div class="card"><strong>Quote Memo Info</strong>Adds quote memo wording inside Cin7.</div>
-          <div class="card"><strong>Install Fees</strong>Adds installation fee search and add tools inside Cin7.</div>
-          <div class="card"><strong>Custom Products</strong>Adds custom product and pergola search inside Cin7.</div>
-          <div class="card"><strong>Promo Summary</strong>Adds current promotion summary search inside Cin7.</div>
+          <div class="card"><strong>Tampermonkey</strong>Chrome extension that runs the browser helpers in Omni, Cin7 Core, Gmail, HubSpot, and on the website.</div>
+          <div class="card"><strong>Living Culture All-in-One</strong>Installs the approved Omni workflow buttons, freight, PDF/email, Cin7 Core, Gmail, HubSpot, and website helpers from GitHub.</div>
+          <div class="card"><strong>Omni Workflow</strong>Adds Site Visit, Quote Review, HubSpot Deal, Download Quote, customer photos, and NZSO tracking.</div>
+          <div class="card"><strong>Omni Quote Tools</strong>Adds LC Freight, Install Fees, Custom Products, Quote Memo Info, stock, and product information buttons.</div>
           <div class="card"><strong>Copy SKU</strong>Adds the red SKU copy button on Living Culture and Luxi Living product pages.</div>
         </div>
       </section>
@@ -270,11 +275,15 @@
       </section>
 
       <section class="section" id="scripts">
-        <h2>2. Install The Tampermonkey Scripts</h2>
-        <p>Open each link below in Chrome. Tampermonkey should open an install page. Click <strong>Install</strong> or <strong>Update</strong>.</p>
+        <h2>2. Install The Tampermonkey Script</h2>
+        <p>Open the all-in-one link below in Chrome. Tampermonkey should open an install page. Click <strong>Install</strong> or <strong>Update</strong>.</p>
+        <div class="links">
+          <a class="primary-install" href="https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/livingculture-all-in-one.user.js">Install Living Culture All-in-One for Omni</a>
+        </div>
+        <div class="note">This one script loads the current approved helpers from GitHub, including Omni workflow buttons, freight tools, PDF/email helpers, Gmail, HubSpot, Cin7 Core, and website tools.</div>
+        <h3>Legacy fallback links</h3>
         <div class="links">
           <a href="https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-lc-freight.user.js">Cin7 LC Freight helper</a>
-          <a href="https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-lc-freight-2.user.js">Cin7 LC Freight 2 helper (test)</a>
           <a href="https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-quote-memo-info.user.js">Cin7 Quote Memo Info helper</a>
           <a href="https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-install-fee-helper.user.js">Cin7 Installation Fee helper</a>
           <a href="https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-custom-product-helper.user.js">Cin7 Custom Product helper</a>
@@ -311,7 +320,7 @@
         <h2>4. Check Everything Appears</h2>
         <h3>Cin7</h3>
         <ol>
-          <li>Open Cin7 or Dear Systems in Chrome.</li>
+          <li>Open Cin7 Omni, Cin7 Core, or Dear Systems in Chrome.</li>
           <li>Open a quote.</li>
           <li>Near <strong>Additional charges and services</strong>, check for:</li>
         </ol>
@@ -320,9 +329,11 @@
         <ol start="4">
           <li>Near the top quote buttons, beside <strong>Scan</strong>, check for:</li>
         </ol>
+        <span class="check">Site Visit</span>
+        <span class="check">Quote Review</span>
+        <span class="check">HubSpot Deal</span>
         <span class="check">Install Fees</span>
         <span class="check">Custom Products</span>
-        <span class="check">Promo Summary</span>
 
         <h3>Living Culture Product Pages</h3>
         <ol>

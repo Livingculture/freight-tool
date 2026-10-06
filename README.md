@@ -22,23 +22,15 @@ The app will show the product details, estimated weight and CBM, warehouse infor
 
 ## Cin7 Helper
 
-The Tampermonkey helpers are installed from GitHub:
+The recommended Tampermonkey install is the all-in-one script from GitHub:
 
 ```text
-https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-lc-freight.user.js
-https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-quote-memo-info.user.js
-https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-install-fee-helper.user.js
-https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-custom-product-helper.user.js
-https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-custom-comments.user.js
-https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js
-https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-site-visit-link.user.js
-https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/livingculture-copy-sku.user.js
-https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/luxiliving-copy-sku.user.js
+https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/livingculture-all-in-one.user.js
 ```
 
-Install each link once in Tampermonkey on every computer. After that, Tampermonkey checks GitHub for script updates automatically because the scripts include `@updateURL` and `@downloadURL`.
+Install this link once in Tampermonkey on every computer. After that, Tampermonkey checks GitHub for script updates automatically because the script includes `@updateURL` and `@downloadURL`.
 
-Once the hosted freight service is deployed and its URL is entered in `userscripts/cin7-lc-freight.user.js`, staff only need Tampermonkey. In Cin7, click `LC Freight` to open the freight panel, or `Quote Memo Info` to open the quote memo panel.
+The all-in-one script loads the approved Omni, Cin7 Core, Gmail, HubSpot, and website helpers from GitHub. In Omni, use the workflow buttons such as `Site Visit`, `Quote Review`, `HubSpot Deal`, `Download Quote`, `Install Fees`, `Custom Products`, and `LC Freight`.
 
 Until the hosted service is commissioned, keep the Freight Costing desktop app running locally when using `LC Freight`.
 

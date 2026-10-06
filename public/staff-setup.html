@@ -8,6 +8,8 @@
     body { font-family: Arial, sans-serif; margin: 24px; color: #1f2d2a; }
     h1 { margin-bottom: 8px; }
     .note { background: #eef7f5; border-left: 4px solid #2f6b61; padding: 10px 12px; margin: 12px 0 20px; }
+    .primary-install { display: inline-block; margin: 8px 0 18px; padding: 12px 16px; color: #fff; background: #05cabe; border-radius: 6px; font-weight: 800; }
+    .primary-install:hover { background: #04b5aa; text-decoration: none; }
     ul { line-height: 1.8; }
     a { color: #0f5d96; text-decoration: none; }
     a:hover { text-decoration: underline; }
@@ -15,9 +17,11 @@
 </head>
 <body>
   <h1>Living Culture Tampermonkey Setup</h1>
-  <p>Open each script link in Chrome and click <strong>Install</strong> or <strong>Update</strong> in Tampermonkey.</p>
-  <div class="note">These links point to the <strong>main</strong> branch so all staff receive the same updates.</div>
+  <p>Open the all-in-one script in Chrome and click <strong>Install</strong> or <strong>Update</strong> in Tampermonkey.</p>
+  <a class="primary-install" href="https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/livingculture-all-in-one.user.js" target="_blank" rel="noopener">Install Living Culture All-in-One for Omni</a>
+  <div class="note">This installs the current approved Omni workflow, freight, PDF/email, Gmail, HubSpot, Cin7 Core, and website helpers from the <strong>main</strong> branch.</div>
 
+  <h2>Legacy fallback links</h2>
   <ul>
     <li><a href="https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-lc-freight.user.js" target="_blank" rel="noopener">Cin7 LC Freight helper</a></li>
     <li><a href="https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-lc-freight-2.user.js" target="_blank" rel="noopener">Cin7 LC Freight 2 helper (test)</a></li>

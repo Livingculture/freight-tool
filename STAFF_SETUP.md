@@ -6,12 +6,8 @@ Use this guide to set up the Living Culture freight app and browser helpers on a
 
 - Hosted Freight Costing service: calculates freight when the `LC Freight` button is used in Cin7.
 - Freight Costing app: local fallback only, used before the hosted service is released or if directed by support.
-- Tampermonkey: the Chrome extension that runs the helpers inside Cin7 and on livingculture.co.nz.
-- Cin7 LC Freight helper: adds the `LC Freight` button in Cin7.
-- Quote Memo Info helper: adds the `Quote Memo Info` button in Cin7.
-- Installation Fee helper: adds the `Install Fees` button in Cin7.
-- Custom Product helper: adds the `Custom Products` button in Cin7.
-- Promo Summary helper: adds the `Promo Summary` button in Cin7.
+- Tampermonkey: the Chrome extension that runs the helpers inside Omni, Cin7 Core, Gmail, HubSpot, and on livingculture.co.nz.
+- Living Culture All-in-One helper: installs the approved Omni workflow buttons, freight tools, PDF/email helpers, Cin7 Core tools, Gmail helpers, HubSpot colours, and website tools from GitHub.
 - Copy SKU helper: adds the red `Copy SKU` button on Living Culture and Luxi Living product pages.
 
 ## 1. Install Chrome
@@ -43,15 +39,22 @@ chrome://extensions
 3. Make sure it is enabled.
 4. If Chrome shows an option called `Allow User Scripts`, turn it on.
 
-## 4. Install The Tampermonkey Scripts
+## 4. Install The Tampermonkey Script
 
-Open each link below in Chrome. Tampermonkey should open an install page for each one.
+Open the all-in-one link below in Chrome. Tampermonkey should open an install page.
 
 Click `Install` or `Update` when Tampermonkey asks.
 
 ```text
+https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/livingculture-all-in-one.user.js
+```
+
+This one script loads the current approved helpers from GitHub, including the Omni workflow buttons and website/Gmail/HubSpot helpers. After installing, Tampermonkey will automatically check GitHub for updates.
+
+Legacy fallback links for support:
+
+```text
 https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-lc-freight.user.js
-https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-lc-freight-2.user.js
 https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-quote-memo-info.user.js
 https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-install-fee-helper.user.js
 https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-custom-product-helper.user.js
@@ -60,8 +63,6 @@ https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/ci
 https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/livingculture-copy-sku.user.js
 https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/luxiliving-copy-sku.user.js
 ```
-
-After installing, Tampermonkey will automatically check GitHub for updates.
 
 ## 5. Freight Costing Service
 
@@ -86,7 +87,7 @@ When using the fallback app, keep it open while using the Cin7 `LC Freight` help
 
 ## 6. Check Cin7
 
-1. Open Cin7 or Dear Systems in Chrome.
+1. Open Cin7 Omni, Cin7 Core, or Dear Systems in Chrome.
 2. Open a quote.
 3. Check near the `Additional charges and services` area.
 4. You should see:
@@ -99,9 +100,11 @@ LC Freight
 Near the top quote buttons, beside `Scan`, you should see:
 
 ```text
+Site Visit
+Quote Review
+HubSpot Deal
 Install Fees
 Custom Products
-Promo Summary
 ```
 
 ## 7. Check Living Culture Product Pages

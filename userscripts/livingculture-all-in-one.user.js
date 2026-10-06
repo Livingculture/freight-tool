@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Living Culture All-in-One (Test)
+// @name         Living Culture All-in-One
 // @namespace    livingculture
-// @version      0.1.19
-// @description  Test bundle for the approved Living Culture Omni, Cin7 Core, Gmail, HubSpot and website tools.
+// @version      0.1.20
+// @description  Approved Living Culture Omni, Cin7 Core, Gmail, HubSpot and website tools in one Tampermonkey install.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
 // @match        https://inventory.dearsystems.com/*
@@ -119,7 +119,7 @@
     { resource: 'wecomPayment', file: 'cin7-wecom-payment-message.user.js', runAt: 'idle', enabled: isCin7Core }
   ];
 
-  const status = { version: '0.1.19', loaded: [], skipped: [], errors: [] };
+  const status = { version: '0.1.20', loaded: [], skipped: [], errors: [] };
   window.__lcAllInOneStatus = status;
 
   function execute(component) {
