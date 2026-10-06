@@ -4,7 +4,7 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync(require('node:path').join(__dirname, '../userscripts/omni-install-fee-helper.user.js'), 'utf8');
 const context = vm.createContext({});
-for (const name of ['clean', 'dimensions', 'pergolaDetails', 'matchingFee', 'matchedFeePlan', 'parseCsvLine', 'parseCsv', 'memoRequiresInstallation']) {
+for (const name of ['clean', 'dimensions', 'pergolaDetails', 'matchingFee', 'matchedFeePlan', 'parseCsvLine', 'parseCsv', 'memoRequiresInstallation', 'blindWidth', 'blindOperation', 'blindMounting', 'matchingBlindFee', 'assemblyProduct']) {
   const start = source.indexOf(`  function ${name}(`);
   const end = source.indexOf('\n  function ', start + 1);
   vm.runInContext(source.slice(start, end), context);
@@ -52,3 +52,36 @@ if (process.argv[2]) {
   console.log(`Live chart checked: ${liveFees.length} fees`);
 }
 console.log('PASS: dimensions, mounting, operation, model, area boundaries, exact footprints, quantities and duplicate protection');
+const blindFees = context.parseCsv(`Product Code,Name,Price
+AS10069,Assembly Manual Blind Under 4m (Post to Post),250
+AS10169,Assembly Manual Blind over 4.1m with Extra Post (Post to Post),450
+AS10176,Assembly Manual Wall Mount Blind Under 4m (Post To Wall),450
+AS10140,Assembly Motorised Blind Under 4m,500
+AS10175,Assembly Motorised Blind Over 4.1m,650
+AS10178,Assembly Programme Motorised Blind Call Out Fee,180`);
+const blind = (options, name = 'Motorised Blind For Tasman Freestanding Pergola') => line(name, options);
+for (const [product, code] of [
+  [blind('3m Black'), 'AS10140'], [blind('4m'), 'AS10140'], [blind('4.1m'), 'AS10175'],
+  [blind('5m'), 'AS10175'], [blind('3000mm'), 'AS10140'], [blind('300cm'), 'AS10140'],
+  [blind('3m', 'Manual Blind For Tasman Freestanding Pergola'), 'AS10069'],
+  [blind('5m', 'Manual Blind For Tasman Freestanding Pergola'), 'AS10169'],
+  [blind('Post To Wall 3m', 'Manual Blind For Tasman Wall Mounted Pergola'), 'AS10176'],
+  [blind('Post To Post 3m', 'Manual Blind For Tasman Wall Mounted Pergola'), 'AS10069'],
+  [blind('3m', 'Retractable Shade Blind For Baltic Freestanding Pergola 2.0'), 'AS10069'],
+  [blind('3m', 'Motorised Blind For Tasman Wall Mounted Pergola'), 'AS10140'],
+  [blind('Black', 'Motorised Blind 3m'), 'AS10140']
+]) assert.equal(context.matchingFee(product, blindFees)?.code, code);
+for (const product of [blind('4.04m'), blind('4.1 x 4.6m L Black'), blind('Black'), blind('3m', 'Outdoor Blind'), blind('Post To Wall 5m', 'Manual Blind For Tasman Wall Mounted Pergola')]) {
+  assert.equal(context.matchingFee(product, blindFees), null);
+}
+assert.equal(context.matchingFee(blind('3m'), [...blindFees, blindFees[3]]), null);
+const combined = context.matchedFeePlan([tasman('4x3m'), { ...blind('3m'), quantity: 2 }, { code: 'AS10140', name: blindFees[3].name, quantity: 1 }], [...fees, ...blindFees]);
+assert.equal(combined.fees.find(item => item.code === 'AS10140').quantity, 1);
+assert.equal(combined.fees.find(item => item.code === 'AS10037').quantity, 1);
+if (process.argv[2]) {
+  const liveFees = context.parseCsv(fs.readFileSync(process.argv[2], 'utf8'));
+  assert.equal(context.matchingFee(blind('3m'), liveFees).code, 'AS10140');
+  assert.equal(context.matchingFee(blind('5m'), liveFees).code, 'AS10175');
+  assert.equal(context.matchingFee(blind('Post To Wall 3m', 'Manual Blind For Tasman Wall Mounted Pergola'), liveFees).code, 'AS10176');
+}
+console.log('PASS: blind widths, boundaries, mounting, motorised/manual, retractable shade, ambiguous sizes, mixed quotes and live fees');

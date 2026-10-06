@@ -2,6 +2,10 @@ const fs = require('node:fs');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { chromium } = require('playwright');
+const blindCase = process.argv.includes('--blind');
+const feeCode = blindCase ? 'AS10140' : 'AS10037';
+const feeName = blindCase ? 'Assembly Motorised Blind Under 4m' : 'Assembly Freestanding Motorised Pergola Tasman Up to 16m2';
+const price = blindCase ? '500' : '2000';
 
 (async () => {
   const browser = await chromium.launch({ headless: true });
@@ -16,8 +20,12 @@ const { chromium } = require('playwright');
       ${Array.from({ length: 3 }, () => '<tr><td class="code">Search...</td><td class="product">Search...</td><td></td><td></td><td></td><td><input value=""></td><td><input value=""></td></tr>').join('')}
       </table><button>Add a new line</button>` }));
     await page.goto('https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx?OrderId=388');
-    await page.evaluate(keyboardSelection => {
-      window.GM_xmlhttpRequest = options => setTimeout(() => options.onload({ status: 200, responseText: 'Product Code,Name,Price\nAS10037,Assembly Freestanding Motorised Pergola Tasman Up to 16m2,2000' }), 10);
+    if (blindCase) await page.locator('body > table tr').nth(1).evaluate(row => {
+      row.children[1].textContent = 'Motorised Outdoor Blind';
+      row.children[2].textContent = '3m';
+    });
+    await page.evaluate(({ keyboardSelection, feeCode, feeName, price }) => {
+      window.GM_xmlhttpRequest = options => setTimeout(() => options.onload({ status: 200, responseText: `Product Code,Name,Price\n${feeCode},${feeName},${price}` }), 10);
       for (const cell of document.querySelectorAll('td.code')) cell.addEventListener('click', () => {
         if (cell.querySelector('input')) return;
         cell.innerHTML = '<input>';
@@ -32,7 +40,7 @@ const { chromium } = require('playwright');
               return;
             }
             cell.textContent = input.value;
-            cell.parentElement.querySelector('.product').textContent = 'Assembly Freestanding Motorised Pergola Tasman Up to 16m2';
+            cell.parentElement.querySelector('.product').textContent = feeName;
             const spacer = document.createElement('tr');
             spacer.innerHTML = '<td colspan="7" style="height:100px">Quote rerender moved the new fee row</td>';
             cell.parentElement.before(spacer);
@@ -52,61 +60,61 @@ const { chromium } = require('playwright');
           option.addEventListener('click', () => {
             if (keyboardSelection) return;
             cell.textContent = option.textContent;
-            cell.parentElement.querySelector('.product').textContent = 'Assembly Freestanding Motorised Pergola Tasman Up to 16m2';
+            cell.parentElement.querySelector('.product').textContent = feeName;
             option.remove();
           });
           document.body.append(option);
           }, 1400);
         });
       });
-    }, keyboardSelection);
+    }, { keyboardSelection, feeCode, feeName, price });
     await page.addScriptTag({ content: fs.readFileSync(path.join(__dirname, '../userscripts/omni-install-fee-helper.user.js'), 'utf8') });
     await page.waitForTimeout(2200);
-    assert.equal(await page.locator('body > table td.code').filter({ hasText: 'AS10037' }).count(), 0, 'Blank memo must not add fees');
+    assert.equal(await page.locator('body > table td.code').filter({ hasText: feeCode }).count(), 0, 'Blank memo must not add fees');
     await page.locator('#memo').fill('No installation required');
     await page.evaluate(() => document.activeElement.blur());
     await page.waitForTimeout(2200);
-    assert.equal(await page.locator('body > table td.code').filter({ hasText: 'AS10037' }).count(), 0, 'No installation required must not add fees');
+    assert.equal(await page.locator('body > table td.code').filter({ hasText: feeCode }).count(), 0, 'No installation required must not add fees');
     await page.locator('#memo').fill('Installation required\n\nTerms and conditions');
     await page.locator('body > table tr').nth(1).locator('td').nth(5).evaluate(cell => {
       cell.innerHTML = '<input value="2">'; cell.firstChild.focus();
     });
     await page.waitForTimeout(2200);
-    assert.equal(await page.locator('body > table td.code').filter({ hasText: 'AS10037' }).count(), 0, 'Do not interrupt editing');
-    if (keyboardSelection) await page.locator('body > table td.code').first().evaluate(cell => {
-      cell.textContent = 'AS10037';
+    assert.equal(await page.locator('body > table td.code').filter({ hasText: feeCode }).count(), 0, 'Do not interrupt editing');
+    if (keyboardSelection) await page.locator('body > table td.code').first().evaluate((cell, feeCode) => {
+      cell.textContent = feeCode;
       cell.parentElement.children[5].querySelector('input').value = '1';
-    });
+    }, feeCode);
     await page.evaluate(() => document.activeElement.blur());
-    await page.waitForFunction(() => document.querySelector('td.code')?.parentElement.children[6].querySelector('input').value === '2000');
+    await page.waitForFunction(price => document.querySelector('td.code')?.parentElement.children[6].querySelector('input').value === price, price);
     await page.waitForFunction(() => !document.getElementById('lc-omni-install-fee-button').disabled);
     const values = await page.locator('td.code').first().evaluate(cell => ({
       code: cell.textContent, quantity: cell.parentElement.children[5].querySelector('input').value,
       price: cell.parentElement.children[6].querySelector('input').value
     }));
-    assert.deepEqual(values, { code: 'AS10037', quantity: '2', price: '2000' });
+    assert.deepEqual(values, { code: feeCode, quantity: '2', price });
     assert.equal(await page.evaluate(() => Boolean(window.prematureEnter)), false, 'Never commit the code before search results arrive');
     assert.equal(await page.locator('#lc-omni-install-fee-root').locator('#modal').evaluate(modal => modal.classList.contains('open')), false);
     assert.equal(await page.locator('#lc-omni-install-fee-root').locator('#toast').evaluate(toast => toast.classList.contains('error')), false);
     await page.waitForTimeout(2200);
-    assert.equal(await page.locator('body > table td.code').filter({ hasText: 'AS10037' }).count(), 1);
+    assert.equal(await page.locator('body > table td.code').filter({ hasText: feeCode }).count(), 1);
     await page.locator('#lc-omni-install-fee-button').click();
-    assert.equal(await page.locator('body > table td.code').filter({ hasText: 'AS10037' }).count(), 1);
+    assert.equal(await page.locator('body > table td.code').filter({ hasText: feeCode }).count(), 1);
     await page.locator('#lc-omni-install-fee-root').locator('.close').click();
     await page.locator('#memo').fill('No installation required');
     await page.locator('body > table tr').nth(1).locator('input').fill('3');
     await page.evaluate(() => document.activeElement.blur());
     await page.waitForTimeout(2200);
-    assert.equal(await page.locator('body > table td.code').filter({ hasText: 'AS10037' }).count(), 1, 'Removing installation requirement prevents further fees');
+    assert.equal(await page.locator('body > table td.code').filter({ hasText: feeCode }).count(), 1, 'Removing installation requirement prevents further fees');
     await page.locator('#memo').fill('Installation required');
     await page.evaluate(() => document.activeElement.blur());
-    await page.waitForFunction(() => [...document.querySelectorAll('body > table td.code')]
-      .filter(cell => cell.textContent === 'AS10037')
-      .reduce((sum, cell) => sum + Number(cell.parentElement.children[5].querySelector('input').value), 0) === 3);
+    await page.waitForFunction(feeCode => [...document.querySelectorAll('body > table td.code')]
+      .filter(cell => cell.textContent === feeCode)
+      .reduce((sum, cell) => sum + Number(cell.parentElement.children[5].querySelector('input').value), 0) === 3, feeCode);
     await page.waitForFunction(() => !document.getElementById('lc-omni-install-fee-button').disabled);
     assert.equal(await page.locator('#lc-omni-install-fee-root').locator('#toast').evaluate(toast => toast.classList.contains('error')), false);
     await page.screenshot({ path: '/tmp/lc-install-fees-auto.png' });
-    console.log(`PASS browser: delayed autocomplete, no premature Enter, memo gate, quantity increase (${keyboardSelection ? 'unfinished-row recovery + keyboard selection + row movement' : 'dropdown selection'})`);
+    console.log(`PASS browser (${blindCase ? 'blinds' : 'pergolas'}): delayed autocomplete, no premature Enter, memo gate, quantity increase (${keyboardSelection ? 'unfinished-row recovery + keyboard selection + row movement' : 'dropdown selection'})`);
     await page.close();
     }
   } finally {

@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Omni Living Culture Installation Fee Helper
 // @namespace    livingculture-omni
-// @version      0.1.11
-// @description  Automatically matches pergola installation fees in Cin7 Omni, with a manual installation fee picker.
+// @version      0.1.12
+// @description  Automatically matches pergola and blind installation fees in Cin7 Omni, with a manual installation fee picker.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-install-fee-helper.user.js
 // @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-install-fee-helper.user.js
@@ -43,6 +43,7 @@
     return { model: model.toLowerCase().replace(/[ -]/g, ''), mounting, operation, ...size };
   }
   function matchingFee(line, fees) {
+    if (/\bblinds?\b/i.test(line.name)) return matchingBlindFee(line, fees);
     const details = pergolaDetails(line.name, line.options);
     if (!details || !/\bpergola\b/i.test(line.name) || /^AS/i.test(line.code)) return null;
     const matches = fees.filter(item => {
@@ -59,6 +60,43 @@
       });
     });
     return matches.length === 1 ? { ...matches[0], area: details.area } : null;
+  }
+  function blindWidth(text) {
+    if (dimensions(text)) return null;
+    const widths = [...String(text || '').matchAll(/\b(\d+(?:\.\d+)?)\s*(mm|cm|m)\b/gi)];
+    if (widths.length !== 1) return /^\d+(?:\.\d+)?$/.test(clean(text)) && Number(text) > 0 ? Number(text) : null;
+    const match = widths[0];
+    const width = Number(match[1]) / (match[2].toLowerCase() === 'mm' ? 1000 : match[2].toLowerCase() === 'cm' ? 100 : 1);
+    return width > 0 ? width : null;
+  }
+  function blindOperation(text) {
+    if (/\bmotori[sz]ed\b/i.test(text)) return 'motorised';
+    if (/\bmanual\b|\bretractable shade\b/i.test(text)) return 'manual';
+    return '';
+  }
+  function blindMounting(text) {
+    if (/\bpost\s*(?:to|-)\s*post\b/i.test(text)) return 'post';
+    if (/\bpost\s*(?:to|-)\s*wall\b|\bwall[ -]*mount(?:ed)?\b/i.test(text)) return 'wall';
+    return 'post';
+  }
+  function matchingBlindFee(line, fees) {
+    if (/^AS/i.test(line.code) || !/\bblinds?\b/i.test(line.name)) return null;
+    const width = blindWidth(line.options) ?? (!dimensions(line.options) ? blindWidth(line.name) : null);
+    const operation = blindOperation(line.name);
+    if (!width || !operation) return null;
+    const mounting = blindMounting(`${line.options} ${line.name}`);
+    const matches = fees.filter(item => {
+      if (!/\bblind\b/i.test(item.name) || /call\s*out|cutting|programme/i.test(item.name)) return false;
+      if (blindOperation(item.name) !== operation) return false;
+      if (operation === 'manual' && blindMounting(item.name) !== mounting) return false;
+      const upper = item.name.match(/\b(?:under|up to|less than)\s+(\d+(?:\.\d+)?)\s*m\b/i);
+      const lower = item.name.match(/\b(?:over|greater than)\s+(\d+(?:\.\d+)?)\s*m\b/i);
+      return upper ? width <= Number(upper[1]) : lower ? width >= Number(lower[1]) : false;
+    });
+    return matches.length === 1 ? { ...matches[0], width } : null;
+  }
+  function assemblyProduct(line) {
+    return !/^AS/i.test(line.code) && /\b(?:pergola|blinds?)\b/i.test(line.name);
   }
   function quoteTableInfo() {
     for (const row of pageElements('table tr')) {
@@ -86,7 +124,7 @@
     const required = new Map();
     const unmatched = [];
     for (const line of lines) {
-      if (/^AS/i.test(line.code) || !/\bpergola\b/i.test(line.name)) continue;
+      if (!assemblyProduct(line)) continue;
       const fee = matchingFee(line, fees);
       if (!fee) { unmatched.push(line); continue; }
       const existing = required.get(fee.code);
@@ -470,7 +508,7 @@
     if (document.getElementById(ROOT_ID)?.shadowRoot?.getElementById('modal')?.classList.contains('open')) return;
     if (!memoRequiresInstallation(quoteMemoText())) return;
     const lines = quoteLines();
-    if (!lines.some(line => !/^AS/i.test(line.code) && /\bpergola\b/i.test(line.name))) return;
+    if (!lines.some(assemblyProduct)) return;
     const key = quoteKey();
     if (key === processedQuoteKey) return;
     if (key !== observedQuoteKey) { observedQuoteKey = key; observedSince = Date.now(); return; }
