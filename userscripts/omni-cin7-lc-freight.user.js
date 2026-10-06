@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.28
+// @version      0.1.29
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -2315,6 +2315,7 @@
 
     createPanel();
     watchCin7QuoteChanges();
+    placeFreightButtonNextToMemo();
 
     setTimeout(placeFreightButtonNextToMemo, 300);
     setTimeout(placeFreightButtonNextToMemo, 1000);

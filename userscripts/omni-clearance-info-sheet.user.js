@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Clearance Info Sheet
 // @namespace    livingculture-omni
-// @version      0.1.14
+// @version      0.1.15
 // @description  Shows a Living Culture clearance product information sheet in Cin7 Omni and Cin7 Core.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -441,8 +441,11 @@
   ensureUi();
   let uiRecoveryTimer = null;
   const scheduleUiRecovery = () => {
-    window.clearTimeout(uiRecoveryTimer);
-    uiRecoveryTimer = window.setTimeout(ensureUi, 180);
+    if (uiRecoveryTimer !== null) return;
+    uiRecoveryTimer = window.requestAnimationFrame(() => {
+      uiRecoveryTimer = null;
+      ensureUi();
+    });
   };
   const uiObserver = new MutationObserver(scheduleUiRecovery);
   if (document.documentElement) uiObserver.observe(document.documentElement, { childList: true, subtree: true });

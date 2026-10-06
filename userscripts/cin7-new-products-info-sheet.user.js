@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture New Products Info Sheet
 // @namespace    livingculture-cin7
-// @version      0.1.6
+// @version      0.1.7
 // @description  Shows the Living Culture new-products spreadsheet in Cin7 Omni and Cin7 Core.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -401,8 +401,11 @@
     const clearance = document.getElementById(CLEARANCE_BUTTON_ID);
     if (button?.isConnected && visible(button) && (!isOmniQuotePage() ||
       (button.parentElement === actions && clearance?.nextElementSibling === button))) return;
-    clearTimeout(recoveryTimer);
-    recoveryTimer = setTimeout(ensureUi, 180);
+    if (recoveryTimer !== null) return;
+    recoveryTimer = requestAnimationFrame(() => {
+      recoveryTimer = null;
+      ensureUi();
+    });
   });
   if (document.documentElement) observer.observe(document.documentElement, { childList: true, subtree: true });
   else document.addEventListener('DOMContentLoaded', () => observer.observe(document.documentElement, { childList: true, subtree: true }), { once: true });

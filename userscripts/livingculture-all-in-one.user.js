@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture All-in-One
 // @namespace    livingculture
-// @version      0.1.22
+// @version      0.1.23
 // @description  Approved Living Culture Omni, Cin7 Core, Gmail, HubSpot and website tools in one Tampermonkey install.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -43,7 +43,7 @@
 // @connect      *.supabase.co
 // @connect      qyapi.weixin.qq.com
 // @resource     copySku https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/livingculture-copy-sku.user.js?v=2.0
-// @resource     omniFreight https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js?v=0.1.28
+// @resource     omniFreight https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js?v=0.1.29
 // @resource     addressAutocomplete https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-address-autocomplete.user.js?v=0.1.10
 // @resource     customComments https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-custom-comments.user.js?v=0.1.14
 // @resource     installFees https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-install-fee-helper.user.js?v=0.1.7
@@ -58,15 +58,15 @@
 // @resource     gmailDrawings https://raw.githubusercontent.com/Livingculture/freight-tool/fcfb0351d321f7cc3aa08aecd2919121a6f81046/userscripts/gmail-drawings.user.js
 // @resource     gmailCareGuides https://raw.githubusercontent.com/Livingculture/freight-tool/fcfb0351d321f7cc3aa08aecd2919121a6f81046/userscripts/gmail-care-guides.user.js
 // @resource     hubspotShortcut https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-hubspot-shortcut.user.js?v=0.2.0
-// @resource     workflow https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.73
+// @resource     workflow https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-livingculture-workflow.user.js?v=0.1.74
 // @resource     gmailHubspotAttachments https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-attachments.user.js?v=0.1.6
 // @resource     gmailQuotePdfs https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-omni-quote-pdfs.user.js?v=0.1.7
 // @resource     emailHelperOnly https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-email-helper-only.user.js?v=0.1.1
 // @resource     quoteMemo https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-memo-info.user.js?v=0.1.2
 // @resource     pergolaGuide https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-pergola-modification-guide.user.js?v=0.1.0
 // @resource     hubspotColours https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/hubspot-contrast-colours.user.js?v=0.1.16
-// @resource     clearanceInfo https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-clearance-info-sheet.user.js?v=0.1.14
-// @resource     newProducts https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-new-products-info-sheet.user.js?v=0.1.6
+// @resource     clearanceInfo https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-clearance-info-sheet.user.js?v=0.1.15
+// @resource     newProducts https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-new-products-info-sheet.user.js?v=0.1.7
 // @resource     wecomPayment https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-wecom-payment-message.user.js?v=4.7
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/livingculture-all-in-one.user.js
 // @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/livingculture-all-in-one.user.js
@@ -119,7 +119,12 @@
     { resource: 'wecomPayment', file: 'cin7-wecom-payment-message.user.js', runAt: 'idle', enabled: isCin7Core }
   ];
 
-  const status = { version: '0.1.22', loaded: [], skipped: [], errors: [] };
+  const earlyOmniTools = new Set(['omniFreight', 'installFees', 'customProducts', 'websiteShortcuts', 'productAvailability', 'chinaWarehouse', 'quoteMemo', 'pergolaGuide']);
+  if (isOmniQuote) components.forEach(component => {
+    if (earlyOmniTools.has(component.resource)) component.runAt = 'body';
+  });
+
+  const status = { version: '0.1.23', loaded: [], skipped: [], errors: [] };
   window.__lcAllInOneStatus = status;
 
   function execute(component) {
@@ -144,6 +149,22 @@
   }
 
   components.filter((component) => component.runAt === 'start').forEach(execute);
+
+  let bodyComponentsStarted = false;
+  function runBodyComponents() {
+    if (bodyComponentsStarted || !document.body) return;
+    bodyComponentsStarted = true;
+    components.filter(component => component.runAt === 'body').forEach(execute);
+  }
+  if (document.body) runBodyComponents();
+  else {
+    const bodyObserver = new MutationObserver(() => {
+      if (!document.body) return;
+      bodyObserver.disconnect();
+      runBodyComponents();
+    });
+    bodyObserver.observe(document, { childList: true, subtree: true });
+  }
 
   function runIdleComponents() {
     components.filter((component) => component.runAt === 'idle').forEach(execute);
