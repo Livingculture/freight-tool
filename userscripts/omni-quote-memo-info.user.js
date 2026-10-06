@@ -1,11 +1,11 @@
 // ==UserScript==
 // @name         Omni Living Culture Quote Memo Info
 // @namespace    livingculture-omni
-// @version      0.1.5
+// @version      0.1.6
 // @description  Fills selected quote wording into Omni Delivery Instructions for display on the quote PDF.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-memo-info.user.js?v=0.1.5
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-memo-info.user.js?v=0.1.5
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-memo-info.user.js?v=0.1.6
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-memo-info.user.js?v=0.1.6
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
 // @grant        none
@@ -135,12 +135,20 @@ Extra charges may be incurred for extra work required in materials and labour ou
       <div class="shade"><div class="panel"><div class="head"><h2>Quote Memo Info</h2><button class="close">Close</button></div><div class="list">${MEMOS.map((memo, index) => `<div class="card"><h3>${memo[0]}</h3><p>${memo[1]}</p><div class="actions"><button data-copy="${index}">Copy</button><button class="fill" data-fill="${index}">Fill Delivery Instructions</button></div></div>`).join('')}</div><div class="status"></div></div></div>`;
     const shade = shadow.querySelector('.shade');
     const previewStyle = document.createElement('style');
-    previewStyle.textContent = '.card h3{font-size:18px;line-height:1.25}.memo-body{margin:8px 0 12px;color:#172b49;font-size:11px;line-height:1.3;white-space:pre-wrap;overflow-wrap:anywhere}';
+    previewStyle.textContent = '.shade{padding:30px 14px}.panel{width:min(760px,calc(100vw - 28px));max-height:calc(100vh - 60px)}.head{padding:10px 14px}.list{gap:8px;padding:10px}.card{padding:10px;overflow:hidden}.card h3{margin:-10px -10px 6px;padding:8px 10px;background:#0b3978;color:#fff;font-size:18px;line-height:1.2}.card p{margin:0 0 6px}.memo-body{margin:6px 0 8px;color:#172b49;font-size:11px;line-height:1.2;white-space:normal;overflow-wrap:anywhere}.memo-paragraph{display:block;margin:0 0 3px}.memo-paragraph:last-child{margin-bottom:0}.actions button{padding:6px 9px;font-size:11px}';
     shadow.appendChild(previewStyle);
     shadow.querySelectorAll('.card').forEach((card, index) => {
       const preview = document.createElement('div');
       preview.className = 'memo-body';
-      preview.textContent = MEMOS[index][2];
+      MEMOS[index][2].split(/(\n\s*\n)/).forEach(part => {
+        if (/^\s+$/.test(part)) preview.appendChild(document.createTextNode(part));
+        else {
+          const paragraph = document.createElement('span');
+          paragraph.className = 'memo-paragraph';
+          paragraph.textContent = part;
+          preview.appendChild(paragraph);
+        }
+      });
       card.querySelector('.actions').insertAdjacentElement('beforebegin', preview);
     });
     shadow.querySelector('.close').addEventListener('click', () => shade.classList.remove('open'));
