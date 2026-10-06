@@ -32,6 +32,9 @@ const resources = Object.fromEntries([...loader.matchAll(/^\/\/ @resource\s+(\w+
     await page.addScriptTag({ content: loader });
     assert.deepEqual(await page.evaluate(() => window.__lcAllInOneStatus.errors), []);
     assert.equal(await page.evaluate(() => window.__lcAllInOneStatus.loaded.length), 4);
+    await page.locator('#lc-gmail-drawings-button').waitFor({ state: 'visible' });
+    await page.locator('#lc-gmail-care-guides-button').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#lc-gmail-add-quote-hint').count(), 0);
     // Gmail creates compose windows after the userscript has already started.
     await page.evaluate(() => {
       const compose = document.createElement('div');
@@ -50,10 +53,11 @@ const resources = Object.fromEntries([...loader.matchAll(/^\/\/ @resource\s+(\w+
     await page.locator('#lc-gmail-care-guides-panel').waitFor({ state: 'visible' });
     await page.screenshot({ path: '/tmp/lc-all-in-one-gmail.png' });
     await page.evaluate(() => document.querySelector('[role="dialog"]').remove());
-    await page.locator('#lc-gmail-attachment-toolbar').waitFor({ state: 'hidden' });
+    await page.waitForTimeout(600);
+    assert(await page.locator('#lc-gmail-attachment-toolbar').isVisible());
     assert.equal(await page.locator('#lc-gmail-add-quote-hint').count(), 0);
     assert.deepEqual(errors, []);
-    console.log('PASS: All four Gmail components load; Drawings, Care Guides and paperclip label appear for late compose windows and disappear when closed. Popups open without sending email.');
+    console.log('PASS: Gmail tools load; Drawings and Care Guides remain visible in the inbox and compose. Paperclip label follows compose. Popups open without sending email.');
   } finally {
     await browser.close();
   }

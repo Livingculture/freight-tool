@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Living Culture Care Guides
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.21
+// @version      0.1.22
 // @description  Attaches Living Culture care guide PDFs to Gmail compose windows.
 // @author       Living Culture
 // @match        https://mail.google.com/*
@@ -9,8 +9,8 @@
 // @grant        GM_registerMenuCommand
 // @connect      cin7-pdf-attachments.vercel.app
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.21
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.21
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.22
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-care-guides.user.js?v=0.1.22
 // ==/UserScript==
 
 (function () {
@@ -583,12 +583,13 @@
     const toolbar = ensureToolbar();
     const composeRoot = activeComposeRoot();
     if (!composeRoot) {
-      toolbar.style.display = "none";
-      toolbar.style.visibility = "hidden";
+      toolbar.style.display = "flex";
+      toolbar.style.visibility = "visible";
+      toolbar.style.left = `${Math.max(8, window.innerWidth - toolbar.offsetWidth - 24)}px`;
+      toolbar.style.top = `${Math.max(8, window.innerHeight - toolbar.offsetHeight - 24)}px`;
       delete toolbar.dataset.lcLayoutKey;
       delete toolbar.dataset.lcReadyAt;
       removeAttachmentHint();
-      if (state.open) closePanel();
       return;
     }
 
@@ -604,16 +605,7 @@
     const top = promptTop === null ? rect.bottom - height - 56 : promptTop - height - 12;
     toolbar.style.left = `${Math.max(8, Math.min(rect.right - width - 10, window.innerWidth - width - 8))}px`;
     toolbar.style.top = `${Math.max(8, Math.min(top, window.innerHeight - height - 8))}px`;
-    const buttonSet = Array.from(toolbar.children).map((item) => item.id).join("|");
-    const layoutKey = `${Math.round(rect.right)}:${Math.round(rect.bottom)}:${Math.round(promptTop || 0)}:${buttonSet}`;
-    if (toolbar.dataset.lcLayoutKey !== layoutKey) {
-      toolbar.dataset.lcLayoutKey = layoutKey;
-      toolbar.dataset.lcReadyAt = String(Date.now() + (promptTop === null ? 1500 : 300));
-      toolbar.style.visibility = "hidden";
-    }
-    if (Date.now() >= Number(toolbar.dataset.lcReadyAt || 0)) {
-      toolbar.style.visibility = "visible";
-    }
+    toolbar.style.visibility = "visible";
     syncAttachmentHint();
   }
 
