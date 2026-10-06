@@ -49,6 +49,29 @@ const loader = fs.readFileSync(path.join(directory, 'livingculture-all-in-one.us
     await page.locator('#lc-gmail-care-guides-button').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#lc-gmail-add-quote-hint').innerText(), 'Add Quote →');
     assert(await page.evaluate(() => document.getElementById('lc-gmail-add-quote-hint').nextSibling.matches('[command="+Att"]')));
+    async function checkAttachmentRow() {
+      const layout = await page.evaluate(() => {
+        const toolbar = document.getElementById('lc-gmail-attachment-toolbar');
+        const ids = ['lc-gmail-drawings-button', 'lc-gmail-care-guides-button', 'lc-gmail-add-quote-hint'];
+        return {
+          adjacent: toolbar.nextSibling?.id === ids[2],
+          boxes: ids.map(id => {
+            const rect = document.getElementById(id).getBoundingClientRect();
+            return { left: rect.left, right: rect.right, middle: rect.top + rect.height / 2 };
+          })
+        };
+      });
+      assert(layout.adjacent, 'Toolbar must sit immediately before Add Quote');
+      assert(layout.boxes[0].right <= layout.boxes[1].left);
+      assert(layout.boxes[1].right <= layout.boxes[2].left);
+      assert(Math.abs(layout.boxes[0].middle - layout.boxes[2].middle) < 2, 'Buttons must share one centred row');
+    }
+    await checkAttachmentRow();
+    await page.setViewportSize({ width: 800, height: 700 });
+    await page.waitForTimeout(600);
+    await checkAttachmentRow();
+    await page.screenshot({ path: '/tmp/lc-gmail-attachment-row.png' });
+    await page.setViewportSize({ width: 1200, height: 900 });
     await page.locator('#lc-gmail-drawings-button').dispatchEvent('pointerdown');
     await page.locator('#lc-gmail-drawings-panel').waitFor({ state: 'visible' });
     await page.locator('#lc-gmail-care-guides-button').dispatchEvent('pointerdown');
@@ -59,7 +82,7 @@ const loader = fs.readFileSync(path.join(directory, 'livingculture-all-in-one.us
     assert(await page.locator('#lc-gmail-attachment-toolbar').isVisible());
     assert.equal(await page.locator('#lc-gmail-add-quote-hint').count(), 0);
     assert.deepEqual(errors, []);
-    console.log('PASS: Gmail tools load under strict CSP without remote code resources; Drawings, Care Guides and paperclip label work. No emails sent.');
+    console.log('PASS: Gmail tools load under strict CSP; Drawings and Care Guides sit before Add Quote on one row across resized viewports and survive compose removal. No emails sent.');
   } finally {
     await browser.close();
   }

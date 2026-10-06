@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture All-in-One
 // @namespace    livingculture
-// @version      0.1.68
+// @version      0.1.69
 // @description  Approved Living Culture Omni, Cin7 Core, Gmail, HubSpot and website tools in one Tampermonkey install.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -123,7 +123,7 @@
     if (earlyOmniTools.has(component.resource)) component.runAt = 'body';
   });
 
-  const status = { version: '0.1.68', loaded: [], skipped: [], errors: [] };
+  const status = { version: '0.1.69', loaded: [], skipped: [], errors: [] };
   window.__lcAllInOneStatus = status;
 
   // BEGIN GENERATED GMAIL COMPONENTS
@@ -143,6 +143,7 @@
         const state = { levels: [], selected: null, loaded: false, loading: false, preparing: false, busy: false, status: "", error: false, open: false };
         const downloadCache = new Map();
         let syncTimer = 0;
+        let attachmentToolbar = null;
 
         function clean(value) {
           return String(value || "").replace(/\s+/g, " ").trim();
@@ -248,10 +249,18 @@
             hint.style.cssText = "display:inline-flex;align-items:center;height:28px;margin:0 5px;padding:0 10px;border-radius:14px;background:#f4511e;color:#fff;font:700 12px Arial,sans-serif;white-space:nowrap;pointer-events:none;box-shadow:0 3px 9px rgba(20,31,38,.20);box-sizing:border-box;vertical-align:middle";
           }
           if (hint.parentElement !== control.parentElement || hint.nextSibling !== control) control.before(hint);
+          const toolbar = ensureToolbar();
+          if (toolbar.parentElement !== hint.parentElement || toolbar.nextSibling !== hint) hint.before(toolbar);
+          toolbar.style.position = "static";
+          toolbar.style.display = "inline-flex";
+          toolbar.style.visibility = "visible";
+          toolbar.style.verticalAlign = "middle";
+          toolbar.style.flexWrap = "nowrap";
+          return true;
         }
 
         function ensureToolbar() {
-          let toolbar = document.getElementById(TOOLBAR_ID);
+          let toolbar = document.getElementById(TOOLBAR_ID) || attachmentToolbar;
           if (!toolbar) {
             toolbar = document.createElement("div");
             toolbar.id = TOOLBAR_ID;
@@ -262,6 +271,8 @@
             toolbar.style.visibility = "hidden";
             document.body.appendChild(toolbar);
           }
+          attachmentToolbar = toolbar;
+          if (!toolbar.isConnected) document.body.appendChild(toolbar);
           [BUTTON_ID, "lc-gmail-care-guides-button"].forEach((id) => {
             const item = document.getElementById(id);
             if (item) toolbar.appendChild(item);
@@ -520,9 +531,12 @@
         }
 
         function syncButton() {
+          const toolbar = ensureToolbar();
           const button = document.getElementById(BUTTON_ID);
           if (!button) return;
-          const toolbar = ensureToolbar();
+          if (syncAttachmentHint()) return;
+          if (toolbar.parentElement !== document.body) document.body.appendChild(toolbar);
+          toolbar.style.position = "fixed";
           const compose = activeComposeRoot();
           if (!compose) {
             toolbar.style.display = "flex";
@@ -596,6 +610,7 @@
         let lastToggleAt = 0;
         let menuRegistered = false;
         let syncTimer = null;
+        let attachmentToolbar = null;
 
         function apiRequest(path) {
           return new Promise((resolve, reject) => {
@@ -691,10 +706,18 @@
             hint.style.cssText = "display:inline-flex;align-items:center;height:28px;margin:0 5px;padding:0 10px;border-radius:14px;background:#f4511e;color:#fff;font:700 12px Arial,sans-serif;white-space:nowrap;pointer-events:none;box-shadow:0 3px 9px rgba(20,31,38,.20);box-sizing:border-box;vertical-align:middle";
           }
           if (hint.parentElement !== control.parentElement || hint.nextSibling !== control) control.before(hint);
+          const toolbar = ensureToolbar();
+          if (toolbar.parentElement !== hint.parentElement || toolbar.nextSibling !== hint) hint.before(toolbar);
+          toolbar.style.position = "static";
+          toolbar.style.display = "inline-flex";
+          toolbar.style.visibility = "visible";
+          toolbar.style.verticalAlign = "middle";
+          toolbar.style.flexWrap = "nowrap";
+          return true;
         }
 
         function ensureToolbar() {
-          let toolbar = document.getElementById(TOOLBAR_ID);
+          let toolbar = document.getElementById(TOOLBAR_ID) || attachmentToolbar;
           if (!toolbar) {
             toolbar = document.createElement("div");
             toolbar.id = TOOLBAR_ID;
@@ -705,6 +728,8 @@
             toolbar.style.visibility = "hidden";
             document.body.appendChild(toolbar);
           }
+          attachmentToolbar = toolbar;
+          if (!toolbar.isConnected) document.body.appendChild(toolbar);
           ["lc-gmail-drawings-button", BUTTON_ID].forEach((id) => {
             const item = document.getElementById(id);
             if (item) toolbar.appendChild(item);
@@ -1141,9 +1166,12 @@
         }
 
         function syncButtonToCompose() {
+          const toolbar = ensureToolbar();
           const button = document.getElementById(BUTTON_ID);
           if (!button) return;
-          const toolbar = ensureToolbar();
+          if (syncAttachmentHint()) return;
+          if (toolbar.parentElement !== document.body) document.body.appendChild(toolbar);
+          toolbar.style.position = "fixed";
           const composeRoot = activeComposeRoot();
           if (!composeRoot) {
             toolbar.style.display = "flex";

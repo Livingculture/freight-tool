@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Living Culture Drawings
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.16
+// @version      0.1.17
 // @description  Selects Living Culture pergola drawings from Google Drive and attaches them to Gmail drafts.
 // @author       Living Culture
 // @match        https://mail.google.com/*
@@ -10,8 +10,8 @@
 // @connect      drive.google.com
 // @connect      drive.usercontent.google.com
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.16
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.16
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.17
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-drawings.user.js?v=0.1.17
 // @supportURL   https://github.com/Livingculture/freight-tool
 // ==/UserScript==
 
@@ -28,6 +28,7 @@
   const state = { levels: [], selected: null, loaded: false, loading: false, preparing: false, busy: false, status: "", error: false, open: false };
   const downloadCache = new Map();
   let syncTimer = 0;
+  let attachmentToolbar = null;
 
   function clean(value) {
     return String(value || "").replace(/\s+/g, " ").trim();
@@ -133,10 +134,18 @@
       hint.style.cssText = "display:inline-flex;align-items:center;height:28px;margin:0 5px;padding:0 10px;border-radius:14px;background:#f4511e;color:#fff;font:700 12px Arial,sans-serif;white-space:nowrap;pointer-events:none;box-shadow:0 3px 9px rgba(20,31,38,.20);box-sizing:border-box;vertical-align:middle";
     }
     if (hint.parentElement !== control.parentElement || hint.nextSibling !== control) control.before(hint);
+    const toolbar = ensureToolbar();
+    if (toolbar.parentElement !== hint.parentElement || toolbar.nextSibling !== hint) hint.before(toolbar);
+    toolbar.style.position = "static";
+    toolbar.style.display = "inline-flex";
+    toolbar.style.visibility = "visible";
+    toolbar.style.verticalAlign = "middle";
+    toolbar.style.flexWrap = "nowrap";
+    return true;
   }
 
   function ensureToolbar() {
-    let toolbar = document.getElementById(TOOLBAR_ID);
+    let toolbar = document.getElementById(TOOLBAR_ID) || attachmentToolbar;
     if (!toolbar) {
       toolbar = document.createElement("div");
       toolbar.id = TOOLBAR_ID;
@@ -147,6 +156,8 @@
       toolbar.style.visibility = "hidden";
       document.body.appendChild(toolbar);
     }
+    attachmentToolbar = toolbar;
+    if (!toolbar.isConnected) document.body.appendChild(toolbar);
     [BUTTON_ID, "lc-gmail-care-guides-button"].forEach((id) => {
       const item = document.getElementById(id);
       if (item) toolbar.appendChild(item);
@@ -405,9 +416,12 @@
   }
 
   function syncButton() {
+    const toolbar = ensureToolbar();
     const button = document.getElementById(BUTTON_ID);
     if (!button) return;
-    const toolbar = ensureToolbar();
+    if (syncAttachmentHint()) return;
+    if (toolbar.parentElement !== document.body) document.body.appendChild(toolbar);
+    toolbar.style.position = "fixed";
     const compose = activeComposeRoot();
     if (!compose) {
       toolbar.style.display = "flex";
