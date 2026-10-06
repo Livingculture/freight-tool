@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Pergola Modification Guide
 // @namespace    livingculture-omni
-// @version      0.1.0
+// @version      0.1.1
 // @description  Adds an easy-to-read Minor Modification and Custom Pergola guide to Cin7 Omni.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -49,13 +49,13 @@
         *{box-sizing:border-box}
         .backdrop{position:fixed;inset:0;z-index:2147483647;display:none;align-items:center;justify-content:center;padding:22px;background:rgba(8,24,45,.68)}
         .backdrop.open{display:flex}
-        .panel{display:flex;flex-direction:column;width:min(1120px,96vw);max-height:94vh;overflow:hidden;border:1px solid #9db3d2;border-radius:14px;background:#eef4fb;box-shadow:0 24px 70px rgba(0,0,0,.34)}
-        header{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:16px 20px;background:#13377e;color:#fff}
+        .panel{display:flex;flex-direction:column;width:820px;max-width:100%;max-height:82vh;overflow:hidden;border:1px solid #9db3d2;border-radius:6px;background:#eef4fb;box-shadow:0 12px 36px rgba(0,0,0,.28)}
+        header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;background:#13377e;color:#fff}
         .eyebrow{margin-bottom:4px;color:#bfeef1;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase}
-        h1{margin:0;font-size:24px;line-height:1.15}
+        h1{margin:0;font-size:20px;line-height:1.15}
         .subtitle{margin:5px 0 0;color:#dce8fa;font-size:13px}
         .close{flex:0 0 auto;height:38px;padding:0 16px;border:1px solid #fff;border-radius:6px;background:#fff;color:#13377e;font-weight:800;cursor:pointer}
-        main{overflow:auto;padding:16px 18px 22px}
+        main{overflow:auto;min-height:0;padding:12px 14px 16px}
         .decision-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
         .decision{padding:14px 16px;border-radius:9px;background:#fff;box-shadow:0 1px 5px rgba(13,48,87,.08)}
         .decision.minor{border-left:6px solid #ef9f22}.decision.custom{border-left:6px solid #7047c7}
@@ -75,7 +75,7 @@
         table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:9px 10px;border-bottom:1px solid #e1e8f1;text-align:left;vertical-align:top}th{background:#edf3fa;color:#294563;font-size:12px}td:last-child{font-weight:800;white-space:nowrap}tr:last-child td{border-bottom:0}
         .warning{margin-bottom:14px;padding:13px 15px;border:1px solid #efc3bd;border-left:6px solid #bd4435;border-radius:8px;background:#fff5f3;color:#703127;font-size:13px;line-height:1.48}.warning strong{display:block;margin-bottom:4px;color:#8e3024;font-size:14px}
         .rule{padding:15px 17px;border-radius:9px;background:#dff3f1;color:#164f55;font-size:14px;line-height:1.5}.rule strong{display:block;margin-bottom:5px;color:#075b66;font-size:17px}
-        @media(max-width:760px){.decision-grid,.content-grid,.calculator{grid-template-columns:1fr}.checks{grid-template-columns:1fr}.total{min-height:130px}header{align-items:flex-start}h1{font-size:20px}.panel{max-height:100vh;border-radius:0}.backdrop{padding:0}}
+        @media(max-width:760px){.decision-grid,.content-grid,.calculator{grid-template-columns:1fr}.checks{grid-template-columns:1fr}.total{min-height:130px}header{align-items:flex-start}h1{font-size:18px}.panel{max-height:88vh}.backdrop{padding:12px}}
       </style>
       <div class="backdrop" role="dialog" aria-modal="true" aria-labelledby="lc-pg-title">
         <section class="panel">
@@ -153,6 +153,12 @@
   }
 
   function placeButton() {
+    if (document.head && !document.getElementById('lc-omni-pergola-guide-button-style')) {
+      const style = document.createElement('style');
+      style.id = 'lc-omni-pergola-guide-button-style';
+      style.textContent = `#${BUTTON_ID}::before,#${BUTTON_ID}::after{content:none!important;display:none!important}#${BUTTON_ID}{background-image:none!important}`;
+      document.head.appendChild(style);
+    }
     const anchor = findAnchor();
     let button = document.getElementById(BUTTON_ID);
     if (!anchor || !visible(anchor)) {
