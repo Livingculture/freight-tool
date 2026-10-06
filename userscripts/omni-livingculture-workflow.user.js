@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.76
+// @version      0.1.77
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -1281,7 +1281,7 @@
     if (toolsBar.parentElement !== anchor.parentElement || toolsBar.nextElementSibling !== anchor) {
       anchor.insertAdjacentElement('beforebegin', toolsBar);
     }
-    toolsBar.style.cssText = 'position:relative;box-sizing:border-box;display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:12px 24px;min-height:38px;margin:7px 0;padding:0 8px;background:transparent;';
+    toolsBar.style.cssText = 'position:relative;box-sizing:border-box;display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:12px 48px;min-height:38px;margin:7px 0;padding:0 8px;background:transparent;';
 
     buttons.forEach((button, index) => {
       button.style.display = 'inline-flex';
