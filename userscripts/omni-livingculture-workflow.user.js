@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.81
+// @version      0.1.82
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -52,6 +52,7 @@
   };
   const HUBSPOT_GATE_CLASS = 'lc-omni-hubspot-gated-action';
   const HUBSPOT_GATE_STORAGE_PREFIX = 'lc-omni-hubspot-deal-complete:';
+  const completedHubSpotSteps = new Set();
   const QUOTE_PDF_HANDOFF_KEY = 'lc-omni-quote-pdf-handoff';
   const QUOTE_PDF_TIMEOUT_MS = 45000;
   const HUBSPOT_GATED_LABELS = new Set([
@@ -178,6 +179,7 @@
   function isHubSpotStepComplete(orderId) {
     const key = hubSpotGateStorageKey(orderId);
     if (!key) return false;
+    if (completedHubSpotSteps.has(key)) return true;
     try {
       return window.localStorage.getItem(key) === '1';
     } catch (error) {
@@ -188,6 +190,7 @@
   function markHubSpotStepComplete(orderId) {
     const key = hubSpotGateStorageKey(orderId);
     if (!key) return;
+    completedHubSpotSteps.add(key);
     try {
       window.localStorage.setItem(key, '1');
     } catch (error) {
@@ -200,7 +203,8 @@
     if (document.getElementById('lc-omni-hubspot-gate-styles')) return;
     const style = document.createElement('style');
     style.id = 'lc-omni-hubspot-gate-styles';
-    style.textContent = `.${HUBSPOT_GATE_CLASS} { display: none !important; }`;
+    style.textContent = `.${HUBSPOT_GATE_CLASS} { display: none !important; }
+      #${QUOTE_PDF_BUTTON_ID}[data-hubspot-locked] { opacity: .5 !important; cursor: not-allowed !important; }`;
     (document.head || document.documentElement).appendChild(style);
   }
 
@@ -220,10 +224,19 @@
       element.classList.toggle(HUBSPOT_GATE_CLASS, !unlocked);
     });
 
-    // Downloading the customer's quote is available to every Omni user. The
-    // HubSpot completion flag is browser-local, so gating this button made it
-    // disappear for colleagues who opened the same quote on another computer.
-    document.getElementById(QUOTE_PDF_BUTTON_ID)?.classList.remove(HUBSPOT_GATE_CLASS);
+    const downloadButton = document.getElementById(QUOTE_PDF_BUTTON_ID);
+    if (downloadButton) {
+      downloadButton.classList.remove(HUBSPOT_GATE_CLASS);
+      if (!unlocked) {
+        downloadButton.dataset.hubspotLocked = '1';
+        downloadButton.disabled = true;
+        downloadButton.title = 'Confirm the HubSpot Deal step before downloading this quote.';
+      } else if (downloadButton.dataset.hubspotLocked) {
+        delete downloadButton.dataset.hubspotLocked;
+        downloadButton.disabled = false;
+        downloadButton.title = '';
+      }
+    }
   }
 
   function deriveBranchFromRep(repName) {
@@ -2800,6 +2813,11 @@
   }
 
   async function downloadCurrentQuotePdf(button) {
+    if (!isHubSpotStepComplete(hubSpotGateOrderId())) {
+      applyHubSpotApprovalGate();
+      window.alert('Confirm the HubSpot Deal step before downloading this quote.');
+      return;
+    }
     const quoteNumber = omniHeadingDraft().orderId || extractOrderId(document.body?.innerText || '');
     if (!quoteNumber) {
       window.alert('The NZSO quote number could not be found on this page.');
