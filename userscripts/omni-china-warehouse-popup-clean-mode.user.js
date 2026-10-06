@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture China Warehouse Popup Clean Mode
 // @namespace    livingculture-omni
-// @version      0.1.0
+// @version      0.1.1
 // @description  Adds Foshan Warehouse beside NZ Availability in Omni and cleans the warehouse popup display.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @match        https://lxexport.dearportal.com/*
@@ -87,7 +87,8 @@
 
   function place() {
     const element = button();
-    const anchor = document.getElementById(AVAILABILITY_BUTTON_ID);
+    const availability = document.getElementById(AVAILABILITY_BUTTON_ID);
+    const anchor = visible(availability) ? availability : document.getElementById('lc-omni-containers-open');
     if (!anchor || !visible(anchor)) { element.style.display = 'none'; return; }
     const rect = anchor.getBoundingClientRect();
     element.style.cssText = `position:absolute;display:inline-flex;align-items:center;justify-content:center;left:${scrollX + rect.right + 8}px;top:${scrollY + rect.top}px;z-index:53;box-sizing:border-box;width:auto;height:${Math.max(34,rect.height)}px;padding:0 14px;color:#fff;background:#13377e;border:1px solid #13377e;border-radius:4px;box-shadow:none;font:700 13px Arial,sans-serif;line-height:1;cursor:pointer;white-space:nowrap;`;
