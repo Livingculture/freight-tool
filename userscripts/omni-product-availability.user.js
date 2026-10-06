@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Product Availability
 // @namespace    livingculture-omni
-// @version      0.1.5
+// @version      0.1.6
 // @description  Checks Omni products-page stock for all SKUs on the current quote.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-product-availability.user.js
@@ -32,6 +32,7 @@
       for (const line of row.closest('table').querySelectorAll('tr')) {
         if (line === row || !visible(line)) continue;
         const sku = value(line.children[code]).toUpperCase();
+        if (/^AS/i.test(sku)) continue;
         const qty = number(value(line.children[quantity]));
         if (!sku || /^search|^code$/i.test(sku) || qty === null || qty <= 0) continue;
         const existing = items.get(sku);
