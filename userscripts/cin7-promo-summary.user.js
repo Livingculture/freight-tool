@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Promo Summary
 // @namespace    livingculture-cin7
-// @version      3.6
+// @version      3.7
 // @description  Compact grouped Living Culture promo summary inside Cin7 from the Summary tab.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
 // @match        https://inventory.dearsystems.com/*
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.6
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.6
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.7
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.7
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
@@ -730,6 +730,12 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
         </div>
       </article>
     `).join('');
+    if (isOmniQuote) list.querySelectorAll('.promo').forEach(promo => {
+      const heading = promo.querySelector('.promo-head');
+      const dates = promo.querySelector('.meta-row');
+      promo.querySelector('.badges').remove();
+      heading.appendChild(dates);
+    });
   }
 
   function openModal() {
@@ -1355,13 +1361,18 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
         .controls,.source{display:none}
         .title{font-size:16px}
         .promo-head{border-bottom:0;padding:12px 14px 6px}
-        .promo-body{padding:6px 14px 12px;gap:8px}
+        .promo-body{padding:4px 14px 10px;gap:6px}
         .detail-box{padding:0;border:0;border-radius:0;background:transparent}
-        .detail-box div,.offer-name{font-size:13px;line-height:1.3}
+        .detail-box div,.offer-name{font-size:13px;line-height:1.25}
         .details a{font-size:13px}
         .offer{padding:0;border:0;border-radius:0;background:transparent}
         .discount{font-size:11px}
-        .readable-text{max-width:none}
+        .readable-text{max-width:none;margin:0;line-height:1.25;white-space:normal}
+        .promo-head{grid-template-columns:minmax(0,1fr) auto;align-items:start}
+        .meta-row{margin:0;flex-direction:column;align-items:flex-end;gap:3px;text-align:right}
+        .date{white-space:nowrap}
+        .label-title{margin-bottom:4px}
+        @media(max-width:760px){.promo-head{grid-template-columns:1fr}.meta-row{flex-direction:row;align-items:center;justify-content:flex-start;text-align:left}}
         .empty{border-color:#c4d3e5;border-radius:6px;color:#526987;box-shadow:none}
         @media(max-width:760px){.controls{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}#lc-promo-search{grid-column:1 / -1}.merge-label{white-space:normal}.panel{height:88vh}.count{text-align:left}}
       `;
