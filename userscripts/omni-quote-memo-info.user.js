@@ -1,11 +1,11 @@
 // ==UserScript==
 // @name         Omni Living Culture Quote Memo Info
 // @namespace    livingculture-omni
-// @version      0.1.2
+// @version      0.1.3
 // @description  Fills selected quote wording into Omni Delivery Instructions for display on the quote PDF.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-memo-info.user.js?v=0.1.2
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-memo-info.user.js?v=0.1.2
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-memo-info.user.js?v=0.1.3
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-memo-info.user.js?v=0.1.3
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
 // @grant        none
@@ -134,6 +134,15 @@ Extra charges may be incurred for extra work required in materials and labour ou
       :host{all:initial;font-family:Arial,sans-serif}.shade{display:none;position:fixed;inset:0;z-index:2147483647;align-items:flex-start;justify-content:center;padding:65px 14px;background:rgba(12,29,54,.4);box-sizing:border-box}.shade.open{display:flex}.panel{width:min(620px,calc(100vw - 28px));max-height:calc(100vh - 100px);overflow:auto;background:#eef4fb;border:1px solid #9db3d2;border-radius:9px;box-shadow:0 22px 55px rgba(8,34,74,.3)}.head{position:sticky;top:0;display:flex;align-items:center;justify-content:space-between;padding:14px 16px;color:#fff;background:#0b3978}.head h2{margin:0;font-size:19px}.close{border:0;border-radius:5px;padding:6px 10px;color:#0b3978;background:#fff;font-weight:800;cursor:pointer}.list{display:grid;gap:10px;padding:13px}.card{padding:13px;background:#fff;border:1px solid #c2d2e6;border-radius:7px}.card h3{margin:0;color:#172b49;font-size:15px}.card p{margin:4px 0 10px;color:#526987;font-size:12px;font-weight:700}.actions{display:flex;gap:8px}.actions button{padding:8px 11px;border:1px solid #0b3978;border-radius:5px;color:#0b3978;background:#fff;font-weight:800;cursor:pointer}.actions .fill{color:#fff;background:#0b3978}.status{min-height:18px;padding:0 14px 12px;color:#087f5b;font-weight:700}</style>
       <div class="shade"><div class="panel"><div class="head"><h2>Quote Memo Info</h2><button class="close">Close</button></div><div class="list">${MEMOS.map((memo, index) => `<div class="card"><h3>${memo[0]}</h3><p>${memo[1]}</p><div class="actions"><button data-copy="${index}">Copy</button><button class="fill" data-fill="${index}">Fill Delivery Instructions</button></div></div>`).join('')}</div><div class="status"></div></div></div>`;
     const shade = shadow.querySelector('.shade');
+    const previewStyle = document.createElement('style');
+    previewStyle.textContent = '.memo-body{margin:8px 0 12px;color:#172b49;font-size:13px;line-height:1.35;white-space:pre-wrap;overflow-wrap:anywhere}';
+    shadow.appendChild(previewStyle);
+    shadow.querySelectorAll('.card').forEach((card, index) => {
+      const preview = document.createElement('div');
+      preview.className = 'memo-body';
+      preview.textContent = MEMOS[index][2];
+      card.querySelector('.actions').insertAdjacentElement('beforebegin', preview);
+    });
     shadow.querySelector('.close').addEventListener('click', () => shade.classList.remove('open'));
     shade.addEventListener('click', event => { if (event.target === shade) shade.classList.remove('open'); });
     shadow.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', async () => {
