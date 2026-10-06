@@ -21,6 +21,12 @@ const price = blindCase ? '500' : '2000';
       ${Array.from({ length: 3 }, () => '<tr><td class="code">Search...</td><td class="product">Search...</td><td></td><td></td><td></td><td><input value=""></td><td><input value=""></td></tr>').join('')}
       </table><button>Add a new line</button>` }));
     await page.goto('https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx?OrderId=388');
+    await page.locator('body > table').evaluate(table => {
+      const row = document.createElement('tr');
+      row.id = 'option-placeholders';
+      row.innerHTML = '<td>AS999</td><td>Assembly display test</td><td><span>#N/A</span></td><td>#N/A</td><td>#N/A</td><td>1</td><td>100</td>';
+      table.appendChild(row);
+    });
     if (blindCase) await page.locator('body > table tr').nth(1).evaluate(row => {
       row.children[1].textContent = 'Motorised Outdoor Blind';
       row.children[2].textContent = '3m';
@@ -42,6 +48,7 @@ const price = blindCase ? '500' : '2000';
             }
             cell.textContent = input.value;
             cell.parentElement.querySelector('.product').textContent = feeName;
+            cell.parentElement.children[5].querySelector('input').value = '2';
             const spacer = document.createElement('tr');
             spacer.innerHTML = '<td colspan="7" style="height:100px">Quote rerender moved the new fee row</td>';
             cell.parentElement.before(spacer);
@@ -67,14 +74,24 @@ const price = blindCase ? '500' : '2000';
             }
             cell.textContent = option.textContent;
             cell.parentElement.querySelector('.product').textContent = feeName;
+            cell.parentElement.children[5].querySelector('input').value = '2';
             option.remove();
           });
           document.body.append(option);
           }, 1400);
         });
       });
+      for (const cell of document.querySelectorAll('td.code')) cell.parentElement.children[5].querySelector('input').addEventListener('input', () => {
+        window.quantityEdits = (window.quantityEdits || 0) + 1;
+      });
     }, { keyboardSelection, mode, feeCode, feeName, price });
     await page.addScriptTag({ content: fs.readFileSync(path.join(__dirname, '../userscripts/omni-install-fee-helper.user.js'), 'utf8') });
+    const placeholders = await page.locator('#option-placeholders').evaluate(row => [...row.children].slice(2, 5).map(cell => ({ text: cell.textContent, color: getComputedStyle(cell).color })));
+    assert.deepEqual(placeholders.map(cell => cell.text), ['#N/A', '#N/A', '#N/A'], 'Keep native saved values unchanged');
+    assert.equal(placeholders[0].color, 'rgba(0, 0, 0, 0)');
+    assert.equal(placeholders[1].color, 'rgba(0, 0, 0, 0)');
+    assert.notEqual(placeholders[2].color, 'rgba(0, 0, 0, 0)', 'Only Option1 and Option2 placeholders are hidden');
+    assert.notEqual(await page.locator('body > table tr').nth(1).locator('td').nth(2).evaluate(cell => getComputedStyle(cell).color), 'rgba(0, 0, 0, 0)', 'Keep real size values visible');
     await page.waitForTimeout(2200);
     assert.equal(await page.locator('body > table td.code').filter({ hasText: feeCode }).count(), 0, 'Blank memo must not add fees');
     await page.locator('#memo').fill('No installation required');
@@ -99,6 +116,7 @@ const price = blindCase ? '500' : '2000';
       price: cell.parentElement.children[6].querySelector('input').value
     }));
     assert.deepEqual(values, { code: feeCode, quantity: '2', price });
+    assert.equal(await page.evaluate(() => window.quantityEdits || 0), 0, 'Do not edit a quantity already filled correctly by Omni');
     assert.equal(await page.evaluate(() => Boolean(window.prematureEnter)), false, 'Never commit the code before search results arrive');
     assert.equal(await page.locator('#lc-omni-install-fee-root').locator('#modal').evaluate(modal => modal.classList.contains('open')), false);
     assert.equal(await page.locator('#lc-omni-install-fee-root').locator('#toast').evaluate(toast => toast.classList.contains('error')), false);

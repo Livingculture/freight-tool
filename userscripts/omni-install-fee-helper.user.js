@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Installation Fee Helper
 // @namespace    livingculture-omni
-// @version      0.1.13
+// @version      0.1.14
 // @description  Automatically matches pergola and blind installation fees in Cin7 Omni, with a manual installation fee picker.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-install-fee-helper.user.js
@@ -109,6 +109,26 @@
   function cellValue(line, headings, key) {
     const cell = line.children[headings.indexOf(key)];
     return clean(cell?.querySelector('input,textarea,select')?.value || cell?.textContent);
+  }
+  function hideEmptyOptions() {
+    const info = quoteTableInfo();
+    if (!info) return;
+    const className = 'lc-omni-empty-option';
+    if (!document.getElementById('lc-omni-empty-option-style')) {
+      const style = document.createElement('style');
+      style.id = 'lc-omni-empty-option-style';
+      style.textContent = `.${className}, .${className} * { color: transparent !important; text-shadow: none !important; }`;
+      (document.head || document.documentElement).appendChild(style);
+    }
+    for (const row of info.table.querySelectorAll('tr')) {
+      if (row === info.headingRow) continue;
+      for (const key of ['option1', 'option2']) {
+        const cell = row.children[info.headings.indexOf(key)];
+        if (!cell) continue;
+        const editing = cell.querySelector('input,textarea,[contenteditable="true"]');
+        cell.classList.toggle(className, !editing && /^#n\/a$/i.test(clean(cell.textContent)));
+      }
+    }
   }
   function quoteLines() {
     const info = quoteTableInfo();
@@ -425,9 +445,11 @@
     targetRow.scrollIntoView({ block: 'nearest' });
     const rowRect = targetRow.getBoundingClientRect();
     rowY = rowRect.top + rowRect.height / 2;
-    if (item.quantity) {
+    const quantityInfo = quoteTableInfo();
+    const currentQuantity = quantityInfo ? Number(cellValue(targetRow, quantityInfo.headings, 'qtyordered').replace(/,/g, '')) : null;
+    if (item.quantity && currentQuantity !== item.quantity) {
       const quantity = header('Qty Ordered');
-      if (!quantity) { toast('Could not find the installation quantity field.', true); return false; }
+      if (!quantity) { console.warn('[LC installation fees] Quantity field not found.', item.code); return false; }
       const x = quantity.left + quantity.width / 2;
       clickAt(x, rowY);
       let quantityInput = null;
@@ -436,7 +458,7 @@
         quantityInput = fieldNear(x, rowY);
       }
       if (!quantityInput || (targetRow?.isConnected && quantityInput.closest('tr') && quantityInput.closest('tr') !== targetRow)) {
-        toast('Could not set the installation quantity. Check the new line.', true); return false;
+        console.warn('[LC installation fees] Could not set quantity.', item.code, item.quantity); return false;
       }
       setValue(quantityInput, String(item.quantity));
       sendKey(quantityInput, 'Tab', 9);
@@ -589,8 +611,9 @@
     button.style.bottom = 'auto';
     button.style.height = `${Math.max(34, rect.height)}px`;
   }
-  function boot() { ensureRoot(); placeButton(); }
-  boot(); setInterval(placeButton, 1500); new MutationObserver(placeButton).observe(document.body, { childList:true, subtree:true });
+  function refreshQuoteUi() { placeButton(); hideEmptyOptions(); }
+  function boot() { ensureRoot(); refreshQuoteUi(); }
+  boot(); setInterval(refreshQuoteUi, 1500); new MutationObserver(refreshQuoteUi).observe(document.body, { childList:true, subtree:true });
   setInterval(checkAutomaticFees, 750);
   window.addEventListener('resize', placeButton); window.addEventListener('scroll', placeButton, { passive:true });
 })();
