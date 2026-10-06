@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Custom Comments
 // @namespace    livingculture-omni
-// @version      0.1.14
+// @version      0.1.15
 // @description  Builds custom pergola comments and fills Omni internal and product-line comments.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-custom-comments.user.js
@@ -164,7 +164,7 @@
     const lines = [];
     if (type) lines.push(type);
     if (clean(data.height)) lines.push(`Height:${clean(data.height)}mm`);
-    if (clean(data.length)) lines.push(`Lenght:${clean(data.length)}mm`);
+    if (clean(data.length)) lines.push(`Length:${clean(data.length)}mm`);
     if (clean(data.width)) lines.push(`Width:${clean(data.width)}mm`);
     if (clean(data.frameColour)) lines.push(`Frame Colour: ${clean(data.frameColour)}`);
     if (clean(data.louvreColour)) lines.push(`Louvre Colour:${clean(data.louvreColour)}`);
