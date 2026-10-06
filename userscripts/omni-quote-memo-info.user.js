@@ -1,11 +1,11 @@
 // ==UserScript==
 // @name         Omni Living Culture Quote Memo Info
 // @namespace    livingculture-omni
-// @version      0.1.6
+// @version      0.1.7
 // @description  Fills selected quote wording into Omni Delivery Instructions for display on the quote PDF.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-memo-info.user.js?v=0.1.6
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-memo-info.user.js?v=0.1.6
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-memo-info.user.js?v=0.1.7
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-memo-info.user.js?v=0.1.7
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
 // @grant        none
@@ -106,6 +106,17 @@ Extra charges may be incurred for extra work required in materials and labour ou
       .sort((a, b) => Math.abs(a.rect.top - labelRect.bottom) - Math.abs(b.rect.top - labelRect.bottom))[0]?.field || null;
   }
 
+  function expandDeliveryField(field) {
+    if (!(field instanceof HTMLTextAreaElement)) return;
+    field.style.setProperty('max-height', 'none', 'important');
+    field.style.setProperty('overflow-y', 'hidden', 'important');
+    field.style.setProperty('box-sizing', 'border-box', 'important');
+    field.style.setProperty('height', 'auto', 'important');
+    const style = getComputedStyle(field);
+    const borders = (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0);
+    field.style.setProperty('height', `${Math.max(34, field.scrollHeight + borders)}px`, 'important');
+  }
+
   function setValue(field, value) {
     field.focus();
     if (field.isContentEditable) field.textContent = value;
@@ -117,6 +128,7 @@ Extra charges may be incurred for extra work required in materials and labour ou
     field.dispatchEvent(new Event('input', { bubbles: true }));
     field.dispatchEvent(new Event('change', { bubbles: true }));
     field.dispatchEvent(new Event('blur', { bubbles: true }));
+    expandDeliveryField(field);
     [0, 100, 300, 700].forEach(delay => window.setTimeout(() => window.dispatchEvent(new Event('resize')), delay));
   }
 
@@ -170,6 +182,7 @@ Extra charges may be incurred for extra work required in materials and labour ou
 
   function placeButton() {
     createUi();
+    expandDeliveryField(deliveryField());
     const label = deliveryLabel();
     if (!label || document.getElementById(BUTTON_ID)) return;
     const button = document.createElement('button');
@@ -184,6 +197,10 @@ Extra charges may be incurred for extra work required in materials and labour ou
   }
 
   placeButton();
+  document.addEventListener('input', event => {
+    if (event.target instanceof HTMLTextAreaElement && event.target === deliveryField()) expandDeliveryField(event.target);
+  });
+  window.addEventListener('resize', () => expandDeliveryField(deliveryField()));
   [400, 1200, 3000, 6000].forEach(delay => setTimeout(placeButton, delay));
   new MutationObserver(() => { if (!document.getElementById(BUTTON_ID)) placeButton(); }).observe(document.documentElement, { childList: true, subtree: true });
 })();
