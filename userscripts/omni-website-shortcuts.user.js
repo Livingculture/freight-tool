@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Website Shortcuts
 // @namespace    livingculture-omni
-// @version      0.1.28
+// @version      0.1.29
 // @description  Adds Living Culture website shortcuts to the grey space between Cin7 Omni quote sections.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @match        https://livingculture.co.nz/*
@@ -182,24 +182,52 @@
     return pending;
   }
 
+  let closePergolaPicker = null;
+
   async function selectPergola(shortcut, trigger) {
-    document.getElementById('lc-omni-pergola-picker')?.remove();
+    if (trigger.getAttribute('aria-expanded') === 'true') { closePergolaPicker?.(); return; }
+    closePergolaPicker?.(false);
     const root = document.createElement('div');
     root.id = 'lc-omni-pergola-picker';
     const shadow = root.attachShadow({ mode: 'open' });
     shadow.innerHTML = `<style>
       :host{font:14px Arial,sans-serif;color:#172b49}*{box-sizing:border-box}
-      .shade{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;padding:16px;background:#0006}
-      .dialog{width:420px;max-width:100%;max-height:90vh;overflow:auto;background:#fff;border-radius:6px}
-      header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:#13377e;color:#fff}h2{margin:0;font-size:18px}
-      button{cursor:pointer}.close{border:0;background:transparent;color:#fff;font-size:24px;width:30px;height:30px}
-      .fields{display:grid;gap:14px;padding:18px}label{display:grid;gap:6px;font-weight:700}select{width:100%;min-width:0;height:38px;border:1px solid #9db3d2;border-radius:4px;background:#fff;padding:0 9px;font:14px Arial}
+      .shade{position:fixed;z-index:2147483647;width:300px;max-width:calc(100vw - 16px)}
+      .dialog{max-height:calc(100vh - 16px);overflow:auto;background:#fff;border:1px solid #9db3d2;border-radius:4px;box-shadow:0 4px 14px #0003}
+      header{display:flex;align-items:center;justify-content:space-between;padding:5px 10px;background:#13377e;color:#fff}h2{margin:0;font-size:14px}
+      button{cursor:pointer}.close{border:0;background:transparent;color:#fff;font-size:20px;width:26px;height:26px}
+      .fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;padding:10px}label{display:grid;gap:4px;font-size:12px;font-weight:700}select{width:100%;min-width:0;height:32px;border:1px solid #9db3d2;border-radius:4px;background:#fff;padding:0 5px;font:12px Arial}
+      label:has(#model){grid-column:1 / -1}#status,#retry{grid-column:1 / -1}
       #status{margin:0;color:#526987}#status.error{color:#a32d22}#retry{height:34px;border:1px solid #13377e;border-radius:4px;background:#fff;color:#13377e;font-weight:700}
       [hidden]{display:none!important}
-    </style><div class="shade"><section class="dialog" role="dialog" aria-modal="true" aria-labelledby="title"><header><h2 id="title"></h2><button class="close" aria-label="Close">&times;</button></header><div class="fields"><p id="status" role="status">Loading products...</p><label>Mounting<select id="mount" disabled><option value="">Select mounting</option><option value="free">Freestanding</option><option value="wall">Wall Mounted</option></select></label><label>Model<select id="model" disabled></select></label><label>Size<select id="size" disabled></select></label><label>Colour<select id="colour" disabled></select></label><button id="retry" hidden>Retry</button></div></section></div>`;
+    </style><div class="shade"><section class="dialog" role="dialog" aria-labelledby="title"><header><h2 id="title"></h2><button class="close" aria-label="Close">&times;</button></header><div class="fields"><p id="status" role="status">Loading products...</p><label>Mounting<select id="mount" disabled><option value="">Select mounting</option><option value="free">Freestanding</option><option value="wall">Wall Mounted</option></select></label><label>Model<select id="model" disabled></select></label><label>Size<select id="size" disabled></select></label><label>Colour<select id="colour" disabled></select></label><button id="retry" hidden>Retry</button></div></section></div>`;
     document.body.appendChild(root);
     shadow.getElementById('title').textContent = shortcut.label;
-    const close = () => { root.remove(); document.removeEventListener('keydown', onKey); trigger.focus(); };
+    trigger.setAttribute('aria-expanded', 'true');
+    const dropdown = shadow.querySelector('.shade');
+    const position = () => {
+      if (!trigger.isConnected) { close(false); return; }
+      const anchor = trigger.getBoundingClientRect();
+      const rect = dropdown.getBoundingClientRect();
+      const left = Math.max(8, Math.min(anchor.left, window.innerWidth - rect.width - 8));
+      const below = anchor.bottom + 6;
+      const top = below + rect.height <= window.innerHeight - 8 ? below :
+        anchor.top - rect.height - 6 >= 8 ? anchor.top - rect.height - 6 : Math.max(8, window.innerHeight - rect.height - 8);
+      dropdown.style.left = `${left}px`;
+      dropdown.style.top = `${top}px`;
+    };
+    const outside = event => { if (!event.composedPath().includes(root) && !trigger.contains(event.target)) close(false); };
+    const close = (restoreFocus = true) => {
+      root.remove(); trigger.setAttribute('aria-expanded', 'false');
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('pointerdown', outside, true);
+      window.removeEventListener('resize', position);
+      window.removeEventListener('scroll', position, true);
+      resizeObserver.disconnect();
+      if (closePergolaPicker === close) closePergolaPicker = null;
+      if (restoreFocus) trigger.focus();
+    };
+    closePergolaPicker = close;
     const onKey = event => {
       if (event.key === 'Escape') close();
       if (event.key === 'Tab') {
@@ -210,8 +238,13 @@
       }
     };
     document.addEventListener('keydown', onKey);
+    document.addEventListener('pointerdown', outside, true);
+    window.addEventListener('resize', position);
+    window.addEventListener('scroll', position, true);
+    const resizeObserver = new ResizeObserver(position);
+    resizeObserver.observe(dropdown);
+    position();
     shadow.querySelector('.close').onclick = close;
-    shadow.querySelector('.shade').onclick = event => { if (event.target.classList.contains('shade')) close(); };
     shadow.querySelector('.close').focus();
     const mount = shadow.getElementById('mount'), model = shadow.getElementById('model');
     const size = shadow.getElementById('size'), colour = shadow.getElementById('colour'), status = shadow.getElementById('status');
@@ -281,6 +314,11 @@
       const button = document.createElement('button');
       button.type = 'button';
       button.textContent = shortcut.label;
+      if (['Tasman', 'Atlantic', 'Baltic', 'Caspian'].includes(shortcut.label)) {
+        button.setAttribute('aria-haspopup', 'dialog');
+        button.setAttribute('aria-expanded', 'false');
+        button.setAttribute('aria-controls', 'lc-omni-pergola-picker');
+      }
       button.addEventListener('click', () => {
         if (['Tasman', 'Atlantic', 'Baltic', 'Caspian'].includes(shortcut.label)) void selectPergola(shortcut, button);
         else openShortcut(shortcut);
