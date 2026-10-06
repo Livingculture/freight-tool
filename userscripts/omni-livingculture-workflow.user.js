@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.79
+// @version      0.1.80
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -1027,6 +1027,20 @@
     return [''].concat(singleVisitByOptions().filter((name) => normaliseVisitorName(name) !== excluded));
   }
 
+  function quoteCreatorVisitor(rep) {
+    const options = singleVisitByOptions();
+    const full = normaliseVisitorName(rep);
+    const stripBranch = value => clean(value).replace(/^[A-Z]{2,5}\s*[-\u2013\u2014]\s*/i, '');
+    const name = normaliseVisitorName(stripBranch(rep));
+    if (!name) return '';
+    const exact = options.find(option => normaliseVisitorName(option) === full);
+    if (exact) return exact;
+    const plain = options.find(option => normaliseVisitorName(option) === name);
+    if (plain) return plain;
+    const matches = options.filter(option => normaliseVisitorName(stripBranch(option)) === name);
+    return matches.length === 1 ? matches[0] : '';
+  }
+
   function selectedVisitBy() {
     const first = clean(field('lcSvVisitBy')?.value || '');
     const second = clean(field('lcSvVisitBy2')?.value || '');
@@ -1045,8 +1059,9 @@
   function refreshVisitBySelects() {
     const first = field('lcSvVisitBy');
     const second = field('lcSvVisitBy2');
-    const firstValue = clean(first?.value || '');
+    let firstValue = clean(first?.value || '') || quoteCreatorVisitor(first?.dataset.quoteCreator || '');
     const secondValue = clean(second?.value || '');
+    if (!visitByOptions(secondValue).includes(firstValue)) firstValue = quoteCreatorVisitor(first?.dataset.quoteCreator || firstValue);
     setSelectOptions(first, visitByOptions(secondValue), 'Visit by', firstValue);
     setSelectOptions(second, visitByOptions(first?.value || ''), 'Second rep (optional)', secondValue);
   }
@@ -2344,8 +2359,11 @@
     field('lcSvTime').value = data.time || '';
     field('lcSvOrder').value = data.orderId || '';
     field('lcSvPlacedBy').value = data.placedBy || '';
+    field('lcSvVisitBy').dataset.quoteCreator = isOmniPage() && !data.visitBy ? data.placedBy || '' : '';
+    field('lcSvVisitBy').value = '';
+    field('lcSvVisitBy2').value = '';
     refreshVisitBySelects();
-    const visitors = visitorNameParts(data.visitBy || '');
+    const visitors = visitorNameParts(data.visitBy || (isOmniPage() ? quoteCreatorVisitor(data.placedBy) : ''));
     field('lcSvVisitBy').value = visitors[0] || '';
     refreshVisitBySelects();
     field('lcSvVisitBy2').value = visitors[1] || '';
@@ -2619,6 +2637,7 @@
     });
     field('lcSvArea').addEventListener('change', refreshSiteVisitBookings);
     field('lcSvVisitBy').addEventListener('change', () => {
+      delete field('lcSvVisitBy').dataset.quoteCreator;
       refreshVisitBySelects();
       refreshSiteVisitBookings();
     });
