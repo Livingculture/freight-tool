@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Installation Fee Helper
 // @namespace    livingculture-omni
-// @version      0.1.14
+// @version      0.1.15
 // @description  Automatically matches pergola and blind installation fees in Cin7 Omni, with a manual installation fee picker.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-install-fee-helper.user.js
@@ -24,6 +24,7 @@
   let addingMatchedFees = false;
   let observedQuoteKey = '', observedSince = 0, processedQuoteKey = '';
   let feesLoading = null;
+  const maskedOptionStyles = new WeakMap();
 
   function dimensions(text) {
     const match = String(text || '').match(/(\d+(?:\.\d+)?)\s*(mm|cm|m)?\s*[x\u00d7]\s*(\d+(?:\.\d+)?)\s*(mm|cm|m)?\b/i);
@@ -125,10 +126,32 @@
       for (const key of ['option1', 'option2']) {
         const cell = row.children[info.headings.indexOf(key)];
         if (!cell) continue;
-        const editing = cell.querySelector('input,textarea,[contenteditable="true"]');
-        cell.classList.toggle(className, !editing && /^#n\/a$/i.test(clean(cell.textContent)));
+        const active = document.activeElement;
+        const editing = cell.contains(active) && (active.matches('input,textarea') || active.isContentEditable);
+        const displayedInput = [...cell.querySelectorAll('input,textarea')].find(visible);
+        const empty = !editing && /^#n\/a$/i.test(clean(cell.textContent) || clean(displayedInput?.value));
+        cell.classList.toggle(className, empty);
+        for (const element of [cell, ...cell.querySelectorAll('*')]) {
+          if (empty) {
+            if (!maskedOptionStyles.has(element)) maskedOptionStyles.set(element, {
+              color: element.style.getPropertyValue('color'), priority: element.style.getPropertyPriority('color'),
+              shadow: element.style.getPropertyValue('text-shadow'), shadowPriority: element.style.getPropertyPriority('text-shadow')
+            });
+            element.style.setProperty('color', 'transparent', 'important');
+            element.style.setProperty('text-shadow', 'none', 'important');
+          } else if (maskedOptionStyles.has(element)) {
+            const original = maskedOptionStyles.get(element);
+            element.style.setProperty('color', original.color, original.priority);
+            element.style.setProperty('text-shadow', original.shadow, original.shadowPriority);
+            maskedOptionStyles.delete(element);
+          }
+        }
       }
     }
+  }
+  function quoteCellRect(row, key) {
+    const info = quoteTableInfo();
+    return info ? row.children[info.headings.indexOf(key)]?.getBoundingClientRect() || null : null;
   }
   function quoteLines() {
     const info = quoteTableInfo();
@@ -448,7 +471,7 @@
     const quantityInfo = quoteTableInfo();
     const currentQuantity = quantityInfo ? Number(cellValue(targetRow, quantityInfo.headings, 'qtyordered').replace(/,/g, '')) : null;
     if (item.quantity && currentQuantity !== item.quantity) {
-      const quantity = header('Qty Ordered');
+      const quantity = quoteCellRect(targetRow, 'qtyordered') || header('Qty Ordered');
       if (!quantity) { console.warn('[LC installation fees] Quantity field not found.', item.code); return false; }
       const x = quantity.left + quantity.width / 2;
       clickAt(x, rowY);
@@ -470,7 +493,11 @@
     targetRow.scrollIntoView({ block: 'nearest' });
     const currentRect = targetRow.getBoundingClientRect();
     rowY = currentRect.top + currentRect.height / 2;
-    const price = header('Unit Price') || header('Price');
+    const priceInfo = quoteTableInfo();
+    const expectedPrice = Number(String(item.price).replace(/[^\d.-]/g, ''));
+    const currentPrice = priceInfo ? Number(cellValue(targetRow, priceInfo.headings, 'unitprice').replace(/[^\d.-]/g, '')) : null;
+    if (Number.isFinite(expectedPrice) && currentPrice === expectedPrice) return true;
+    const price = quoteCellRect(targetRow, 'unitprice') || quoteCellRect(targetRow, 'price') || header('Unit Price') || header('Price');
     if (price) {
       const x = price.left + price.width / 2;
       clickAt(x, rowY);
@@ -483,8 +510,8 @@
         setValue(priceInput, String(item.price).replace(/[^\d.]/g, ''));
         sendKey(priceInput, 'Tab', 9);
         priceInput.blur();
-      } else { toast('Could not set the chart price. Check the installation line.', true); return false; }
-    } else { toast('Could not find the installation price field.', true); return false; }
+      } else { console.warn('[LC installation fees] Could not set chart price.', item.code, item.price); return false; }
+    } else { console.warn('[LC installation fees] Price field not found.', item.code); return false; }
     return true;
   }
   function editingQuote() {

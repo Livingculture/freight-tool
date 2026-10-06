@@ -16,7 +16,7 @@ const price = blindCase ? '500' : '2000';
     await page.route('https://go.cin7.com/**', route => route.fulfill({ contentType: 'text/html', body: `
       <style>td,th{width:160px;height:42px;border:1px solid #ddd}table{border-collapse:collapse}input{width:130px}button{height:36px}</style>
       <label for="memo">Delivery Instructions</label><textarea id="memo" aria-label="Delivery Instructions"></textarea>
-      <table><tr><th>Code</th><th>Product</th><th>Option1</th><th>Option2</th><th>Option3</th><th>Qty Ordered</th><th>Unit Price</th></tr>
+      <table><tr><th>Code</th><th>Product</th><th>Option1</th><th>Option2</th><th>Option3</th><th><span>Qty</span><span>Ordered</span></th><th><span>Unit</span><span>Price</span></th></tr>
       <tr><td>CS123</td><td>Tasman Motorised Freestanding Pergola</td><td>4 x 3m</td><td>Black</td><td></td><td>2</td><td>9999</td></tr>
       ${Array.from({ length: 3 }, () => '<tr><td class="code">Search...</td><td class="product">Search...</td><td></td><td></td><td></td><td><input value=""></td><td><input value=""></td></tr>').join('')}
       </table><button>Add a new line</button>` }));
@@ -24,7 +24,7 @@ const price = blindCase ? '500' : '2000';
     await page.locator('body > table').evaluate(table => {
       const row = document.createElement('tr');
       row.id = 'option-placeholders';
-      row.innerHTML = '<td>AS999</td><td>Assembly display test</td><td><span>#N/A</span></td><td>#N/A</td><td>#N/A</td><td>1</td><td>100</td>';
+      row.innerHTML = '<td>AS999</td><td>Assembly display test</td><td><span style="color:black!important">#N/A</span><input type="hidden" value="#N/A"></td><td>#N/A<input type="hidden" value="#N/A"></td><td>#N/A</td><td>1</td><td>100</td>';
       table.appendChild(row);
     });
     if (blindCase) await page.locator('body > table tr').nth(1).evaluate(row => {
@@ -49,6 +49,7 @@ const price = blindCase ? '500' : '2000';
             cell.textContent = input.value;
             cell.parentElement.querySelector('.product').textContent = feeName;
             cell.parentElement.children[5].querySelector('input').value = '2';
+            if (mode === 'dismissed') cell.parentElement.children[6].querySelector('input').value = price;
             const spacer = document.createElement('tr');
             spacer.innerHTML = '<td colspan="7" style="height:100px">Quote rerender moved the new fee row</td>';
             cell.parentElement.before(spacer);
@@ -84,12 +85,16 @@ const price = blindCase ? '500' : '2000';
       for (const cell of document.querySelectorAll('td.code')) cell.parentElement.children[5].querySelector('input').addEventListener('input', () => {
         window.quantityEdits = (window.quantityEdits || 0) + 1;
       });
+      for (const cell of document.querySelectorAll('td.code')) cell.parentElement.children[6].querySelector('input').addEventListener('input', () => {
+        window.priceEdits = (window.priceEdits || 0) + 1;
+      });
     }, { keyboardSelection, mode, feeCode, feeName, price });
     await page.addScriptTag({ content: fs.readFileSync(path.join(__dirname, '../userscripts/omni-install-fee-helper.user.js'), 'utf8') });
     const placeholders = await page.locator('#option-placeholders').evaluate(row => [...row.children].slice(2, 5).map(cell => ({ text: cell.textContent, color: getComputedStyle(cell).color })));
     assert.deepEqual(placeholders.map(cell => cell.text), ['#N/A', '#N/A', '#N/A'], 'Keep native saved values unchanged');
     assert.equal(placeholders[0].color, 'rgba(0, 0, 0, 0)');
     assert.equal(placeholders[1].color, 'rgba(0, 0, 0, 0)');
+    assert.equal(await page.locator('#option-placeholders span').evaluate(span => getComputedStyle(span).color), 'rgba(0, 0, 0, 0)', 'Override native inline colors');
     assert.notEqual(placeholders[2].color, 'rgba(0, 0, 0, 0)', 'Only Option1 and Option2 placeholders are hidden');
     assert.notEqual(await page.locator('body > table tr').nth(1).locator('td').nth(2).evaluate(cell => getComputedStyle(cell).color), 'rgba(0, 0, 0, 0)', 'Keep real size values visible');
     await page.waitForTimeout(2200);
@@ -117,6 +122,7 @@ const price = blindCase ? '500' : '2000';
     }));
     assert.deepEqual(values, { code: feeCode, quantity: '2', price });
     assert.equal(await page.evaluate(() => window.quantityEdits || 0), 0, 'Do not edit a quantity already filled correctly by Omni');
+    if (mode === 'dismissed') assert.equal(await page.evaluate(() => window.priceEdits || 0), 0, 'Do not edit an already-correct native price');
     assert.equal(await page.evaluate(() => Boolean(window.prematureEnter)), false, 'Never commit the code before search results arrive');
     assert.equal(await page.locator('#lc-omni-install-fee-root').locator('#modal').evaluate(modal => modal.classList.contains('open')), false);
     assert.equal(await page.locator('#lc-omni-install-fee-root').locator('#toast').evaluate(toast => toast.classList.contains('error')), false);
