@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Installation Fee Helper
 // @namespace    livingculture-omni
-// @version      0.1.12
+// @version      0.1.13
 // @description  Automatically matches pergola and blind installation fees in Cin7 Omni, with a manual installation fee picker.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-install-fee-helper.user.js
@@ -313,6 +313,15 @@
   async function chooseDropdown(sku, input, confirmed = () => false) {
     const wanted = sku.toLowerCase();
     let lastSelectionAt = 0;
+    const startedAt = Date.now();
+    let commitAttempts = 0;
+    const commitCode = () => {
+      if (!input.isConnected || input.disabled || input.getAttribute('aria-busy') === 'true' || clean(input.value).toLowerCase() !== wanted) return false;
+      if (document.activeElement !== input && document.activeElement !== document.body) return false;
+      sendKey(input, 'Enter', 13);
+      commitAttempts += 1;
+      return true;
+    };
     for (let attempt = 0; attempt < 200; attempt += 1) {
       await new Promise(resolve => setTimeout(resolve, 60));
       if (confirmed()) return true;
@@ -343,20 +352,32 @@
         });
         await new Promise(resolve => setTimeout(resolve, 300));
         if (confirmed()) return true;
-        // Only use Enter while a matching result is actually present.
-        if (input.isConnected && visible(target) && clean(input.value).toLowerCase() === wanted) {
-          sendKey(input, 'ArrowDown', 40);
-          sendKey(input, 'Enter', 13);
+        // Omni may close its results after choosing the code, but still needs
+        // Enter on the Code editor before it loads the rest of the product.
+        if (input.isConnected && clean(input.value).toLowerCase() === wanted) {
+          if (visible(target)) sendKey(input, 'ArrowDown', 40);
+          if (commitAttempts < 2) commitCode();
         }
       }
+      // Some Omni Code editors resolve the SKU on Enter without exposing a menu.
+      const elapsed = Date.now() - startedAt;
+      if ((!commitAttempts && elapsed >= 2500) || (commitAttempts === 1 && elapsed >= 7500)) commitCode();
     }
     return Boolean(confirmed());
   }
   function sendKey(input, key, code) {
     input.focus();
-    ['keydown', 'keypress', 'keyup'].forEach(type => input.dispatchEvent(new KeyboardEvent(type, {
-      bubbles:true, cancelable:true, key, code:key, keyCode:code, which:code, charCode:type === 'keypress' ? code : 0
-    })));
+    const KeyboardEventType = input.ownerDocument.defaultView.KeyboardEvent;
+    const types = key === 'ArrowDown' ? ['keydown', 'keyup'] : ['keydown', 'keypress', 'keyup'];
+    types.forEach(type => {
+      const charCode = type === 'keypress' && key === 'Enter' ? 13 : 0;
+      const event = new KeyboardEventType(type, { bubbles:true, cancelable:true, key, code:key, keyCode:code, which:code, charCode });
+      // Older Omni handlers read the legacy fields rather than event.key.
+      for (const [property, value] of Object.entries({ keyCode: code, which: code, charCode })) {
+        if (event[property] !== value) Object.defineProperty(event, property, { value });
+      }
+      input.dispatchEvent(event);
+    });
   }
   function toast(message, error = false) {
     const element = document.getElementById(ROOT_ID)?.shadowRoot?.getElementById('toast');

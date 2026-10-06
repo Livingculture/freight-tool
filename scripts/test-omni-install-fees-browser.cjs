@@ -10,7 +10,8 @@ const price = blindCase ? '500' : '2000';
 (async () => {
   const browser = await chromium.launch({ headless: true });
   try {
-    for (const keyboardSelection of [false, true]) {
+    for (const mode of (process.argv.includes('--native') ? ['native', 'dismissed'] : ['dropdown', 'keyboard', 'native', 'dismissed'])) {
+    const keyboardSelection = mode !== 'dropdown';
     const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
     await page.route('https://go.cin7.com/**', route => route.fulfill({ contentType: 'text/html', body: `
       <style>td,th{width:160px;height:42px;border:1px solid #ddd}table{border-collapse:collapse}input{width:130px}button{height:36px}</style>
@@ -24,7 +25,7 @@ const price = blindCase ? '500' : '2000';
       row.children[1].textContent = 'Motorised Outdoor Blind';
       row.children[2].textContent = '3m';
     });
-    await page.evaluate(({ keyboardSelection, feeCode, feeName, price }) => {
+    await page.evaluate(({ keyboardSelection, mode, feeCode, feeName, price }) => {
       window.GM_xmlhttpRequest = options => setTimeout(() => options.onload({ status: 200, responseText: `Product Code,Name,Price\n${feeCode},${feeName},${price}` }), 10);
       for (const cell of document.querySelectorAll('td.code')) cell.addEventListener('click', () => {
         if (cell.querySelector('input')) return;
@@ -33,8 +34,8 @@ const price = blindCase ? '500' : '2000';
         input.focus();
         if (keyboardSelection) {
           input.addEventListener('keydown', event => {
-            if (event.key !== 'Enter') return;
-            if (!document.getElementById('option')) {
+            if (event.which !== 13 || event.keyCode !== 13) return;
+            if (!input.dataset.lookupReady || (mode === 'keyboard' && !document.getElementById('option'))) {
               window.prematureEnter = true;
               cell.textContent = input.value;
               return;
@@ -50,6 +51,8 @@ const price = blindCase ? '500' : '2000';
         input.addEventListener('input', () => {
           setTimeout(() => {
           if (!input.isConnected) return;
+          input.dataset.lookupReady = '1';
+          if (mode === 'native') return;
           document.getElementById('option')?.remove();
           const rect = input.getBoundingClientRect();
           const option = document.createElement('div');
@@ -58,7 +61,10 @@ const price = blindCase ? '500' : '2000';
           option.textContent = input.value;
           option.style.cssText = `position:fixed;top:${rect.bottom}px;left:${rect.left}px;width:180px;height:32px;background:white;z-index:100`;
           option.addEventListener('click', () => {
-            if (keyboardSelection) return;
+            if (keyboardSelection) {
+              if (mode === 'dismissed') option.remove();
+              return;
+            }
             cell.textContent = option.textContent;
             cell.parentElement.querySelector('.product').textContent = feeName;
             option.remove();
@@ -67,7 +73,7 @@ const price = blindCase ? '500' : '2000';
           }, 1400);
         });
       });
-    }, { keyboardSelection, feeCode, feeName, price });
+    }, { keyboardSelection, mode, feeCode, feeName, price });
     await page.addScriptTag({ content: fs.readFileSync(path.join(__dirname, '../userscripts/omni-install-fee-helper.user.js'), 'utf8') });
     await page.waitForTimeout(2200);
     assert.equal(await page.locator('body > table td.code').filter({ hasText: feeCode }).count(), 0, 'Blank memo must not add fees');
@@ -114,7 +120,7 @@ const price = blindCase ? '500' : '2000';
     await page.waitForFunction(() => !document.getElementById('lc-omni-install-fee-button').disabled);
     assert.equal(await page.locator('#lc-omni-install-fee-root').locator('#toast').evaluate(toast => toast.classList.contains('error')), false);
     await page.screenshot({ path: '/tmp/lc-install-fees-auto.png' });
-    console.log(`PASS browser (${blindCase ? 'blinds' : 'pergolas'}): delayed autocomplete, no premature Enter, memo gate, quantity increase (${keyboardSelection ? 'unfinished-row recovery + keyboard selection + row movement' : 'dropdown selection'})`);
+    console.log(`PASS browser (${blindCase ? 'blinds' : 'pergolas'}, ${mode}): automatic Enter, delayed autocomplete, memo gate, quantity increase, incomplete-row recovery`);
     await page.close();
     }
   } finally {
