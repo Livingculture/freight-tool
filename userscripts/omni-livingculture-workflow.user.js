@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.74
+// @version      0.1.75
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -1209,16 +1209,20 @@
   }
 
   function placeOmniActionButton(button, anchor) {
-    if (!button || !anchor || !isVisible(anchor)) return false;
-    if (button.parentElement?.id === OMNI_TOOLS_BAR_ID) return true;
-    const rect = anchor.getBoundingClientRect();
-    button.style.position = 'absolute';
-    button.style.left = `${window.scrollX + rect.right + 8}px`;
-    button.style.top = `${window.scrollY + rect.top}px`;
-    button.style.zIndex = '56';
+    if (!button) return false;
+    let toolsBar = document.getElementById(OMNI_TOOLS_BAR_ID);
+    if (!toolsBar) {
+      toolsBar = document.createElement('div');
+      toolsBar.id = OMNI_TOOLS_BAR_ID;
+      toolsBar.style.visibility = 'hidden';
+      document.body.appendChild(toolsBar);
+    }
+    button.style.position = 'static';
+    button.style.left = '';
+    button.style.top = '';
     button.style.margin = '0';
-    button.style.height = `${Math.max(34, rect.height || 34)}px`;
-    if (button.parentElement !== document.body) document.body.appendChild(button);
+    button.style.height = '36px';
+    if (button.parentElement !== toolsBar) toolsBar.appendChild(button);
     return true;
   }
 
@@ -1240,9 +1244,8 @@
   function omniFooterPanel(saveButton) {
     let element = saveButton?.parentElement || null;
     while (element && element !== document.body) {
-      const rect = element.getBoundingClientRect();
       const text = clean(element.textContent || '');
-      if (rect.width >= window.innerWidth * 0.72 && rect.height >= 48 && rect.height <= 220 && /(?:Branch|Total|Save|Approve)/i.test(text)) {
+      if (isVisible(element) && /\bBranch\s*:/i.test(text)) {
         return element;
       }
       element = element.parentElement;
@@ -1253,7 +1256,12 @@
   function layoutOmniWorkflowButtons() {
     if (!isOmniPage()) return;
     const saveButton = leftmostOmniSaveButton();
-    if (!saveButton || !isVisible(saveButton)) return;
+    const footer = saveButton ? omniFooterPanel(saveButton) : null;
+    if (!footer) {
+      const toolsBar = document.getElementById(OMNI_TOOLS_BAR_ID);
+      if (toolsBar) toolsBar.style.visibility = 'hidden';
+      return;
+    }
     const buttons = [
       document.getElementById(BUTTON_ID),
       document.getElementById(QUOTE_REVIEW_BUTTON_ID),
@@ -1268,8 +1276,7 @@
       toolsBar.id = OMNI_TOOLS_BAR_ID;
       document.body.appendChild(toolsBar);
     }
-    const footer = omniFooterPanel(saveButton);
-    const anchor = footer || saveButton.parentElement;
+    const anchor = footer;
     if (!anchor || anchor === document.body) return;
     if (toolsBar.parentElement !== anchor.parentElement || toolsBar.nextElementSibling !== anchor) {
       anchor.insertAdjacentElement('beforebegin', toolsBar);
