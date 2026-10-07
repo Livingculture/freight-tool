@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.91
+// @version      0.1.92
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -28,6 +28,7 @@
   const CONVERT_ORDER_BUTTON_ID = 'lc-convert-sales-order-button';
   const CLONE_QUOTE_BUTTON_ID = 'lc-clone-quote-button';
   const CLONE_QUOTE_INTENT_KEY = 'lc-omni-clone-quote-intent';
+  const CLONE_QUOTE_SAVE_KEY = 'lc-omni-clone-quote-save';
   const CONVERT_ORDER_INTENT_KEY = 'lc-omni-convert-sales-order-intent';
   const CUSTOMER_PHOTOS_BUTTON_ID = 'lc-omni-customer-photos-button';
   const VIEW_CUSTOMER_ALBUM_BUTTON_ID = 'lc-omni-view-customer-album-button';
@@ -2802,7 +2803,7 @@
   function cloneCurrentQuote() {
     if (!isOmniPage() || omniHeadingDraft().documentType !== 'quote') return;
     const action = nativeCopyAllItemsControl();
-    if (action) { action.click(); return; }
+    if (action) { clickNativeCloneAction(action); return; }
     const admin = findButtonByLabel('Go to Admin');
     const orderId = currentQuotePdfOrderId();
     if (!admin || admin.disabled || !orderId) {
@@ -2829,13 +2830,60 @@
     const timer = window.setInterval(() => {
       attempts++;
       const action = nativeCopyAllItemsControl();
-      if (action) { window.clearInterval(timer); action.click(); }
+      if (action) { window.clearInterval(timer); clickNativeCloneAction(action); }
       else if (attempts === 1) findButtonByLabel('Actions')?.click();
       else if (attempts >= 40) {
         window.clearInterval(timer);
         window.alert('Omni\'s Copy All Items action was not found. Choose it from the Actions menu.');
       }
     }, 125);
+  }
+
+  function clickNativeCloneAction(action) {
+    sessionStorage.setItem(CLONE_QUOTE_SAVE_KEY, JSON.stringify({
+      orderId: currentQuotePdfOrderId(), quoteNumber: hubSpotGateOrderId(),
+      customerName: omniHeadingDraft().customerName || '', at: Date.now()
+    }));
+    try {
+      action.click();
+      continueSaveClonedQuote();
+    } catch (error) {
+      sessionStorage.removeItem(CLONE_QUOTE_SAVE_KEY);
+      throw error;
+    }
+  }
+
+  function continueSaveClonedQuote() {
+    if (!isOmniPage() || window.parent !== window) return;
+    let intent;
+    try { intent = JSON.parse(sessionStorage.getItem(CLONE_QUOTE_SAVE_KEY) || 'null'); } catch { return; }
+    if (!intent) return;
+    if (!intent.at || Date.now() - intent.at > 120000 || intent.at > Date.now()) {
+      sessionStorage.removeItem(CLONE_QUOTE_SAVE_KEY);
+      return;
+    }
+    let attempts = 0;
+    const timer = window.setInterval(() => {
+      if (sessionStorage.getItem(CLONE_QUOTE_SAVE_KEY) !== JSON.stringify(intent)) { window.clearInterval(timer); return; }
+      attempts++;
+      const draft = omniHeadingDraft();
+      const newQuoteHeading = Array.from(document.querySelectorAll('h1, h2, h3, [role="heading"]'))
+        .some(node => /^new\s+quote\b/i.test(clean(node.textContent || '')));
+      const differentQuote = draft.orderId && draft.orderId !== intent.quoteNumber
+        && currentQuotePdfOrderId() && currentQuotePdfOrderId() !== intent.orderId;
+      const customerName = draft.customerName || readValueNearLabel('Selected Customer');
+      const sameCustomer = !intent.customerName || clean(customerName).toLowerCase() === clean(intent.customerName).toLowerCase();
+      const save = visibleOmniControl('Save') || visibleOmniControl('Save As Draft');
+      if (draft.documentType === 'quote' && (newQuoteHeading || differentQuote) && sameCustomer && save && !save.disabled) {
+        window.clearInterval(timer);
+        sessionStorage.removeItem(CLONE_QUOTE_SAVE_KEY);
+        save.click();
+      } else if (attempts >= 120) {
+        window.clearInterval(timer);
+        sessionStorage.removeItem(CLONE_QUOTE_SAVE_KEY);
+        window.alert('The cloned quote could not be confirmed for automatic saving. Save the new quote manually.');
+      }
+    }, 250);
   }
 
   function currentQuotePdfOrderId() {
@@ -4240,6 +4288,7 @@
       return;
     }
     if (continueQuotePdfFromEditFrame()) return;
+    continueSaveClonedQuote();
     installOmniInvoiceDateHooks();
     if (isOmniPage()) document.getElementById('lc-omni-hubspot-shortcut-button')?.remove();
     ensureDelegatedClickHandler();
