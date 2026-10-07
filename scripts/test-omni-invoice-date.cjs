@@ -16,6 +16,7 @@ function extract(name) {
       window.type = 'sales-order';
       window.isOmniPage = () => true;
       window.omniHeadingDraft = () => ({ documentType: window.type });
+      window.scheduleOmniWorkflowSync = () => {};
       window.normalizeLabel = value => value.trim().toLowerCase();
       window.changed = 0;
       document.getElementById('date').addEventListener('change', () => window.changed++);

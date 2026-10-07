@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.93
+// @version      0.1.94
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -1697,6 +1697,22 @@
     };
   }
 
+  function omniPaymentSummary() {
+    const text = document.body?.innerText || document.body?.textContent || '';
+    const amount = label => {
+      const match = text.match(new RegExp(`\\b${label}\\s*:?\\s*(?:NZD|NZ\\$|\\$)?\\s*(-?[\\d,]+(?:\\.\\d+)?)`, 'i'));
+      if (!match) return null;
+      const number = Number(match[1].replace(/,/g, ''));
+      return Number.isFinite(number) ? number : null;
+    };
+    const paidAmount = amount('Total Paid');
+    const balanceDue = amount('Total Owing');
+    if (paidAmount === null || balanceDue === null) return { paid: null, paidAmount, balanceDue, paymentStatus: '', total: null };
+    const total = Math.round((paidAmount + balanceDue) * 100) / 100;
+    const paid = total > 0 && paidAmount > 0 && balanceDue <= 0.01;
+    return { total, paidAmount, balanceDue, paid, paymentStatus: paid ? 'PAID' : paidAmount > 0 ? 'PART PAID' : 'UNPAID' };
+  }
+
   function omniWorkflowSnapshot() {
     if (!isOmniPage()) return null;
     const heading = omniHeadingDraft();
@@ -1708,7 +1724,7 @@
       .find(Boolean) || '';
     const bodyText = clean(document.body?.innerText || document.body?.textContent || '');
     const branch = bodyText.match(/\bBranch\s*:\s*([A-Z]{2,5})\b/i)?.[1]?.toUpperCase() || deriveBranchFromRep(draft.placedBy);
-    const paymentStatus = labelled('Payment Status', 'Paid Status');
+    const payment = omniPaymentSummary();
     const dispatchedValue = labelled('Fully Dispatched', 'Dispatched Date', 'Dispatch Date');
     const stockValue = labelled('Stock Status', 'Stock Ready', 'In Stock');
     const internalComments = readMultilineNearLabel('Internal Comments');
@@ -1728,11 +1744,14 @@
       notes: draft.comments,
       internalComments,
       deliveryInstructions,
-      total: readMoneyNearLabels(['Invoiced Total', 'Acceptance Total', 'Order Total', 'Grand Total', 'Total']),
+      total: payment.total ?? readMoneyNearLabels(['Invoiced Total', 'Acceptance Total', 'Order Total', 'Grand Total', 'Total']),
       createdDate: labelled('Created Date'),
       invoiceDate: labelled('Invoice Date'),
       fullyDispatched: Boolean(dispatchedValue && !/^(?:no|false|0|-+)$/i.test(dispatchedValue)),
-      paid: /\bpaid\b/i.test(paymentStatus) && !/\bunpaid\b/i.test(paymentStatus),
+      paid: payment.paid,
+      paidAmount: payment.paidAmount,
+      balanceDue: payment.balanceDue,
+      paymentStatus: payment.paymentStatus,
       stockReady: stockValue ? /\b(?:ready|available|in stock|yes|true)\b/i.test(stockValue) : null,
       sourceUrl: window.location.href
     };
@@ -4314,7 +4333,10 @@
 
   function installOmniInvoiceDateHooks() {
     if (!isOmniPage()) return;
-    document.addEventListener('lc-omni-wecom-payment-sent', fillOmniInvoiceDate);
+    document.addEventListener('lc-omni-wecom-payment-sent', () => {
+      fillOmniInvoiceDate();
+      scheduleOmniWorkflowSync(100, true);
+    });
     document.addEventListener('click', event => {
       const control = event.target.closest('button, a, input[type="button"], input[type="submit"]');
       if (control && /^(save|save & email|save back to list|save & back to list|save to admin)$/.test(normalizeLabel(control.value || control.textContent || ''))) fillOmniInvoiceDate();
