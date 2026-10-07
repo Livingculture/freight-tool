@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail Living Culture HubSpot Attachments
 // @namespace    https://livingculture.co.nz/
-// @version      0.1.6
+// @version      0.1.7
 // @description  Uploads Gmail attachments to the customer HubSpot deals referenced by the subject and attached quotes.
 // @author       Living Culture
 // @match        https://mail.google.com/*
@@ -10,8 +10,8 @@
 // @connect      *.supabase.co
 // @connect      qvoacxmzsmulhnllfntl.supabase.co
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-attachments.user.js?v=0.1.6
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-attachments.user.js?v=0.1.6
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-attachments.user.js?v=0.1.7
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/gmail-hubspot-attachments.user.js?v=0.1.7
 // @supportURL   https://github.com/Livingculture/freight-tool
 // ==/UserScript==
 
@@ -20,7 +20,7 @@
 
   const API_URL = "https://living-culture-workflow.vercel.app/api/hubspot/gmail-attachment";
   const TOOL_TOKEN = "fXlAMocbHnglrq02Vg4WZY0xbHaPsA+b";
-  const QUOTE_RE = /\bSFOR\s*[-#]?\s*(\d{4,}(?:-[A-Z0-9]+)?)\b/gi;
+  const QUOTE_RE = /\b(NZSO|SFOR)\s*[-#]?\s*(\d{4,}(?:-[A-Z0-9]+)?)\b/gi;
   const composeStates = new WeakMap();
   let uploadQueue = Promise.resolve();
 
@@ -41,7 +41,7 @@
   function extractQuoteNumbers(value) {
     QUOTE_RE.lastIndex = 0;
     return Array.from(new Set(Array.from(clean(value).matchAll(QUOTE_RE))
-      .map((match) => `SFOR${match[1]}`.toUpperCase())));
+      .map((match) => `${match[1].toUpperCase()}${match[1].toUpperCase() === 'NZSO' ? '-' : ''}${match[2].toUpperCase()}`)));
   }
 
   function subjectQuoteNumbers(root) {
@@ -172,7 +172,7 @@
     const attachedQuotes = Array.from(state.files.values()).flatMap((file) => extractQuoteNumbers(file.name));
     const allQuotes = Array.from(new Set([...subjectQuotes, ...attachedQuotes]));
     if (!allQuotes.length) {
-      showStatus("HubSpot: no SFOR quote numbers were found in the Gmail subject.", "error");
+      showStatus("HubSpot: no NZSO or SFOR quote numbers were found in the Gmail subject or attachment filenames.", "error");
       return;
     }
 

@@ -22,7 +22,17 @@ const loader = fs.readFileSync(path.join(directory, 'livingculture-all-in-one.us
       window.GM_getValue = (_, fallback) => fallback;
       window.GM_setValue = () => {};
       window.GM_registerMenuCommand = () => {};
+      window.completedUploads = [];
       window.GM_xmlhttpRequest = options => {
+        const data = typeof options.data === 'string' ? JSON.parse(options.data) : {};
+        if (options.method === 'POST' || options.method === 'PUT') {
+          if (data.action === 'complete') window.completedUploads.push(data.quoteNumbers);
+          const body = data.action === 'prepare'
+            ? { ok: true, signedUrl: 'https://example.invalid/mock-upload', storagePath: 'pending/test.pdf' }
+            : { ok: true, deals: [{ id: 'mock-deal' }] };
+          setTimeout(() => options.onload({ status: 200, responseText: JSON.stringify(body) }), 0);
+          return;
+        }
         const payload = JSON.stringify([[['drawing-id', null, 'Pergola drawing.pdf', 'application/pdf']]]);
         const responseText = options.url.includes('drive.google.com')
           ? `window['_DRIVE_ivd'] = '${payload}'`
@@ -81,8 +91,40 @@ const loader = fs.readFileSync(path.join(directory, 'livingculture-all-in-one.us
     await page.waitForTimeout(600);
     assert(await page.locator('#lc-gmail-attachment-toolbar').isVisible());
     assert.equal(await page.locator('#lc-gmail-add-quote-hint').count(), 0);
+    await page.evaluate(() => {
+      const compose = document.createElement('div');
+      compose.setAttribute('role', 'dialog');
+      compose.innerHTML = '<input name="subjectbox" value="NZSO-15502 - Customer"><input type="file" id="mock-attachment">';
+      document.body.appendChild(compose);
+    });
+    await page.locator('#mock-attachment').setInputFiles({ name: 'drawing.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF mock') });
+    await page.waitForFunction(() => window.completedUploads.length === 1);
+    assert.deepEqual(await page.evaluate(() => window.completedUploads), [['NZSO-15502']]);
+    await page.locator('#mock-attachment').dispatchEvent('change');
+    await page.waitForTimeout(100);
+    assert.equal(await page.evaluate(() => window.completedUploads.length), 1, 'Do not upload the same file twice');
+    await page.evaluate(() => {
+      document.querySelector('[role="dialog"]').remove();
+      const compose = document.createElement('div');
+      compose.setAttribute('role', 'dialog');
+      compose.innerHTML = '<input name="subjectbox" value="NZSO-15502 - Customer"><input type="file" id="mock-attachment">';
+      document.body.appendChild(compose);
+    });
+    await page.locator('#mock-attachment').setInputFiles({ name: 'NZSO-15503.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF mock') });
+    await page.waitForFunction(() => window.completedUploads.length === 2);
+    assert.deepEqual(await page.evaluate(() => window.completedUploads[1]), ['NZSO-15503'], 'A named quote PDF uses its own quote number');
+    await page.evaluate(() => {
+      document.querySelector('[role="dialog"]').remove();
+      const compose = document.createElement('div');
+      compose.setAttribute('role', 'dialog');
+      compose.innerHTML = '<input name="subjectbox" value="SFOR12345 - Core customer"><input type="file" id="mock-attachment">';
+      document.body.appendChild(compose);
+    });
+    await page.locator('#mock-attachment').setInputFiles({ name: 'core-guide.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF mock') });
+    await page.waitForFunction(() => window.completedUploads.length === 3);
+    assert.deepEqual(await page.evaluate(() => window.completedUploads[2]), ['SFOR12345']);
     assert.deepEqual(errors, []);
-    console.log('PASS: Gmail tools load under strict CSP; Drawings and Care Guides sit before Add Quote on one row across resized viewports and survive compose removal. No emails sent.');
+    console.log('PASS: Strict-CSP Gmail buttons and attachment row; NZSO subjects, quote filenames, SFOR compatibility and upload deduplication. All uploads mocked; no emails sent.');
   } finally {
     await browser.close();
   }

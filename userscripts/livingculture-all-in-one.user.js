@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture All-in-One
 // @namespace    livingculture
-// @version      0.1.72
+// @version      0.1.73
 // @description  Approved Living Culture Omni, Cin7 Core, Gmail, HubSpot and website tools in one Tampermonkey install.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -123,7 +123,7 @@
     if (earlyOmniTools.has(component.resource)) component.runAt = 'body';
   });
 
-  const status = { version: '0.1.72', loaded: [], skipped: [], errors: [] };
+  const status = { version: '0.1.73', loaded: [], skipped: [], errors: [] };
   window.__lcAllInOneStatus = status;
 
   // BEGIN GENERATED GMAIL COMPONENTS
@@ -1224,7 +1224,7 @@
 
         const API_URL = "https://living-culture-workflow.vercel.app/api/hubspot/gmail-attachment";
         const TOOL_TOKEN = "fXlAMocbHnglrq02Vg4WZY0xbHaPsA+b";
-        const QUOTE_RE = /\bSFOR\s*[-#]?\s*(\d{4,}(?:-[A-Z0-9]+)?)\b/gi;
+        const QUOTE_RE = /\b(NZSO|SFOR)\s*[-#]?\s*(\d{4,}(?:-[A-Z0-9]+)?)\b/gi;
         const composeStates = new WeakMap();
         let uploadQueue = Promise.resolve();
 
@@ -1245,7 +1245,7 @@
         function extractQuoteNumbers(value) {
           QUOTE_RE.lastIndex = 0;
           return Array.from(new Set(Array.from(clean(value).matchAll(QUOTE_RE))
-            .map((match) => `SFOR${match[1]}`.toUpperCase())));
+            .map((match) => `${match[1].toUpperCase()}${match[1].toUpperCase() === 'NZSO' ? '-' : ''}${match[2].toUpperCase()}`)));
         }
 
         function subjectQuoteNumbers(root) {
@@ -1376,7 +1376,7 @@
           const attachedQuotes = Array.from(state.files.values()).flatMap((file) => extractQuoteNumbers(file.name));
           const allQuotes = Array.from(new Set([...subjectQuotes, ...attachedQuotes]));
           if (!allQuotes.length) {
-            showStatus("HubSpot: no SFOR quote numbers were found in the Gmail subject.", "error");
+            showStatus("HubSpot: no NZSO or SFOR quote numbers were found in the Gmail subject or attachment filenames.", "error");
             return;
           }
 
