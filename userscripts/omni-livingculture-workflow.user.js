@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.83
+// @version      0.1.84
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -2763,7 +2763,68 @@
     window.setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
   }
 
-  function requestAdminQuoteHref(orderId) {
+  function quotePdfTemplateLabel(template) {
+    return template === 'custom' ? 'Custom Quote' : 'Quote';
+  }
+
+  function showQuotePdfTemplateMenu(button) {
+    const menuId = 'lc-quote-pdf-template-menu';
+    if (document.getElementById(menuId)) return;
+    const menu = document.createElement('div');
+    menu.id = menuId;
+    menu.setAttribute('role', 'menu');
+    menu.setAttribute('aria-label', 'Quote template');
+    menu.style.cssText = 'position:fixed;z-index:2147483647;width:160px;box-sizing:border-box;padding:4px;background:#fff;border:1px solid #a6bddb;border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.18);';
+    const close = () => {
+      menu.remove();
+      button.setAttribute('aria-expanded', 'false');
+      document.removeEventListener('pointerdown', outside, true);
+      document.removeEventListener('keydown', keydown, true);
+      window.removeEventListener('resize', close);
+      window.removeEventListener('scroll', close, true);
+    };
+    const outside = event => {
+      if (!menu.contains(event.target) && !button.contains(event.target)) close();
+    };
+    const keydown = event => {
+      if (event.key === 'Escape') { close(); button.focus(); }
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        const options = Array.from(menu.children);
+        const index = options.indexOf(document.activeElement);
+        options[(index + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length].focus();
+      }
+    };
+    ['quote', 'custom'].forEach(template => {
+      const option = document.createElement('button');
+      option.type = 'button';
+      option.setAttribute('role', 'menuitem');
+      option.textContent = quotePdfTemplateLabel(template);
+      option.style.cssText = 'display:block;width:100%;height:34px;border:0;border-radius:3px;background:#fff;color:#123b76;text-align:left;padding:0 10px;font:600 13px Arial;cursor:pointer;';
+      option.addEventListener('focus', () => { option.style.background = '#edf3fa'; });
+      option.addEventListener('blur', () => { option.style.background = '#fff'; });
+      option.addEventListener('mouseenter', () => { option.style.background = '#edf3fa'; });
+      option.addEventListener('mouseleave', () => { option.style.background = '#fff'; });
+      option.addEventListener('click', () => {
+        close();
+        void downloadCurrentQuotePdf(button, template);
+      });
+      menu.appendChild(option);
+    });
+    document.body.appendChild(menu);
+    const rect = button.getBoundingClientRect();
+    menu.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - 168))}px`;
+    const height = menu.offsetHeight;
+    menu.style.top = `${Math.max(8, rect.bottom + height + 4 <= window.innerHeight ? rect.bottom + 4 : rect.top - height - 4)}px`;
+    button.setAttribute('aria-expanded', 'true');
+    document.addEventListener('pointerdown', outside, true);
+    document.addEventListener('keydown', keydown, true);
+    window.addEventListener('resize', close);
+    window.addEventListener('scroll', close, true);
+    menu.firstElementChild.focus({ preventScroll: true });
+  }
+
+  function requestAdminQuoteHref(orderId, template = 'quote') {
     const adminUrl = new URL('https://go.cin7.com/Cloud/ShoppingCartAdmin/Orders/OrderDetail.aspx');
     adminUrl.searchParams.set('idCustomerAppsLink', '1328006');
     adminUrl.searchParams.set('idOrder', orderId);
@@ -2779,12 +2840,17 @@
             return;
           }
           const parsed = new DOMParser().parseFromString(response.responseText || '', 'text/html');
-          const quoteLink = Array.from(parsed.querySelectorAll('a[href]')).find((link) => {
+          const links = Array.from(parsed.querySelectorAll('a[href]'));
+          const quoteLink = links.find(link => {
+            return normalizeLabel(link.textContent || '') === normalizeLabel(quotePdfTemplateLabel(template))
+              && /\/Cloud\/Docs\/PDF/i.test(link.getAttribute('href') || '');
+          }) || (template !== 'custom' && links.find((link) => {
             const href = link.getAttribute('href') || '';
-            return /\/Cloud\/Docs\/PDF/i.test(href) && /(?:\?|&)T=Quote(?:&|$)/i.test(href.replace(/&amp;/gi, '&'));
-          });
+            return normalizeLabel(link.textContent || '') !== 'custom quote'
+              && /\/Cloud\/Docs\/PDF/i.test(href) && /(?:\?|&)T=Quote(?:&|$)/i.test(href.replace(/&amp;/gi, '&'));
+          }));
           if (!quoteLink) {
-            reject(new Error('Cin7 Admin did not include its signed Quote link.'));
+            reject(new Error(`Cin7 Admin did not include its signed ${quotePdfTemplateLabel(template)} link.`));
             return;
           }
           resolve(new URL((quoteLink.getAttribute('href') || '').replace(/&amp;/gi, '&'), adminUrl).href);
@@ -2813,20 +2879,21 @@
       });
     });
   }
-  function prepareQuotePdfLink(orderId) {
+  function prepareQuotePdfLink(orderId, template = 'quote') {
     if (!orderId) return Promise.reject(new Error('Quote order ID is missing.'));
-    const cached = quotePdfLinkCache.get(orderId);
+    const key = `${orderId}:${template}`;
+    const cached = quotePdfLinkCache.get(key);
     if (cached && Date.now() - cached.at < 60000) return cached.promise;
     const entry = { at: Date.now(), promise: null };
-    entry.promise = requestAdminQuoteHref(orderId).catch(error => {
-      if (quotePdfLinkCache.get(orderId) === entry) quotePdfLinkCache.delete(orderId);
+    entry.promise = requestAdminQuoteHref(orderId, template).catch(error => {
+      if (quotePdfLinkCache.get(key) === entry) quotePdfLinkCache.delete(key);
       throw error;
     });
-    quotePdfLinkCache.set(orderId, entry);
+    quotePdfLinkCache.set(key, entry);
     return entry.promise;
   }
 
-  async function downloadCurrentQuotePdf(button) {
+  async function downloadCurrentQuotePdf(button, template = 'quote') {
     if (!isHubSpotStepComplete(hubSpotGateOrderId())) {
       applyHubSpotApprovalGate();
       window.alert('Confirm the HubSpot Deal step before downloading this quote.');
@@ -2848,8 +2915,8 @@
       let fastPdfPromise = null;
       if (orderId || sidCandidates.length) {
         try {
-          const directRoutes = sidCandidates.map((sid) => requestQuotePdf(orderId, sid));
-          if (orderId) directRoutes.push(prepareQuotePdfLink(orderId).then(fetchSignedQuotePdf));
+          const directRoutes = template === 'custom' ? [] : sidCandidates.map((sid) => requestQuotePdf(orderId, sid));
+          if (orderId) directRoutes.push(prepareQuotePdfLink(orderId, template).then(fetchSignedQuotePdf));
           fastPdfPromise = Promise.any(directRoutes);
           let fastTimer = 0;
           const fastLimit = new Promise((resolve, reject) => {
@@ -2873,7 +2940,7 @@
         return;
       }
 
-      localStorage.setItem(QUOTE_PDF_HANDOFF_KEY, JSON.stringify({ quoteNumber, startedAt: Date.now() }));
+      localStorage.setItem(QUOTE_PDF_HANDOFF_KEY, JSON.stringify({ quoteNumber, template, startedAt: Date.now() }));
       const frameName = `lc-quote-pdf-${Date.now()}`;
       const frame = document.createElement('iframe');
       frame.name = frameName;
@@ -2925,7 +2992,7 @@
             return;
           }
           if (/\/Cloud\/ShoppingCartAdmin\//i.test(framePath) && !pdfStarted) {
-            const quoteControl = controls.find((element) => normalizeLabel(element.textContent || element.value || '') === 'quote');
+            const quoteControl = controls.find((element) => normalizeLabel(element.textContent || element.value || '') === normalizeLabel(quotePdfTemplateLabel(template)));
             if (!quoteControl) {
               if (frame.isConnected) window.setTimeout(handleFrame, 100);
               return;
@@ -2935,7 +3002,7 @@
               : quoteControl.getAttribute('formaction');
             if (!href || !/\/Cloud\/Docs\/PDF/i.test(href)) {
               cleanup();
-              window.alert('Cin7\'s signed Quote PDF link could not be found.');
+              window.alert(`Cin7's signed ${quotePdfTemplateLabel(template)} PDF link could not be found.`);
               return;
             }
             pdfStarted = true;
@@ -3018,12 +3085,12 @@
       attempts += 1;
       const quoteControl = Array.from(document.querySelectorAll('a, button, input[type="button"], input[type="submit"]'))
         .filter(isVisible)
-        .find((element) => normalizeLabel(element.textContent || element.value || '') === 'quote');
+        .find((element) => normalizeLabel(element.textContent || element.value || '') === normalizeLabel(quotePdfTemplateLabel(handoff.template)));
       if (!quoteControl && attempts < 40) return;
       window.clearInterval(findQuote);
       localStorage.removeItem(QUOTE_PDF_HANDOFF_KEY);
       if (!quoteControl) {
-        window.alert('Cin7\'s Quote link could not be found on the Admin page.');
+        window.alert(`Cin7's ${quotePdfTemplateLabel(handoff.template)} link could not be found on the Admin page.`);
         return;
       }
       const href = quoteControl instanceof HTMLAnchorElement ? quoteControl.href : quoteControl.getAttribute('formaction');
@@ -3513,7 +3580,7 @@
         return;
       }
       if (button.id === QUOTE_PDF_BUTTON_ID) {
-        downloadCurrentQuotePdf(button);
+        showQuotePdfTemplateMenu(button);
       }
     } catch (error) {
       const message = error && error.message ? error.message : String(error || 'Unknown error');
@@ -3837,6 +3904,8 @@
       button.id = QUOTE_PDF_BUTTON_ID;
       button.type = 'button';
       button.textContent = 'Download Quote';
+      button.setAttribute('aria-haspopup', 'menu');
+      button.setAttribute('aria-expanded', 'false');
       styleInlineButton(button, '#087f8c');
       wireActionButton(button);
     }
