@@ -11,9 +11,9 @@ const staff = JSON.parse(reps);
     const page = await browser.newPage({ viewport: { width: 1100, height: 800 } });
     await page.route('https://go.cin7.com/**', route => route.fulfill({ contentType: 'text/html', body: `
       <h1>Edit Sales Order - Customer - NZSO-15502</h1>
-      <table><tr><th>Payment Type</th><th>Amount<br>NZD</th><th>Date</th><th>Comments</th></tr>
+      <div style="transform:translateZ(0);overflow:hidden;height:180px"><table><tr><th>Payment Type</th><th>Amount<br>NZD</th><th>Date</th><th>Comments</th></tr>
       <tr><td><select><option>EFTPOS</option></select></td><td><input value="12,899.99"></td><td><input value="7-10-2026 7:17 pm"></td><td><input></td></tr></table>
-      <button>Add a new payment</button><p>Total Paid: 12,899.99</p><p>Total Owing: 0.00</p>` }));
+      <button>Add a new payment</button><p>Total Paid: 12,899.99</p><p>Total Owing: 0.00</p></div>` }));
     await page.goto('https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx?OrderId=397');
     await page.evaluate(reps => {
       window.GM_getResourceText = () => reps;
@@ -25,6 +25,7 @@ const staff = JSON.parse(reps);
     await button.waitFor({ state: 'visible' });
     assert(await page.evaluate(() => document.getElementById('lc-wecom-payment-wrapper').previousElementSibling.textContent === 'Add a new payment'));
     await button.click();
+    assert(await page.evaluate(() => document.getElementById('lc-send-as-wecom-menu').parentElement === document.body), 'Menu must escape clipping and transformed payment containers');
     assert.equal(await page.locator('#lc-send-as-wecom-menu button').count(), staff.length);
     await page.locator('#lc-send-as-wecom-menu').getByRole('button', { name: 'PEN-Steve', exact: true }).click();
     const preview = page.locator('#lc-wecom-payment-confirm-overlay textarea');

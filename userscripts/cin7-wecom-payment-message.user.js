@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 WeCom Payment Message Sender
 // @namespace    livingculture
-// @version      4.9
+// @version      4.10
 // @description  Sends a WeCom payment message from Cin7 invoice/payment screen only.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -886,29 +886,44 @@
 
     const sendAsMenu = makeSendAsMenu();
 
-    sendAsButton.addEventListener('pointerdown', event => {
-      if (event.isTrusted) markUserPointerActivation(sendAsButton);
-    });
-    sendAsButton.addEventListener('click', event => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      if (!isTrustedUserClick(event, sendAsButton)) {
-        setStatus('Ignored WeCom menu open because it was not a direct user click.', true);
-        return;
-      }
-
+    let omniPointerOpenedAt = 0;
+    const toggleSendAsMenu = () => {
       const isOpen = sendAsMenu.style.display === 'block';
       sendAsMenu.style.display = isOpen ? 'none' : 'block';
+      sendAsButton.setAttribute('aria-expanded', String(!isOpen));
       if (isOmniPaymentPage() && !isOpen) {
+        if (sendAsMenu.parentElement !== document.body) document.body.appendChild(sendAsMenu);
         const rect = sendAsButton.getBoundingClientRect();
         sendAsMenu.style.position = 'fixed';
+        sendAsMenu.style.zIndex = '2147483646';
         sendAsMenu.style.right = 'auto';
         sendAsMenu.style.maxHeight = '260px';
         sendAsMenu.style.overflowY = 'auto';
         sendAsMenu.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - sendAsMenu.offsetWidth - 8))}px`;
         sendAsMenu.style.top = `${Math.max(8, rect.bottom + sendAsMenu.offsetHeight + 4 <= window.innerHeight ? rect.bottom + 4 : rect.top - sendAsMenu.offsetHeight - 4)}px`;
       }
+    };
+    sendAsButton.setAttribute('aria-haspopup', 'menu');
+    sendAsButton.setAttribute('aria-expanded', 'false');
+    sendAsButton.addEventListener('pointerdown', event => {
+      if (!event.isTrusted) return;
+      markUserPointerActivation(sendAsButton);
+      if (isOmniPaymentPage()) {
+        event.preventDefault();
+        event.stopPropagation();
+        omniPointerOpenedAt = Date.now();
+        toggleSendAsMenu();
+      }
+    }, true);
+    sendAsButton.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (isOmniPaymentPage() && Date.now() - omniPointerOpenedAt < USER_POINTER_WINDOW_MS) return;
+      if (!isTrustedUserClick(event, sendAsButton)) {
+        setStatus('Ignored WeCom menu open because it was not a direct user click.', true);
+        return;
+      }
+      toggleSendAsMenu();
     });
 
     sendAsWrap.appendChild(sendAsButton);
@@ -926,10 +941,20 @@
     wrapper.appendChild(sendAsWrap);
     wrapper.appendChild(status);
 
-    document.addEventListener('click', () => {
+    const closeSendAsMenu = event => {
       const menu = document.getElementById(SEND_AS_MENU_ID);
+      if (event && (menu?.contains(event.target) || sendAsButton.contains(event.target))) return;
       if (menu) menu.style.display = 'none';
-    });
+      sendAsButton.setAttribute('aria-expanded', 'false');
+    };
+    document.addEventListener('click', closeSendAsMenu);
+    if (isOmniPaymentPage()) {
+      document.addEventListener('keydown', event => { if (event.key === 'Escape') closeSendAsMenu(); });
+      window.addEventListener('resize', () => closeSendAsMenu());
+      window.addEventListener('scroll', event => {
+        if (!sendAsMenu.contains(event.target)) closeSendAsMenu();
+      }, true);
+    }
 
     return wrapper;
   }
@@ -948,12 +973,14 @@
   }
 
   function removeButton() {
+    if (isOmniPaymentPage()) document.getElementById(SEND_AS_MENU_ID)?.remove();
     document.getElementById(WRAPPER_ID)?.remove();
     document.getElementById(SPACER_ID)?.remove();
   }
 
   function createButton() {
     if (!document.body) return;
+    if (isOmniPaymentPage() && !document.getElementById(WRAPPER_ID)) document.getElementById(SEND_AS_MENU_ID)?.remove();
 
     if (!isInvoiceScreen()) {
       removeButton();
