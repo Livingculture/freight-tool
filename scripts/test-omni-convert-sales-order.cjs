@@ -23,22 +23,51 @@ function extract(name) {
       window.isHubSpotStepComplete = () => window.complete;
       window.normalizeLabel = value => String(value).trim().toLowerCase();
       window.styleInlineButton = button => { button.style.cssText = 'background:#063b78;color:white;border:0;border-radius:4px;'; };
-      window.wireActionButton = button => button.addEventListener('pointerdown', event => { event.preventDefault(); void convertQuoteToSalesOrder(button, event); });
+      window.wireActionButton = button => button.addEventListener('pointerdown', event => { event.preventDefault(); if (button.id === 'lc-clone-quote-button') cloneCurrentQuote(); else void convertQuoteToSalesOrder(button, event); });
+      window.findButtonByLabel = label => Array.from(document.querySelectorAll('button')).find(button => button.textContent.toLowerCase() === label.toLowerCase());
       window.leftmostOmniSaveButton = () => document.getElementById('save');
       window.omniFooterPanel = () => document.getElementById('footer');
       window.confirm = () => window.confirmed;
       window.alert = message => { throw Error(message); };
       document.getElementById('admin').onclick = () => { window.adminOpened++; };
     });
-    const functions = ['currentQuotePdfOrderId', 'placeOmniActionButton', 'layoutOmniWorkflowButtons', 'nativeConvertToSalesOrderControl', 'confirmConvertToSalesOrder', 'convertQuoteToSalesOrder', 'continueConvertToSalesOrderFromAdmin', 'addConvertToSalesOrderButton'];
-    await page.addScriptTag({ content: `const CONVERT_ORDER_BUTTON_ID='lc-convert-sales-order-button', CONVERT_ORDER_INTENT_KEY='convert-intent', QUOTE_PDF_BUTTON_ID='download', BUTTON_ID='site', QUOTE_REVIEW_BUTTON_ID='review', HUBSPOT_BUTTON_ID='hubspot', OMNI_TOOLS_BAR_ID='toolbar';\n${functions.map(extract).join('\n')}` });
+    const functions = ['currentQuotePdfOrderId', 'placeOmniActionButton', 'layoutOmniWorkflowButtons', 'nativeConvertToSalesOrderControl', 'confirmConvertToSalesOrder', 'convertQuoteToSalesOrder', 'continueConvertToSalesOrderFromAdmin', 'addConvertToSalesOrderButton', 'addCloneQuoteButton', 'nativeCopyAllItemsControl', 'cloneCurrentQuote', 'continueCloneQuoteFromAdmin'];
+    await page.addScriptTag({ content: `const CLONE_QUOTE_BUTTON_ID='lc-clone-quote-button', CLONE_QUOTE_INTENT_KEY='clone-intent', CONVERT_ORDER_BUTTON_ID='lc-convert-sales-order-button', CONVERT_ORDER_INTENT_KEY='convert-intent', QUOTE_PDF_BUTTON_ID='download', BUTTON_ID='site', QUOTE_REVIEW_BUTTON_ID='review', HUBSPOT_BUTTON_ID='hubspot', OMNI_TOOLS_BAR_ID='toolbar';\n${functions.map(extract).join('\n')}` });
     await page.evaluate(() => { addConvertToSalesOrderButton(); convertQuoteToSalesOrder(); });
     assert.equal(await page.locator('#lc-convert-sales-order-button').count(), 0);
     assert.equal(await page.evaluate(() => window.adminOpened), 0, 'Do not bypass HubSpot gate');
-    await page.evaluate(() => { window.complete = true; addConvertToSalesOrderButton(); layoutOmniWorkflowButtons(); });
+    await page.evaluate(() => {
+      window.copied = 0;
+      addCloneQuoteButton();
+      const wrong = document.createElement('button'); wrong.textContent = 'Copy Selected Items'; wrong.onclick = () => { throw Error('Must copy ALL items'); }; document.body.appendChild(wrong);
+    });
+    await page.locator('#lc-clone-quote-button').click();
+    assert.equal(await page.evaluate(() => window.adminOpened), 1, 'Clone does not require HubSpot');
+    await page.evaluate(() => {
+      const actions = document.createElement('button'); actions.textContent = 'Actions';
+      actions.onclick = () => {
+        const copy = document.createElement('button'); copy.id = 'native-copy'; copy.textContent = 'Copy All Items';
+        copy.onclick = () => { window.copied++; }; document.body.appendChild(copy);
+      };
+      document.body.appendChild(actions);
+      continueCloneQuoteFromAdmin();
+    });
+    await page.waitForFunction(() => window.copied === 1);
+    await page.evaluate(() => continueCloneQuoteFromAdmin());
+    await page.waitForTimeout(180);
+    assert.equal(await page.evaluate(() => window.copied), 1, 'Clone intent consumed once');
+    await page.locator('#lc-clone-quote-button').click();
+    assert.equal(await page.evaluate(() => window.copied), 2, 'Use native Copy All Items when available');
+    await page.evaluate(() => {
+      sessionStorage.setItem('clone-intent', JSON.stringify({ orderId: '999', quoteNumber: 'NZSO-OTHER', at: Date.now() }));
+      continueCloneQuoteFromAdmin();
+      window.adminOpened = 0; window.complete = true; addConvertToSalesOrderButton(); layoutOmniWorkflowButtons();
+    });
+    assert.equal(await page.evaluate(() => window.copied), 2, 'Never clone a different quote');
     const button = page.locator('#lc-convert-sales-order-button');
     assert(await button.isVisible());
-    assert(await page.evaluate(() => document.getElementById('lc-convert-sales-order-button').previousElementSibling.id === 'download'));
+    assert(await page.evaluate(() => document.getElementById('lc-convert-sales-order-button').previousElementSibling.id === 'lc-clone-quote-button'));
+    assert(await page.evaluate(() => document.getElementById('lc-clone-quote-button').previousElementSibling.id === 'download'));
     await page.screenshot({ path: '/tmp/lc-convert-sales-order-button.png' });
     await button.click();
     const popup = page.locator('#lc-convert-order-confirm');
@@ -79,10 +108,11 @@ function extract(name) {
     await page.evaluate(() => {
       sessionStorage.setItem('convert-intent', JSON.stringify({ orderId: '999', quoteNumber: 'NZSO-OTHER', at: Date.now() }));
       continueConvertToSalesOrderFromAdmin();
-      window.documentType = 'sales-order'; addConvertToSalesOrderButton();
+      window.documentType = 'sales-order'; addConvertToSalesOrderButton(); addCloneQuoteButton();
     });
     assert.equal(await button.count(), 0, 'Hide on sales orders');
+    assert.equal(await page.locator('#lc-clone-quote-button').count(), 0, 'Clone only quotes');
     assert.equal(await page.evaluate(() => window.converted), 2, 'Never convert a different quote');
-    console.log('PASS: Hidden until HubSpot, adjacent toolbar button, cancel, native admin conversion intent exactly once, wrong-quote protection and sales-order hiding. Conversion mocked.');
+    console.log('PASS: Clone Quote toolbar order, Copy All Items directly and via one-time Admin handoff, wrong-quote protection, quote-only display; conversion gating and confirmation preserved. Native actions mocked.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

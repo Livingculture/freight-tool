@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.90
+// @version      0.1.91
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -26,6 +26,8 @@
   const QUOTE_REVIEW_BUTTON_ID = 'lc-quote-review-inline-button-v1';
   const QUOTE_PDF_BUTTON_ID = 'lc-quote-pdf-download-button-v1';
   const CONVERT_ORDER_BUTTON_ID = 'lc-convert-sales-order-button';
+  const CLONE_QUOTE_BUTTON_ID = 'lc-clone-quote-button';
+  const CLONE_QUOTE_INTENT_KEY = 'lc-omni-clone-quote-intent';
   const CONVERT_ORDER_INTENT_KEY = 'lc-omni-convert-sales-order-intent';
   const CUSTOMER_PHOTOS_BUTTON_ID = 'lc-omni-customer-photos-button';
   const VIEW_CUSTOMER_ALBUM_BUTTON_ID = 'lc-omni-view-customer-album-button';
@@ -1280,6 +1282,7 @@
       document.getElementById(QUOTE_REVIEW_BUTTON_ID),
       document.getElementById(HUBSPOT_BUTTON_ID),
       document.getElementById(QUOTE_PDF_BUTTON_ID),
+      document.getElementById(CLONE_QUOTE_BUTTON_ID),
       document.getElementById(CONVERT_ORDER_BUTTON_ID)
     ].filter(Boolean);
     if (!buttons.length) return;
@@ -2791,6 +2794,50 @@
     }, 125);
   }
 
+  function nativeCopyAllItemsControl() {
+    return Array.from(document.querySelectorAll('a, button, input[type="button"], input[type="submit"]'))
+      .find(element => normalizeLabel(element.value || element.textContent || '') === 'copy all items' && !element.disabled);
+  }
+
+  function cloneCurrentQuote() {
+    if (!isOmniPage() || omniHeadingDraft().documentType !== 'quote') return;
+    const action = nativeCopyAllItemsControl();
+    if (action) { action.click(); return; }
+    const admin = findButtonByLabel('Go to Admin');
+    const orderId = currentQuotePdfOrderId();
+    if (!admin || admin.disabled || !orderId) {
+      window.alert('Use Go to Admin and Actions > Copy All Items to clone this quote.');
+      return;
+    }
+    try {
+      sessionStorage.setItem(CLONE_QUOTE_INTENT_KEY, JSON.stringify({ orderId, quoteNumber: hubSpotGateOrderId(), at: Date.now() }));
+      admin.click();
+    } catch {
+      sessionStorage.removeItem(CLONE_QUOTE_INTENT_KEY);
+      window.alert('Could not open Copy All Items. Use Omni\'s Actions menu.');
+    }
+  }
+
+  function continueCloneQuoteFromAdmin() {
+    let intent;
+    try { intent = JSON.parse(sessionStorage.getItem(CLONE_QUOTE_INTENT_KEY) || 'null'); } catch { return; }
+    if (!intent) return;
+    sessionStorage.removeItem(CLONE_QUOTE_INTENT_KEY);
+    if (!intent.at || Date.now() - intent.at > 120000 || intent.at > Date.now()
+      || intent.orderId !== currentQuotePdfOrderId() || intent.quoteNumber !== hubSpotGateOrderId()) return;
+    let attempts = 0;
+    const timer = window.setInterval(() => {
+      attempts++;
+      const action = nativeCopyAllItemsControl();
+      if (action) { window.clearInterval(timer); action.click(); }
+      else if (attempts === 1) findButtonByLabel('Actions')?.click();
+      else if (attempts >= 40) {
+        window.clearInterval(timer);
+        window.alert('Omni\'s Copy All Items action was not found. Choose it from the Actions menu.');
+      }
+    }, 125);
+  }
+
   function currentQuotePdfOrderId() {
     const params = new URL(location.href).searchParams;
     for (const wanted of ['OrderId', 'idOrder', 'ID']) {
@@ -3751,6 +3798,7 @@
         else showQuotePdfTemplateMenu(button);
       }
       if (button.id === CONVERT_ORDER_BUTTON_ID) void convertQuoteToSalesOrder(button, event);
+      if (button.id === CLONE_QUOTE_BUTTON_ID) cloneCurrentQuote();
     } catch (error) {
       const message = error && error.message ? error.message : String(error || 'Unknown error');
       console.error('[LC Cin7 buttons] Button action failed:', error);
@@ -3764,7 +3812,7 @@
     const handleEvent = (event) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
-      const button = target.closest(`#${CUSTOMER_PHOTOS_BUTTON_ID}, #${VIEW_CUSTOMER_ALBUM_BUTTON_ID}, #${VIEW_CUSTOMER_ALBUMS_BUTTON_ID}, #${BUTTON_ID}, #${HUBSPOT_BUTTON_ID}, #${QUOTE_REVIEW_BUTTON_ID}, #${QUOTE_PDF_BUTTON_ID}, #${CONVERT_ORDER_BUTTON_ID}`);
+      const button = target.closest(`#${CUSTOMER_PHOTOS_BUTTON_ID}, #${VIEW_CUSTOMER_ALBUM_BUTTON_ID}, #${VIEW_CUSTOMER_ALBUMS_BUTTON_ID}, #${BUTTON_ID}, #${HUBSPOT_BUTTON_ID}, #${QUOTE_REVIEW_BUTTON_ID}, #${QUOTE_PDF_BUTTON_ID}, #${CLONE_QUOTE_BUTTON_ID}, #${CONVERT_ORDER_BUTTON_ID}`);
       if (!button) return;
       event.preventDefault();
       event.stopPropagation();
@@ -4113,6 +4161,25 @@
     }
   }
 
+  function addCloneQuoteButton() {
+    if (!isOmniPage() || omniHeadingDraft().documentType !== 'quote') {
+      document.getElementById(CLONE_QUOTE_BUTTON_ID)?.remove();
+      return;
+    }
+    const download = document.getElementById(QUOTE_PDF_BUTTON_ID);
+    if (!download) return;
+    let button = document.getElementById(CLONE_QUOTE_BUTTON_ID);
+    if (!button) {
+      button = document.createElement('button');
+      button.id = CLONE_QUOTE_BUTTON_ID;
+      button.type = 'button';
+      button.textContent = 'Clone Quote';
+      styleInlineButton(button, '#173b78');
+      wireActionButton(button);
+    }
+    placeOmniActionButton(button, download);
+  }
+
   function addConvertToSalesOrderButton() {
     if (!isOmniPage() || omniHeadingDraft().documentType !== 'quote' || !isHubSpotStepComplete(hubSpotGateOrderId())) {
       document.getElementById(CONVERT_ORDER_BUTTON_ID)?.remove();
@@ -4129,7 +4196,7 @@
       styleInlineButton(button, '#063b78');
       wireActionButton(button);
     }
-    placeOmniActionButton(button, downloadButton);
+    placeOmniActionButton(button, document.getElementById(CLONE_QUOTE_BUTTON_ID) || downloadButton);
   }
 
   function installOmniInvoiceDateHooks() {
@@ -4151,6 +4218,7 @@
     addHubSpotButton();
     addQuoteReviewButton();
     addQuotePdfButton();
+    addCloneQuoteButton();
     applyHubSpotApprovalGate();
     layoutOmniWorkflowButtons();
     void linkExistingCustomerAlbumToQuote();
@@ -4167,6 +4235,7 @@
     if (/\/Cloud\/ShoppingCartAdmin\//i.test(location.pathname)) {
       if (window.parent !== window) return;
       continueConvertToSalesOrderFromAdmin();
+      continueCloneQuoteFromAdmin();
       continueQuotePdfFromAdmin();
       return;
     }
