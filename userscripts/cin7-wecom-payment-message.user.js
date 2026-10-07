@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 WeCom Payment Message Sender
 // @namespace    livingculture
-// @version      4.8
+// @version      4.9
 // @description  Sends a WeCom payment message from Cin7 invoice/payment screen only.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -37,6 +37,47 @@
   const USER_POINTER_WINDOW_MS = 1500;
 
   const SEND_AS_REPS = JSON.parse(GM_getResourceText('staffReps'));
+
+  function isOmniPaymentPage() {
+    return location.hostname === 'go.cin7.com' && /\/Cloud\/TransactionEntry\/TransactionEntry\.aspx/i.test(location.pathname);
+  }
+
+  function findOmniPaymentRows() {
+    for (const table of document.querySelectorAll('table')) {
+      const header = Array.from(table.rows).find(row => {
+        const labels = Array.from(row.cells).map(cell => clean(cell.textContent).toLowerCase().replace(/\s+/g, ''));
+        return labels.includes('paymenttype') && labels.some(label => /^amount(?:nzd)?$/.test(label));
+      });
+      if (!header) continue;
+      const labels = Array.from(header.cells).map(cell => clean(cell.textContent).toLowerCase().replace(/\s+/g, ''));
+      const methodIndex = labels.indexOf('paymenttype');
+      const amountIndex = labels.findIndex(label => /^amount(?:nzd)?$/.test(label));
+      const dateIndex = labels.indexOf('date');
+      const cellValue = cell => {
+        const input = cell?.querySelector('input:not([type="hidden"]), select');
+        return input instanceof HTMLSelectElement ? input.selectedOptions[0]?.textContent : input?.value || cell?.textContent || '';
+      };
+      return Array.from(table.rows).slice(Array.from(table.rows).indexOf(header) + 1)
+        .filter(row => row.closest('table') === table && isVisible(row))
+        .map(row => {
+          const dateText = clean(cellValue(row.cells[dateIndex]));
+          return {
+            text: clean(row.textContent), dateText, dateValue: parseDateNZ(dateText),
+            amount: moneyToNumber(cellValue(row.cells[amountIndex])),
+            method: getPaymentMethodFromText(cellValue(row.cells[methodIndex])), rect: row.getBoundingClientRect()
+          };
+        })
+        .filter(row => row.amount !== null && row.amount > 0)
+        .sort((a, b) => (b.dateValue || 0) - (a.dateValue || 0) || b.rect.top - a.rect.top);
+    }
+    return [];
+  }
+
+  function omniPaymentTotal(label) {
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const match = getBodyText().match(new RegExp(`${escaped}\\s*:?\\s*(?:NZD\\s*)?\\$?\\s*([0-9,]+\\.\\d{2})`, 'i'));
+    return match ? moneyToNumber(match[1]) : null;
+  }
 
   function clean(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
@@ -101,7 +142,7 @@
   }
 
   function parseDateNZ(value) {
-    const match = String(value || '').match(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/);
+    const match = String(value || '').match(/\b(\d{1,2})[/-](\d{1,2})[/-](\d{4})\b(?:\s+(\d{1,2}):(\d{2})\s*(am|pm)?)?/i);
 
     if (!match) return null;
 
@@ -109,7 +150,9 @@
     const month = Number(match[2]) - 1;
     const year = Number(match[3]);
 
-    return new Date(year, month, day).getTime();
+    let hour = Number(match[4] || 0);
+    if (match[6]) hour = hour % 12 + (match[6].toLowerCase() === 'pm' ? 12 : 0);
+    return new Date(year, month, day, hour, Number(match[5] || 0)).getTime();
   }
 
   function formatRep(rep) {
@@ -131,6 +174,7 @@
   }
 
   function isInvoiceScreen() {
+    if (isOmniPaymentPage()) return findOmniPaymentRows().length > 0;
     const bodyText = getBodyText().toLowerCase();
     const paymentHeading = findPaymentHeading();
 
@@ -227,6 +271,7 @@
   }
 
   function findPaymentRows() {
+    if (isOmniPaymentPage()) return findOmniPaymentRows();
     const paymentHeading = findPaymentHeading();
     if (!paymentHeading) return [];
 
@@ -336,6 +381,7 @@
   }
 
   function findBalanceDue() {
+    if (isOmniPaymentPage()) return omniPaymentTotal('Total Owing');
     const bodyText = getBodyText();
     const match = bodyText.match(/Balance due\s*\(NZD\)\s*([0-9,]+\.\d{2})/i);
 
@@ -347,6 +393,11 @@
   }
 
   function findInvoiceTotal() {
+    if (isOmniPaymentPage()) {
+      const paid = omniPaymentTotal('Total Paid');
+      const owing = omniPaymentTotal('Total Owing');
+      return paid !== null && owing !== null ? paid + owing : null;
+    }
     const paymentHeading = findPaymentHeading();
     const paymentTop = paymentHeading ? paymentHeading.getBoundingClientRect().top : Infinity;
 
@@ -713,6 +764,11 @@
       return;
     }
 
+    if (isOmniPaymentPage() && (!findOmniPaymentRows().length || !/^NZSO-?\d+$/i.test(findOrderNumber()))) {
+      setStatus('The NZSO number and payment amount are required before sending.', true);
+      return;
+    }
+
     const senderDetails = formatRep(rep);
     const message = buildMessage(senderDetails);
 
@@ -844,6 +900,15 @@
 
       const isOpen = sendAsMenu.style.display === 'block';
       sendAsMenu.style.display = isOpen ? 'none' : 'block';
+      if (isOmniPaymentPage() && !isOpen) {
+        const rect = sendAsButton.getBoundingClientRect();
+        sendAsMenu.style.position = 'fixed';
+        sendAsMenu.style.right = 'auto';
+        sendAsMenu.style.maxHeight = '260px';
+        sendAsMenu.style.overflowY = 'auto';
+        sendAsMenu.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - sendAsMenu.offsetWidth - 8))}px`;
+        sendAsMenu.style.top = `${Math.max(8, rect.bottom + sendAsMenu.offsetHeight + 4 <= window.innerHeight ? rect.bottom + 4 : rect.top - sendAsMenu.offsetHeight - 4)}px`;
+      }
     });
 
     sendAsWrap.appendChild(sendAsButton);
@@ -899,6 +964,18 @@
       document.getElementById(SEND_AS_BUTTON_ID) ||
       document.getElementById(SEND_AS_MENU_ID)
     ) {
+      return;
+    }
+
+    if (isOmniPaymentPage()) {
+      const anchor = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]'))
+        .find(element => isVisible(element) && clean(element.value || element.textContent).toLowerCase() === 'add a new payment');
+      if (!anchor) return;
+      const wrapper = makeWrapper();
+      wrapper.style.display = 'inline-flex';
+      wrapper.style.marginLeft = '12px';
+      wrapper.style.verticalAlign = 'middle';
+      anchor.insertAdjacentElement('afterend', wrapper);
       return;
     }
 
