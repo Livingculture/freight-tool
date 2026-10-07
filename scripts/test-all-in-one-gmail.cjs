@@ -123,6 +123,18 @@ const loader = fs.readFileSync(path.join(directory, 'livingculture-all-in-one.us
     await page.locator('#mock-attachment').setInputFiles({ name: 'core-guide.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF mock') });
     await page.waitForFunction(() => window.completedUploads.length === 3);
     assert.deepEqual(await page.evaluate(() => window.completedUploads[2]), ['SFOR12345']);
+    await page.evaluate(() => {
+      document.querySelector('[role="dialog"]').remove();
+      document.getElementById('lc-gmail-hubspot-attachment-status')?.remove();
+      const compose = document.createElement('div');
+      compose.setAttribute('role', 'dialog');
+      compose.innerHTML = '<input name="subjectbox" value="Team meeting"><input type="file" id="mock-attachment">';
+      document.body.appendChild(compose);
+    });
+    await page.locator('#mock-attachment').setInputFiles({ name: 'agenda.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF mock') });
+    await page.waitForTimeout(100);
+    assert.equal(await page.evaluate(() => window.completedUploads.length), 3, 'Ordinary email must not upload to HubSpot');
+    assert.equal(await page.locator('#lc-gmail-hubspot-attachment-status').count(), 0, 'Ordinary attachments must not show a quote-number warning');
     assert.deepEqual(errors, []);
     console.log('PASS: Strict-CSP Gmail buttons and attachment row; NZSO subjects, quote filenames, SFOR compatibility and upload deduplication. All uploads mocked; no emails sent.');
   } finally {

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture All-in-One
 // @namespace    livingculture
-// @version      0.1.73
+// @version      0.1.74
 // @description  Approved Living Culture Omni, Cin7 Core, Gmail, HubSpot and website tools in one Tampermonkey install.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -123,7 +123,7 @@
     if (earlyOmniTools.has(component.resource)) component.runAt = 'body';
   });
 
-  const status = { version: '0.1.73', loaded: [], skipped: [], errors: [] };
+  const status = { version: '0.1.74', loaded: [], skipped: [], errors: [] };
   window.__lcAllInOneStatus = status;
 
   // BEGIN GENERATED GMAIL COMPONENTS
@@ -1375,10 +1375,7 @@
           const subjectQuotes = subjectQuoteNumbers(root);
           const attachedQuotes = Array.from(state.files.values()).flatMap((file) => extractQuoteNumbers(file.name));
           const allQuotes = Array.from(new Set([...subjectQuotes, ...attachedQuotes]));
-          if (!allQuotes.length) {
-            showStatus("HubSpot: no NZSO or SFOR quote numbers were found in the Gmail subject or attachment filenames.", "error");
-            return;
-          }
+          if (!allQuotes.length) return;
 
           state.files.forEach((file, key) => {
             const fileQuotes = extractQuoteNumbers(file.name);
