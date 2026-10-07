@@ -16,7 +16,7 @@ function extract(name) {
     for (const timings of [{ fast: 100, rendered: 100 }, { fast: 1600, rendered: 2000 }, { fast: 2500, rendered: 100 }, { fast: 100, rendered: 100, template: 'custom' }, { fast: 2500, rendered: 100, template: 'custom' }, { fast: 100, rendered: 100, template: 'invoice' }, { fast: 2500, rendered: 100, template: 'invoice' }]) {
       const page = await browser.newPage();
       await page.route('https://go.cin7.com/**', route => route.fulfill({ contentType: 'text/html', body: route.request().url().includes('ShoppingCartAdmin')
-        ? `<a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Quote&amp;path=${timings.template ? 'wrong' : 'rendered'}">Quote</a><a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Quote&amp;path=${timings.template === 'custom' ? 'rendered' : 'wrong'}">Custom Quote</a><a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Invoice&amp;path=${timings.template === 'invoice' ? 'rendered' : 'wrong'}">Invoice</a>`
+        ? `<a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Quote&amp;path=${timings.template ? 'wrong' : 'rendered'}">Quote</a><a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Quote&amp;path=${timings.template === 'custom' ? 'rendered' : 'wrong'}">Custom Quote</a><a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Invoice&amp;path=wrong">Invoice</a><a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Invoice&amp;path=${timings.template === 'invoice' ? 'rendered' : 'wrong'}">Dynamic Invoice</a>`
         : '<button id="pdf">Download Quote</button>' }));
       await page.goto('https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx?OrderId=388');
       await page.evaluate(timings => {
@@ -62,7 +62,7 @@ function extract(name) {
       window.requests = 0;
       window.GM_xmlhttpRequest = options => {
         window.requests++;
-        options.onload({ status: 200, responseText: '<a href="/Cloud/Docs/PDF/?T=Quote&amp;ID=custom">Custom Quote</a><a href="/Cloud/Docs/PDF/?T=Quote&amp;ID=standard">Quote</a>' });
+        options.onload({ status: 200, responseText: '<a href="/Cloud/Docs/PDF/?T=Quote&amp;ID=custom">Custom Quote</a><a href="/Cloud/Docs/PDF/?T=Quote&amp;ID=standard">Quote</a><a href="/Cloud/Docs/PDF/?T=Invoice&amp;ID=wrong">Invoice</a><a href="/Cloud/Docs/PDF/?T=Invoice&amp;ID=dynamic">Dynamic Invoice</a>' });
       };
       window.downloadCurrentQuotePdf = (_, template) => { window.downloadChoice = template; };
     });
@@ -71,6 +71,7 @@ function extract(name) {
     assert(urls[0].endsWith('ID=standard'));
     assert(urls[1].endsWith('ID=custom'));
     assert.equal(await templates.evaluate(() => window.requests), 2, 'Each template has its own signed-link cache');
+    assert((await templates.evaluate(() => prepareQuotePdfLink('388', 'invoice'))).endsWith('ID=dynamic'), 'Use Dynamic Invoice, not Invoice');
     await templates.evaluate(() => showQuotePdfTemplateMenu(document.getElementById('pdf')));
     assert.deepEqual(await templates.locator('[role="menuitem"]').allTextContents(), ['Quote', 'Custom Quote']);
     await templates.screenshot({ path: '/tmp/lc-quote-template-menu.png' });
@@ -90,6 +91,10 @@ function extract(name) {
       try { await requestAdminQuoteHref('388', 'custom'); return false; }
       catch { return true; }
     }), 'A missing custom template must not silently select Quote');
+    assert(await templates.evaluate(async () => {
+      try { await requestAdminQuoteHref('388', 'invoice'); return false; }
+      catch { return true; }
+    }), 'A missing Dynamic Invoice must not silently select Quote');
     await templates.close();
     console.log('PASS PDF: Exact admin templates, isolated caches, missing-template rejection, menu selection and dismissal');
     const page = await browser.newPage();
