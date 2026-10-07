@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.84
+// @version      0.1.85
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -2100,12 +2100,12 @@
           if (data.hubspotUrl) {
             copyTextToClipboard(data.hubspotUrl);
             const linkStatus = data.orderDealAssociated
-              ? 'DEAR deal linked.'
+              ? `Cin7 order deal linked: ${data.orderDealAssociation?.orderDealName || payload.orderId}.`
               : data.orderDealAssociation?.reason === 'order_deal_pending'
-                ? `DEAR deal not linked yet: waiting for Cin7 sync to create ${data.orderDealAssociation.orderDealName || 'the Order Deal'}.`
+                ? `Cin7 order deal not linked yet: waiting for Cin7 sync to create ${data.orderDealAssociation.orderDealName || 'the Order Deal'}.`
                 : data.orderDealAssociation?.reason
-                ? `DEAR deal not linked: ${data.orderDealAssociation.reason}.`
-                : 'DEAR deal not linked.';
+                ? `Cin7 order deal not linked: ${data.orderDealAssociation.error || data.orderDealAssociation.reason}.`
+                : 'Cin7 order deal not linked.';
             const lineItemStatus = data.lineItems
               ? `Line items: ${data.lineItems.created || 0} added, ${data.lineItems.skipped || 0} already there${data.lineItems.errors?.length ? `, ${data.lineItems.errors.length} error(s): ${data.lineItems.errors[0]}` : ''}.`
               : '';
