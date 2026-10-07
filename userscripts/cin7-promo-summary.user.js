@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Promo Summary
 // @namespace    livingculture-cin7
-// @version      3.7
+// @version      3.8
 // @description  Compact grouped Living Culture promo summary inside Cin7 from the Summary tab.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
 // @match        https://inventory.dearsystems.com/*
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.7
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.7
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.8
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-promo-summary.user.js?v=3.8
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
@@ -372,6 +372,11 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
     return 'current';
   }
 
+  function isStartingTomorrow(row) {
+    const { start } = fixDateRange(row);
+    return getState(row) === 'upcoming' && start?.getTime() === addDays(startOfToday(), 1).getTime();
+  }
+
   function isDateRelevant(row) {
     const state = getState(row);
     const today = startOfToday();
@@ -515,7 +520,7 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
     rows.forEach(row => {
       if (row.isWeek) return;
 
-      const key = compact(row.campaign) + '|' + compact(row.category);
+      const key = compact(row.campaign) + '|' + compact(row.category) + '|' + (isStartingTomorrow(row) ? 'tomorrow' : 'other');
 
       if (!map.has(key)) {
         const rowCopy = { ...row };
@@ -651,7 +656,7 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
       const state = getState(row);
 
       if (filterValue === 'date-relevant' && !isDateRelevant(row)) return false;
-      if (filterValue === 'current' && state !== 'current') return false;
+      if (filterValue === 'current' && state !== 'current' && !isStartingTomorrow(row)) return false;
       if (filterValue === 'upcoming' && state !== 'upcoming') return false;
       if (filterValue === 'past' && state !== 'past') return false;
 
@@ -699,6 +704,7 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
             <h2 class="title">${escapeHtml(row.campaign) || 'Untitled promotion'}</h2>
 
             <div class="meta-row">
+              ${isStartingTomorrow(row) ? '<span class="starting-tomorrow">Starting tomorrow</span>' : ''}
               <span class="date">
                 ${escapeHtml(row.start) || 'No start date'}${row.end ? ` – ${escapeHtml(row.end)}` : ''}
               </span>
@@ -1125,6 +1131,16 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
           background: #e4f5ec;
         }
 
+        .starting-tomorrow {
+          display: inline-block;
+          padding: 3px 7px;
+          border-radius: 4px;
+          background: #fff2d2;
+          color: #76500d;
+          font: 700 12px Arial, Helvetica, sans-serif;
+          white-space: nowrap;
+        }
+
         .tag.upcoming {
           color: #76500d;
           background: #fff2d2;
@@ -1295,7 +1311,7 @@ Approval,May Mega Sale,14-May,26-May,"10%off - Baltic Pergolas(Manual)5%off - Ca
             <input id="lc-promo-search" type="search" placeholder="Search promo, category, date or note..." />
 
             <select id="lc-promo-filter">
-              <option value="current" selected>Current only</option>
+              <option value="current" selected>Current + starting tomorrow</option>
             </select>
 
             <label class="merge-label">
