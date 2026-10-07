@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.85
+// @version      0.1.86
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -3278,6 +3278,27 @@
     picker.click();
   }
 
+  async function encodeAnnotatedCustomerPhoto(canvas) {
+    const output = document.createElement('canvas');
+    const maxBytes = 3 * 1024 * 1024;
+    let scale = Math.min(1, 2560 / Math.max(canvas.width, canvas.height));
+    for (let pass = 0; pass < 3; pass += 1) {
+      output.width = Math.max(1, Math.round(canvas.width * scale));
+      output.height = Math.max(1, Math.round(canvas.height * scale));
+      const context = output.getContext('2d');
+      context.fillStyle = '#fff';
+      context.fillRect(0, 0, output.width, output.height);
+      context.drawImage(canvas, 0, 0, output.width, output.height);
+      for (const quality of [0.9, 0.8, 0.7]) {
+        const blob = await new Promise(resolve => output.toBlob(resolve, 'image/jpeg', quality));
+        if (!blob) throw new Error('Could not create the marked-up photo.');
+        if (blob.type === 'image/jpeg' && blob.size <= maxBytes) return blob;
+      }
+      scale *= 0.75;
+    }
+    throw new Error('The marked-up photo is too large to upload. Your edits are still open; please try again.');
+  }
+
   function customerPhotoBlob(url) {
     return new Promise((resolve, reject) => GM_xmlhttpRequest({
       method: 'GET', url, responseType: 'arraybuffer', timeout: 30000,
@@ -3365,7 +3386,27 @@
     canvas.onpointerup = () => { if (dragging) { dragging = null; return; } if (!draft) return; if (Math.hypot(draft.x2 - draft.x1, draft.y2 - draft.y1) < 8) { draft = null; paint(); return; } if (draft.tool === 'measure') { const completed = draft; draft = null; askLabel(completed); } else { marks.push(draft); draft = null; paint(); updateSave(); } };
     close.onclick = () => { labelBox?.remove(); overlay.remove(); };
     overlay.onclick = (event) => { if (event.target === overlay) close.click(); };
-    save.onclick = () => { save.disabled = true; save.textContent = 'Saving…'; selected = null; paint(); canvas.toBlob(async (blob) => { try { if (!blob) throw new Error('Could not create the marked-up photo.'); const form = new FormData(), name = (photo.file_name || 'customer-photo').replace(/\.[^.]+$/, ''); form.set('albumId', albumId); form.set('caption', `Annotated - ${photo.caption || photo.file_name || 'customer photo'}`); form.append('photos', new File([blob], `${name}-annotated.png`, { type: 'image/png' })); await customerPhotosRequest({ method: 'POST', data: form }); overlay.remove(); await refreshAlbum(); } catch (error) { window.alert(error?.message || 'The marked-up photo could not be saved.'); save.textContent = 'Save annotated copy'; updateSave(); } }, 'image/png'); };
+    save.onclick = async () => {
+      save.disabled = true;
+      save.textContent = 'Saving…';
+      selected = null;
+      paint();
+      try {
+        const blob = await encodeAnnotatedCustomerPhoto(canvas);
+        const form = new FormData();
+        const name = (photo.file_name || 'customer-photo').replace(/\.[^.]+$/, '');
+        form.set('albumId', albumId);
+        form.set('caption', `Annotated - ${photo.caption || photo.file_name || 'customer photo'}`);
+        form.append('photos', new File([blob], `${name}-annotated.jpg`, { type: 'image/jpeg' }));
+        await customerPhotosRequest({ method: 'POST', data: form });
+        overlay.remove();
+        await refreshAlbum();
+      } catch (error) {
+        window.alert(error?.message || 'The marked-up photo could not be saved.');
+        save.textContent = 'Save annotated copy';
+        updateSave();
+      }
+    };
     try { const blob = await customerPhotoBlob(photo.url), url = URL.createObjectURL(blob); image = new Image(); image.onload = () => { canvas.width = image.naturalWidth; canvas.height = image.naturalHeight; paint(); URL.revokeObjectURL(url); }; image.src = url; } catch (error) { window.alert(error?.message || 'Could not load the photo editor.'); overlay.remove(); }
   }
 
