@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.94
+// @version      0.1.95
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -1713,6 +1713,30 @@
     return { total, paidAmount, balanceDue, paid, paymentStatus: paid ? 'PAID' : paidAmount > 0 ? 'PART PAID' : 'UNPAID' };
   }
 
+  function omniFullyDispatchedState() {
+    const label = Array.from(document.querySelectorAll('label, legend, span, div, td'))
+      .filter(isVisible)
+      .find(node => normalizeLabel(node.textContent || '').replace(/^2\s*/, '') === 'fully dispatched');
+    if (!label) return null;
+    const linked = label.getAttribute('for') && document.getElementById(label.getAttribute('for'));
+    let controls = linked ? [linked] : [];
+    for (let root = label; !controls.length && root && root !== document.body; root = root.parentElement) {
+      const candidates = Array.from(root.querySelectorAll('input:not([type="hidden"]):not([type="image"]):not([type="button"]):not([type="submit"])')).filter(isVisible);
+      if (candidates.length > 2) break;
+      controls = candidates;
+    }
+    if (!controls.length) {
+      const rect = label.getBoundingClientRect();
+      controls = Array.from(document.querySelectorAll('input')).filter(isVisible).filter(input => {
+        const field = input.getBoundingClientRect();
+        return field.left >= rect.left - 4 && field.left < rect.left + 100 && field.top >= rect.bottom - 4 && field.top < rect.bottom + 50;
+      }).sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
+    }
+    if (!controls.length) return null;
+    const value = clean(controls[0].value);
+    return /^(?:\d{4}-\d{2}-\d{2}|\d{1,2}[\/-]\d{1,2}[\/-]\d{4})(?:\s|$)/.test(value);
+  }
+
   function omniWorkflowSnapshot() {
     if (!isOmniPage()) return null;
     const heading = omniHeadingDraft();
@@ -1725,7 +1749,6 @@
     const bodyText = clean(document.body?.innerText || document.body?.textContent || '');
     const branch = bodyText.match(/\bBranch\s*:\s*([A-Z]{2,5})\b/i)?.[1]?.toUpperCase() || deriveBranchFromRep(draft.placedBy);
     const payment = omniPaymentSummary();
-    const dispatchedValue = labelled('Fully Dispatched', 'Dispatched Date', 'Dispatch Date');
     const stockValue = labelled('Stock Status', 'Stock Ready', 'In Stock');
     const internalComments = readMultilineNearLabel('Internal Comments');
     const deliveryInstructions = readMultilineNearLabel('Delivery Instructions');
@@ -1747,7 +1770,7 @@
       total: payment.total ?? readMoneyNearLabels(['Invoiced Total', 'Acceptance Total', 'Order Total', 'Grand Total', 'Total']),
       createdDate: labelled('Created Date'),
       invoiceDate: labelled('Invoice Date'),
-      fullyDispatched: Boolean(dispatchedValue && !/^(?:no|false|0|-+)$/i.test(dispatchedValue)),
+      fullyDispatched: omniFullyDispatchedState(),
       paid: payment.paid,
       paidAmount: payment.paidAmount,
       balanceDue: payment.balanceDue,
