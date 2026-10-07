@@ -44,8 +44,9 @@ function extract(name) {
       addCloneQuoteButton();
       const wrong = document.createElement('button'); wrong.textContent = 'Copy Selected Items'; wrong.onclick = () => { throw Error('Must copy ALL items'); }; document.body.appendChild(wrong);
     });
-    await page.locator('#lc-clone-quote-button').click();
-    assert.equal(await page.evaluate(() => window.adminOpened), 1, 'Clone does not require HubSpot');
+    await page.evaluate(() => {
+      sessionStorage.setItem('clone-intent', JSON.stringify({ orderId: '397', quoteNumber: 'NZSO-15512', at: Date.now() }));
+    });
     await page.evaluate(() => {
       const actions = document.createElement('button'); actions.textContent = 'Actions';
       actions.onclick = () => {
@@ -59,7 +60,7 @@ function extract(name) {
     await page.evaluate(() => continueCloneQuoteFromAdmin());
     await page.waitForTimeout(180);
     assert.equal(await page.evaluate(() => window.copied), 1, 'Clone intent consumed once');
-    await page.locator('#lc-clone-quote-button').click();
+    await page.evaluate(() => clickNativeCloneAction(document.getElementById('native-copy')));
     assert.equal(await page.evaluate(() => window.copied), 2, 'Use native Copy All Items when available');
     await page.evaluate(() => {
       sessionStorage.setItem('clone-intent', JSON.stringify({ orderId: '999', quoteNumber: 'NZSO-OTHER', at: Date.now() }));

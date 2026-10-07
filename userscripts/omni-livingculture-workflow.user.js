@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.92
+// @version      0.1.93
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -2802,21 +2802,86 @@
 
   function cloneCurrentQuote() {
     if (!isOmniPage() || omniHeadingDraft().documentType !== 'quote') return;
-    const action = nativeCopyAllItemsControl();
-    if (action) { clickNativeCloneAction(action); return; }
-    const admin = findButtonByLabel('Go to Admin');
     const orderId = currentQuotePdfOrderId();
-    if (!admin || admin.disabled || !orderId) {
-      window.alert('Use Go to Admin and Actions > Copy All Items to clone this quote.');
-      return;
+    if (!orderId || document.getElementById('lc-clone-background-worker')) return;
+    const button = document.getElementById(CLONE_QUOTE_BUTTON_ID);
+    const sourceNumber = hubSpotGateOrderId();
+    const frame = document.createElement('iframe');
+    frame.id = 'lc-clone-background-worker';
+    frame.name = `lc-clone-worker-${Date.now()}`;
+    frame.setAttribute('aria-hidden', 'true');
+    frame.style.cssText = 'position:fixed;left:-2000px;top:0;width:1200px;height:900px;opacity:0;pointer-events:none;border:0;';
+    if (button) {
+      button.disabled = true;
+      button.setAttribute('aria-busy', 'true');
+      button.textContent = '';
+      const spinner = document.createElement('span');
+      spinner.style.cssText = 'display:inline-block;width:12px;height:12px;margin-right:8px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;vertical-align:middle;';
+      spinner.animate([{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }], { duration: 800, iterations: Infinity });
+      button.append(spinner, 'Cloning…');
     }
-    try {
-      sessionStorage.setItem(CLONE_QUOTE_INTENT_KEY, JSON.stringify({ orderId, quoteNumber: hubSpotGateOrderId(), at: Date.now() }));
-      admin.click();
-    } catch {
-      sessionStorage.removeItem(CLONE_QUOTE_INTENT_KEY);
-      window.alert('Could not open Copy All Items. Use Omni\'s Actions menu.');
-    }
+    let copied = false;
+    let saving = false;
+    let saveDocument = null;
+    let openedMenu = false;
+    const cleanup = () => {
+      window.clearInterval(timer);
+      frame.remove();
+      if (button) { button.disabled = false; button.removeAttribute('aria-busy'); button.textContent = 'Clone Quote'; }
+    };
+    const started = Date.now();
+    const timer = window.setInterval(() => {
+      if (Date.now() - started > 120000) {
+        cleanup();
+        window.alert('Could not confirm the cloned quote was saved. Check the quotes list before cloning again.');
+        return;
+      }
+      try {
+        const doc = frame.contentDocument;
+        if (!doc || frame.contentWindow.location.href === 'about:blank') return;
+        if (doc.readyState !== 'complete') return;
+        const url = new URL(frame.contentWindow.location.href);
+        const controls = Array.from(doc.querySelectorAll('a, button, input[type="button"], input[type="submit"]'));
+        const find = label => controls.find(element => normalizeLabel(element.value || element.textContent || '') === label && !element.disabled);
+        const number = extractOrderId(doc.querySelector('h1, h2, h3')?.textContent || doc.title);
+        const internalId = Array.from(url.searchParams.entries()).find(([key]) => /^(orderid|idorder)$/i.test(key))?.[1];
+        if (!copied) {
+          if (internalId !== orderId || number !== sourceNumber) return;
+          const copy = find('copy all items');
+          if (copy) {
+            copied = true;
+            copy.setAttribute('target', frame.name);
+            copy.setAttribute('formtarget', frame.name);
+            if (copy.form) copy.form.target = frame.name;
+            copy.click();
+          }
+          else if (!openedMenu) { const actions = find('actions'); if (actions) { openedMenu = true; actions.click(); } }
+        } else if (!saving && /\/TransactionEntry\//i.test(url.pathname)) {
+          const newHeading = /^new\s+quote\b/i.test(clean(doc.querySelector('h1, h2, h3')?.textContent || ''));
+          const changed = number && number !== sourceNumber && internalId && internalId !== orderId;
+          const save = find('save') || find('save as draft');
+          if ((newHeading || changed) && save) {
+            saving = true;
+            saveDocument = doc;
+            save.setAttribute('formtarget', frame.name);
+            if (save.form) save.form.target = frame.name;
+            save.click();
+          }
+        } else if (saving && doc !== saveDocument && number && number !== sourceNumber && internalId && internalId !== orderId
+          && /^edit\s+quote\b/i.test(clean(doc.querySelector('h1, h2, h3')?.textContent || doc.title))
+          && /\/TransactionEntry\//i.test(url.pathname)) {
+          cleanup();
+          location.assign(url.href);
+          return;
+        }
+      } catch { /* Wait for same-origin navigation to finish. */ }
+    }, 250);
+    const adminUrl = new URL('https://go.cin7.com/Cloud/ShoppingCartAdmin/Orders/OrderDetail.aspx');
+    adminUrl.searchParams.set('idCustomerAppsLink', '1328006');
+    adminUrl.searchParams.set('idOrder', orderId);
+    adminUrl.searchParams.set('idWebSite', '27265');
+    document.body.appendChild(frame);
+    frame.src = adminUrl.href;
   }
 
   function continueCloneQuoteFromAdmin() {
@@ -4280,6 +4345,7 @@
   }
 
   function boot() {
+    if (window.parent !== window && window.name.startsWith('lc-clone-worker-')) return;
     if (/\/Cloud\/ShoppingCartAdmin\//i.test(location.pathname)) {
       if (window.parent !== window) return;
       continueConvertToSalesOrderFromAdmin();
