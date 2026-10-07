@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.87
+// @version      0.1.88
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -2681,9 +2681,69 @@
       .find(element => element.id !== CONVERT_ORDER_BUTTON_ID && normalizeLabel(element.value || element.textContent || '') === 'convert to sales order');
   }
 
-  function convertQuoteToSalesOrder() {
+  function confirmConvertToSalesOrder(button, event) {
+    if (document.getElementById('lc-convert-order-confirm')) return Promise.resolve(false);
+    return new Promise(resolve => {
+      const overlay = document.createElement('div');
+      overlay.id = 'lc-convert-order-confirm';
+      overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:rgba(15,35,60,.16);';
+      const panel = document.createElement('div');
+      panel.setAttribute('role', 'dialog');
+      panel.setAttribute('aria-modal', 'true');
+      panel.setAttribute('aria-labelledby', 'lc-convert-order-title');
+      panel.style.cssText = 'position:fixed;left:0;top:0;width:360px;max-width:calc(100vw - 16px);box-sizing:border-box;background:#fff;border:1px solid #a6bddb;border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.22);font:13px Arial;color:#172b49;overflow:hidden;';
+      const title = document.createElement('div');
+      title.id = 'lc-convert-order-title';
+      title.textContent = 'Convert to Sales Order';
+      title.style.cssText = 'background:#063b78;color:white;padding:12px;font-size:16px;font-weight:700;';
+      const body = document.createElement('p');
+      body.textContent = `Convert ${hubSpotGateOrderId()} to a sales order? Save any unsaved quote changes before continuing.`;
+      body.style.cssText = 'margin:0;padding:12px;line-height:1.4;';
+      const footer = document.createElement('div');
+      footer.style.cssText = 'display:flex;justify-content:flex-end;gap:8px;padding:0 12px 12px;';
+      const cancel = document.createElement('button');
+      cancel.type = 'button'; cancel.textContent = 'Cancel';
+      cancel.style.cssText = 'height:36px;width:80px;border:1px solid #063b78;border-radius:4px;background:#fff;color:#063b78;font:700 13px Arial;cursor:pointer;';
+      const confirm = document.createElement('button');
+      confirm.type = 'button'; confirm.textContent = 'Convert';
+      confirm.style.cssText = 'height:36px;width:160px;border:1px solid #063b78;border-radius:4px;background:#063b78;color:#fff;font:700 13px Arial;cursor:pointer;';
+      const close = accepted => {
+        overlay.remove();
+        if (!accepted && button?.isConnected) button.focus({ preventScroll: true });
+        resolve(accepted);
+      };
+      let newPointerPress = false;
+      confirm.addEventListener('pointerdown', pointerEvent => { newPointerPress = pointerEvent.isTrusted; });
+      confirm.addEventListener('click', clickEvent => {
+        // The opening press can end over this button. Require another press or keyboard activation.
+        if (clickEvent.isTrusted && (newPointerPress || clickEvent.detail === 0)) close(true);
+      });
+      cancel.addEventListener('click', () => close(false));
+      overlay.addEventListener('click', clickEvent => { if (clickEvent.target === overlay) close(false); });
+      overlay.addEventListener('keydown', keyEvent => {
+        if (keyEvent.key === 'Escape') { keyEvent.preventDefault(); close(false); }
+        if (keyEvent.key === 'Tab') {
+          keyEvent.preventDefault();
+          (document.activeElement === confirm ? cancel : confirm).focus();
+        }
+      });
+      footer.append(cancel, confirm); panel.append(title, body, footer); overlay.appendChild(panel); document.body.appendChild(overlay);
+      const anchor = button?.getBoundingClientRect();
+      const pointerEvent = event && (event.type === 'pointerdown' || event.detail !== 0);
+      const x = pointerEvent && Number.isFinite(event.clientX) ? event.clientX : anchor ? anchor.left + anchor.width / 2 : window.innerWidth / 2;
+      const y = pointerEvent && Number.isFinite(event.clientY) ? event.clientY : anchor ? anchor.top + anchor.height / 2 : window.innerHeight / 2;
+      const confirmRect = confirm.getBoundingClientRect();
+      panel.style.left = `${Math.max(8, Math.min(x - confirmRect.left - confirmRect.width / 2, window.innerWidth - panel.offsetWidth - 8))}px`;
+      panel.style.top = `${Math.max(8, Math.min(y - confirmRect.top - confirmRect.height / 2, window.innerHeight - panel.offsetHeight - 8))}px`;
+      confirm.focus({ preventScroll: true });
+    });
+  }
+
+  async function convertQuoteToSalesOrder(button, event) {
     if (!isHubSpotStepComplete(hubSpotGateOrderId()) || omniHeadingDraft().documentType !== 'quote') return;
-    if (!window.confirm('Convert this quote to a sales order? Save any unsaved quote changes before continuing.')) return;
+    const quoteNumber = hubSpotGateOrderId();
+    if (!await confirmConvertToSalesOrder(button || document.getElementById(CONVERT_ORDER_BUTTON_ID), event)) return;
+    if (quoteNumber !== hubSpotGateOrderId() || !isHubSpotStepComplete(quoteNumber) || omniHeadingDraft().documentType !== 'quote') return;
     const nativeAction = nativeConvertToSalesOrderControl();
     if (nativeAction && !nativeAction.disabled) {
       nativeAction.click();
@@ -3656,7 +3716,7 @@
     }
   }
 
-  function handleActionButtonClick(button) {
+  function handleActionButtonClick(button, event) {
     if (!button || button.disabled) return;
     if (!shouldHandleAction(button)) return;
     try {
@@ -3687,7 +3747,7 @@
       if (button.id === QUOTE_PDF_BUTTON_ID) {
         showQuotePdfTemplateMenu(button);
       }
-      if (button.id === CONVERT_ORDER_BUTTON_ID) convertQuoteToSalesOrder();
+      if (button.id === CONVERT_ORDER_BUTTON_ID) void convertQuoteToSalesOrder(button, event);
     } catch (error) {
       const message = error && error.message ? error.message : String(error || 'Unknown error');
       console.error('[LC Cin7 buttons] Button action failed:', error);
@@ -3705,7 +3765,7 @@
       if (!button) return;
       event.preventDefault();
       event.stopPropagation();
-      handleActionButtonClick(button);
+      handleActionButtonClick(button, event);
     };
     ['pointerdown', 'mousedown', 'click'].forEach((eventName) => {
       document.addEventListener(eventName, handleEvent, true);
@@ -3718,7 +3778,7 @@
     const run = (event) => {
       event.preventDefault();
       event.stopPropagation();
-      handleActionButtonClick(button);
+      handleActionButtonClick(button, event);
     };
     ['pointerdown', 'mousedown', 'click'].forEach((eventName) => {
       button.addEventListener(eventName, run, true);
