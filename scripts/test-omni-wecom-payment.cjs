@@ -18,6 +18,8 @@ const staff = JSON.parse(reps);
     await page.evaluate(reps => {
       window.GM_getResourceText = () => reps;
       window.sent = [];
+      window.successEvents = 0;
+      document.addEventListener('lc-omni-wecom-payment-sent', () => window.successEvents++);
       window.GM_xmlhttpRequest = options => { window.sent.push(JSON.parse(options.data)); options.onload({ status: 200, responseText: '{"errcode":0}' }); };
     }, reps);
     await page.addScriptTag({ content: source });
@@ -31,9 +33,11 @@ const staff = JSON.parse(reps);
     const preview = page.locator('#lc-wecom-payment-confirm-overlay textarea');
     assert.equal(await preview.inputValue(), 'NZSO-15502 EFTPOS payment $12,899.99 paid in full — Steve, PEN');
     assert.equal(await page.evaluate(() => window.sent.length), 0, 'Selecting a rep must not send');
+    assert.equal(await page.evaluate(() => window.successEvents), 0);
     await page.screenshot({ path: '/tmp/lc-omni-wecom-payment.png' });
     await page.locator('#lc-wecom-payment-confirm-overlay').getByRole('button', { name: 'Send to WeCom', exact: true }).click();
     assert.equal(await page.evaluate(() => window.sent.length), 1, 'Send only after explicit confirmation');
+    assert.equal(await page.evaluate(() => window.successEvents), 1, 'Notify invoice date helper only after success');
     await page.evaluate(() => {
       document.querySelector('table input').value = '6,449.99';
       document.querySelectorAll('p')[0].textContent = 'Total Paid: 6,449.99';

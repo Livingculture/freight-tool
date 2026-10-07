@@ -13,10 +13,10 @@ function extract(name) {
 (async () => {
   const browser = await chromium.launch({ headless: true });
   try {
-    for (const timings of [{ fast: 100, rendered: 100 }, { fast: 1600, rendered: 2000 }, { fast: 2500, rendered: 100 }, { fast: 100, rendered: 100, template: 'custom' }, { fast: 2500, rendered: 100, template: 'custom' }]) {
+    for (const timings of [{ fast: 100, rendered: 100 }, { fast: 1600, rendered: 2000 }, { fast: 2500, rendered: 100 }, { fast: 100, rendered: 100, template: 'custom' }, { fast: 2500, rendered: 100, template: 'custom' }, { fast: 100, rendered: 100, template: 'invoice' }, { fast: 2500, rendered: 100, template: 'invoice' }]) {
       const page = await browser.newPage();
       await page.route('https://go.cin7.com/**', route => route.fulfill({ contentType: 'text/html', body: route.request().url().includes('ShoppingCartAdmin')
-        ? `<a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Quote&amp;path=${timings.template ? 'wrong' : 'rendered'}">Quote</a><a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Quote&amp;path=${timings.template ? 'rendered' : 'wrong'}">Custom Quote</a>`
+        ? `<a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Quote&amp;path=${timings.template ? 'wrong' : 'rendered'}">Quote</a><a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Quote&amp;path=${timings.template === 'custom' ? 'rendered' : 'wrong'}">Custom Quote</a><a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Invoice&amp;path=${timings.template === 'invoice' ? 'rendered' : 'wrong'}">Invoice</a>`
         : '<button id="pdf">Download Quote</button>' }));
       await page.goto('https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx?OrderId=388');
       await page.evaluate(timings => {
@@ -48,6 +48,7 @@ function extract(name) {
       assert.deepEqual(await page.evaluate(() => window.alerts), []);
       assert.equal(await page.locator('iframe').count(), 0);
       assert.equal(await page.locator('#pdf').isEnabled(), true);
+      assert.equal(await page.locator('#pdf').innerText(), timings.template === 'invoice' ? 'Download Invoice' : 'Download Quote');
       assert.equal(await page.evaluate(() => window.selectedTemplate), timings.template || 'quote');
       assert(!(await page.evaluate(() => window.pdfUrls)).some(url => url.includes('wrong')), 'Fallback must use the selected template');
       if (timings.fast > 1000) assert(elapsed < 2400, `Fallback should not wait five seconds (${elapsed}ms)`);

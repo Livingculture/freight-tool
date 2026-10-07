@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 WeCom Payment Message Sender
 // @namespace    livingculture
-// @version      4.10
+// @version      4.11
 // @description  Sends a WeCom payment message from Cin7 invoice/payment screen only.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -568,6 +568,7 @@
         }
 
         if (ok) {
+          document.dispatchEvent(new Event('lc-omni-wecom-payment-sent'));
           setStatus(`Sent to WeCom: ${message}`);
 
           const button = document.getElementById(SEND_AS_BUTTON_ID);

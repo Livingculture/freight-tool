@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.88
+// @version      0.1.89
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -2888,6 +2888,7 @@
   }
 
   function quotePdfTemplateLabel(template) {
+    if (template === 'invoice') return 'Invoice';
     return template === 'custom' ? 'Custom Quote' : 'Quote';
   }
 
@@ -2968,7 +2969,7 @@
           const quoteLink = links.find(link => {
             return normalizeLabel(link.textContent || '') === normalizeLabel(quotePdfTemplateLabel(template))
               && /\/Cloud\/Docs\/PDF/i.test(link.getAttribute('href') || '');
-          }) || (template !== 'custom' && links.find((link) => {
+          }) || (template === 'quote' && links.find((link) => {
             const href = link.getAttribute('href') || '';
             return normalizeLabel(link.textContent || '') !== 'custom quote'
               && /\/Cloud\/Docs\/PDF/i.test(href) && /(?:\?|&)T=Quote(?:&|$)/i.test(href.replace(/&amp;/gi, '&'));
@@ -3018,6 +3019,7 @@
   }
 
   async function downloadCurrentQuotePdf(button, template = 'quote') {
+    const downloadLabel = template === 'invoice' ? 'Download Invoice' : 'Download Quote';
     if (!isHubSpotStepComplete(hubSpotGateOrderId())) {
       applyHubSpotApprovalGate();
       window.alert('Confirm the HubSpot Deal step before downloading this quote.');
@@ -3039,7 +3041,7 @@
       let fastPdfPromise = null;
       if (orderId || sidCandidates.length) {
         try {
-          const directRoutes = template === 'custom' ? [] : sidCandidates.map((sid) => requestQuotePdf(orderId, sid));
+          const directRoutes = template === 'quote' ? sidCandidates.map((sid) => requestQuotePdf(orderId, sid)) : [];
           if (orderId) directRoutes.push(prepareQuotePdfLink(orderId, template).then(fetchSignedQuotePdf));
           fastPdfPromise = Promise.any(directRoutes);
           let fastTimer = 0;
@@ -3049,7 +3051,7 @@
           const pdfBuffer = await Promise.race([fastPdfPromise, fastLimit]).finally(() => window.clearTimeout(fastTimer));
           saveQuotePdfBuffer(pdfBuffer, quoteNumber);
           button.disabled = false;
-          button.textContent = 'Download Quote';
+          button.textContent = downloadLabel;
           return;
         } catch (error) {
           // Some Cin7 sessions only expose the signed link after the Admin page
@@ -3059,7 +3061,7 @@
 
       if (!orderId) {
         button.disabled = false;
-        button.textContent = 'Download Quote';
+        button.textContent = downloadLabel;
         window.alert('Cin7\'s internal order ID could not be found for this quote. Refresh the quote and try again.');
         return;
       }
@@ -3086,7 +3088,7 @@
         localStorage.removeItem(QUOTE_PDF_HANDOFF_KEY);
         frame.remove();
         button.disabled = false;
-        button.textContent = 'Download Quote';
+        button.textContent = downloadLabel;
       };
       const completeDownload = (buffer) => {
         if (finished) return;
@@ -3163,7 +3165,7 @@
       }
     } catch (error) {
       button.disabled = false;
-      button.textContent = 'Download Quote';
+      button.textContent = downloadLabel;
       window.alert(error.message || 'The quote PDF could not be downloaded.');
     }
   }
@@ -3745,7 +3747,8 @@
         return;
       }
       if (button.id === QUOTE_PDF_BUTTON_ID) {
-        showQuotePdfTemplateMenu(button);
+        if (omniHeadingDraft().documentType === 'sales-order') void downloadCurrentQuotePdf(button, 'invoice');
+        else showQuotePdfTemplateMenu(button);
       }
       if (button.id === CONVERT_ORDER_BUTTON_ID) void convertQuoteToSalesOrder(button, event);
     } catch (error) {
@@ -4076,7 +4079,38 @@
       wireActionButton(button);
     }
     button.classList.remove(HUBSPOT_GATE_CLASS);
+    if (!button.disabled) button.textContent = omniHeadingDraft().documentType === 'sales-order' ? 'Download Invoice' : 'Download Quote';
     placeOmniActionButton(button, hubspotButton);
+  }
+
+  function fillOmniInvoiceDate() {
+    if (!isOmniPage() || omniHeadingDraft().documentType !== 'sales-order') return;
+    const label = Array.from(document.querySelectorAll('label, legend, span, div, td'))
+      .find(node => normalizeLabel(node.textContent || '').replace(/^3\s*/, '') === 'invoice date');
+    if (!label) return;
+    let inputs = [];
+    const associated = label.getAttribute('for') && document.getElementById(label.getAttribute('for'));
+    if (associated) inputs = [associated];
+    for (let root = label; !inputs.length && root && root !== document.body; root = root.parentElement) {
+      const candidates = Array.from(root.querySelectorAll('input:not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="image"])'));
+      if (candidates.length > 2) return;
+      inputs = candidates;
+    }
+    const dateInput = inputs[0];
+    if (!dateInput || dateInput.disabled || dateInput.readOnly || dateInput.value.trim()) return;
+    const now = new Date();
+    const date = dateInput.type === 'date' ? localDateKey(now) : `${now.getDate()}-${now.getMonth() + 1}-${now.getFullYear()}`;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(dateInput, date);
+    dateInput.dispatchEvent(new Event('input', { bubbles: true }));
+    dateInput.dispatchEvent(new Event('change', { bubbles: true }));
+    const timeInput = inputs[1];
+    if (timeInput && !timeInput.value.trim() && !timeInput.disabled && !timeInput.readOnly) {
+      const time = timeInput.type === 'time' ? `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+        : `${now.getHours() % 12 || 12}:${String(now.getMinutes()).padStart(2, '0')} ${now.getHours() < 12 ? 'am' : 'pm'}`;
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(timeInput, time);
+      timeInput.dispatchEvent(new Event('input', { bubbles: true }));
+      timeInput.dispatchEvent(new Event('change', { bubbles: true }));
+    }
   }
 
   function addConvertToSalesOrderButton() {
@@ -4096,6 +4130,15 @@
       wireActionButton(button);
     }
     placeOmniActionButton(button, downloadButton);
+  }
+
+  function installOmniInvoiceDateHooks() {
+    if (!isOmniPage()) return;
+    document.addEventListener('lc-omni-wecom-payment-sent', fillOmniInvoiceDate);
+    document.addEventListener('click', event => {
+      const control = event.target.closest('button, a, input[type="button"], input[type="submit"]');
+      if (control && /^(save|save & email|save back to list|save & back to list|save to admin)$/.test(normalizeLabel(control.value || control.textContent || ''))) fillOmniInvoiceDate();
+    }, true);
   }
 
   let buttonPassScheduled = false;
@@ -4128,6 +4171,7 @@
       return;
     }
     if (continueQuotePdfFromEditFrame()) return;
+    installOmniInvoiceDateHooks();
     if (isOmniPage()) document.getElementById('lc-omni-hubspot-shortcut-button')?.remove();
     ensureDelegatedClickHandler();
     void loadRepOptions();
