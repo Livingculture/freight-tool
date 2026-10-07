@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.86
+// @version      0.1.87
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -25,6 +25,8 @@
   const HUBSPOT_BUTTON_ID = 'lc-hubspot-deal-inline-button-v1';
   const QUOTE_REVIEW_BUTTON_ID = 'lc-quote-review-inline-button-v1';
   const QUOTE_PDF_BUTTON_ID = 'lc-quote-pdf-download-button-v1';
+  const CONVERT_ORDER_BUTTON_ID = 'lc-convert-sales-order-button';
+  const CONVERT_ORDER_INTENT_KEY = 'lc-omni-convert-sales-order-intent';
   const CUSTOMER_PHOTOS_BUTTON_ID = 'lc-omni-customer-photos-button';
   const VIEW_CUSTOMER_ALBUM_BUTTON_ID = 'lc-omni-view-customer-album-button';
   const VIEW_CUSTOMER_ALBUMS_BUTTON_ID = 'lc-omni-view-customer-albums-button';
@@ -239,6 +241,7 @@
         downloadButton.title = '';
       }
     }
+    addConvertToSalesOrderButton();
   }
 
   function deriveBranchFromRep(repName) {
@@ -1276,7 +1279,8 @@
       document.getElementById(BUTTON_ID),
       document.getElementById(QUOTE_REVIEW_BUTTON_ID),
       document.getElementById(HUBSPOT_BUTTON_ID),
-      document.getElementById(QUOTE_PDF_BUTTON_ID)
+      document.getElementById(QUOTE_PDF_BUTTON_ID),
+      document.getElementById(CONVERT_ORDER_BUTTON_ID)
     ].filter(Boolean);
     if (!buttons.length) return;
 
@@ -1314,6 +1318,11 @@
       button.style.paddingLeft = window.innerWidth < 1180 ? '9px' : '14px';
       button.style.paddingRight = window.innerWidth < 1180 ? '9px' : '14px';
       button.style.fontSize = window.innerWidth < 1180 ? '12px' : '14px';
+      if (button.id === CONVERT_ORDER_BUTTON_ID) {
+        button.style.setProperty('font-size', '12px', 'important');
+        button.style.whiteSpace = 'normal';
+        button.style.lineHeight = '1.2';
+      }
       button.style.pointerEvents = 'auto';
       if (button.parentElement !== toolsBar || toolsBar.children[index] !== button) toolsBar.appendChild(button);
     });
@@ -2667,6 +2676,61 @@
     field(OVERLAY_ID).classList.add('open');
   }
 
+  function nativeConvertToSalesOrderControl() {
+    return Array.from(document.querySelectorAll('a, button, input[type="button"], input[type="submit"]'))
+      .find(element => element.id !== CONVERT_ORDER_BUTTON_ID && normalizeLabel(element.value || element.textContent || '') === 'convert to sales order');
+  }
+
+  function convertQuoteToSalesOrder() {
+    if (!isHubSpotStepComplete(hubSpotGateOrderId()) || omniHeadingDraft().documentType !== 'quote') return;
+    if (!window.confirm('Convert this quote to a sales order? Save any unsaved quote changes before continuing.')) return;
+    const nativeAction = nativeConvertToSalesOrderControl();
+    if (nativeAction && !nativeAction.disabled) {
+      nativeAction.click();
+      return;
+    }
+    const goToAdmin = Array.from(document.querySelectorAll('a, button, input[type="button"], input[type="submit"]'))
+      .find(element => normalizeLabel(element.value || element.textContent || '') === 'go to admin' && !element.disabled);
+    const orderId = currentQuotePdfOrderId();
+    if (!goToAdmin || !orderId) {
+      window.alert('The native Go to Admin action could not be found. Convert the quote from Omni\'s Actions menu.');
+      return;
+    }
+    try {
+      sessionStorage.setItem(CONVERT_ORDER_INTENT_KEY, JSON.stringify({ orderId, quoteNumber: hubSpotGateOrderId(), at: Date.now() }));
+      goToAdmin.click();
+    } catch (error) {
+      try { sessionStorage.removeItem(CONVERT_ORDER_INTENT_KEY); } catch {}
+      window.alert('Could not open the conversion action. Use Go to Admin and Convert to Sales Order in Omni\'s Actions menu.');
+    }
+  }
+
+  function continueConvertToSalesOrderFromAdmin() {
+    let intent;
+    try { intent = JSON.parse(sessionStorage.getItem(CONVERT_ORDER_INTENT_KEY) || 'null'); } catch { return; }
+    if (!intent) return;
+    sessionStorage.removeItem(CONVERT_ORDER_INTENT_KEY);
+    if (!intent.at || Date.now() - intent.at > 120000 || intent.at > Date.now()
+      || intent.orderId !== currentQuotePdfOrderId() || intent.quoteNumber !== hubSpotGateOrderId()) return;
+    let attempts = 0;
+    const timer = window.setInterval(() => {
+      const action = nativeConvertToSalesOrderControl();
+      attempts += 1;
+      if (!action && attempts === 1) {
+        const actionsMenu = Array.from(document.querySelectorAll('a, button, input[type="button"], input[type="submit"]'))
+          .find(element => normalizeLabel(element.value || element.textContent || '') === 'actions');
+        actionsMenu?.click();
+      }
+      if (action && !action.disabled) {
+        window.clearInterval(timer);
+        action.click();
+      } else if (attempts >= 40) {
+        window.clearInterval(timer);
+        window.alert('Omni\'s Convert to Sales Order action was not found. Choose it from the Actions menu.');
+      }
+    }, 125);
+  }
+
   function currentQuotePdfOrderId() {
     const params = new URL(location.href).searchParams;
     for (const wanted of ['OrderId', 'idOrder', 'ID']) {
@@ -3623,6 +3687,7 @@
       if (button.id === QUOTE_PDF_BUTTON_ID) {
         showQuotePdfTemplateMenu(button);
       }
+      if (button.id === CONVERT_ORDER_BUTTON_ID) convertQuoteToSalesOrder();
     } catch (error) {
       const message = error && error.message ? error.message : String(error || 'Unknown error');
       console.error('[LC Cin7 buttons] Button action failed:', error);
@@ -3636,7 +3701,7 @@
     const handleEvent = (event) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
-      const button = target.closest(`#${CUSTOMER_PHOTOS_BUTTON_ID}, #${VIEW_CUSTOMER_ALBUM_BUTTON_ID}, #${VIEW_CUSTOMER_ALBUMS_BUTTON_ID}, #${BUTTON_ID}, #${HUBSPOT_BUTTON_ID}, #${QUOTE_REVIEW_BUTTON_ID}, #${QUOTE_PDF_BUTTON_ID}`);
+      const button = target.closest(`#${CUSTOMER_PHOTOS_BUTTON_ID}, #${VIEW_CUSTOMER_ALBUM_BUTTON_ID}, #${VIEW_CUSTOMER_ALBUMS_BUTTON_ID}, #${BUTTON_ID}, #${HUBSPOT_BUTTON_ID}, #${QUOTE_REVIEW_BUTTON_ID}, #${QUOTE_PDF_BUTTON_ID}, #${CONVERT_ORDER_BUTTON_ID}`);
       if (!button) return;
       event.preventDefault();
       event.stopPropagation();
@@ -3954,6 +4019,25 @@
     placeOmniActionButton(button, hubspotButton);
   }
 
+  function addConvertToSalesOrderButton() {
+    if (!isOmniPage() || omniHeadingDraft().documentType !== 'quote' || !isHubSpotStepComplete(hubSpotGateOrderId())) {
+      document.getElementById(CONVERT_ORDER_BUTTON_ID)?.remove();
+      return;
+    }
+    const downloadButton = document.getElementById(QUOTE_PDF_BUTTON_ID);
+    if (!downloadButton) return;
+    let button = document.getElementById(CONVERT_ORDER_BUTTON_ID);
+    if (!button) {
+      button = document.createElement('button');
+      button.id = CONVERT_ORDER_BUTTON_ID;
+      button.type = 'button';
+      button.textContent = 'Convert to Sales Order';
+      styleInlineButton(button, '#063b78');
+      wireActionButton(button);
+    }
+    placeOmniActionButton(button, downloadButton);
+  }
+
   let buttonPassScheduled = false;
 
   function runButtonPass() {
@@ -3979,6 +4063,7 @@
   function boot() {
     if (/\/Cloud\/ShoppingCartAdmin\//i.test(location.pathname)) {
       if (window.parent !== window) return;
+      continueConvertToSalesOrderFromAdmin();
       continueQuotePdfFromAdmin();
       return;
     }
