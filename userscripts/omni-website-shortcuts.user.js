@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Website Shortcuts
 // @namespace    livingculture-omni
-// @version      0.1.32
+// @version      0.1.33
 // @description  Adds Living Culture website shortcuts to the grey space between Cin7 Omni quote sections.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @match        https://livingculture.co.nz/*
@@ -203,6 +203,25 @@
     return mounted && (operation === 'motorised' ? motorised : operation === 'manual' ? manual : false);
   }
 
+  function blindPickerOptions(product, mounting) {
+    const options = [...product.options].sort((a, b) => a.position - b.position);
+    const fields = options.map(option => ({ name: /colou?r/i.test(option.name) ? 'Colour' : option.name,
+      key: `option${option.position}`, read: variant => variant[`option${option.position}`] }));
+    if (mounting !== 'wall') return fields;
+    const parse = value => clean(value).match(/^post[\s-]*to[\s-]*(post|wall)\b\s*(.*)$/i);
+    const index = fields.findIndex(field => (product.variants || []).some(variant => parse(field.read(variant))));
+    if (index < 0) return fields;
+    const field = fields.splice(index, 1)[0];
+    const combined = (product.variants || []).some(variant => parse(field.read(variant))?.[2]);
+    if (combined) {
+      fields.splice(index, 0, { name: 'Size', key: field.key,
+        read: variant => parse(field.read(variant))?.[2] || '' });
+      fields.unshift({ name: 'Wall Mounting', key: 'wall-mounting',
+        read: variant => { const match = parse(field.read(variant)); return match ? `Post to ${match[1].toLowerCase() === 'wall' ? 'Wall' : 'Post'}` : ''; } });
+    } else fields.unshift({ ...field, name: 'Wall Mounting' });
+    return fields;
+  }
+
   async function selectPergola(shortcut, trigger) {
     const isBlinds = shortcut.label === 'Blinds';
     if (trigger.getAttribute('aria-expanded') === 'true') { closePergolaPicker?.(); return; }
@@ -312,20 +331,21 @@
     const chooseBlind = () => {
       blindOptions.replaceChildren();
       if (!selectedProduct) return;
-      const options = [...selectedProduct.options].sort((a, b) => a.position - b.position);
+      const options = blindPickerOptions(selectedProduct, mount.value);
       const selects = options.map(option => {
         const label = document.createElement('label');
-        label.textContent = /colou?r/i.test(option.name) ? 'Colour' : option.name;
+        label.textContent = option.name;
+        if (option.name === 'Wall Mounting') label.style.gridColumn = '1 / -1';
         const select = document.createElement('select');
-        select.dataset.option = `option${option.position}`;
+        select.dataset.option = option.key;
         select.setAttribute('aria-label', label.textContent);
         label.appendChild(select); blindOptions.appendChild(label);
         return select;
       });
-      const matching = count => variants().filter(variant => selects.slice(0, count).every(select => variant[select.dataset.option] === select.value));
+      const matching = count => variants().filter(variant => selects.slice(0, count).every((select, index) => options[index].read(variant) === select.value));
       const refresh = start => {
         for (let index = start; index < selects.length; index += 1) {
-          const values = index === start ? [...new Set(matching(index).map(variant => variant[selects[index].dataset.option]).filter(Boolean))] : [];
+          const values = index === start ? [...new Set(matching(index).map(variant => options[index].read(variant)).filter(Boolean))] : [];
           fill(selects[index], `Select ${options[index].name.toLowerCase()}`, values.map(value => ({ label: value, value })));
         }
       };

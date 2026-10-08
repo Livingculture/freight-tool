@@ -18,7 +18,7 @@ const products = [
   try {
     const page = await browser.newPage({ viewport: { width: 1200, height: 850 } });
     await page.setContent('<style>body{font:14px Arial;background:#eee;margin:24px}button{height:34px;width:100px}</style><button id="trigger">Blinds</button>');
-    await page.addScriptTag({ content: `const clean=value=>String(value||'').trim();const loadPergolas=async family=>family==='Blinds'?${JSON.stringify(products)}:${JSON.stringify([product(7, 'Tasman Motorised Wall Mounted Louvre Roof Aluminium Pergola')])};let opened=[];let skus=[];const openShortcut=shortcut=>{opened.push(shortcut.url);return {};};window.addEventListener('lc:omni-add-sku',event=>skus.push(event.detail.sku));${source.slice(start, end)}` });
+    await page.addScriptTag({ content: `const clean=value=>String(value||'').trim();let blindCatalog=${JSON.stringify(products)};const loadPergolas=async family=>family==='Blinds'?blindCatalog:${JSON.stringify([product(7, 'Tasman Motorised Wall Mounted Louvre Roof Aluminium Pergola')])};let opened=[];let skus=[];const openShortcut=shortcut=>{opened.push(shortcut.url);return {};};window.addEventListener('lc:omni-add-sku',event=>skus.push(event.detail.sku));${source.slice(start, end)}` });
     const open = async () => page.evaluate(() => selectPergola({ label: 'Blinds' }, document.getElementById('trigger')));
     await open();
     const mount = page.getByLabel('Mounting', { exact: true });
@@ -63,13 +63,49 @@ const products = [
     assert.equal(await page.locator('#lc-omni-pergola-picker').count(), 0);
     assert.equal(await page.evaluate(() => document.activeElement.id), 'trigger');
     assert.equal(await page.evaluate(() => blindMatches({ title: 'Outdoor Blind' }, 'free', 'manual')), false, 'Unclassified blinds are not assigned an invented mounting');
+    const explicitWall = { ...product(8, 'Motorised Blind For Tasman Wall Mounted Pergola'),
+      options: [{ name: 'Type', position: 1 }, { name: 'Size', position: 2 }, { name: 'Color', position: 3 }],
+      variants: [
+        { id: 81, sku: 'POST-4', option1: 'Post To Post', option2: '4m', option3: 'Black' },
+        { id: 82, sku: 'POST-5', option1: 'Post To Post', option2: '5m', option3: 'Black' },
+        { id: 83, sku: 'WALL-4', option1: 'Post To Wall', option2: '4m', option3: 'Black' },
+      ] };
+    await page.evaluate(catalog => { blindCatalog = catalog; }, [explicitWall]);
+    await open(); await mount.selectOption('wall'); await operation.selectOption('motorised');
+    const wallMounting = page.getByLabel('Wall Mounting', { exact: true });
+    assert.deepEqual(await wallMounting.locator('option').evaluateAll(opts => opts.map(o => o.value).filter(Boolean)), ['Post To Post', 'Post To Wall']);
+    assert(await page.getByLabel('Size', { exact: true }).isDisabled(), 'Select wall mounting before size');
+    await wallMounting.selectOption('Post To Post');
+    await page.getByLabel('Size', { exact: true }).selectOption('5m');
+    await wallMounting.selectOption('Post To Wall');
+    assert.equal(await page.getByLabel('Size', { exact: true }).inputValue(), '', 'Changing wall mounting resets size');
+    assert(await page.getByLabel('Colour', { exact: true }).isDisabled());
+    assert.deepEqual(await page.getByLabel('Size', { exact: true }).locator('option').evaluateAll(opts => opts.map(o => o.value).filter(Boolean)), ['4m'], 'Only website sizes available for Post to Wall remain');
+    await page.getByLabel('Size', { exact: true }).selectOption('4m');
+    await page.screenshot({ path: '/tmp/lc-blind-wall-mounting.png' });
+    await page.getByLabel('Colour', { exact: true }).selectOption('Black');
+    assert.equal((await page.evaluate(() => skus)).at(-1), 'WALL-4');
+    await open(); await mount.selectOption('wall'); await operation.selectOption('motorised');
+    await wallMounting.selectOption('Post To Post'); await page.getByLabel('Size', { exact: true }).selectOption('4m');
+    await page.getByLabel('Colour', { exact: true }).selectOption('Black');
+    assert.equal((await page.evaluate(() => skus)).at(-1), 'POST-4', 'Same width uses a different SKU for Post to Post');
+    const combinedWall = { ...product(9, 'Manual Blind For Tasman Wall Mounted Pergola'), variants: [
+      { id: 91, sku: 'MANUAL-POST', option1: 'Post To Post 3m', option2: 'Black' },
+      { id: 92, sku: 'MANUAL-WALL', option1: 'Post To Wall 3m', option2: 'Black' },
+    ] };
+    await page.evaluate(catalog => { blindCatalog = catalog; }, [combinedWall]);
+    await open(); await mount.selectOption('wall'); await operation.selectOption('manual');
+    await wallMounting.selectOption('Post to Wall');
+    await page.getByLabel('Size', { exact: true }).selectOption('3m');
+    await page.getByLabel('Colour', { exact: true }).selectOption('Black');
+    assert.equal((await page.evaluate(() => skus)).at(-1), 'MANUAL-WALL', 'Combined website size/type becomes separate fields without changing SKU');
     await page.evaluate(() => selectPergola({ label: 'Tasman' }, document.getElementById('trigger')));
     assert.equal(await operation.count(), 0, 'Pergola picker retains its existing layout');
     await mount.selectOption('wall');
     assert.equal(await page.getByRole('combobox', { name: 'Model', exact: true }).inputValue(), '7');
     await page.locator('#lc-omni-pergola-picker #size').selectOption('4m');
     await page.locator('#lc-omni-pergola-picker #colour').selectOption('Black');
-    assert.deepEqual(await page.evaluate(() => skus), ['BL-4', 'BL-7'], 'Pergola SKU insertion is unchanged');
+    assert.equal((await page.evaluate(() => skus)).at(-1), 'BL-7', 'Pergola SKU insertion is unchanged');
     console.log('PASS: Mounting then operation filters, manual blinds for motorised pergolas, hyphenated names, dependent resets, variant SKU insertion, Escape and mobile framing. Catalogue/browser mocked.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
