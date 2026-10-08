@@ -64,6 +64,10 @@ assert(source.includes('addStaffHelpButton();\n    layoutOmniWorkflowButtons();'
     await popup.waitFor({ state: 'visible' });
     const embedded = page.frameLocator('iframe[title="Living Culture staff reference"]');
     await embedded.getByRole('heading', { name: 'Find a button' }).waitFor();
+    const desktopPopupBox = await popup.boundingBox();
+    assert.equal(desktopPopupBox.width, 820, 'Desktop Help stays compact');
+    assert(Math.abs(desktopPopupBox.x - (page.viewportSize().width - 820) / 2) <= 1, 'Desktop Help remains centred');
+    assert(await embedded.locator('html').evaluate(el => el.scrollWidth <= window.innerWidth), 'Embedded guide fits the narrower popup');
     assert.equal(await embedded.getByText('Living Culture Help', { exact: true }).count(), 0, 'Only the outer popup carries the Help heading');
     const search = embedded.getByRole('searchbox', { name: 'Search help' });
     await search.fill('CLONE quote');

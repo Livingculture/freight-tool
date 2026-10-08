@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.98
+// @version      0.1.99
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -4381,7 +4381,7 @@
     const dialog = document.createElement('dialog');
     dialog.id = STAFF_HELP_DIALOG_ID;
     dialog.setAttribute('aria-label', 'Living Culture Help');
-    dialog.style.cssText = 'box-sizing:border-box;width:min(1180px,calc(100vw - 24px));height:min(900px,calc(100dvh - 24px));max-width:none;max-height:none;padding:0;border:1px solid #a6bddb;border-radius:6px;background:#fff;color:#172b49;overflow:hidden;box-shadow:0 20px 60px rgba(7,28,58,.3);';
+    dialog.style.cssText = 'box-sizing:border-box;width:min(820px,calc(100vw - 24px));height:min(900px,calc(100dvh - 24px));max-width:none;max-height:none;padding:0;border:1px solid #a6bddb;border-radius:6px;background:#fff;color:#172b49;overflow:hidden;box-shadow:0 20px 60px rgba(7,28,58,.3);';
     const style = document.createElement('style');
     style.textContent = `#${STAFF_HELP_DIALOG_ID}[open]{display:flex;flex-direction:column}#${STAFF_HELP_DIALOG_ID}::backdrop{background:rgba(7,28,58,.45)}`;
     const header = document.createElement('div');
