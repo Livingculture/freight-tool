@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.102
+// @version      0.1.103
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -1860,6 +1860,18 @@
     });
   }
 
+  const collectionDispatchAttempts = new Set();
+
+  function claimOmniCollectionDispatch(collection) {
+    const key = `lc-omni-collection-dispatch:${collection.orderNumber}:${collection.collectedAt}`;
+    if (collectionDispatchAttempts.has(key)) return false;
+    try { if (sessionStorage.getItem(key)) return false; } catch {}
+    // Mark before native events: stock validation may clear the field or reload the page.
+    collectionDispatchAttempts.add(key);
+    try { sessionStorage.setItem(key, 'attempted'); } catch {}
+    return true;
+  }
+
   function fillOmniShowroomDispatch(collection) {
     const heading = omniHeadingDraft();
     if (!isOmniPage() || heading.documentType !== 'sales-order' || !collection
@@ -1868,6 +1880,7 @@
     if (!Number.isFinite(collected.getTime())) return false;
     const [dateInput, timeInput] = omniFullyDispatchedInputs();
     if (!dateInput || dateInput.disabled || dateInput.readOnly || clean(dateInput.value)) return false;
+    if (!claimOmniCollectionDispatch(collection)) return false;
     const parts = Object.fromEntries(new Intl.DateTimeFormat('en-NZ', { timeZone: 'Pacific/Auckland',
       year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
       .formatToParts(collected).map(part => [part.type, part.value]));
