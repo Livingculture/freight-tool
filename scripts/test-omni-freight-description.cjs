@@ -32,13 +32,20 @@ const options = ['Ship from Auckland', 'Ship from Chch', 'Collect from Warehouse
     assert.equal(box.width, original.width);
     assert.equal(box.height, original.height);
     for (const value of options) {
-      assert.equal(await dropdown.locator('option').filter({ hasText: value }).count(), 1);
-      await dropdown.selectOption(value);
+      assert.equal(await page.locator('datalist option').filter({ hasText: value }).count(), 1);
+      await dropdown.fill(value);
+      await dropdown.blur();
       assert.equal(await page.locator('#description').inputValue(), value);
       assert.equal(await page.evaluate(() => new FormData(document.querySelector('form')).get('FreightDescription')), value, 'Native saved field retains chosen value');
       assert.equal(await page.locator('#amount').inputValue(), '579.00', 'Description choice never changes the charge');
     }
     assert.equal(await page.evaluate(() => window.nativeChanges), 4, 'Each manual choice fires the native change once');
+    await dropdown.fill('Deliver to side gate after 10am');
+    await page.evaluate(() => ensureFreightDescriptionDropdown());
+    assert.equal(await dropdown.inputValue(), 'Deliver to side gate after 10am', 'Periodic sync preserves custom typing');
+    assert.equal(await page.evaluate(() => new FormData(document.querySelector('form')).get('FreightDescription')), 'Deliver to side gate after 10am', 'Custom typing updates the native saved field');
+    await dropdown.blur();
+    assert.equal(await page.locator('#amount').inputValue(), '579.00');
     assert.equal(await page.locator('#surcharge').inputValue(), 'Surcharge description');
     assert.equal(await page.locator('#discount').inputValue(), 'Deal');
     assert.equal(await page.evaluate(() => fillOmniFreightFields('$145.25', 'Ship from Auckland')), true);
@@ -47,9 +54,9 @@ const options = ['Ship from Auckland', 'Ship from Chch', 'Collect from Warehouse
     assert.equal(await page.locator('#amount').inputValue(), '145.25', 'Calculator still writes the amount, not the description control');
     await page.evaluate(() => fillOmniFreightFields('$250.00', 'Ship from Auckland + Christchurch'));
     assert.equal(await dropdown.inputValue(), 'Ship from Auckland + Christchurch', 'Special calculator wording is not truncated');
-    assert.equal(await dropdown.locator('option[data-current]').count(), 1);
-    await dropdown.selectOption('Collect from Warehouse');
-    assert.equal(await dropdown.locator('option[data-current]').count(), 0, 'Temporary current option is removed after choosing a standard option');
+    assert.equal(await page.locator('datalist option').count(), 4, 'Custom wording does not duplicate the preset suggestions');
+    await dropdown.fill('Collect from Warehouse');
+    await dropdown.blur();
     await page.evaluate(() => fillOmniFreightFields('$0.00', ''));
     assert.equal(await dropdown.inputValue(), 'Collect from Warehouse', 'Blank calculator method preserves the description');
     assert.equal(await page.locator('#amount').inputValue(), '0.00');
@@ -65,7 +72,8 @@ const options = ['Ship from Auckland', 'Ship from Chch', 'Collect from Warehouse
     });
     assert.equal(await dropdown.count(), 1, 'Re-render does not duplicate the dropdown');
     assert.equal(await dropdown.inputValue(), 'Collect from Showroom');
-    await dropdown.selectOption('Ship from Chch');
+    await dropdown.fill('Ship from Chch');
+    await dropdown.blur();
     assert.equal(await page.locator('#description').inputValue(), 'Ship from Chch');
     await page.evaluate(() => { document.getElementById('description').readOnly = true; ensureFreightDescriptionDropdown(); });
     assert(await dropdown.isDisabled(), 'Read-only native fields remain read-only');
