@@ -25,6 +25,7 @@ assert(source.includes('addStaffHelpButton();\n    layoutOmniWorkflowButtons();'
     await page.goto('https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx');
     await page.setContent(`<style>body{font:14px Arial;margin:0;background:#eee}main{margin:24px}.document-type{background:white;padding:20px}.tools{display:flex;gap:32px;justify-content:center;flex-wrap:wrap;padding:12px}button{width:160px;height:36px}section{background:white;padding:20px}</style><main><div class="document-type"><h1>Edit Quote - Customer - NZSO-15512</h1><label>Type <select><option>Quote</option><option>Sales Order</option></select></label></div><div id="lc-omni-workflow-tools-bar" class="tools"><button>Site Visit</button><button>Quote Review</button><button>HubSpot Deal</button><button disabled>Download Quote</button></div><section>Branch: AKL Wairau Showroom <button>Save</button></section></main>`);
     await page.route('https://living-culture-freight.vercel.app/staff-button-guide.html', route => route.fulfill({ contentType: 'text/html', body: guide }));
+    await page.route('https://living-culture-freight.vercel.app/staff-button-guide.js', route => route.fulfill({ contentType: 'application/javascript', body: fs.readFileSync('public/staff-button-guide.js', 'utf8') }));
     await page.addScriptTag({ content: `const OMNI_TOOLS_BAR_ID='lc-omni-workflow-tools-bar';const STAFF_HELP_BAR_ID='lc-omni-staff-help-bar';const STAFF_HELP_BUTTON_ID='lc-omni-staff-help-button';const STAFF_HELP_DIALOG_ID='lc-omni-staff-help-dialog';const STAFF_GUIDE_URL='https://living-culture-freight.vercel.app/staff-button-guide.html';const BUTTON_ID='site';const QUOTE_REVIEW_BUTTON_ID='review';const HUBSPOT_BUTTON_ID='hubspot';const QUOTE_PDF_BUTTON_ID='download';const CLONE_QUOTE_BUTTON_ID='clone';const CONVERT_ORDER_BUTTON_ID='convert';window.isOmniPage=()=>true;window.leftmostOmniSaveButton=()=>document.querySelector('section button');window.omniFooterPanel=()=>document.querySelector('section');${fn}${layout}` });
     await page.evaluate(() => {
       Array.from(document.querySelectorAll('.tools button')).forEach((button, index) => { button.id = ['site', 'review', 'hubspot', 'download'][index]; });
@@ -62,7 +63,20 @@ assert(source.includes('addStaffHelpButton();\n    layoutOmniWorkflowButtons();'
     const popup = page.getByRole('dialog', { name: 'Living Culture Help' });
     await popup.waitFor({ state: 'visible' });
     const embedded = page.frameLocator('iframe[title="Living Culture staff reference"]');
-    await embedded.getByRole('heading', { name: 'Staff Button Reference' }).waitFor();
+    await embedded.getByRole('heading', { name: 'Find a button' }).waitFor();
+    assert.equal(await embedded.getByText('Living Culture Help', { exact: true }).count(), 0, 'Only the outer popup carries the Help heading');
+    const search = embedded.getByRole('searchbox', { name: 'Search help' });
+    await search.fill('CLONE quote');
+    assert(await embedded.locator('#section-1 .button-name').getByText('Clone Quote', { exact: true }).isVisible());
+    assert.equal(await embedded.locator('#section-1 .button-name').getByText('Site Visit', { exact: true }).isVisible(), false);
+    assert.equal(await embedded.getByRole('heading', { name: 'Find a button' }).isVisible(), false, 'Hide contents while searching');
+    assert((await embedded.getByRole('status').innerText()).includes('matching'));
+    await page.screenshot({ path: '/tmp/lc-staff-help-search-desktop.png' });
+    await search.fill('no-button-matches-this-phrase');
+    assert((await embedded.getByRole('status').innerText()).startsWith('No matches'));
+    await embedded.getByRole('button', { name: 'Clear search' }).click();
+    assert.equal(await search.inputValue(), '');
+    assert(await embedded.getByRole('heading', { name: 'Find a button' }).isVisible());
     assert.equal(page.context().pages().length, 1, 'Help does not open another tab');
     assert.equal(await page.evaluate(() => document.body.style.overflow), 'hidden');
     await page.evaluate(() => openStaffHelpPopup());
@@ -86,7 +100,7 @@ assert(source.includes('addStaffHelpButton();\n    layoutOmniWorkflowButtons();'
     assert(await help.isVisible());
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Action row wraps without horizontal overflow');
     await help.click();
-    await embedded.getByRole('heading', { name: 'Staff Button Reference' }).waitFor();
+    await embedded.getByRole('heading', { name: 'Find a button' }).waitFor();
     const popupBox = await popup.boundingBox();
     assert(popupBox.width <= 390 && popupBox.height <= 844, 'Popup fits mobile viewport');
     await page.screenshot({ path: '/tmp/lc-staff-help-popup-mobile.png' });
@@ -95,12 +109,15 @@ assert(source.includes('addStaffHelpButton();\n    layoutOmniWorkflowButtons();'
     await page.waitForFunction(() => !document.getElementById('lc-omni-staff-help-dialog'));
     await page.goto('file://' + path.resolve('public/staff-button-guide.html'));
     assert.equal(await page.getByRole('link', { name: 'Download PDF', exact: true }).count(), 1);
-    assert.equal(await page.getByRole('heading', { name: 'Staff Button Reference' }).count(), 1);
+    assert.equal(await page.getByRole('heading', { name: 'Find a button' }).count(), 1);
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'Guide fits a mobile viewport');
     const oversized = await page.evaluate(() => Array.from(document.querySelectorAll('.button-name,.description,.contents a')).filter(el => el.scrollWidth > el.clientWidth + 1).length);
     assert.equal(oversized, 0, 'Guide labels and instructions do not overflow');
     await page.screenshot({ path: '/tmp/lc-staff-guide-mobile.png' });
     await page.setViewportSize({ width: 1100, height: 1250 });
+    const contentsBox = await page.locator('#contents').boundingBox();
+    assert(contentsBox.height < 700, 'Desktop contents use compact rows instead of a full PDF page');
+    assert.equal(await page.locator('.contents').evaluate(el => getComputedStyle(el).gridTemplateColumns.split(' ').length), 2);
     await page.locator('.sheet').nth(3).screenshot({ path: '/tmp/lc-staff-guide-desktop.png' });
     console.log('PASS: Help opens one inline popup with the guide, never a new tab; Close/Escape restore focus and scroll; matching action-row sizes and mobile framing remain correct.');
   } finally { await browser.close(); }
