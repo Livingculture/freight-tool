@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Website Shortcuts
 // @namespace    livingculture-omni
-// @version      0.1.31
+// @version      0.1.32
 // @description  Adds Living Culture website shortcuts to the grey space between Cin7 Omni quote sections.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @match        https://livingculture.co.nz/*
@@ -194,6 +194,15 @@
 
   let closePergolaPicker = null;
 
+  function blindMatches(product, mounting, operation) {
+    const title = clean(product.title);
+    const mounted = mounting === 'wall' ? /wall[\s-]*mount(?:ed)?/i.test(title) : /free[\s-]*standing/i.test(title);
+    const blindName = title.split(/\b(?:for|to suit)\b/i)[0];
+    const motorised = /motor(?:ised|ized)/i.test(blindName);
+    const manual = !motorised && /manual|retractable/i.test(blindName);
+    return mounted && (operation === 'motorised' ? motorised : operation === 'manual' ? manual : false);
+  }
+
   async function selectPergola(shortcut, trigger) {
     const isBlinds = shortcut.label === 'Blinds';
     if (trigger.getAttribute('aria-expanded') === 'true') { closePergolaPicker?.(); return; }
@@ -259,13 +268,25 @@
     shadow.querySelector('.close').onclick = close;
     shadow.querySelector('.close').focus();
     const mount = shadow.getElementById('mount'), model = shadow.getElementById('model');
+    mount.setAttribute('aria-label', 'Mounting');
+    model.setAttribute('aria-label', isBlinds ? 'Blind' : 'Model');
     const size = shadow.getElementById('size'), colour = shadow.getElementById('colour'), status = shadow.getElementById('status');
     const blindOptions = document.createElement('div');
     blindOptions.id = 'blind-options';
     model.closest('label').insertAdjacentElement('afterend', blindOptions);
+    let operation = null;
     if (isBlinds) {
-      [mount, size, colour].forEach(select => { select.closest('label').hidden = true; });
+      [size, colour].forEach(select => { select.closest('label').hidden = true; });
       model.closest('label').firstChild.textContent = 'Blind';
+      const operationLabel = document.createElement('label');
+      operationLabel.textContent = 'Operation';
+      operation = document.createElement('select');
+      operation.id = 'operation';
+      operation.setAttribute('aria-label', 'Operation');
+      operation.disabled = true;
+      operation.append(new Option('Select operation', ''), new Option('Motorised', 'motorised'), new Option('Manual / Retractable', 'manual'));
+      operationLabel.appendChild(operation);
+      mount.closest('label').insertAdjacentElement('afterend', operationLabel);
     }
     let products = [], selectedProduct = null;
     const fill = (select, placeholder, options) => {
@@ -327,9 +348,24 @@
       fill(colour, 'Select colour', []);
     };
     mount.onchange = () => {
+      if (isBlinds) {
+        operation.value = ''; operation.disabled = !mount.value;
+        selectedProduct = null; model.title = ''; blindOptions.replaceChildren();
+        fill(model, 'Select blind', []); status.hidden = true;
+        return;
+      }
       const matches = mount.value ? products.filter(product => mount.value === 'wall' ? /wall mounted/i.test(product.title) : /freestanding/i.test(product.title)) : [];
       fill(model, 'Select model', matches.map(product => ({ value: String(product.id), label: product.title.replace(`${shortcut.label} `, '').replace(/ Louvre Roof Aluminium Pergola/i, '') })));
       selectedProduct = null; fill(size, 'Select size', []); fill(colour, 'Select colour', []);
+      if (matches.length === 1) { model.value = String(matches[0].id); chooseModel(); }
+    };
+    if (isBlinds) operation.onchange = () => {
+      selectedProduct = null; model.title = ''; blindOptions.replaceChildren();
+      const matches = mount.value && operation.value ? products.filter(product => blindMatches(product, mount.value, operation.value)) : [];
+      fill(model, 'Select blind', matches.map(product => ({ value: String(product.id), label: product.title })));
+      status.className = '';
+      status.textContent = 'No matching blinds were found.';
+      status.hidden = !mount.value || !operation.value || matches.length > 0;
       if (matches.length === 1) { model.value = String(matches[0].id); chooseModel(); }
     };
     model.onchange = chooseModel;
@@ -351,10 +387,7 @@
         products = await loadPergolas(shortcut.label);
         if (!root.isConnected) return;
         status.hidden = true;
-        if (isBlinds) {
-          fill(model, 'Select blind', products.map(product => ({ value: String(product.id), label: product.title })));
-          model.focus();
-        } else { mount.disabled = false; mount.focus(); }
+        mount.disabled = false; mount.focus();
       } catch (error) {
         status.className = 'error'; status.textContent = error.message;
         shadow.getElementById('retry').hidden = false;
