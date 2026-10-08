@@ -2,8 +2,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { chromium } = require('playwright');
 const source = fs.readFileSync('userscripts/omni-livingculture-workflow.user.js', 'utf8');
-const start = source.indexOf('  function omniFullyDispatchedState(');
-const next = source.slice(start + 1).search(/\n  (?:async )?function /);
+const start = source.indexOf('  function omniFullyDispatchedInputs(');
+const end = source.indexOf('  function omniWorkflowSnapshot(', start);
 (async () => {
   const browser = await chromium.launch();
   try {
@@ -14,7 +14,7 @@ const next = source.slice(start + 1).search(/\n  (?:async )?function /);
       window.normalizeLabel = value => String(value || '').trim().toLowerCase();
       window.isVisible = node => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0;
     });
-    await page.addScriptTag({ content: source.slice(start, start + next + 1) });
+    await page.addScriptTag({ content: source.slice(start, end) });
     assert.equal(await page.evaluate(() => omniFullyDispatchedState()), false, 'Blank dispatch must not read Invoice Date');
     await page.locator('#dispatch').fill('8-10-2026');
     assert.equal(await page.evaluate(() => omniFullyDispatchedState()), true);

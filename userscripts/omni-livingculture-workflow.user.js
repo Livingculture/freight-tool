@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.101
+// @version      0.1.102
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -1718,11 +1718,11 @@
     return { total, paidAmount, balanceDue, paid, paymentStatus: paid ? 'PAID' : paidAmount > 0 ? 'PART PAID' : 'UNPAID' };
   }
 
-  function omniFullyDispatchedState() {
+  function omniFullyDispatchedInputs() {
     const label = Array.from(document.querySelectorAll('label, legend, span, div, td'))
       .filter(isVisible)
       .find(node => normalizeLabel(node.textContent || '').replace(/^2\s*/, '') === 'fully dispatched');
-    if (!label) return null;
+    if (!label) return [];
     const linked = label.getAttribute('for') && document.getElementById(label.getAttribute('for'));
     let controls = linked ? [linked] : [];
     for (let root = label; !controls.length && root && root !== document.body; root = root.parentElement) {
@@ -1737,6 +1737,11 @@
         return field.left >= rect.left - 4 && field.left < rect.left + 100 && field.top >= rect.bottom - 4 && field.top < rect.bottom + 50;
       }).sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
     }
+    return controls;
+  }
+
+  function omniFullyDispatchedState() {
+    const controls = omniFullyDispatchedInputs();
     if (!controls.length) return null;
     const value = clean(controls[0].value);
     return /^(?:\d{4}-\d{2}-\d{2}|\d{1,2}[\/-]\d{1,2}[\/-]\d{4})(?:\s|$)/.test(value);
@@ -1839,6 +1844,7 @@
         omniOrderSyncInFlight = false;
         if (response.status >= 200 && response.status < 300) {
           lastOmniOrderSyncDigest = digest;
+          try { fillOmniShowroomDispatch(JSON.parse(response.responseText).collectionDispatch); } catch (error) { console.warn('[LC Workflow] Collection date could not be read.', error); }
           return;
         }
         console.warn(`[LC Workflow] Omni order sync failed (${response.status}).`);
@@ -1851,6 +1857,52 @@
         omniOrderSyncInFlight = false;
         console.warn('[LC Workflow] Omni order sync timed out.');
       }
+    });
+  }
+
+  function fillOmniShowroomDispatch(collection) {
+    const heading = omniHeadingDraft();
+    if (!isOmniPage() || heading.documentType !== 'sales-order' || !collection
+      || collection.orderNumber !== heading.orderId || !collection.collectedAt) return false;
+    const collected = new Date(collection.collectedAt);
+    if (!Number.isFinite(collected.getTime())) return false;
+    const [dateInput, timeInput] = omniFullyDispatchedInputs();
+    if (!dateInput || dateInput.disabled || dateInput.readOnly || clean(dateInput.value)) return false;
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-NZ', { timeZone: 'Pacific/Auckland',
+      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+      .formatToParts(collected).map(part => [part.type, part.value]));
+    const set = (input, value) => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    set(dateInput, dateInput.type === 'date' ? `${parts.year}-${parts.month}-${parts.day}` : `${Number(parts.day)}-${Number(parts.month)}-${parts.year}`);
+    if (timeInput && !timeInput.disabled && !timeInput.readOnly && !clean(timeInput.value)) {
+      set(timeInput, timeInput.type === 'time' ? `${parts.hour}:${parts.minute}` : `${Number(parts.hour) % 12 || 12}:${parts.minute} ${Number(parts.hour) < 12 ? 'am' : 'pm'}`);
+    }
+    dateInput.title = 'Filled from the Workflow showroom collection date';
+    return true;
+  }
+
+  let collectionDispatchInFlight = false;
+  function checkOmniShowroomCollection() {
+    if (!isOmniPage() || document.visibilityState !== 'visible' || collectionDispatchInFlight) return;
+    const heading = omniHeadingDraft();
+    if (heading.documentType !== 'sales-order' || !/^NZSO-\d+$/.test(heading.orderId) || omniFullyDispatchedState() !== false) return;
+    const [dateInput] = omniFullyDispatchedInputs();
+    if (!dateInput || dateInput.disabled || dateInput.readOnly || clean(dateInput.value)) return;
+    collectionDispatchInFlight = true;
+    const headers = { 'Content-Type': 'application/json' };
+    if (API_KEY) headers.Authorization = `Bearer ${API_KEY}`;
+    GM_xmlhttpRequest({ method: 'POST', url: OMNI_ORDER_SYNC_API_URL, headers,
+      data: JSON.stringify({ action: 'collection-dispatch', orderNumber: heading.orderId }), timeout: 15000,
+      onload: response => {
+        collectionDispatchInFlight = false;
+        if (response.status < 200 || response.status >= 300) return;
+        try { fillOmniShowroomDispatch(JSON.parse(response.responseText).collectionDispatch); } catch (error) { console.warn('[LC Workflow] Collection date lookup failed.', error); }
+      },
+      onerror: () => { collectionDispatchInFlight = false; },
+      ontimeout: () => { collectionDispatchInFlight = false; }
     });
   }
 
@@ -4516,6 +4568,11 @@
     if (continueQuotePdfFromEditFrame()) return;
     continueSaveClonedQuote();
     installOmniInvoiceDateHooks();
+    if (isOmniPage() && window.parent === window) {
+      setTimeout(checkOmniShowroomCollection, 1500);
+      setInterval(checkOmniShowroomCollection, 30000);
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkOmniShowroomCollection(); });
+    }
     if (isOmniPage()) document.getElementById('lc-omni-hubspot-shortcut-button')?.remove();
     ensureDelegatedClickHandler();
     void loadRepOptions();
