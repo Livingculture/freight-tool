@@ -7,20 +7,26 @@ const start = source.indexOf('  function addStaffHelpButton()');
 const end = source.indexOf('\n  function runButtonPass()', start);
 assert(start > 0 && end > start);
 const fn = source.slice(start, end);
+const layoutStart = source.indexOf('  function layoutOmniWorkflowButtons()');
+const layoutEnd = source.indexOf('\n  function observeOmniLayout()', layoutStart);
+const layout = source.slice(layoutStart, layoutEnd);
 const guide = fs.readFileSync('public/staff-button-guide.html', 'utf8');
 assert(!/testing needed|outstanding issue|association failure|<b>Does:|<b>Use:|regression checks/i.test(guide));
 assert(guide.includes('How to use:'));
 assert(guide.includes('Download PDF'));
 assert(guide.includes('staff-button-guide.pdf'));
 assert(guide.includes('Your daily workflow'));
-assert(source.includes('layoutOmniWorkflowButtons();\n    addStaffHelpButton();'));
+assert(source.includes('addStaffHelpButton();\n    layoutOmniWorkflowButtons();'));
 (async () => {
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     await page.setContent(`<style>body{font:14px Arial;margin:0;background:#eee}main{margin:24px}.document-type{background:white;padding:20px}.tools{display:flex;gap:32px;justify-content:center;flex-wrap:wrap;padding:12px}button{width:160px;height:36px}section{background:white;padding:20px}</style><main><div class="document-type"><h1>Edit Quote - Customer - NZSO-15512</h1><label>Type <select><option>Quote</option><option>Sales Order</option></select></label></div><div id="lc-omni-workflow-tools-bar" class="tools"><button>Site Visit</button><button>Quote Review</button><button>HubSpot Deal</button><button disabled>Download Quote</button></div><section>Branch: AKL Wairau Showroom <button>Save</button></section></main>`);
-    await page.addScriptTag({ content: `const OMNI_TOOLS_BAR_ID='lc-omni-workflow-tools-bar';const STAFF_HELP_BAR_ID='lc-omni-staff-help-bar';const STAFF_HELP_BUTTON_ID='lc-omni-staff-help-button';const STAFF_GUIDE_URL='https://living-culture-freight.vercel.app/staff-button-guide.html';window.isOmniPage=()=>true;${fn}` });
-    await page.evaluate(() => { addStaffHelpButton(); addStaffHelpButton(); });
+    await page.addScriptTag({ content: `const OMNI_TOOLS_BAR_ID='lc-omni-workflow-tools-bar';const STAFF_HELP_BAR_ID='lc-omni-staff-help-bar';const STAFF_HELP_BUTTON_ID='lc-omni-staff-help-button';const STAFF_GUIDE_URL='https://living-culture-freight.vercel.app/staff-button-guide.html';const BUTTON_ID='site';const QUOTE_REVIEW_BUTTON_ID='review';const HUBSPOT_BUTTON_ID='hubspot';const QUOTE_PDF_BUTTON_ID='download';const CLONE_QUOTE_BUTTON_ID='clone';const CONVERT_ORDER_BUTTON_ID='convert';window.isOmniPage=()=>true;window.leftmostOmniSaveButton=()=>document.querySelector('section button');window.omniFooterPanel=()=>document.querySelector('section');${fn}${layout}` });
+    await page.evaluate(() => {
+      Array.from(document.querySelectorAll('.tools button')).forEach((button, index) => { button.id = ['site', 'review', 'hubspot', 'download'][index]; });
+      addStaffHelpButton(); layoutOmniWorkflowButtons(); addStaffHelpButton(); layoutOmniWorkflowButtons();
+    });
     const help = page.getByRole('link', { name: 'Living Culture Help' });
     assert.equal(await help.count(), 1, 'Repeated layout passes create one control');
     assert.equal(await help.getAttribute('target'), '_blank');
@@ -29,14 +35,34 @@ assert(source.includes('layoutOmniWorkflowButtons();\n    addStaffHelpButton();'
     assert.equal(await page.getByRole('button', { name: 'Download Quote' }).isDisabled(), true);
     assert.equal(await help.isVisible(), true, 'Help does not depend on HubSpot approval');
     const helpBox = await help.boundingBox();
-    const toolsBox = await page.locator('#lc-omni-workflow-tools-bar').boundingBox();
-    assert(helpBox.y + helpBox.height <= toolsBox.y, 'Help occupies its own row without covering actions');
+    for (const name of ['Site Visit', 'Quote Review', 'HubSpot Deal', 'Download Quote']) {
+      const box = await page.getByRole('button', { name, exact: true }).boundingBox();
+      assert.equal(helpBox.y, box.y, 'Help shares the same desktop row');
+      assert.equal(helpBox.width, box.width, 'Help matches the action widths');
+      assert.equal(helpBox.height, box.height, 'Help matches the action heights');
+    }
+    assert.equal(await help.evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(37, 99, 235)');
+    assert.equal(await help.evaluate(el => getComputedStyle(el).color), 'rgb(255, 255, 255)');
+    assert.equal(await page.locator('#lc-omni-staff-help-bar').count(), 0, 'No separate Help row remains');
+    await page.evaluate(() => {
+      const oldBar = document.createElement('div');
+      oldBar.id = 'lc-omni-staff-help-bar';
+      document.querySelector('main').appendChild(oldBar);
+      const link = document.getElementById('lc-omni-staff-help-button');
+      link.style.background = '#fff';
+      oldBar.appendChild(link);
+      addStaffHelpButton(); layoutOmniWorkflowButtons();
+    });
+    assert.equal(await page.locator('#lc-omni-staff-help-bar').count(), 0, 'Existing separate row is cleaned up');
+    assert.equal(await help.evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(37, 99, 235)', 'Existing Help controls also get the filled style');
     await page.screenshot({ path: '/tmp/lc-staff-help-desktop.png' });
     await page.evaluate(() => { document.querySelector('h1').textContent = 'Edit Sales Order - Customer - NZSO-15512'; document.querySelector('select').selectedIndex = 1; addStaffHelpButton(); });
     assert.equal(await help.count(), 1, 'Sales orders retain the same Help control');
     await page.setViewportSize({ width: 390, height: 844 });
+    await page.evaluate(() => layoutOmniWorkflowButtons());
     await page.screenshot({ path: '/tmp/lc-staff-help-mobile.png' });
     assert(await help.isVisible());
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Action row wraps without horizontal overflow');
     await page.goto('file://' + path.resolve('public/staff-button-guide.html'));
     assert.equal(await page.getByRole('link', { name: 'Download PDF', exact: true }).count(), 1);
     assert.equal(await page.getByRole('heading', { name: 'Staff Button Reference' }).count(), 1);

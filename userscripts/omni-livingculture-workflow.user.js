@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.96
+// @version      0.1.97
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -1287,7 +1287,8 @@
       document.getElementById(HUBSPOT_BUTTON_ID),
       document.getElementById(QUOTE_PDF_BUTTON_ID),
       document.getElementById(CLONE_QUOTE_BUTTON_ID),
-      document.getElementById(CONVERT_ORDER_BUTTON_ID)
+      document.getElementById(CONVERT_ORDER_BUTTON_ID),
+      document.getElementById(STAFF_HELP_BUTTON_ID)
     ].filter(Boolean);
     if (!buttons.length) return;
 
@@ -4374,13 +4375,10 @@
   function addStaffHelpButton() {
     if (!isOmniPage()) return;
     const toolsBar = document.getElementById(OMNI_TOOLS_BAR_ID);
-    if (!toolsBar || toolsBar.parentElement === document.body || toolsBar.style.visibility === 'hidden') return;
-    let bar = document.getElementById(STAFF_HELP_BAR_ID);
-    if (!bar) {
-      bar = document.createElement('div');
-      bar.id = STAFF_HELP_BAR_ID;
-      bar.style.cssText = 'display:flex;justify-content:flex-end;box-sizing:border-box;width:100%;padding:0 8px;margin:4px 0;';
-      const help = document.createElement('a');
+    if (!toolsBar) return;
+    let help = document.getElementById(STAFF_HELP_BUTTON_ID);
+    if (!help) {
+      help = document.createElement('a');
       help.id = STAFF_HELP_BUTTON_ID;
       help.href = STAFF_GUIDE_URL;
       help.target = '_blank';
@@ -4388,12 +4386,13 @@
       help.setAttribute('aria-label', 'Living Culture Help');
       help.title = 'Living Culture staff reference';
       help.textContent = '? Help';
-      help.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;min-height:34px;min-width:80px;padding:0 12px;border:1px solid #9eb7bc;border-radius:4px;background:#fff;color:#063b78;font:700 14px Arial,sans-serif;text-decoration:none;white-space:nowrap;cursor:pointer;';
-      bar.appendChild(help);
+      help.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;padding:0 14px;border:1px solid #2563eb;border-radius:4px;background:#2563eb;color:#fff;font:700 14px Arial,sans-serif;text-decoration:none;white-space:nowrap;cursor:pointer;';
     }
-    if (bar.parentElement !== toolsBar.parentElement || bar.nextElementSibling !== toolsBar) {
-      toolsBar.insertAdjacentElement('beforebegin', bar);
-    }
+    help.style.background = '#2563eb';
+    help.style.color = '#fff';
+    help.style.borderColor = '#2563eb';
+    if (help.parentElement !== toolsBar) toolsBar.appendChild(help);
+    document.getElementById(STAFF_HELP_BAR_ID)?.remove();
   }
 
   function runButtonPass() {
@@ -4406,8 +4405,8 @@
     addQuotePdfButton();
     addCloneQuoteButton();
     applyHubSpotApprovalGate();
-    layoutOmniWorkflowButtons();
     addStaffHelpButton();
+    layoutOmniWorkflowButtons();
     void linkExistingCustomerAlbumToQuote();
     scheduleOmniWorkflowSync();
   }
