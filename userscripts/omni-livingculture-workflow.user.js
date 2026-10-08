@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.100
+// @version      0.1.101
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -1772,6 +1772,8 @@
       notes: draft.comments,
       internalComments,
       deliveryInstructions,
+      freightDescription: omniWorkflowFreightDescription(),
+      stage: omniWorkflowStage(),
       total: payment.total ?? readMoneyNearLabels(['Invoiced Total', 'Acceptance Total', 'Order Total', 'Grand Total', 'Total']),
       createdDate: labelled('Created Date'),
       invoiceDate: labelled('Invoice Date'),
@@ -1783,6 +1785,39 @@
       stockReady: stockValue ? /\b(?:ready|available|in stock|yes|true)\b/i.test(stockValue) : null,
       sourceUrl: window.location.href
     };
+  }
+
+  function omniWorkflowStage() {
+    const label = Array.from(document.querySelectorAll('label, legend, span, div, td'))
+      .filter(isVisible)
+      .filter(node => normalizeLabel(node.textContent || '') === 'stage')
+      .sort((a, b) => a.children.length - b.children.length)[0];
+    if (!label) return null;
+    const linked = label.getAttribute('for') && document.getElementById(label.getAttribute('for'));
+    const rect = label.getBoundingClientRect();
+    const select = linked?.tagName === 'SELECT' ? linked : Array.from(document.querySelectorAll('select')).filter(isVisible)
+      .filter(control => {
+        const field = control.getBoundingClientRect();
+        return field.left >= rect.left - 4 && field.left <= rect.right + 240 && Math.abs(field.top - rect.top) < 40;
+      }).sort((a, b) => Math.abs(a.getBoundingClientRect().left - rect.right) - Math.abs(b.getBoundingClientRect().left - rect.right))[0];
+    return select ? clean(select.selectedOptions[0]?.textContent || '') : null;
+  }
+
+  function omniWorkflowFreightDescription() {
+    const editable = document.getElementById('lc-omni-freight-description-select');
+    if (editable) return clean(editable.value);
+    const label = Array.from(document.querySelectorAll('label, span, div, td')).filter(isVisible)
+      .filter(node => normalizeLabel(node.textContent || '') === 'freight')
+      .sort((a, b) => a.children.length - b.children.length)[0];
+    if (!label) return null;
+    const rect = label.getBoundingClientRect();
+    const input = Array.from(document.querySelectorAll('input:not([type="hidden"])')).filter(isVisible)
+      .filter(control => {
+        const field = control.getBoundingClientRect();
+        return field.left >= rect.right - 8 && Math.abs(field.top + field.height / 2 - rect.top - rect.height / 2) <= 6;
+      }).sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left)[0];
+    if (!input || /^[\d,.$\s]+$/.test(input.value)) return null;
+    return clean(input.value);
   }
 
   function syncOmniWorkflowRecord(options = {}) {
