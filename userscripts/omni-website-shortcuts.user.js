@@ -276,9 +276,11 @@
     model.closest('label').insertAdjacentElement('afterend', blindOptions);
     let operation = null;
     if (isBlinds) {
+      mount.closest('label').style.gridColumn = '1 / -1';
       [size, colour].forEach(select => { select.closest('label').hidden = true; });
       model.closest('label').firstChild.textContent = 'Blind';
       const operationLabel = document.createElement('label');
+      operationLabel.style.gridColumn = '1 / -1';
       operationLabel.textContent = 'Operation';
       operation = document.createElement('select');
       operation.id = 'operation';
