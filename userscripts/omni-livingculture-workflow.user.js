@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.97
+// @version      0.1.98
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -38,6 +38,7 @@
   const OMNI_TOOLS_BAR_ID = 'lc-omni-workflow-tools-bar';
   const STAFF_HELP_BAR_ID = 'lc-omni-staff-help-bar';
   const STAFF_HELP_BUTTON_ID = 'lc-omni-staff-help-button';
+  const STAFF_HELP_DIALOG_ID = 'lc-omni-staff-help-dialog';
   const STAFF_GUIDE_URL = 'https://living-culture-freight.vercel.app/staff-button-guide.html';
   const FLOATING_BAR_ID = 'lc-cin7-floating-actions-v1';
   const OVERLAY_ID = 'lc-site-visit-overlay-v2';
@@ -4372,17 +4373,68 @@
 
   let buttonPassScheduled = false;
 
+  function openStaffHelpPopup() {
+    const existing = document.getElementById(STAFF_HELP_DIALOG_ID);
+    if (existing) { existing.querySelector('button')?.focus(); return; }
+    const previousOverflow = document.body.style.overflow;
+    const previousFocus = document.activeElement;
+    const dialog = document.createElement('dialog');
+    dialog.id = STAFF_HELP_DIALOG_ID;
+    dialog.setAttribute('aria-label', 'Living Culture Help');
+    dialog.style.cssText = 'box-sizing:border-box;width:min(1180px,calc(100vw - 24px));height:min(900px,calc(100dvh - 24px));max-width:none;max-height:none;padding:0;border:1px solid #a6bddb;border-radius:6px;background:#fff;color:#172b49;overflow:hidden;box-shadow:0 20px 60px rgba(7,28,58,.3);';
+    const style = document.createElement('style');
+    style.textContent = `#${STAFF_HELP_DIALOG_ID}[open]{display:flex;flex-direction:column}#${STAFF_HELP_DIALOG_ID}::backdrop{background:rgba(7,28,58,.45)}`;
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;background:#063b78;color:#fff;font:700 18px Arial,sans-serif;flex-shrink:0;';
+    const title = document.createElement('span');
+    title.textContent = 'Living Culture Help';
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.textContent = 'Close';
+    close.style.cssText = 'width:80px;min-width:80px;height:34px;flex-shrink:0;padding:0 14px;border:1px solid #fff;border-radius:4px;background:#fff;color:#063b78;font:700 14px Arial,sans-serif;cursor:pointer;';
+    close.addEventListener('click', () => dialog.close());
+    header.append(title, close);
+    const status = document.createElement('div');
+    status.textContent = 'Loading help...';
+    status.setAttribute('role', 'status');
+    status.style.cssText = 'padding:12px 16px;font:14px Arial,sans-serif;';
+    const frame = document.createElement('iframe');
+    frame.title = 'Living Culture staff reference';
+    frame.src = STAFF_GUIDE_URL;
+    frame.style.cssText = 'display:block;width:100%;flex:1;min-height:0;border:0;background:#fff;';
+    frame.addEventListener('load', () => status.remove(), { once: true });
+    const onMessage = event => {
+      if (event.source === frame.contentWindow && event.origin === new URL(STAFF_GUIDE_URL).origin && event.data?.type === 'lc-staff-help-close') dialog.close();
+    };
+    window.addEventListener('message', onMessage);
+    dialog.append(style, header, status, frame);
+    dialog.addEventListener('click', event => {
+      const bounds = dialog.getBoundingClientRect();
+      if (event.target === dialog && (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom)) dialog.close();
+    });
+    dialog.addEventListener('close', () => {
+      window.removeEventListener('message', onMessage);
+      document.body.style.overflow = previousOverflow;
+      dialog.remove();
+      if (previousFocus?.isConnected) previousFocus.focus();
+    }, { once: true });
+    document.body.appendChild(dialog);
+    dialog.showModal();
+    document.body.style.overflow = 'hidden';
+    close.focus();
+  }
+
   function addStaffHelpButton() {
     if (!isOmniPage()) return;
     const toolsBar = document.getElementById(OMNI_TOOLS_BAR_ID);
     if (!toolsBar) return;
     let help = document.getElementById(STAFF_HELP_BUTTON_ID);
+    if (help?.tagName !== 'BUTTON') { help?.remove(); help = null; }
     if (!help) {
-      help = document.createElement('a');
+      help = document.createElement('button');
       help.id = STAFF_HELP_BUTTON_ID;
-      help.href = STAFF_GUIDE_URL;
-      help.target = '_blank';
-      help.rel = 'noopener noreferrer';
+      help.type = 'button';
+      help.addEventListener('click', openStaffHelpPopup);
       help.setAttribute('aria-label', 'Living Culture Help');
       help.title = 'Living Culture staff reference';
       help.textContent = '? Help';
@@ -4460,7 +4512,7 @@
 
   const observer = new MutationObserver((records) => {
     if (!document.body) return;
-    if (records.some(record => !record.target.closest?.(`#${CUSTOMER_PHOTOS_ACTIONS_ID}, #${OMNI_TOOLS_BAR_ID}, #${STAFF_HELP_BAR_ID}, #${OVERLAY_ID}`))) {
+    if (records.some(record => !record.target.closest?.(`#${CUSTOMER_PHOTOS_ACTIONS_ID}, #${OMNI_TOOLS_BAR_ID}, #${STAFF_HELP_BAR_ID}, #${STAFF_HELP_DIALOG_ID}, #${OVERLAY_ID}`))) {
       scheduleButtonPass();
     }
   });
