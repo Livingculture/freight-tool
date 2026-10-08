@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.29
+// @version      0.1.30
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -19,6 +19,11 @@
   const API_BASE = HOSTED_API_BASE || 'http://localhost:3001';
   const SHOPIFY_BASE = 'https://livingculture.co.nz';
   const CONTAINER_DASHBOARD_URL = `${API_BASE}/containers.html`;
+  const FREIGHT_DESCRIPTION_SELECT_ID = 'lc-omni-freight-description-select';
+  const FREIGHT_DESCRIPTION_OPTIONS = ['Ship from Auckland', 'Ship from Chch', 'Collect from Warehouse', 'Collect from Showroom'];
+  let freightDescriptionInput = null;
+  let freightDescriptionDisplay = '';
+  let freightDescriptionSyncCleanup = null;
 
   const state = {
     price: '',
@@ -1410,15 +1415,84 @@
     const labelRect = label.getBoundingClientRect();
     const labelCentreY = labelRect.top + labelRect.height / 2;
     return Array.from(document.querySelectorAll('input:not([type="hidden"])'))
-      .filter(isVisible)
-      .filter(input => !isInjectedPanelElement(input))
-      .map(input => ({ input, rect: input.getBoundingClientRect() }))
+      .map(input => ({ input, visibleField: input === freightDescriptionInput ? document.getElementById(FREIGHT_DESCRIPTION_SELECT_ID) || input : input }))
+      .filter(({ visibleField }) => isVisible(visibleField))
+      .filter(({ input }) => !isInjectedPanelElement(input))
+      .map(({ input, visibleField }) => ({ input, rect: visibleField.getBoundingClientRect() }))
       .filter(({ rect }) => (
         rect.left >= labelRect.right - 8 &&
         Math.abs((rect.top + rect.height / 2) - labelCentreY) <= 6
       ))
       .sort((a, b) => a.rect.left - b.rect.left)
       .map(({ input }) => input);
+  }
+
+  function syncFreightDescriptionDropdown(input, select) {
+    const current = input.value || '';
+    let custom = select.querySelector('option[data-current]');
+    if (current && !FREIGHT_DESCRIPTION_OPTIONS.includes(current)) {
+      if (!custom) {
+        custom = document.createElement('option');
+        custom.dataset.current = 'true';
+        select.appendChild(custom);
+      }
+      if (custom.value !== current) { custom.value = current; custom.textContent = current; }
+    } else if (custom) custom.remove();
+    if (select.value !== current) select.value = current;
+    const disabled = input.disabled || input.readOnly;
+    if (select.disabled !== disabled) select.disabled = disabled;
+  }
+
+  function ensureFreightDescriptionDropdown() {
+    let select = document.getElementById(FREIGHT_DESCRIPTION_SELECT_ID);
+    if (freightDescriptionInput?.isConnected && !select) freightDescriptionInput.style.display = freightDescriptionDisplay;
+    const inputs = findOmniFreightInputs();
+    if (inputs.length < 2) return;
+    const input = inputs[0];
+    if (input === freightDescriptionInput && select) {
+      syncFreightDescriptionDropdown(input, select);
+      return;
+    }
+    freightDescriptionSyncCleanup?.();
+    if (freightDescriptionInput?.isConnected) freightDescriptionInput.style.display = freightDescriptionDisplay;
+    select?.remove();
+    freightDescriptionInput = input;
+    freightDescriptionDisplay = input.style.display;
+    const computed = window.getComputedStyle(input);
+    select = document.createElement('select');
+    select.id = FREIGHT_DESCRIPTION_SELECT_ID;
+    select.className = input.className;
+    select.setAttribute('aria-label', 'Freight description');
+    for (const property of ['height', 'border', 'borderRadius', 'backgroundColor', 'color', 'font', 'padding', 'boxSizing', 'verticalAlign', 'margin']) select.style[property] = computed[property];
+    select.style.width = input.style.width || computed.width;
+    select.style.maxWidth = '100%';
+    select.style.paddingRight = '24px';
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = 'Freight description';
+    select.appendChild(placeholder);
+    FREIGHT_DESCRIPTION_OPTIONS.forEach(value => {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = value;
+      select.appendChild(option);
+    });
+    syncFreightDescriptionDropdown(input, select);
+    select.addEventListener('change', () => {
+      setOmniInputValue(input, select.value);
+      syncFreightDescriptionDropdown(input, select);
+    });
+    const sync = () => {
+      if (document.getElementById(FREIGHT_DESCRIPTION_SELECT_ID) === select) syncFreightDescriptionDropdown(input, select);
+    };
+    input.addEventListener('input', sync);
+    input.addEventListener('change', sync);
+    freightDescriptionSyncCleanup = () => {
+      input.removeEventListener('input', sync);
+      input.removeEventListener('change', sync);
+    };
+    input.insertAdjacentElement('afterend', select);
+    input.style.display = 'none';
   }
 
   function setOmniInputValue(input, value) {
@@ -1443,6 +1517,7 @@
 
     if (descriptionInput && clean(method)) setOmniInputValue(descriptionInput, clean(method));
     setOmniInputValue(amountInput, amount.toFixed(2));
+    ensureFreightDescriptionDropdown();
     return true;
   }
 
@@ -1662,6 +1737,7 @@
         window.__lcOmniFreightPositionFrame = requestAnimationFrame(() => {
           window.__lcOmniFreightPositionFrame = 0;
           placeFreightButtonNextToMemo();
+          ensureFreightDescriptionDropdown();
         });
       }
 
@@ -2314,6 +2390,7 @@
     if (!document.body) return;
 
     createPanel();
+    ensureFreightDescriptionDropdown();
     watchCin7QuoteChanges();
     placeFreightButtonNextToMemo();
 
@@ -2332,6 +2409,7 @@
 
   setInterval(() => {
     createPanel();
+    ensureFreightDescriptionDropdown();
     placeFreightButtonNextToMemo();
   }, 5000);
 })();
