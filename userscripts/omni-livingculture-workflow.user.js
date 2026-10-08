@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.103
+// @version      0.1.104
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -1860,7 +1860,44 @@
     });
   }
 
+  let omniQuoteConversionLoaded = false;
   const collectionDispatchAttempts = new Set();
+
+  function finishOmniConversionNavigation() {
+    if (!isOmniPage() || omniHeadingDraft().documentType !== 'sales-order') return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('ConvertQuoteToSalesOrder')?.toLowerCase() !== 'yes') return;
+    omniQuoteConversionLoaded = true;
+    url.searchParams.delete('ConvertQuoteToSalesOrder');
+    window.history.replaceState(window.history.state, '', url.href);
+  }
+
+  function omniHasStockShortage() {
+    for (const table of Array.from(document.querySelectorAll('table')).filter(isVisible)) {
+      const headers = tableHeaderMap(table);
+      const stockIndex = indexForHeader(headers, ['stock']);
+      const quantityIndex = indexForHeader(headers, ['qty ordered', 'quantity ordered']);
+      const productIndex = indexForHeader(headers, ['product']);
+      const codeIndex = indexForHeader(headers, ['code']);
+      if (stockIndex < 0 || quantityIndex < 0 || productIndex < 0) continue;
+      for (const row of Array.from(table.querySelectorAll('tr')).filter(isVisible)) {
+        const cells = Array.from(row.querySelectorAll('th,td'));
+        const name = cellText(cells, productIndex);
+        const sku = cellText(cells, codeIndex);
+        const quantity = Number(cellText(cells, quantityIndex).replace(/,/g, ''));
+        if (!name || /^assembly\b/i.test(name) || /^AS\d/i.test(sku) || !(quantity > 0)) continue;
+        const available = cellText(cells, stockIndex).match(/(-?[\d,]+(?:\.\d+)?)\s*available\b/i);
+        if (available && Number(available[1].replace(/,/g, '')) < quantity) return true;
+      }
+    }
+    return false;
+  }
+
+  function omniCollectionDispatchAllowed() {
+    return !omniQuoteConversionLoaded
+      && new URL(window.location.href).searchParams.get('ConvertQuoteToSalesOrder')?.toLowerCase() !== 'yes'
+      && !omniHasStockShortage();
+  }
 
   function claimOmniCollectionDispatch(collection) {
     const key = `lc-omni-collection-dispatch:${collection.orderNumber}:${collection.collectedAt}`;
@@ -1880,6 +1917,7 @@
     if (!Number.isFinite(collected.getTime())) return false;
     const [dateInput, timeInput] = omniFullyDispatchedInputs();
     if (!dateInput || dateInput.disabled || dateInput.readOnly || clean(dateInput.value)) return false;
+    if (!omniCollectionDispatchAllowed()) return false;
     if (!claimOmniCollectionDispatch(collection)) return false;
     const parts = Object.fromEntries(new Intl.DateTimeFormat('en-NZ', { timeZone: 'Pacific/Auckland',
       year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
@@ -1900,6 +1938,7 @@
   let collectionDispatchInFlight = false;
   function checkOmniShowroomCollection() {
     if (!isOmniPage() || document.visibilityState !== 'visible' || collectionDispatchInFlight) return;
+    if (!omniCollectionDispatchAllowed()) return;
     const heading = omniHeadingDraft();
     if (heading.documentType !== 'sales-order' || !/^NZSO-\d+$/.test(heading.orderId) || omniFullyDispatchedState() !== false) return;
     const [dateInput] = omniFullyDispatchedInputs();
@@ -4549,6 +4588,7 @@
 
   function runButtonPass() {
     buttonPassScheduled = false;
+    finishOmniConversionNavigation();
     observeOmniLayout();
     addCustomerPhotosButton();
     addButton();

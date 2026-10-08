@@ -2,13 +2,13 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { chromium } = require('playwright');
 const source = fs.readFileSync('userscripts/omni-livingculture-workflow.user.js', 'utf8');
-const names = ['omniFullyDispatchedInputs', 'omniFullyDispatchedState', 'claimOmniCollectionDispatch', 'fillOmniShowroomDispatch', 'checkOmniShowroomCollection'];
+const names = ['omniFullyDispatchedInputs', 'omniFullyDispatchedState', 'claimOmniCollectionDispatch', 'fillOmniShowroomDispatch', 'checkOmniShowroomCollection', 'omniCollectionDispatchAllowed'];
 const functions = names.map(name => {
   const start = source.indexOf(`  function ${name}(`);
   const next = source.slice(start + 1).search(/\n  (?:async )?function /);
   return source.slice(start, start + next + 1);
 }).join('\n');
-const attempts = 'const collectionDispatchAttempts = new Set();';
+const attempts = 'const collectionDispatchAttempts = new Set();let omniQuoteConversionLoaded=false;const omniHasStockShortage=()=>false;';
 (async () => {
   const browser = await chromium.launch();
   try {

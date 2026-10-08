@@ -35,6 +35,7 @@ function extract(name) {
       document.getElementById('admin').onclick = () => { window.adminOpened++; };
     });
     const functions = ['currentQuotePdfOrderId', 'placeOmniActionButton', 'layoutOmniWorkflowButtons', 'nativeConvertToSalesOrderControl', 'confirmConvertToSalesOrder', 'convertQuoteToSalesOrder', 'continueConvertToSalesOrderFromAdmin', 'addConvertToSalesOrderButton', 'addCloneQuoteButton', 'nativeCopyAllItemsControl', 'cloneCurrentQuote', 'continueCloneQuoteFromAdmin', 'clickNativeCloneAction', 'continueSaveClonedQuote'];
+    await page.addScriptTag({ content: "const STAFF_HELP_BUTTON_ID='lc-omni-staff-help-button';" });
     await page.addScriptTag({ content: `const CLONE_QUOTE_SAVE_KEY='clone-save', CLONE_QUOTE_BUTTON_ID='lc-clone-quote-button', CLONE_QUOTE_INTENT_KEY='clone-intent', CONVERT_ORDER_BUTTON_ID='lc-convert-sales-order-button', CONVERT_ORDER_INTENT_KEY='convert-intent', QUOTE_PDF_BUTTON_ID='download', BUTTON_ID='site', QUOTE_REVIEW_BUTTON_ID='review', HUBSPOT_BUTTON_ID='hubspot', OMNI_TOOLS_BAR_ID='toolbar';\n${functions.map(extract).join('\n')}` });
     await page.evaluate(() => { addConvertToSalesOrderButton(); convertQuoteToSalesOrder(); });
     assert.equal(await page.locator('#lc-convert-sales-order-button').count(), 0);
