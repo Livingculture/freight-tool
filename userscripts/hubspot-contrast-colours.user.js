@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture HubSpot Contrast & Colours
 // @namespace    livingculture-hubspot
-// @version      0.1.16
+// @version      0.1.17
 // @description  Adjusts HubSpot record text and changes deal-stage pills to softer pastel colours.
 // @author       Living Culture
 // @match        https://app.hubspot.com/*
@@ -88,7 +88,12 @@
         border-color: color-mix(in srgb, var(--lc-stage-text) 18%, transparent) !important;
         box-shadow: none !important;
       }
-      .${STAGE_CLASS}, .${STAGE_CLASS} * {
+      /* Keep pill text above the more specific CRM grid/link text rules. */
+      .${STAGE_CLASS}.${STAGE_CLASS}, .${STAGE_CLASS}.${STAGE_CLASS} *,
+      [role="grid"] [role="gridcell"] .${STAGE_CLASS}.${STAGE_CLASS},
+      [role="grid"] [role="gridcell"] .${STAGE_CLASS}.${STAGE_CLASS} *,
+      [role="table"] [role="cell"] .${STAGE_CLASS}.${STAGE_CLASS},
+      [role="table"] [role="cell"] .${STAGE_CLASS}.${STAGE_CLASS} * {
         color: var(--lc-stage-text, #111) !important;
       }
       .${STAGE_CLASS} * {
@@ -294,10 +299,7 @@
         if (!cell || cell === header || clean(cell.textContent).toLowerCase() === 'deal stage') continue;
         const pill = findPill(cell);
         if (!pill) continue;
-        const [background, text] = stageColours(clean(cell.textContent));
-        pill.classList.add(STAGE_CLASS);
-        pill.style.setProperty('--lc-stage-bg', background);
-        pill.style.setProperty('--lc-stage-text', text);
+        applyPillColours(pill, clean(cell.textContent));
       }
     }
 
@@ -311,11 +313,15 @@
       const rect = element.getBoundingClientRect();
       if (!rect.width || !rect.height || rect.width > 340 || rect.height > 55) continue;
       const pill = outerPill(element);
-      const [background, text] = stageColours(label);
-      pill.classList.add(STAGE_CLASS);
-      pill.style.setProperty('--lc-stage-bg', background);
-      pill.style.setProperty('--lc-stage-text', text);
+      applyPillColours(pill, label);
     }
+  }
+
+  function applyPillColours(pill, label) {
+    const [background, text] = stageColours(label);
+    if (!pill.classList.contains(STAGE_CLASS)) pill.classList.add(STAGE_CLASS);
+    if (pill.style.getPropertyValue('--lc-stage-bg') !== background) pill.style.setProperty('--lc-stage-bg', background);
+    if (pill.style.getPropertyValue('--lc-stage-text') !== text) pill.style.setProperty('--lc-stage-text', text);
   }
 
   let scanQueued = false;
@@ -335,14 +341,23 @@
   // browser paint, allowing new HubSpot rows to receive their colours without
   // first displaying the original bright pills.
   const relevantText = /(deal\s*stage|opp\s*deal|quote[- ]?sent|deposit\s*paid|waitingforstock|ready\s*to|readyto|completed|new\s*enquiry|followed\s*up|waiting\s*on\s*customer|site\s*visit|closed\s*lost|\d[\d,]*\s+(?:deals|tickets))/i;
+  function relevantMutationNode(node, added = false) {
+    const element = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+    if (!element || element.nodeType !== Node.ELEMENT_NODE || element.closest(`#${CONTROLS_ID}, #${STYLE_ID}`)) return false;
+    if (element.closest(`.${STAGE_CLASS}`)) return true;
+    const text = clean(node.textContent);
+    return (added || text.length <= 120) && relevantText.test(text);
+  }
   new MutationObserver((mutations) => {
-    const relevant = mutations.some((mutation) => Array.from(mutation.addedNodes).some((node) => {
-      if (node.nodeType === Node.TEXT_NODE) return relevantText.test(clean(node.textContent));
-      return node.nodeType === Node.ELEMENT_NODE && relevantText.test(clean(node.textContent));
-    }));
+    const relevant = mutations.some((mutation) => mutation.type === 'childList'
+      ? Array.from(mutation.addedNodes).some((node) => relevantMutationNode(node, true))
+      : relevantMutationNode(mutation.target));
     if (relevant) schedule();
   }).observe(document.documentElement, {
     childList: true,
+    characterData: true,
+    attributes: true,
+    attributeFilter: ['class', 'style'],
     subtree: true
   });
   window.addEventListener('resize', dockControls, { passive: true });
