@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.104
+// @version      0.1.105
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -95,6 +95,7 @@
   let lastHandledAction = { id: '', at: 0 };
   let omniOrderSyncTimer = null;
   let omniOrderSyncInFlight = false;
+  let omniOrderSyncQueued = false;
   let lastOmniOrderSyncDigest = '';
   const TIME_OPTIONS = (() => {
     const options = [''];
@@ -1793,7 +1794,7 @@
   }
 
   function omniWorkflowStage() {
-    const label = Array.from(document.querySelectorAll('label, legend, span, div, td'))
+    const label = Array.from(document.querySelectorAll('label, legend, span, div, td, th, b, strong'))
       .filter(isVisible)
       .filter(node => normalizeLabel(node.textContent || '') === 'stage')
       .sort((a, b) => a.children.length - b.children.length)[0];
@@ -1829,7 +1830,11 @@
     const payload = omniWorkflowSnapshot();
     if (!payload) return;
     const digest = JSON.stringify(payload);
-    if (!options.force && (digest === lastOmniOrderSyncDigest || omniOrderSyncInFlight)) return;
+    if (omniOrderSyncInFlight) {
+      omniOrderSyncQueued = true;
+      return;
+    }
+    if (!options.force && digest === lastOmniOrderSyncDigest) return;
 
     omniOrderSyncInFlight = true;
     const headers = { 'Content-Type': 'application/json' };
@@ -1841,7 +1846,7 @@
       data: digest,
       timeout: 20000,
       onload: (response) => {
-        omniOrderSyncInFlight = false;
+        finishOmniWorkflowSync();
         if (response.status >= 200 && response.status < 300) {
           lastOmniOrderSyncDigest = digest;
           try { fillOmniShowroomDispatch(JSON.parse(response.responseText).collectionDispatch); } catch (error) { console.warn('[LC Workflow] Collection date could not be read.', error); }
@@ -1850,14 +1855,35 @@
         console.warn(`[LC Workflow] Omni order sync failed (${response.status}).`);
       },
       onerror: () => {
-        omniOrderSyncInFlight = false;
+        finishOmniWorkflowSync();
         console.warn('[LC Workflow] Could not connect to the Omni order sync service.');
       },
       ontimeout: () => {
-        omniOrderSyncInFlight = false;
+        finishOmniWorkflowSync();
         console.warn('[LC Workflow] Omni order sync timed out.');
       }
     });
+  }
+
+  function finishOmniWorkflowSync() {
+    omniOrderSyncInFlight = false;
+    if (omniOrderSyncQueued) {
+      omniOrderSyncQueued = false;
+      scheduleOmniWorkflowSync(100, true);
+    }
+  }
+
+  function installOmniWorkflowChangeHooks() {
+    document.addEventListener('change', (event) => {
+      if (!(event.target instanceof HTMLSelectElement)) return;
+      scheduleOmniWorkflowSync(350, true);
+    }, true);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') scheduleOmniWorkflowSync(350);
+    });
+    window.setInterval(() => {
+      if (document.visibilityState === 'visible') scheduleOmniWorkflowSync(350);
+    }, 30000);
   }
 
   let omniQuoteConversionLoaded = false;
@@ -4622,6 +4648,7 @@
     continueSaveClonedQuote();
     installOmniInvoiceDateHooks();
     if (isOmniPage() && window.parent === window) {
+      installOmniWorkflowChangeHooks();
       setTimeout(checkOmniShowroomCollection, 1500);
       setInterval(checkOmniShowroomCollection, 30000);
       document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkOmniShowroomCollection(); });
