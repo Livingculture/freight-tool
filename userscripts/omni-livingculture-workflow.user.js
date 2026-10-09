@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.105
+// @version      0.1.106
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -1849,7 +1849,7 @@
         finishOmniWorkflowSync();
         if (response.status >= 200 && response.status < 300) {
           lastOmniOrderSyncDigest = digest;
-          try { fillOmniShowroomDispatch(JSON.parse(response.responseText).collectionDispatch); } catch (error) { console.warn('[LC Workflow] Collection date could not be read.', error); }
+          try { fillOmniShowroomDispatch(JSON.parse(response.responseText).fulfillmentDispatch); } catch (error) { console.warn('[LC Workflow] Completion date could not be read.', error); }
           return;
         }
         console.warn(`[LC Workflow] Omni order sync failed (${response.status}).`);
@@ -1926,7 +1926,7 @@
   }
 
   function claimOmniCollectionDispatch(collection) {
-    const key = `lc-omni-collection-dispatch:${collection.orderNumber}:${collection.collectedAt}`;
+    const key = `lc-omni-collection-dispatch:${collection.orderNumber}:${collection.dispatchedAt || collection.collectedAt}`;
     if (collectionDispatchAttempts.has(key)) return false;
     try { if (sessionStorage.getItem(key)) return false; } catch {}
     // Mark before native events: stock validation may clear the field or reload the page.
@@ -1938,8 +1938,8 @@
   function fillOmniShowroomDispatch(collection) {
     const heading = omniHeadingDraft();
     if (!isOmniPage() || heading.documentType !== 'sales-order' || !collection
-      || collection.orderNumber !== heading.orderId || !collection.collectedAt) return false;
-    const collected = new Date(collection.collectedAt);
+      || collection.orderNumber !== heading.orderId || !(collection.dispatchedAt || collection.collectedAt)) return false;
+    const collected = new Date(collection.dispatchedAt || collection.collectedAt);
     if (!Number.isFinite(collected.getTime())) return false;
     const [dateInput, timeInput] = omniFullyDispatchedInputs();
     if (!dateInput || dateInput.disabled || dateInput.readOnly || clean(dateInput.value)) return false;
@@ -1957,7 +1957,7 @@
     if (timeInput && !timeInput.disabled && !timeInput.readOnly && !clean(timeInput.value)) {
       set(timeInput, timeInput.type === 'time' ? `${parts.hour}:${parts.minute}` : `${Number(parts.hour) % 12 || 12}:${parts.minute} ${Number(parts.hour) < 12 ? 'am' : 'pm'}`);
     }
-    dateInput.title = 'Filled from the Workflow showroom collection date';
+    dateInput.title = 'Filled from the Workflow delivery or collection completion date. Save the Omni order to retain it.';
     return true;
   }
 
@@ -1973,11 +1973,11 @@
     const headers = { 'Content-Type': 'application/json' };
     if (API_KEY) headers.Authorization = `Bearer ${API_KEY}`;
     GM_xmlhttpRequest({ method: 'POST', url: OMNI_ORDER_SYNC_API_URL, headers,
-      data: JSON.stringify({ action: 'collection-dispatch', orderNumber: heading.orderId }), timeout: 15000,
+      data: JSON.stringify({ action: 'fulfillment-dispatch', orderNumber: heading.orderId }), timeout: 15000,
       onload: response => {
         collectionDispatchInFlight = false;
         if (response.status < 200 || response.status >= 300) return;
-        try { fillOmniShowroomDispatch(JSON.parse(response.responseText).collectionDispatch); } catch (error) { console.warn('[LC Workflow] Collection date lookup failed.', error); }
+        try { fillOmniShowroomDispatch(JSON.parse(response.responseText).fulfillmentDispatch); } catch (error) { console.warn('[LC Workflow] Completion date lookup failed.', error); }
       },
       onerror: () => { collectionDispatchInFlight = false; },
       ontimeout: () => { collectionDispatchInFlight = false; }

@@ -23,7 +23,8 @@ const attempts = 'const collectionDispatchAttempts = new Set();let omniQuoteConv
     assert.equal(await page.evaluate(() => requests.length), 1);
     await page.evaluate(() => checkOmniShowroomCollection());
     assert.equal(await page.evaluate(() => requests.length), 1, 'Concurrent lookups do not duplicate requests');
-    await page.evaluate(c => requests[0].onload({ status: 200, responseText: JSON.stringify({ collectionDispatch: c }) }), collected);
+    assert.equal(await page.evaluate(() => JSON.parse(requests[0].data).action),'fulfillment-dispatch');
+    await page.evaluate(c => requests[0].onload({ status: 200, responseText: JSON.stringify({ fulfillmentDispatch: {orderNumber:c.orderNumber,dispatchedAt:c.collectedAt} }) }), collected);
     assert.equal(await page.locator('#dispatch').inputValue(), '9-10-2026', 'Use Auckland collection date, not host timezone or today');
     assert.equal(await page.locator('#dispatch-time').inputValue(), '1:59 am');
     assert.equal(await page.locator('#invoice').inputValue(), '7-10-2026', 'Invoice Date is untouched');
@@ -36,7 +37,7 @@ const attempts = 'const collectionDispatchAttempts = new Set();let omniQuoteConv
     await page.locator('#dispatch-time').fill('');
     await page.evaluate(() => { document.getElementById('dispatch').type='date';document.getElementById('dispatch-time').type='time'; });
     assert.equal(await page.evaluate(c => fillOmniShowroomDispatch(c), collected), false, 'Clearing a rejected date must not restart the autofill');
-    const recollected = { ...collected, collectedAt: '2026-10-08T12:59:01.000Z' };
+    const recollected = { orderNumber:collected.orderNumber, dispatchedAt: '2026-10-08T12:59:01.000Z' };
     assert.equal(await page.evaluate(c => fillOmniShowroomDispatch(c), recollected), true, 'A genuinely new collection can fill again');
     assert.equal(await page.locator('#dispatch').inputValue(), '2026-10-09');
     assert.equal(await page.locator('#dispatch-time').inputValue(), '01:59');
