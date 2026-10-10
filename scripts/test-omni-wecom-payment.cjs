@@ -10,7 +10,7 @@ const staff = JSON.parse(reps);
   try {
     const page = await browser.newPage({ viewport: { width: 1100, height: 800 } });
     await page.route('https://go.cin7.com/**', route => route.fulfill({ contentType: 'text/html', body: `
-      <h1>Edit Sales Order - Customer - NZSO-15502</h1>
+      <h1>Edit Sales Order - Customer - NZSO-15502</h1><button id="native-save">Save</button>
       <div style="transform:translateZ(0);overflow:hidden;height:180px"><table><tr><th>Payment Type</th><th>Amount<br>NZD</th><th>Date</th><th>Comments</th></tr>
       <tr><td><select><option>EFTPOS</option></select></td><td><input value="12,899.99"></td><td><input value="7-10-2026 7:17 pm"></td><td><input></td></tr></table>
       <button>Add a new payment</button><p>Total Paid: 12,899.99</p><p>Total Owing: 0.00</p></div>` }));
@@ -19,6 +19,13 @@ const staff = JSON.parse(reps);
       window.GM_getResourceText = () => reps;
       window.sent = [];
       window.successEvents = 0;
+      window.nativeSaves = 0;
+      window.savedPaymentHtml = '';
+      document.getElementById('native-save').onclick = () => {
+        window.nativeSaves++;
+        window.savedPaymentHtml = document.documentElement.outerHTML;
+      };
+      window.fetch = async () => new Response(window.savedPaymentHtml, {status:200});
       document.addEventListener('lc-omni-wecom-payment-sent', () => window.successEvents++);
       window.GM_xmlhttpRequest = options => { window.sent.push(JSON.parse(options.data)); options.onload({ status: 200, responseText: '{"errcode":0}' }); };
     }, reps);
@@ -35,7 +42,10 @@ const staff = JSON.parse(reps);
     assert.equal(await page.evaluate(() => window.sent.length), 0, 'Selecting a rep must not send');
     assert.equal(await page.evaluate(() => window.successEvents), 0);
     await page.screenshot({ path: '/tmp/lc-omni-wecom-payment.png' });
-    await page.locator('#lc-wecom-payment-confirm-overlay').getByRole('button', { name: 'Send to WeCom', exact: true }).click();
+    await page.locator('#lc-wecom-payment-confirm-overlay').getByRole('button', { name: 'Save & Send to WeCom', exact: true }).click();
+    assert.equal(await page.evaluate(() => window.nativeSaves), 1, 'Explicit confirmation invokes native Save once');
+    assert.equal(await page.evaluate(() => window.sent.length), 0, 'Never send before verifying saved payment');
+    await page.waitForFunction(() => window.sent.length === 1);
     assert.equal(await page.evaluate(() => window.sent.length), 1, 'Send only after explicit confirmation');
     assert.equal(await page.evaluate(() => window.successEvents), 1, 'Notify invoice date helper only after success');
     await page.evaluate(() => {
@@ -47,6 +57,29 @@ const staff = JSON.parse(reps);
     await page.locator('#lc-send-as-wecom-menu').getByRole('button', { name: 'PEN-Steve', exact: true }).click();
     assert((await preview.inputValue()).includes('50% deposit'));
     assert.equal(await page.evaluate(() => window.sent.length), 1);
+    await page.evaluate(() => { document.getElementById('native-save').onclick = () => { window.nativeSaves++; }; });
+    await page.locator('#lc-wecom-payment-confirm-overlay').getByRole('button', {name:'Save & Send to WeCom',exact:true}).click();
+    await page.waitForFunction(() => document.getElementById('lc-wecom-payment-status').textContent.includes('not saved'));
+    assert.equal(await page.evaluate(() => window.sent.length),1,'Blocked native save must not send an unsaved payment');
+    assert.equal(await page.evaluate(() => sessionStorage.getItem('lc-omni-payment-save-send')),null,'Failed verification cannot loop across reloads');
+    assert.equal(await page.evaluate(() => window.nativeSaves),2,'No automatic save retry');
+    await page.evaluate(() => sessionStorage.setItem('lc-omni-payment-save-send',JSON.stringify({
+      order:'NZSO-15502',message:'Reloaded saved payment',url:location.href,
+      rows:JSON.stringify([['EFTPOS',12899.99]]),totalPaid:12899.99,createdAt:Date.now()
+    })));
+    await page.reload();
+    await page.evaluate(reps => {
+      window.GM_getResourceText = () => reps;
+      window.sent=[];
+      window.fetch=async()=>new Response(document.documentElement.outerHTML,{status:200});
+      window.GM_xmlhttpRequest=options=>{window.sent.push(JSON.parse(options.data));options.onload({status:200,responseText:'{"errcode":0}'});};
+    },reps);
+    await page.addScriptTag({content:source});
+    await page.waitForFunction(()=>window.sent.length===1);
+    assert.equal(await page.evaluate(()=>window.sent[0].text.content),'Reloaded saved payment','Confirmation survives native save navigation');
+    assert.equal(await page.evaluate(()=>sessionStorage.getItem('lc-omni-payment-save-send')),null,'Successful send claims pending confirmation exactly once');
+    await page.waitForTimeout(1200);
+    assert.equal(await page.evaluate(()=>window.sent.length),1,'Repeated boot hooks cannot duplicate a saved message');
     const core = await browser.newPage();
     await core.route('https://inventory.dearsystems.com/**', route => route.fulfill({ contentType: 'text/html', body: '<h1>Invoice SO-123</h1><p>Invoice memo</p><div>Total NZD 100.00</div><h2>Payment</h2><button>+ Payment</button><table><tr><td>7/10/2026</td><td>EFTPOS</td><td>100.00</td></tr></table><p>Balance due (NZD) 0.00</p>' }));
     await core.goto('https://inventory.dearsystems.com/Sale');
@@ -58,6 +91,6 @@ const staff = JSON.parse(reps);
     await core.locator('#lc-send-as-wecom-payment-btn').click();
     await core.locator('#lc-send-as-wecom-menu').getByRole('button', { name: 'PEN-Steve', exact: true }).click();
     assert.equal(await core.locator('#lc-wecom-payment-confirm-overlay textarea').inputValue(), 'SO-123 EFTPOS payment $100.00 paid in full — Steve, PEN');
-    console.log('PASS: Omni payment table detection, rep list, NZSO full-payment and deposit previews, explicit confirmation. WeCom requests mocked.');
+    console.log('PASS: Omni native save before send, persisted-payment verification, blocked save prevents send/retries, rep list, full/deposit previews and unchanged Core confirmation. Omni and WeCom requests mocked.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

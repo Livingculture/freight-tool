@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 WeCom Payment Message Sender
 // @namespace    livingculture
-// @version      4.11
+// @version      4.12
 // @description  Sends a WeCom payment message from Cin7 invoice/payment screen only.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -28,6 +28,8 @@
   const WRAPPER_ID = 'lc-wecom-payment-wrapper';
   const SPACER_ID = 'lc-wecom-payment-spacer';
   const CONFIRM_OVERLAY_ID = 'lc-wecom-payment-confirm-overlay';
+  const PENDING_PAYMENT_KEY = 'lc-omni-payment-save-send';
+  let paymentSaveInFlight = false;
 
   const WECOM_WEBHOOK_URL = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=f875dc80-5d4e-4bb4-8a8d-cd66193dc7e5';
 
@@ -42,8 +44,8 @@
     return location.hostname === 'go.cin7.com' && /\/Cloud\/TransactionEntry\/TransactionEntry\.aspx/i.test(location.pathname);
   }
 
-  function findOmniPaymentRows() {
-    for (const table of document.querySelectorAll('table')) {
+  function findOmniPaymentRows(root = document) {
+    for (const table of root.querySelectorAll('table')) {
       const header = Array.from(table.rows).find(row => {
         const labels = Array.from(row.cells).map(cell => clean(cell.textContent).toLowerCase().replace(/\s+/g, ''));
         return labels.includes('paymenttype') && labels.some(label => /^amount(?:nzd)?$/.test(label));
@@ -58,7 +60,7 @@
         return input instanceof HTMLSelectElement ? input.selectedOptions[0]?.textContent : input?.value || cell?.textContent || '';
       };
       return Array.from(table.rows).slice(Array.from(table.rows).indexOf(header) + 1)
-        .filter(row => row.closest('table') === table && isVisible(row))
+        .filter(row => row.closest('table') === table && (root !== document || isVisible(row)))
         .map(row => {
           const dateText = clean(cellValue(row.cells[dateIndex]));
           return {
@@ -534,6 +536,66 @@
     }
   }
 
+  function paymentRowsKey(root = document) {
+    return JSON.stringify(findOmniPaymentRows(root).map(row => [row.method, row.amount]).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))));
+  }
+
+  function saveOmniPaymentBeforeSending(message) {
+    if (paymentSaveInFlight) return;
+    const save = Array.from(document.querySelectorAll('button, input[type="submit"], input[type="button"], a'))
+      .filter(isVisible).filter(control => !control.disabled && /^(?:save|save as draft)$/i.test(clean(control.value || control.textContent)))
+      .sort((a, b) => /^save$/i.test(clean(a.value || a.textContent)) ? -1 : /^save$/i.test(clean(b.value || b.textContent)) ? 1 : 0)[0];
+    const rows = findOmniPaymentRows();
+    if (!save || !rows.length) {
+      setStatus('Payment message not sent. Enter the payment and make sure Save is available.', true);
+      return;
+    }
+    const pending = { message, order:findOrderNumber(), url:location.href, rows:paymentRowsKey(),
+      totalPaid:Math.round(rows.reduce((sum, row) => sum + row.amount, 0) * 100) / 100, createdAt:Date.now() };
+    try { sessionStorage.setItem(PENDING_PAYMENT_KEY, JSON.stringify(pending)); }
+    catch { setStatus('Payment message not sent. Could not retain the message during saving.', true); return; }
+    paymentSaveInFlight = true;
+    setStatus('Saving Omni payment before sending...');
+    try { save.click(); }
+    catch {
+      sessionStorage.removeItem(PENDING_PAYMENT_KEY);
+      paymentSaveInFlight = false;
+      setStatus('Omni save failed. Payment message not sent.', true);
+      return;
+    }
+    // Normal saves reload the page; this also handles a save that stays on screen.
+    setTimeout(() => { paymentSaveInFlight = false; void resumeSavedOmniPayment(); }, 4000);
+  }
+
+  async function resumeSavedOmniPayment() {
+    if (!isOmniPaymentPage() || paymentSaveInFlight) return;
+    let pending;
+    try { pending = JSON.parse(sessionStorage.getItem(PENDING_PAYMENT_KEY) || 'null'); } catch { return; }
+    if (!pending) return;
+    if (pending.order !== findOrderNumber()) return;
+    paymentSaveInFlight = true;
+    try {
+      if (Date.now() - pending.createdAt > 300000) throw Error('The saved-payment message expired. Please send again.');
+      const response = await fetch(pending.url, { credentials:'same-origin', cache:'no-store', signal:AbortSignal.timeout(15000) });
+      if (!response.ok) throw Error('Could not verify the saved Omni payment.');
+      const saved = new DOMParser().parseFromString(await response.text(), 'text/html');
+      const savedText = saved.body?.textContent || '';
+      const paid = savedText.match(/Total Paid\s*:?\s*(?:NZD|NZ\$|\$)?\s*(-?[\d,]+(?:\.\d+)?)/i);
+      const orderPattern = new RegExp(`\\b${pending.order}\\b(?![-\\d])`, 'i');
+      const matchingOrder = Array.from(saved.querySelectorAll('h1,h2,[role="heading"]')).some(heading => orderPattern.test(heading.textContent));
+      if (!matchingOrder || paymentRowsKey(saved) !== pending.rows
+        || !paid || !nearlyEqual(Number(paid[1].replace(/,/g, '')), pending.totalPaid, 0.01)) {
+        throw Error('Omni has not saved these payment details. Payment message not sent; save the order and try again.');
+      }
+      // Claim once before the external send, including across reloads.
+      sessionStorage.removeItem(PENDING_PAYMENT_KEY);
+      sendMessageToWeCom(pending.message);
+    } catch (error) {
+      sessionStorage.removeItem(PENDING_PAYMENT_KEY);
+      setStatus(error.message || 'Saved payment could not be verified. Message not sent.', true);
+    } finally { paymentSaveInFlight = false; }
+  }
+
   function sendMessageToWeCom(message) {
     if (!WECOM_WEBHOOK_URL) {
       setStatus('WeCom webhook URL is missing from the script.', true);
@@ -702,7 +764,7 @@
 
     const send = document.createElement('button');
     send.type = 'button';
-    send.textContent = 'Send to WeCom';
+    send.textContent = isOmniPaymentPage() ? 'Save & Send to WeCom' : 'Send to WeCom';
     send.style.minHeight = '38px';
     send.style.padding = '8px 14px';
     send.style.border = '1px solid #05cabe';
@@ -731,7 +793,8 @@
       }
 
       closeConfirmDialog();
-      sendMessageToWeCom(editedMessage);
+      if (isOmniPaymentPage()) saveOmniPaymentBeforeSending(editedMessage);
+      else sendMessageToWeCom(editedMessage);
     });
 
     footer.appendChild(cancel);
@@ -1033,7 +1096,7 @@
   function boot() {
     if (!document.body) return;
 
-    setTimeout(createButton, 400);
+    setTimeout(() => { createButton(); void resumeSavedOmniPayment(); }, 400);
     setTimeout(createButton, 1200);
     setTimeout(createButton, 2500);
     setTimeout(createButton, 5000);
