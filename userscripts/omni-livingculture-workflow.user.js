@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.109
+// @version      0.1.110
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -1290,6 +1290,7 @@
       document.getElementById(QUOTE_PDF_BUTTON_ID),
       document.getElementById(CLONE_QUOTE_BUTTON_ID),
       document.getElementById(CONVERT_ORDER_BUTTON_ID),
+      document.getElementById('lc-omni-jobs-overview-button'),
       document.getElementById(STAFF_HELP_BUTTON_ID)
     ].filter(Boolean);
     if (!buttons.length) return;
@@ -4663,6 +4664,28 @@
     document.getElementById(STAFF_HELP_BAR_ID)?.remove();
   }
 
+  function addJobsOverviewButton() {
+    if (!isOmniPage()) return;
+    const toolsBar = document.getElementById(OMNI_TOOLS_BAR_ID);
+    if (!toolsBar) return;
+    let button = document.getElementById('lc-omni-jobs-overview-button');
+    if (!button) {
+      button = document.createElement('button');
+      button.id = 'lc-omni-jobs-overview-button';
+      button.type = 'button';
+      button.textContent = 'Jobs Overview';
+      button.title = 'Open this job in Living Culture Workflow';
+      button.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;border:1px solid #176e58;border-radius:4px;background:#176e58;color:#fff;font:700 14px Arial,sans-serif;cursor:pointer;';
+      button.addEventListener('click', () => {
+        const order = hubSpotGateOrderId();
+        const url = new URL('jobs', WORKFLOW_PLANNER_URL);
+        if (/^NZSO-\d+$/i.test(order)) url.searchParams.set('order', order.toUpperCase());
+        window.open(url.href, '_blank', 'noopener,noreferrer');
+      });
+    }
+    if (button.parentElement !== toolsBar) toolsBar.appendChild(button);
+  }
+
   function runButtonPass() {
     buttonPassScheduled = false;
     finishOmniConversionNavigation();
@@ -4674,6 +4697,7 @@
     addQuotePdfButton();
     addCloneQuoteButton();
     applyHubSpotApprovalGate();
+    addJobsOverviewButton();
     addStaffHelpButton();
     layoutOmniWorkflowButtons();
     void linkExistingCustomerAlbumToQuote();
