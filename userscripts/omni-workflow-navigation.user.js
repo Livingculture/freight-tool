@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Omni Workflow Navigation
 // @namespace    livingculture
-// @version      0.1.1
+// @version      0.1.2
 // @description  Adds a Workflow pages dropdown to the Omni top navigation.
 // @match        https://go.cin7.com/*
 // @run-at       document-idle
@@ -23,8 +23,6 @@
     ['Install', '/?app=workflow&planner=installs'],
     ['Collect', '/?app=workflow&planner=pickups'],
     ['Roster', '/?app=workflow&planner=roster'],
-    ['Install Follow-ups', '/?app=workflow&planner=installfollowups'],
-    ['Install Times', '/?app=workflow&planner=installtimes'],
     ['Weekly Sales', '/weekly-sales'],
   ];
   const label = element => (element.textContent || '').replace(/[\u2605\u2b50]/g, '').trim().replace(/\s+/g, ' ').toLowerCase();

@@ -21,7 +21,9 @@ const body = `<style>body{margin:0;font:13px Arial}nav{background:#06346d;color:
       await link.click();
       const menu=page.locator('#lc-omni-workflow-nav-menu');
       await menu.waitFor({state:'visible'});
-      assert.equal(await menu.getByRole('menuitem').count(),12);
+      assert.equal(await menu.getByRole('menuitem').count(),10);
+      assert.equal(await menu.getByRole('menuitem',{name:'Install Follow-ups',exact:true}).count(),0);
+      assert.equal(await menu.getByRole('menuitem',{name:'Install Times',exact:true}).count(),0);
       assert(await page.evaluate(()=>document.getElementById('lc-omni-workflow-nav-menu').parentElement===document.body),'Menu escapes clipped/transformed native navigation');
       assert.equal(await menu.getByRole('menuitem',{name:'Jobs Overview',exact:true}).getAttribute('href'),'https://living-culture-workflow.vercel.app/jobs');
       assert.equal(await menu.getByRole('menuitem',{name:'Open Workflow',exact:true}).getAttribute('href'),'https://living-culture-workflow.vercel.app/','Default entry preserves last-screen restoration');
