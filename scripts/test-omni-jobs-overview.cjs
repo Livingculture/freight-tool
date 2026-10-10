@@ -9,8 +9,8 @@ assert(start>0&&end>start);
  const browser=await chromium.launch();
  try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}});
-  await page.route('https://go.cin7.com/**',route=>route.fulfill({contentType:'text/html',body:'<div id="tools"></div>'}));
-  await page.route('https://living-culture-workflow.vercel.app/**',route=>route.fulfill({contentType:'text/html',body:'<main>Job overview</main>'}));
+  await page.context().route('https://go.cin7.com/**',route=>route.fulfill({contentType:'text/html',body:'<div id="tools"></div>'}));
+  await page.context().route('https://living-culture-workflow.vercel.app/**',route=>route.fulfill({contentType:'text/html',body:'<main>Job overview</main>'}));
   await page.goto('https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx');
   await page.addScriptTag({content:`const OMNI_TOOLS_BAR_ID='tools';const WORKFLOW_PLANNER_URL='https://living-culture-workflow.vercel.app/';window.isOmniPage=()=>true;window.hubSpotGateOrderId=()=>window.testOrder;${source.slice(start,end)}`});
   await page.evaluate(()=>{window.testOrder='NZSO-17002';addJobsOverviewButton();addJobsOverviewButton();});
