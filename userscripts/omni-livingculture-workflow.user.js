@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.110
+// @version      0.1.111
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -4664,6 +4664,24 @@
     document.getElementById(STAFF_HELP_BAR_ID)?.remove();
   }
 
+  function openJobsOverviewPopup() {
+    const url = new URL('jobs', WORKFLOW_PLANNER_URL);
+    const order = hubSpotGateOrderId();
+    if (/^NZSO-\d+$/i.test(order)) url.searchParams.set('order', order.toUpperCase());
+    // A top-level popup preserves Workflow's same-site authenticated session.
+    const width = Math.min(1180, screen.availWidth || window.innerWidth);
+    const height = Math.min(900, screen.availHeight || window.innerHeight);
+    const left = Math.round((screen.availLeft || 0) + ((screen.availWidth || width) - width) / 2);
+    const top = Math.round((screen.availTop || 0) + ((screen.availHeight || height) - height) / 2);
+    const popup = window.open(url.href, '_blank', `popup=yes,width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`);
+    if (!popup) {
+      window.alert('Please allow popups for go.cin7.com, then click Jobs Overview again.');
+      return;
+    }
+    popup.opener = null;
+    popup.focus();
+  }
+
   function addJobsOverviewButton() {
     if (!isOmniPage()) return;
     const toolsBar = document.getElementById(OMNI_TOOLS_BAR_ID);
@@ -4674,14 +4692,9 @@
       button.id = 'lc-omni-jobs-overview-button';
       button.type = 'button';
       button.textContent = 'Jobs Overview';
-      button.title = 'Open this job in Living Culture Workflow';
+      button.title = 'Open this job overview in a popup';
       button.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;border:1px solid #176e58;border-radius:4px;background:#176e58;color:#fff;font:700 14px Arial,sans-serif;cursor:pointer;';
-      button.addEventListener('click', () => {
-        const order = hubSpotGateOrderId();
-        const url = new URL('jobs', WORKFLOW_PLANNER_URL);
-        if (/^NZSO-\d+$/i.test(order)) url.searchParams.set('order', order.toUpperCase());
-        window.open(url.href, '_blank', 'noopener,noreferrer');
-      });
+      button.addEventListener('click', openJobsOverviewPopup);
     }
     if (button.parentElement !== toolsBar) toolsBar.appendChild(button);
   }
