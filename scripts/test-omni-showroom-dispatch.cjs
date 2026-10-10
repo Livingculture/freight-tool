@@ -8,7 +8,7 @@ const functions = names.map(name => {
   const next = source.slice(start + 1).search(/\n  (?:async )?function /);
   return source.slice(start, start + next + 1);
 }).join('\n');
-const attempts = 'const collectionDispatchAttempts = new Set();let omniQuoteConversionLoaded=false;const omniHasStockShortage=()=>false;';
+const attempts = 'const collectionDispatchAttempts = new Set();let omniQuoteConversionLoaded=false;let forceShortage=false;const omniHasStockShortage=()=>forceShortage;';
 (async () => {
   const browser = await chromium.launch();
   try {
@@ -19,6 +19,12 @@ const attempts = 'const collectionDispatchAttempts = new Set();let omniQuoteConv
     await page.addScriptTag({ content: `const clean=value=>String(value||'').trim();const normalizeLabel=value=>clean(value).toLowerCase();const isVisible=node=>node.getBoundingClientRect().width>0&&node.getBoundingClientRect().height>0;const isOmniPage=()=>true;let heading={orderId:'NZSO-15516',documentType:'sales-order'};const omniHeadingDraft=()=>heading;const API_KEY='';const OMNI_ORDER_SYNC_API_URL='https://workflow.test/api/omni/orders';let requests=[];let saved=0;let changes=0;document.getElementById('save').onclick=()=>saved++;document.getElementById('dispatch').onchange=()=>changes++;const GM_xmlhttpRequest=options=>requests.push(options);${attempts}${functions}` });
     const collected = { orderNumber: 'NZSO-15516', collectedAt: '2026-10-08T12:59:00.000Z' };
     await page.evaluate(() => {
+      const date=document.getElementById('dispatch');
+      const label=date.parentElement.parentElement.querySelector('label');
+      label.setAttribute('for','dispatch');
+      label.style.width='90px';label.style.display='block';
+      date.parentElement.style.width='130px';
+      for(const input of date.parentElement.querySelectorAll('input')){input.style.width='90px';input.style.display='block';}
       const row=document.createElement('div');
       row.innerHTML='<label for="stage">Stage</label><select id="stage"><option value="7">Fully Packed - WMS</option><option value="9">Dispatched</option></select>';
       document.body.appendChild(row);
@@ -79,6 +85,17 @@ const attempts = 'const collectionDispatchAttempts = new Set();let omniQuoteConv
     const newer={orderNumber:collected.orderNumber,dispatchedAt:'2026-10-09T12:00:00.000Z'};
     assert.equal(await page.evaluate(c=>applyOmniWorkflowDispatch(c),newer),true,'Stage updates independently of an existing or rejected date');
     assert.equal(await page.locator('#stage').inputValue(),'9');
+    await page.evaluate(() => {
+      document.getElementById('dispatch').value='';document.getElementById('dispatch-time').value='';
+      document.getElementById('dispatch').onchange=()=>changes++;
+      forceShortage=true;
+    });
+    const confirmed={orderNumber:collected.orderNumber,dispatchedAt:'2026-10-10T02:36:00.000Z'};
+    assert.equal(await page.evaluate(c=>fillOmniShowroomDispatch(c),confirmed),true,'Confirmed completion and Dispatched stage can stamp a date despite stale stock availability');
+    assert.equal(await page.locator('#dispatch').inputValue(),'2026-10-10');
+    assert.equal(await page.locator('#dispatch-time').inputValue(),'15:36');
+    await page.evaluate(() => {document.getElementById('dispatch').value='';omniQuoteConversionLoaded=true;});
+    assert.equal(await page.evaluate(c=>fillOmniShowroomDispatch(c),{...confirmed,dispatchedAt:'2026-10-10T02:37:00.000Z'}),false,'Conversion never bypasses stock safeguard');
     console.log('PASS: Collection date/time fills exact NZSO sales order using Auckland time, preserves existing/readonly dates and invoice fields, native events fire, no approval/save is triggered. Browser/API mocked.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.107
+// @version      0.1.108
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -1726,17 +1726,18 @@
     if (!label) return [];
     const linked = label.getAttribute('for') && document.getElementById(label.getAttribute('for'));
     let controls = linked ? [linked] : [];
-    for (let root = label; !controls.length && root && root !== document.body; root = root.parentElement) {
+    for (let root = linked?.parentElement || label; root && root !== document.body; root = root.parentElement) {
       const candidates = Array.from(root.querySelectorAll('input:not([type="hidden"]):not([type="image"]):not([type="button"]):not([type="submit"])')).filter(isVisible);
       if (candidates.length > 2) break;
-      controls = candidates;
+      if (candidates.length > controls.length) controls = candidates;
+      if (controls.length === 2) break;
     }
     if (!controls.length) {
       const rect = label.getBoundingClientRect();
       controls = Array.from(document.querySelectorAll('input')).filter(isVisible).filter(input => {
         const field = input.getBoundingClientRect();
-        return field.left >= rect.left - 4 && field.left < rect.left + 100 && field.top >= rect.bottom - 4 && field.top < rect.bottom + 50;
-      }).sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
+        return field.left >= rect.left - 4 && field.left < rect.left + 200 && field.top >= rect.bottom - 4 && field.top < rect.bottom + 120;
+      }).sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top || a.getBoundingClientRect().left - b.getBoundingClientRect().left);
     }
     return controls;
   }
@@ -1967,7 +1968,10 @@
     if (!Number.isFinite(collected.getTime())) return false;
     const [dateInput, timeInput] = omniFullyDispatchedInputs();
     if (!dateInput || dateInput.disabled || dateInput.readOnly || clean(dateInput.value)) return false;
-    if (!omniCollectionDispatchAllowed()) return false;
+    if (!omniCollectionDispatchAllowed()) {
+      if (omniQuoteConversionLoaded || new URL(window.location.href).searchParams.get('ConvertQuoteToSalesOrder')?.toLowerCase() === 'yes'
+        || !collection.dispatchedAt || !/^(?:fully\s+)?dispatched$/i.test(omniWorkflowStage() || '')) return false;
+    }
     if (!claimOmniCollectionDispatch(collection)) return false;
     const parts = Object.fromEntries(new Intl.DateTimeFormat('en-NZ', { timeZone: 'Pacific/Auckland',
       year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
@@ -1978,6 +1982,7 @@
       input.dispatchEvent(new Event('change', { bubbles: true }));
     };
     set(dateInput, dateInput.type === 'date' ? `${parts.year}-${parts.month}-${parts.day}` : `${Number(parts.day)}-${Number(parts.month)}-${parts.year}`);
+    if (!clean(dateInput.value)) return false;
     if (timeInput && !timeInput.disabled && !timeInput.readOnly && !clean(timeInput.value)) {
       set(timeInput, timeInput.type === 'time' ? `${parts.hour}:${parts.minute}` : `${Number(parts.hour) % 12 || 12}:${parts.minute} ${Number(parts.hour) < 12 ? 'am' : 'pm'}`);
     }
