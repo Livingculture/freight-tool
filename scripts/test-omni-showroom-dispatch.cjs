@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { chromium } = require('playwright');
 const source = fs.readFileSync('userscripts/omni-livingculture-workflow.user.js', 'utf8');
-const names = ['omniFullyDispatchedInputs', 'omniFullyDispatchedState', 'claimOmniCollectionDispatch', 'fillOmniShowroomDispatch', 'checkOmniShowroomCollection', 'omniCollectionDispatchAllowed', 'omniWorkflowStageControl', 'omniWorkflowStage', 'applyOmniWorkflowDispatch'];
+const names = ['omniFullyDispatchedInputs', 'omniFullyDispatchedState', 'claimOmniCollectionDispatch', 'fillOmniShowroomDispatch', 'checkOmniShowroomCollection', 'omniCollectionDispatchAllowed', 'omniWorkflowStageControl', 'omniWorkflowStage', 'applyOmniWorkflowDispatch', 'applyOmniWorkflowResponse'];
 const functions = names.map(name => {
   const start = source.indexOf(`  function ${name}(`);
   const next = source.slice(start + 1).search(/\n  (?:async )?function /);
@@ -50,7 +50,8 @@ const attempts = 'const collectionDispatchAttempts = new Set();let omniQuoteConv
     assert.equal(await page.evaluate(() => changes), 1, 'Omni receives native change event');
     assert.equal(await page.evaluate(c => fillOmniShowroomDispatch(c), collected), false, 'Existing date is never overwritten');
     await page.evaluate(() => checkOmniShowroomCollection());
-    assert.equal(await page.evaluate(() => requests.length), 1, 'Filled orders stop polling');
+    assert.equal(await page.evaluate(() => requests.length), 2, 'Completed orders still check for an explicit reversal');
+    await page.evaluate(() => requests[1].onload({status:200,responseText:'{}'}));
     await page.locator('#dispatch').fill('');
     await page.locator('#dispatch-time').fill('');
     await page.evaluate(() => { document.getElementById('dispatch').type='date';document.getElementById('dispatch-time').type='time'; });
@@ -96,6 +97,14 @@ const attempts = 'const collectionDispatchAttempts = new Set();let omniQuoteConv
     assert.equal(await page.locator('#dispatch-time').inputValue(),'15:36');
     await page.evaluate(() => {document.getElementById('dispatch').value='';omniQuoteConversionLoaded=true;});
     assert.equal(await page.evaluate(c=>fillOmniShowroomDispatch(c),{...confirmed,dispatchedAt:'2026-10-10T02:37:00.000Z'}),false,'Conversion never bypasses stock safeguard');
-    console.log('PASS: Collection date/time fills exact NZSO sales order using Auckland time, preserves existing/readonly dates and invoice fields, native events fire, no approval/save is triggered. Browser/API mocked.');
+    await page.evaluate(()=>{omniQuoteConversionLoaded=false;document.getElementById('stage').value='9';});
+    const reversal={workflowUndo:{id:'undo-1',orderNumber:collected.orderNumber,stage:'Fully Packed - WMS',clearDispatchDate:true}};
+    assert.equal(await page.evaluate(p=>applyOmniWorkflowResponse(p),reversal),true);
+    assert.equal(await page.locator('#stage').inputValue(),'7');
+    assert.equal(await page.locator('#dispatch').inputValue(),'');
+    assert.equal(await page.locator('#dispatch-time').inputValue(),'');
+    assert.equal(await page.evaluate(p=>applyOmniWorkflowResponse(p),reversal),false,'A reversal only applies once');
+    assert.equal(await page.evaluate(p=>applyOmniWorkflowResponse(p),{workflowUndo:{...reversal.workflowUndo,id:'undo-2',orderNumber:'NZSO-155160'}}),false,'Undo cannot target a near-number order');
+    console.log('PASS: Completion and explicit reversal synchronize native Omni stage/date fields without auto-saving or warning loops. Browser/API mocked.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

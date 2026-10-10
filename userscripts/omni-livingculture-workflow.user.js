@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.108
+// @version      0.1.109
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -1855,7 +1855,7 @@
         finishOmniWorkflowSync();
         if (response.status >= 200 && response.status < 300) {
           lastOmniOrderSyncDigest = digest;
-          try { applyOmniWorkflowDispatch(JSON.parse(response.responseText).fulfillmentDispatch); } catch (error) { console.warn('[LC Workflow] Completion date could not be read.', error); }
+          try { applyOmniWorkflowResponse(JSON.parse(response.responseText)); } catch (error) { console.warn('[LC Workflow] Workflow status could not be read.', error); }
           return;
         }
         console.warn(`[LC Workflow] Omni order sync failed (${response.status}).`);
@@ -1960,6 +1960,29 @@
     return fillOmniShowroomDispatch(completion) || changed;
   }
 
+  function applyOmniWorkflowResponse(payload) {
+    if (!payload.workflowUndo) return applyOmniWorkflowDispatch(payload.fulfillmentDispatch);
+    const heading = omniHeadingDraft(), undo = payload.workflowUndo;
+    if (!isOmniPage() || heading.documentType !== 'sales-order' || undo.orderNumber !== heading.orderId || omniQuoteConversionLoaded) return false;
+    const stage = omniWorkflowStageControl();
+    const key = value => clean(value).toLowerCase().replace(/\s*-\s*wms$/, '');
+    const options = stage && Array.from(stage.options).filter(option => !option.disabled && key(option.textContent) === key(undo.stage));
+    if (!stage || stage.disabled || options.length !== 1 || !claimOmniCollectionDispatch({orderNumber:heading.orderId,dispatchedAt:undo.id}, 'undo')) return false;
+    stage.value = options[0].value;
+    if (undo.clearDispatchDate) {
+      for (const input of omniFullyDispatchedInputs()) {
+        if (input.disabled || input.readOnly || !clean(input.value)) continue;
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '');
+        input.dispatchEvent(new Event('input', {bubbles:true}));
+        input.dispatchEvent(new Event('change', {bubbles:true}));
+      }
+    }
+    stage.dispatchEvent(new Event('input', {bubbles:true}));
+    stage.dispatchEvent(new Event('change', {bubbles:true}));
+    stage.title = 'Reopened from Workflow. Save the Omni order to retain this correction.';
+    return true;
+  }
+
   function fillOmniShowroomDispatch(collection) {
     const heading = omniHeadingDraft();
     if (!isOmniPage() || heading.documentType !== 'sales-order' || !collection
@@ -1997,7 +2020,6 @@
     const heading = omniHeadingDraft();
     if (heading.documentType !== 'sales-order' || !/^NZSO-\d+$/.test(heading.orderId)) return;
     const [dateInput] = omniFullyDispatchedInputs();
-    if (/^(?:fully\s+)?dispatched$/i.test(omniWorkflowStage() || '') && dateInput && clean(dateInput.value)) return;
     collectionDispatchInFlight = true;
     const headers = { 'Content-Type': 'application/json' };
     if (API_KEY) headers.Authorization = `Bearer ${API_KEY}`;
@@ -2006,7 +2028,7 @@
       onload: response => {
         collectionDispatchInFlight = false;
         if (response.status < 200 || response.status >= 300) return;
-        try { applyOmniWorkflowDispatch(JSON.parse(response.responseText).fulfillmentDispatch); } catch (error) { console.warn('[LC Workflow] Completion date lookup failed.', error); }
+        try { applyOmniWorkflowResponse(JSON.parse(response.responseText)); } catch (error) { console.warn('[LC Workflow] Workflow status lookup failed.', error); }
       },
       onerror: () => { collectionDispatchInFlight = false; },
       ontimeout: () => { collectionDispatchInFlight = false; }
