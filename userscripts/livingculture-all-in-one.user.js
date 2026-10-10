@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture All-in-One
 // @namespace    livingculture
-// @version      0.1.108
+// @version      0.1.109
 // @description  Approved Living Culture Omni, Cin7 Core, Gmail, HubSpot and website tools in one Tampermonkey install.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -64,7 +64,7 @@
 // @resource     clearanceInfo https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-clearance-info-sheet.user.js?v=0.1.15
 // @resource     promoSummary https://raw.githubusercontent.com/Livingculture/freight-tool/6c7e65a72b06ae04475bf0f16c7f508dcaf5e136/userscripts/cin7-promo-summary.user.js
 // @resource     newProducts https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-new-products-info-sheet.user.js?v=0.1.7
-// @resource     wecomPayment https://raw.githubusercontent.com/Livingculture/freight-tool/accc7b86a6960e42d1a5c36136ad65f354e7ceb0/userscripts/cin7-wecom-payment-message.user.js
+// @resource     wecomPayment https://raw.githubusercontent.com/Livingculture/freight-tool/1becb34d96e7fc9679306fc9bae371a14fc369f7/userscripts/cin7-wecom-payment-message.user.js
 // @resource     staffReps https://raw.githubusercontent.com/Livingculture/freight-tool/3cc7c5d5391066307b53282bd4cd89a63adc99ea/userscripts/livingculture-reps.json
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/livingculture-all-in-one.user.js
 // @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/livingculture-all-in-one.user.js
