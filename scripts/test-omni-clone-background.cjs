@@ -16,14 +16,14 @@ const clone = source.slice(start, start + next + 1);
       const url = new URL(route.request().url());
       let body;
       if (url.pathname.includes('ShoppingCartAdmin')) {
-        body = '<h1>Admin - Customer - NZSO-15514</h1><button onclick="document.getElementById(\'copy\').hidden=false">Actions</button><a id="copy" target="_top" hidden href="/Cloud/TransactionEntry/TransactionEntry.aspx?newClone=1">Copy All Items</a>';
+        body = '<h1>Sales Orders</h1><h2>Admin - Customer - NZSO-15514</h2><button onclick="document.getElementById(\'copy\').hidden=false">Actions</button><a id="copy" target="_top" hidden href="/Cloud/TransactionEntry/TransactionEntry.aspx?newClone=1">Copy All Items</a>';
       } else if (url.searchParams.has('newClone')) {
         copies++;
         await new Promise(resolve => setTimeout(resolve, 350));
-        body = '<h1>New Quote</h1><button onclick="location.href=\'/Cloud/TransactionEntry/TransactionEntry.aspx?OrderId=398\'">Save</button>';
+        body = '<h1>Living Culture</h1><div role="heading">New Quote</div><button onclick="location.href=\'/Cloud/TransactionEntry/TransactionEntry.aspx?OrderId=398\'">Save As Draft</button>';
       } else if (url.searchParams.get('OrderId') === '398') {
         saves++;
-        body = '<h1>Edit Quote - Customer - NZSO-15515</h1>';
+        body = '<h1>Living Culture</h1><h2>Edit Quote - Customer - NZSO-15515</h2>';
       } else body = '<h1>Edit Quote - Customer - NZSO-15514</h1><button id="clone">Clone Quote</button>';
       await route.fulfill({ contentType: 'text/html', body });
     });

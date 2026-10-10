@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.112
+// @version      0.1.113
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -3148,6 +3148,12 @@
     let saving = false;
     let saveDocument = null;
     let openedMenu = false;
+    const identity = doc => {
+      const headings = Array.from(doc.querySelectorAll('h1, h2, h3, [role="heading"]')).map(node => clean(node.textContent || ''));
+      const heading = headings.find(text => /^(?:new|edit)\s+quote\b/i.test(text))
+        || headings.find(text => extractOrderId(text)) || clean(doc.title || '');
+      return { heading, number:extractOrderId(heading) || extractOrderId(doc.title || '') };
+    };
     const cleanup = () => {
       window.clearInterval(timer);
       frame.remove();
@@ -3157,7 +3163,9 @@
     const timer = window.setInterval(() => {
       if (Date.now() - started > 120000) {
         cleanup();
-        window.alert('Could not confirm the cloned quote was saved. Check the quotes list before cloning again.');
+        window.alert(!copied ? 'Could not find Copy All Items for this quote in Omni. No copy was started.'
+          : !saving ? 'Omni did not show the new quote for saving. Check the quotes list before cloning again.'
+          : 'Could not confirm the cloned quote was saved. Check the quotes list before cloning again.');
         return;
       }
       try {
@@ -3167,7 +3175,7 @@
         const url = new URL(frame.contentWindow.location.href);
         const controls = Array.from(doc.querySelectorAll('a, button, input[type="button"], input[type="submit"]'));
         const find = label => controls.find(element => normalizeLabel(element.value || element.textContent || '') === label && !element.disabled);
-        const number = extractOrderId(doc.querySelector('h1, h2, h3')?.textContent || doc.title);
+        const { heading, number } = identity(doc);
         const internalId = Array.from(url.searchParams.entries()).find(([key]) => /^(orderid|idorder)$/i.test(key))?.[1];
         if (!copied) {
           if (internalId !== orderId || number !== sourceNumber) return;
@@ -3181,7 +3189,7 @@
           }
           else if (!openedMenu) { const actions = find('actions'); if (actions) { openedMenu = true; actions.click(); } }
         } else if (!saving && /\/TransactionEntry\//i.test(url.pathname)) {
-          const newHeading = /^new\s+quote\b/i.test(clean(doc.querySelector('h1, h2, h3')?.textContent || ''));
+          const newHeading = /^new\s+quote\b/i.test(heading);
           const changed = number && number !== sourceNumber && internalId && internalId !== orderId;
           const save = find('save') || find('save as draft');
           if ((newHeading || changed) && save) {
@@ -3192,7 +3200,7 @@
             save.click();
           }
         } else if (saving && doc !== saveDocument && number && number !== sourceNumber && internalId && internalId !== orderId
-          && /^edit\s+quote\b/i.test(clean(doc.querySelector('h1, h2, h3')?.textContent || doc.title))
+          && /^edit\s+quote\b/i.test(heading)
           && /\/TransactionEntry\//i.test(url.pathname)) {
           cleanup();
           location.assign(url.href);
