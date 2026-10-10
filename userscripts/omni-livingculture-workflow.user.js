@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.106
+// @version      0.1.107
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -1793,7 +1793,7 @@
     };
   }
 
-  function omniWorkflowStage() {
+  function omniWorkflowStageControl() {
     const label = Array.from(document.querySelectorAll('label, legend, span, div, td, th, b, strong'))
       .filter(isVisible)
       .filter(node => normalizeLabel(node.textContent || '') === 'stage')
@@ -1806,6 +1806,11 @@
         const field = control.getBoundingClientRect();
         return field.left >= rect.left - 4 && field.left <= rect.right + 240 && Math.abs(field.top - rect.top) < 40;
       }).sort((a, b) => Math.abs(a.getBoundingClientRect().left - rect.right) - Math.abs(b.getBoundingClientRect().left - rect.right))[0];
+    return select || null;
+  }
+
+  function omniWorkflowStage() {
+    const select = omniWorkflowStageControl();
     return select ? clean(select.selectedOptions[0]?.textContent || '') : null;
   }
 
@@ -1849,7 +1854,7 @@
         finishOmniWorkflowSync();
         if (response.status >= 200 && response.status < 300) {
           lastOmniOrderSyncDigest = digest;
-          try { fillOmniShowroomDispatch(JSON.parse(response.responseText).fulfillmentDispatch); } catch (error) { console.warn('[LC Workflow] Completion date could not be read.', error); }
+          try { applyOmniWorkflowDispatch(JSON.parse(response.responseText).fulfillmentDispatch); } catch (error) { console.warn('[LC Workflow] Completion date could not be read.', error); }
           return;
         }
         console.warn(`[LC Workflow] Omni order sync failed (${response.status}).`);
@@ -1925,14 +1930,33 @@
       && !omniHasStockShortage();
   }
 
-  function claimOmniCollectionDispatch(collection) {
-    const key = `lc-omni-collection-dispatch:${collection.orderNumber}:${collection.dispatchedAt || collection.collectedAt}`;
+  function claimOmniCollectionDispatch(collection, kind = 'date') {
+    const key = `lc-omni-collection-dispatch:${kind}:${collection.orderNumber}:${collection.dispatchedAt || collection.collectedAt}`;
     if (collectionDispatchAttempts.has(key)) return false;
     try { if (sessionStorage.getItem(key)) return false; } catch {}
     // Mark before native events: stock validation may clear the field or reload the page.
     collectionDispatchAttempts.add(key);
     try { sessionStorage.setItem(key, 'attempted'); } catch {}
     return true;
+  }
+
+  function applyOmniWorkflowDispatch(completion) {
+    const heading = omniHeadingDraft();
+    if (omniQuoteConversionLoaded || new URL(window.location.href).searchParams.get('ConvertQuoteToSalesOrder')?.toLowerCase() === 'yes') return false;
+    if (!isOmniPage() || heading.documentType !== 'sales-order' || completion?.orderNumber !== heading.orderId
+      || !Number.isFinite(Date.parse(completion?.dispatchedAt || completion?.collectedAt || ''))) return false;
+    const stage = omniWorkflowStageControl();
+    const dispatched = stage && Array.from(stage.options).filter(option => /^(?:fully\s+)?dispatched$/i.test(clean(option.textContent)) && !option.disabled);
+    let changed = false;
+    if (stage && !stage.disabled && dispatched.length === 1 && stage.value !== dispatched[0].value
+      && claimOmniCollectionDispatch(completion, 'stage')) {
+      stage.value = dispatched[0].value;
+      stage.dispatchEvent(new Event('input', { bubbles:true }));
+      stage.dispatchEvent(new Event('change', { bubbles:true }));
+      stage.title = 'Dispatched from Workflow completion. Save the Omni order to retain it.';
+      changed = true;
+    }
+    return fillOmniShowroomDispatch(completion) || changed;
   }
 
   function fillOmniShowroomDispatch(collection) {
@@ -1964,11 +1988,11 @@
   let collectionDispatchInFlight = false;
   function checkOmniShowroomCollection() {
     if (!isOmniPage() || document.visibilityState !== 'visible' || collectionDispatchInFlight) return;
-    if (!omniCollectionDispatchAllowed()) return;
+    if (omniQuoteConversionLoaded || new URL(window.location.href).searchParams.get('ConvertQuoteToSalesOrder')?.toLowerCase() === 'yes') return;
     const heading = omniHeadingDraft();
-    if (heading.documentType !== 'sales-order' || !/^NZSO-\d+$/.test(heading.orderId) || omniFullyDispatchedState() !== false) return;
+    if (heading.documentType !== 'sales-order' || !/^NZSO-\d+$/.test(heading.orderId)) return;
     const [dateInput] = omniFullyDispatchedInputs();
-    if (!dateInput || dateInput.disabled || dateInput.readOnly || clean(dateInput.value)) return;
+    if (/^(?:fully\s+)?dispatched$/i.test(omniWorkflowStage() || '') && dateInput && clean(dateInput.value)) return;
     collectionDispatchInFlight = true;
     const headers = { 'Content-Type': 'application/json' };
     if (API_KEY) headers.Authorization = `Bearer ${API_KEY}`;
@@ -1977,7 +2001,7 @@
       onload: response => {
         collectionDispatchInFlight = false;
         if (response.status < 200 || response.status >= 300) return;
-        try { fillOmniShowroomDispatch(JSON.parse(response.responseText).fulfillmentDispatch); } catch (error) { console.warn('[LC Workflow] Completion date lookup failed.', error); }
+        try { applyOmniWorkflowDispatch(JSON.parse(response.responseText).fulfillmentDispatch); } catch (error) { console.warn('[LC Workflow] Completion date lookup failed.', error); }
       },
       onerror: () => { collectionDispatchInFlight = false; },
       ontimeout: () => { collectionDispatchInFlight = false; }
