@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.111
+// @version      0.1.112
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -62,6 +62,8 @@
   const HUBSPOT_GATE_CLASS = 'lc-omni-hubspot-gated-action';
   const HUBSPOT_GATE_STORAGE_PREFIX = 'lc-omni-hubspot-deal-complete:';
   const completedHubSpotSteps = new Set();
+  const hubSpotPrerequisiteClicks = new Map();
+  let hubSpotPrerequisiteHooksInstalled = false;
   const QUOTE_PDF_HANDOFF_KEY = 'lc-omni-quote-pdf-handoff';
   const QUOTE_PDF_TIMEOUT_MS = 45000;
   const quotePdfLinkCache = new Map();
@@ -218,6 +220,57 @@
     style.textContent = `.${HUBSPOT_GATE_CLASS} { display: none !important; }
       #${QUOTE_PDF_BUTTON_ID}[data-hubspot-locked] { opacity: .5 !important; cursor: not-allowed !important; }`;
     (document.head || document.documentElement).appendChild(style);
+  }
+
+  function hubSpotPrerequisites() {
+    if (!isOmniPage() || (omniHeadingDraft().documentType !== 'quote' && !findButtonByLabel('Save As Draft'))) return [];
+    const order = extractOrderId(hubSpotGateOrderId());
+    const key = order ? `lc-omni-hubspot-prerequisites:${order}` : '';
+    let clicks = hubSpotPrerequisiteClicks.get(key) || {};
+    if (key) {
+      try { clicks = { ...JSON.parse(sessionStorage.getItem(key) || '{}'), ...clicks }; } catch (error) { /* Keep the current-page click state. */ }
+    }
+    return [!clicks.savedDraft && 'Save as Draft', !clicks.quoteMemo && 'Quote Memo Info'].filter(Boolean);
+  }
+
+  function applyHubSpotPrerequisiteGate() {
+    const button = document.getElementById(HUBSPOT_BUTTON_ID);
+    if (!button) return;
+    const missing = hubSpotPrerequisites();
+    if (missing.length) {
+      button.dataset.prerequisiteLocked = '1';
+      button.disabled = true;
+      button.title = `Click ${missing.join(' and ')} before using HubSpot Deal.`;
+      button.style.opacity = '.5';
+      button.style.cursor = 'not-allowed';
+    } else if (button.dataset.prerequisiteLocked) {
+      delete button.dataset.prerequisiteLocked;
+      button.disabled = false;
+      button.title = '';
+      button.style.opacity = '';
+      button.style.cursor = 'pointer';
+    }
+  }
+
+  function installHubSpotPrerequisiteHooks() {
+    if (!isOmniPage() || hubSpotPrerequisiteHooksInstalled) return;
+    hubSpotPrerequisiteHooksInstalled = true;
+    document.addEventListener('click', event => {
+      const control = event.target.closest?.('button, a, input[type="button"], input[type="submit"]');
+      if (!control || control.disabled) return;
+      const label = normalizeLabel(control.value || control.textContent || '');
+      const step = control.id === 'lc-omni-quote-memo-button' || label === 'quote memo info' ? 'quoteMemo'
+        : !control.id?.startsWith('lc-') && label === 'save as draft' ? 'savedDraft' : '';
+      const order = extractOrderId(hubSpotGateOrderId());
+      if (!step || !order) return;
+      const key = `lc-omni-hubspot-prerequisites:${order}`;
+      let clicks = hubSpotPrerequisiteClicks.get(key) || {};
+      try { clicks = { ...JSON.parse(sessionStorage.getItem(key) || '{}'), ...clicks }; } catch (error) { /* Storage may be unavailable. */ }
+      clicks[step] = true;
+      hubSpotPrerequisiteClicks.set(key, clicks);
+      try { sessionStorage.setItem(key, JSON.stringify(clicks)); } catch (error) { /* Current-page clicks still unlock the control. */ }
+      applyHubSpotPrerequisiteGate();
+    }, true);
   }
 
   function applyHubSpotApprovalGate(completedOrderId = '') {
@@ -2325,6 +2378,12 @@
   }
 
   async function submitHubSpotDeal(button) {
+    const missing = hubSpotPrerequisites();
+    if (missing.length) {
+      applyHubSpotPrerequisiteGate();
+      await hubSpotMessage('HubSpot Deal', [`Click ${missing.join(' and ')} before using HubSpot Deal.`], { intent:'danger' });
+      return;
+    }
     const payload = hubspotDraft();
 
     if (!payload.customerName && !payload.email && !payload.phone) {
@@ -2346,6 +2405,7 @@
     if (!review?.confirmed) {
       return;
     }
+    if (isOmniPage() && (extractOrderId(payload.orderId) !== extractOrderId(hubSpotGateOrderId()) || hubSpotPrerequisites().length)) return;
     payload.lineItems = Array.isArray(review.lineItems) ? review.lineItems : [];
     payload.copyContactTimeline = Boolean(review.copyContactTimeline);
     markHubSpotStepComplete(payload.orderId);
@@ -4706,6 +4766,7 @@
     addCustomerPhotosButton();
     addButton();
     addHubSpotButton();
+    applyHubSpotPrerequisiteGate();
     addQuoteReviewButton();
     addQuotePdfButton();
     addCloneQuoteButton();
@@ -4735,6 +4796,7 @@
     if (continueQuotePdfFromEditFrame()) return;
     continueSaveClonedQuote();
     installOmniInvoiceDateHooks();
+    installHubSpotPrerequisiteHooks();
     if (isOmniPage() && window.parent === window) {
       installOmniWorkflowChangeHooks();
       setTimeout(checkOmniShowroomCollection, 1500);
