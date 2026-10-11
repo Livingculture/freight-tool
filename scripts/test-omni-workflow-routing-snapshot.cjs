@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { chromium } = require('playwright');
 const source = fs.readFileSync('userscripts/omni-livingculture-workflow.user.js', 'utf8');
-const functions = ['omniWorkflowSnapshot', 'omniWorkflowStageControl', 'omniWorkflowStage', 'omniWorkflowFreightDescription', 'syncOmniWorkflowRecord', 'finishOmniWorkflowSync', 'installOmniWorkflowChangeHooks', 'scheduleOmniWorkflowSync'].map(name => {
+const functions = ['quoteWorkflowRequestAction', 'omniWorkflowSnapshot', 'omniWorkflowStageControl', 'omniWorkflowStage', 'omniWorkflowFreightDescription', 'syncOmniWorkflowRecord', 'finishOmniWorkflowSync', 'installOmniWorkflowChangeHooks', 'scheduleOmniWorkflowSync'].map(name => {
   const start = source.indexOf(`  function ${name}(`);
   const next = source.slice(start + 1).search(/\n  (?:async )?function /);
   return source.slice(start, start + next + 1);

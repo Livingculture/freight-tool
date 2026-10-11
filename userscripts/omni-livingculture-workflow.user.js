@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.124
+// @version      0.1.125
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -1812,6 +1812,23 @@
     return /^(?:\d{4}-\d{2}-\d{2}|\d{1,2}[\/-]\d{1,2}[\/-]\d{4})(?:\s|$)/.test(value);
   }
 
+  function quoteWorkflowRequestAction(orderNumber) {
+    try {
+      const action = window.localStorage.getItem(`lc-workflow-quote-request:${orderNumber}`);
+      if (['site-visit','quote-review'].includes(action)) return action;
+    } catch {}
+    return quoteWorkflowRequestAction.requested?.[orderNumber] || '';
+  }
+
+  function requestQuoteWorkflowTracking(action) {
+    const heading = omniHeadingDraft();
+    if (heading.documentType !== 'quote' || !/^NZSO-\d+$/.test(heading.orderId) || !['site-visit','quote-review'].includes(action)) return;
+    quoteWorkflowRequestAction.requested ||= {};
+    quoteWorkflowRequestAction.requested[heading.orderId] = action;
+    try { window.localStorage.setItem(`lc-workflow-quote-request:${heading.orderId}`,action); } catch {}
+    scheduleOmniWorkflowSync(0,true);
+  }
+
   function omniWorkflowSnapshot() {
     if (!isOmniPage()) return null;
     const heading = omniHeadingDraft();
@@ -1832,6 +1849,7 @@
       orderNumber: heading.orderId,
       documentType: heading.documentType,
       documentTypeObservedAt: new Date(window.performance?.timeOrigin || Date.now()).toISOString(),
+      quoteWorkflowAction: quoteWorkflowRequestAction(heading.orderId),
       secondaryType: labelled('Secondary Type'),
       customerName: heading.customerName || draft.customerName,
       address: draft.address,
@@ -4240,6 +4258,7 @@
         return;
       }
       if (button.id === BUTTON_ID) {
+        requestQuoteWorkflowTracking('site-visit');
         openPanel();
         return;
       }
@@ -4248,6 +4267,7 @@
         return;
       }
       if (button.id === QUOTE_REVIEW_BUTTON_ID) {
+        requestQuoteWorkflowTracking('quote-review');
         submitQuoteReview(button);
         return;
       }
