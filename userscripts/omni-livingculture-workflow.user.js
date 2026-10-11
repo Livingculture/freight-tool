@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.125
+// @version      0.1.126
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -232,8 +232,11 @@
   }
 
   function hubSpotPrerequisites() {
-    if (!isOmniPage() || (omniHeadingDraft().documentType !== 'quote' && !findButtonByLabel('Save As Draft'))) return [];
-    const order = extractOrderId(hubSpotGateOrderId());
+    if (!isOmniPage()) return [];
+    const heading = omniHeadingDraft();
+    const order = extractOrderId(heading.orderId);
+    if (!/^NZSO-\d+$/.test(order)) return ['Save as Draft to obtain an NZSO number'];
+    if (heading.documentType !== 'quote' && !findButtonByLabel('Save As Draft')) return [];
     const key = order ? `lc-omni-hubspot-prerequisites:${order}` : '';
     let clicks = hubSpotPrerequisiteClicks.get(key) || {};
     if (key) {
@@ -2416,6 +2419,10 @@
       return;
     }
     const payload = hubspotDraft();
+    if (isOmniPage() && (!/^NZSO-\d+$/i.test(String(payload.orderId || '').trim()) || extractOrderId(payload.orderId) !== extractOrderId(omniHeadingDraft().orderId))) {
+      await hubSpotMessage('HubSpot Deal', ['Save As Draft first, then wait for the NZSO number to appear before sending to HubSpot.'], { intent:'danger' });
+      return;
+    }
 
     if (!payload.customerName && !payload.email && !payload.phone) {
       await hubSpotMessage('HubSpot Deal', ['Customer name, email, or phone is required before creating a HubSpot deal.'], { intent: 'danger' });
@@ -2436,7 +2443,7 @@
     if (!review?.confirmed) {
       return;
     }
-    if (isOmniPage() && (extractOrderId(payload.orderId) !== extractOrderId(hubSpotGateOrderId()) || hubSpotPrerequisites().length)) return;
+    if (isOmniPage() && (!/^NZSO-\d+$/i.test(String(payload.orderId || '').trim()) || extractOrderId(payload.orderId) !== extractOrderId(omniHeadingDraft().orderId) || hubSpotPrerequisites().length)) return;
     payload.lineItems = Array.isArray(review.lineItems) ? review.lineItems : [];
     payload.copyContactTimeline = Boolean(review.copyContactTimeline);
     markHubSpotStepComplete(payload.orderId);

@@ -8,7 +8,7 @@ assert(gate&&submit);
 const setup=`
 const HUBSPOT_BUTTON_ID='hubspot';const hubSpotPrerequisiteClicks=new Map();let hubSpotPrerequisiteHooksInstalled=false;
 window.order='NZSO-17002';window.docType='quote';window.isOmni=true;window.drafts=0;window.messages=[];
-window.isOmniPage=()=>isOmni;window.omniHeadingDraft=()=>({documentType:docType});window.hubSpotGateOrderId=()=>order;
+window.isOmniPage=()=>isOmni;window.omniHeadingDraft=()=>({documentType:docType,orderId:order});window.hubSpotGateOrderId=()=>order;
 window.extractOrderId=value=>String(value||'').match(/NZSO-\\d+/i)?.[0].toUpperCase()||'';
 window.normalizeLabel=value=>String(value||'').trim().toLowerCase();
 window.findButtonByLabel=label=>[...document.querySelectorAll('button')].find(button=>button.textContent.toLowerCase()===label.toLowerCase());
@@ -38,7 +38,16 @@ installHubSpotPrerequisiteHooks();installHubSpotPrerequisiteHooks();applyHubSpot
   await page.locator('#lc-omni-quote-memo-button').click();assert(await hubspot.isEnabled(),'Either click order works');
   await page.evaluate(()=>{document.getElementById('hubspot').disabled=true;applyHubSpotPrerequisiteGate();});assert(await hubspot.isDisabled(),'Button refresh cannot unlock an in-flight send');
   await page.evaluate(()=>{order='';applyHubSpotPrerequisiteGate();});assert(await hubspot.isDisabled(),'Unknown quote cannot inherit saved steps');
-  await page.evaluate(()=>{docType='sales-order';document.getElementById('save').remove();applyHubSpotPrerequisiteGate();});assert(await hubspot.isEnabled(),'Approved sales orders without Draft remain usable');
+  await page.evaluate(()=>{docType='sales-order';document.getElementById('save').remove();applyHubSpotPrerequisiteGate();});assert(await hubspot.isDisabled(),'Missing number cannot bypass the gate when Save As Draft is absent');
+  const draftsBefore=await page.evaluate(()=>drafts);
+  await page.evaluate(()=>submitHubSpotDeal(document.getElementById('hubspot')));
+  assert.equal(await page.evaluate(()=>drafts),draftsBefore,'No payload or lead-source work without an NZSO number');
+  await page.evaluate(()=>{order='NZSO-17003';applyHubSpotPrerequisiteGate();});assert(await hubspot.isEnabled(),'Approved sales orders with a number remain usable');
+  await page.evaluate(()=>{docType='quote';order='SFOR17003';applyHubSpotPrerequisiteGate();});assert(await hubspot.isDisabled(),'Legacy or incidental references are not NZSO numbers');
+  await page.evaluate(()=>{order='NZSO-17003';window.hubspotDraft=()=>{drafts++;return{customerName:'Test',orderId:''};};applyHubSpotPrerequisiteGate();});
+  const beforeMessages=await page.evaluate(()=>messages.length);
+  await page.evaluate(()=>submitHubSpotDeal(document.getElementById('hubspot')));
+  assert.equal(await page.evaluate(()=>messages.length),beforeMessages+1,'An empty payload number is guarded even with completed draft/memo steps');
   await page.evaluate(()=>{docType='quote';order='NZSO-17004';Object.defineProperty(window,'sessionStorage',{value:{getItem(){throw Error('blocked');},setItem(){throw Error('blocked');}}});applyHubSpotPrerequisiteGate();});
   await page.evaluate(()=>{const b=document.createElement('button');b.textContent='Save As Draft';b.id='save';document.body.appendChild(b);});
   await page.locator('#save').click();await page.locator('#lc-omni-quote-memo-button').click();assert(await hubspot.isEnabled(),'Current-page steps work when storage is blocked');
