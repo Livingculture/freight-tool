@@ -5,7 +5,7 @@ const path = require('node:path');
 const ts = require(process.env.TYPESCRIPT_MODULE || path.resolve(__dirname, '../../workflow-speed-fix/node_modules/typescript'));
 const source = fs.readFileSync('userscripts/omni-livingculture-workflow.user.js', 'utf8');
 const parsed = ts.createSourceFile('workflow.js', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
-const names = new Set(['omniJobProgressPlacement', 'ensureOmniJobProgress', 'omniJobProgressStatus', 'renderOmniJobProgress', 'escapeHtml', 'checkOmniShowroomCollection']);
+const names = new Set(['omniJobProgressPlacement', 'alignOmniJobProgress', 'ensureOmniJobProgress', 'omniJobProgressStatus', 'renderOmniJobProgress', 'escapeHtml', 'checkOmniShowroomCollection']);
 const functions = [];
 function visit(node) { if (ts.isFunctionDeclaration(node) && names.has(node.name?.text)) functions.push(node.getText(parsed)); ts.forEachChild(node, visit); }
 visit(parsed);
@@ -58,13 +58,27 @@ const progress = { orderNumber: 'NZSO-17003', nextAction: 'Arrange installation'
       assert.equal(await page.locator('#lc-omni-job-progress').count(), 1, `Works with ${tag} headings`);
       assert(await page.locator('#lc-omni-job-progress').isVisible());
     }
-    await page.evaluate(() => { document.querySelector('main').innerHTML='<section id="creator"><div><label>Created By:</label><select><option>Steve</option></select></div><div>Processed By: Steve</div></section><form>Native controls</form>';ensureOmniJobProgress(); });
+    await page.evaluate(() => { document.querySelector('main').innerHTML='<section id="creator" style="min-height:60px"><div><label>Created By:</label><select><option>Steve</option></select></div><div>Processed By: Steve</div></section><form>Native controls</form>';ensureOmniJobProgress(); });
     assert.equal(await page.evaluate(() => document.querySelector('#creator').previousElementSibling.id), 'lc-omni-job-progress', 'No heading: fallback above existing creator controls');
     await page.evaluate(() => { document.querySelector('main').innerHTML='<form><div id="lc-omni-tools">Jobs Overview</div></form>';ensureOmniJobProgress(); });
     assert.equal(await page.evaluate(() => document.querySelector('#lc-omni-tools').previousElementSibling.id), 'lc-omni-job-progress', 'Toolbar fallback works without heading or creator controls');
     await page.evaluate(() => { document.querySelector('main').innerHTML='<div><table><tbody><tr><td>Edit Sales Order - Customer - NZSO-17003</td></tr></tbody></table></div><form>Native controls</form>';ensureOmniJobProgress(); });
     assert.equal(await page.locator('table #lc-omni-job-progress').count(), 0, 'Table headings never insert a section inside table structure');
     assert(await page.locator('#lc-omni-job-progress').isVisible());
+    await page.evaluate(() => {
+      document.querySelector('main').innerHTML='<div class="wide-title">Edit Sales Order - Customer - NZSO-17003</div><div style="width:100%;padding-top:100px"><div id="native-order" style="width:min(1120px,calc(100% - 24px));margin:auto"><h4>Edit Sales Order - Customer - NZSO-17003</h4><div id="creator" style="background:white;height:70px"><label>Created By:</label> Steve <span>Processed By: Steve</span></div><div style="height:120px;background:white;margin-top:20px">Contact and delivery address</div></div></div>';
+    });
+    for (const width of [2048, 1440, 1000, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.evaluate(value => { ensureOmniJobProgress();renderOmniJobProgress(value); }, progress);
+      const panelBounds = await page.locator('#lc-omni-job-progress').boundingBox();
+      const nativeBounds = await page.locator('#creator').boundingBox();
+      assert(Math.abs(panelBounds.x-nativeBounds.x)<1 && Math.abs(panelBounds.width-nativeBounds.width)<1, `Matches native boxes at ${width}`);
+      assert(panelBounds.y > 100 && panelBounds.y+panelBounds.height <= nativeBounds.y, 'Placed inside order content, not beneath fixed navigation');
+      assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      assert.equal(await page.locator('#lc-omni-job-progress .step').count(), 11);
+      await page.screenshot({ path: `/tmp/omni-job-progress-aligned-${width}.png` });
+    }
     console.log('PASS: Omni inline progress, Details, order switching, escaped values, failures, single read-only request, desktop/mobile layouts. Browser fixture, no live customer writes.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

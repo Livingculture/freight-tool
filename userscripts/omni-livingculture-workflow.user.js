@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.115
+// @version      0.1.116
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -4661,6 +4661,14 @@
   let buttonPassScheduled = false;
   let omniJobProgressCache = null;
   function omniJobProgressPlacement(heading) {
+    const createdBy = Array.from(document.querySelectorAll('label,div,span,td'))
+      .find(node => isVisible(node) && normalizeLabel(node.textContent || '').replace(/:$/, '') === 'created by');
+    let nativePanel = createdBy?.parentElement;
+    while (nativePanel && nativePanel !== document.body) {
+      const rect = nativePanel.getBoundingClientRect();
+      if (rect.width >= Math.min(600, window.innerWidth * 0.72) && rect.height >= 40 && rect.height <= 320 && /Processed By/i.test(clean(nativePanel.textContent || ''))) return { anchor: nativePanel, before: true };
+      nativePanel = nativePanel.parentElement;
+    }
     const matches = node => {
       const text = clean(node.textContent || '');
       return text.length <= 300 && /^(?:Edit|New)\s+Sales Order\b/i.test(text) && extractOrderId(text) === heading.orderId;
@@ -4673,30 +4681,36 @@
         (/^(SPAN|TD|TH|TR|TBODY|THEAD|TFOOT|TABLE)$/.test(anchor.tagName) || getComputedStyle(anchor).display === 'inline')) anchor = anchor.parentElement;
       return { anchor, before: false };
     }
-    const createdBy = Array.from(document.querySelectorAll('label,div,span,td'))
-      .find(node => isVisible(node) && normalizeLabel(node.textContent || '').replace(/:$/, '') === 'created by');
-    anchor = createdBy?.parentElement;
-    while (anchor && anchor !== document.body) {
-      const rect = anchor.getBoundingClientRect();
-      if (rect.width >= Math.min(600, window.innerWidth * 0.72) && /Processed By/i.test(anchor.textContent || '')) return { anchor, before: true };
-      anchor = anchor.parentElement;
-    }
     anchor = document.getElementById(OMNI_TOOLS_BAR_ID);
     return anchor ? { anchor, before: true } : null;
+  }
+  function alignOmniJobProgress(panel, placement) {
+    const anchor = placement.anchor;
+    const adjacent = placement.before ? anchor.previousElementSibling : anchor.nextElementSibling;
+    if (adjacent !== panel) anchor.insertAdjacentElement(placement.before ? 'beforebegin' : 'afterend', panel);
+    const rect = anchor.getBoundingClientRect();
+    const parent = panel.parentElement;
+    const parentRect = parent.getBoundingClientRect();
+    const parentStyle = getComputedStyle(parent);
+    const contentLeft = parentRect.left + (parseFloat(parentStyle.borderLeftWidth) || 0) + (parseFloat(parentStyle.paddingLeft) || 0);
+    panel.style.width = `${rect.width}px`;
+    panel.style.marginLeft = `${Math.max(0, rect.left - contentLeft)}px`;
+    panel.style.marginRight = '0';
   }
   function ensureOmniJobProgress(){
     const heading=omniHeadingDraft();
     let panel=document.getElementById('lc-omni-job-progress');
     if(heading.documentType!=='sales-order'||!/^NZSO-\d+$/.test(heading.orderId)){panel?.remove();return null;}
     if(panel&&panel.dataset.order!==heading.orderId){panel.remove();panel=null;}
-    if(panel)return panel;
     const placement=omniJobProgressPlacement(heading);
-    if(!placement)return null;
-    panel=document.createElement('section');panel.id='lc-omni-job-progress';panel.dataset.order=heading.orderId;panel.style.cssText='display:block;clear:both;width:100%;flex:0 0 100%;margin:12px 0 18px;max-width:100%;';
+    if(!placement)return panel;
+    if(panel){alignOmniJobProgress(panel,placement);return panel;}
+    panel=document.createElement('section');panel.id='lc-omni-job-progress';panel.dataset.order=heading.orderId;panel.style.cssText='display:block;position:relative;top:auto;left:auto;right:auto;bottom:auto;float:none;clear:both;box-sizing:border-box;min-width:0;margin:12px 0 18px;max-width:100%;';
     const shadow=panel.attachShadow({mode:'open'});
     shadow.innerHTML=`<style>:host{font:12px Arial,sans-serif;color:#29434b}*{box-sizing:border-box}.strip{background:white;border-top:1px solid #d5e3e6;border-bottom:1px solid #d5e3e6;padding:14px 16px}.head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:14px}.head strong{font-size:14px}.head button{font:600 12px Arial;padding:7px 12px;border:1px solid #b9ced4;border-radius:4px;background:white;color:#08788d;cursor:pointer}.head button:focus-visible{outline:3px solid #039bb5;outline-offset:3px}.steps{display:grid;grid-template-columns:repeat(11,minmax(0,1fr));list-style:none;margin:0;padding:0}.step{position:relative;text-align:center;min-width:0;padding:0 2px;font-size:11px}.step:before{content:'';position:absolute;top:12px;left:0;right:0;height:2px;background:#dce6e9}.step:first-child:before{left:50%}.step:last-child:before{right:50%}.dot{position:relative;display:flex;align-items:center;justify-content:center;width:26px;height:26px;margin:0 auto 8px;border:2px solid #cad8dd;border-radius:50%;background:white;font-size:14px;font-weight:700}.label{display:block;min-height:28px;overflow-wrap:anywhere}.state{display:block;font-size:10px;color:#6d8189;line-height:1.4;overflow-wrap:anywhere}.done .dot{background:#26805b;border-color:#26805b;color:white}.done:before{background:#83bda1}.done .state{color:#26704e}.active .dot{border-color:#00889f;box-shadow:0 0 0 4px #e2f3f6}.waiting .dot,.partial .dot{border-color:#d09a31;background:#fff4dd;color:#986b18}.skip .dot{background:#f0f4f5;border-color:#dce6e9}.foot{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:12px;font-size:11px;color:#637b83}.next{font-weight:600;color:#29434b}@media(max-width:700px){.steps{grid-template-columns:repeat(4,minmax(0,1fr));row-gap:16px}.step:nth-child(4n):before{right:50%}.step:nth-child(4n+1):before{left:50%}.label{min-height:0;margin-bottom:5px}}</style><div class="strip"><div class="head"><strong>Job progress</strong><button type="button">Details</button></div><ol class="steps" aria-label="Job progress"></ol><div class="foot"><span class="next"></span><span class="updated" role="status">Loading job progress...</span></div></div>`;
     shadow.querySelector('button').onclick=openJobsOverviewPopup;
-    placement.anchor.insertAdjacentElement(placement.before?'beforebegin':'afterend',panel);
+    shadow.querySelector('style').textContent += '.strip{container-type:inline-size}@container(max-width:700px){.steps{grid-template-columns:repeat(4,minmax(0,1fr));row-gap:16px}.step:nth-child(4n):before{right:50%}.step:nth-child(4n+1):before{left:50%}.label{min-height:0;margin-bottom:5px}}';
+    alignOmniJobProgress(panel,placement);
     if(omniJobProgressCache?.orderNumber===heading.orderId)renderOmniJobProgress(omniJobProgressCache);
     return panel;
   }
