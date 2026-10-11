@@ -27,10 +27,13 @@ const progress = { orderNumber: 'NZSO-17003', nextAction: 'Arrange installation'
     assert.equal(await page.locator('#lc-omni-job-progress button').count(), 0, 'Omni progress does not have a Details button');
     assert.equal(await page.locator('#lc-omni-job-progress .next').evaluate(el=>Math.abs(el.getBoundingClientRect().right-el.parentElement.getBoundingClientRect().right)<1),true,'Job status appears at the right-hand end');
     await page.evaluate(()=>{const bar=document.createElement('div');bar.id=OMNI_TOOLS_BAR_ID;document.querySelector('form').append(bar);addJobsOverviewButton();addJobsOverviewButton();});
+    await page.evaluate(()=>{const open=window.open;window.popupFeatures=[];window.open=(url,name,features)=>{popupFeatures.push(features);return open(url,name,features);};});
     assert.equal(await page.locator('#lc-omni-jobs-overview-button').count(),1);
     await page.locator('#lc-omni-jobs-overview-button').click();
     assert.equal(await page.evaluate(()=>new URL(openedUrls[0]).pathname),'/jobs');
-    assert.equal(await page.evaluate(()=>new URL(openedUrls[0]).search), '', 'Jobs Overview opens the all-jobs view without an order filter');
+    assert.equal(await page.evaluate(()=>new URL(openedUrls[0]).searchParams.get('order')), null, 'Jobs Overview opens the all-jobs view without an order filter');
+    assert.equal(await page.evaluate(()=>new URL(openedUrls[0]).searchParams.get('popup')), '1', 'Popup uses the compact layout');
+    assert((await page.evaluate(()=>popupFeatures[0])).includes('width=1080'),'Overview popup requests a narrower window');
     await page.evaluate(() => { ensureOmniJobProgress(); ensureOmniJobProgress(); checkOmniShowroomCollection(); checkOmniShowroomCollection(); });
     assert.equal(await page.locator('#lc-omni-job-progress').count(), 1);
     assert.equal(await page.evaluate(() => requests.length), 1, 'Uses one existing sync lookup with an in-flight guard');
