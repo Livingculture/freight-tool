@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.116
+// @version      0.1.117
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -4708,7 +4708,7 @@
     panel=document.createElement('section');panel.id='lc-omni-job-progress';panel.dataset.order=heading.orderId;panel.style.cssText='display:block;position:relative;top:auto;left:auto;right:auto;bottom:auto;float:none;clear:both;box-sizing:border-box;min-width:0;margin:12px 0 18px;max-width:100%;';
     const shadow=panel.attachShadow({mode:'open'});
     shadow.innerHTML=`<style>:host{font:12px Arial,sans-serif;color:#29434b}*{box-sizing:border-box}.strip{background:white;border-top:1px solid #d5e3e6;border-bottom:1px solid #d5e3e6;padding:14px 16px}.head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:14px}.head strong{font-size:14px}.head button{font:600 12px Arial;padding:7px 12px;border:1px solid #b9ced4;border-radius:4px;background:white;color:#08788d;cursor:pointer}.head button:focus-visible{outline:3px solid #039bb5;outline-offset:3px}.steps{display:grid;grid-template-columns:repeat(11,minmax(0,1fr));list-style:none;margin:0;padding:0}.step{position:relative;text-align:center;min-width:0;padding:0 2px;font-size:11px}.step:before{content:'';position:absolute;top:12px;left:0;right:0;height:2px;background:#dce6e9}.step:first-child:before{left:50%}.step:last-child:before{right:50%}.dot{position:relative;display:flex;align-items:center;justify-content:center;width:26px;height:26px;margin:0 auto 8px;border:2px solid #cad8dd;border-radius:50%;background:white;font-size:14px;font-weight:700}.label{display:block;min-height:28px;overflow-wrap:anywhere}.state{display:block;font-size:10px;color:#6d8189;line-height:1.4;overflow-wrap:anywhere}.done .dot{background:#26805b;border-color:#26805b;color:white}.done:before{background:#83bda1}.done .state{color:#26704e}.active .dot{border-color:#00889f;box-shadow:0 0 0 4px #e2f3f6}.waiting .dot,.partial .dot{border-color:#d09a31;background:#fff4dd;color:#986b18}.skip .dot{background:#f0f4f5;border-color:#dce6e9}.foot{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:12px;font-size:11px;color:#637b83}.next{font-weight:600;color:#29434b}@media(max-width:700px){.steps{grid-template-columns:repeat(4,minmax(0,1fr));row-gap:16px}.step:nth-child(4n):before{right:50%}.step:nth-child(4n+1):before{left:50%}.label{min-height:0;margin-bottom:5px}}</style><div class="strip"><div class="head"><strong>Job progress</strong><button type="button">Details</button></div><ol class="steps" aria-label="Job progress"></ol><div class="foot"><span class="next"></span><span class="updated" role="status">Loading job progress...</span></div></div>`;
-    shadow.querySelector('button').onclick=openJobsOverviewPopup;
+    shadow.querySelector('button').onclick=()=>openJobsOverviewPopup(true);
     shadow.querySelector('style').textContent += '.strip{container-type:inline-size}@container(max-width:700px){.steps{grid-template-columns:repeat(4,minmax(0,1fr));row-gap:16px}.step:nth-child(4n):before{right:50%}.step:nth-child(4n+1):before{left:50%}.label{min-height:0;margin-bottom:5px}}';
     alignOmniJobProgress(panel,placement);
     if(omniJobProgressCache?.orderNumber===heading.orderId)renderOmniJobProgress(omniJobProgressCache);
@@ -4802,10 +4802,10 @@
     document.getElementById(STAFF_HELP_BAR_ID)?.remove();
   }
 
-  function openJobsOverviewPopup() {
+  function openJobsOverviewPopup(currentJob = false) {
     const url = new URL('jobs', WORKFLOW_PLANNER_URL);
     const order = hubSpotGateOrderId();
-    if (/^NZSO-\d+$/i.test(order)) url.searchParams.set('order', order.toUpperCase());
+    if (currentJob === true && /^NZSO-\d+$/i.test(order)) url.searchParams.set('order', order.toUpperCase());
     // A top-level popup preserves Workflow's same-site authenticated session.
     const width = Math.min(1180, screen.availWidth || window.innerWidth);
     const height = Math.min(900, screen.availHeight || window.innerHeight);
@@ -4830,7 +4830,7 @@
       button.id = 'lc-omni-jobs-overview-button';
       button.type = 'button';
       button.textContent = 'Jobs Overview';
-      button.title = 'Open this job overview in a popup';
+      button.title = 'Open all jobs overview in a popup';
       button.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;border:1px solid #176e58;border-radius:4px;background:#176e58;color:#fff;font:700 14px Arial,sans-serif;cursor:pointer;';
       button.addEventListener('click', openJobsOverviewPopup);
     }
