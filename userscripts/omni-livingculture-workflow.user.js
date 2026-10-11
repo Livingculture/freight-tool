@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.121
+// @version      0.1.122
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -4840,7 +4840,8 @@
     const heading = omniHeadingDraft();
     const url = new URL('issue-report.html', WORKFLOW_PLANNER_URL);
     url.searchParams.set('order', heading.orderId);
-    url.searchParams.set('customer', heading.customerName);
+    const customer = heading.customerName || readOmniControlByLabel('Selected Customer') || readValueNearLabel('Selected Customer') || readOmniControlByLabel('Customer') || readValueNearLabel('Customer');
+    url.searchParams.set('customer', clean(customer));
     url.searchParams.set('sourceUrl', location.href);
     const popup = window.open(url.href, '_blank', 'popup=yes,width=620,height=720,resizable=yes,scrollbars=yes');
     if(!popup){window.alert('Please allow popups for go.cin7.com, then click Report Issue again.');return;}
@@ -4859,10 +4860,11 @@
     if(!heading) return;
     if(!button){
       button = document.createElement('button');button.id = 'lc-omni-report-issue';button.type = 'button';
-      button.textContent = 'Report Issue';button.title = 'Report an issue with this job';
-      button.style.cssText = 'display:inline-flex;vertical-align:middle;align-items:center;margin-left:16px;padding:7px 12px;border:1px solid #b85130;border-radius:4px;background:#fff0e9;color:#933c22;font:700 14px Arial,sans-serif;cursor:pointer;';
+      button.textContent = 'Report Issue';button.title = 'Report missing quote items, production, assembly, product or system problems';
+      button.style.cssText = 'display:inline-flex;flex:0 0 auto;vertical-align:middle;align-items:center;margin-left:auto;padding:7px 12px;border:1px solid #b85130;border-radius:4px;background:#fff0e9;color:#933c22;font:700 14px Arial,sans-serif;cursor:pointer;';
       button.addEventListener('click', openIssueReportPopup);
     }
+    heading.style.display = 'flex';heading.style.alignItems = 'center';heading.style.flexWrap = 'wrap';heading.style.gap = '8px 16px';heading.style.width = '100%';
     if(button.parentElement !== heading || heading.lastElementChild !== button) heading.appendChild(button);
   }
 
