@@ -26,7 +26,7 @@ const functions = ['quoteWorkflowRequestAction', 'omniWorkflowSnapshot', 'omniWo
       let omniOrderSyncInFlight=false,omniOrderSyncQueued=false,omniOrderSyncTimer=null,lastOmniOrderSyncDigest='';
       const fillOmniShowroomDispatch=()=>{};
       const applyOmniWorkflowDispatch=()=>{};
-      const applyOmniWorkflowResponse=()=>{};
+      window.progressResponses=[];const applyOmniWorkflowResponse=payload=>progressResponses.push(payload);
       const linkExistingCustomerAlbumToQuote=()=>Promise.resolve();
       window.requests=[];const GM_xmlhttpRequest=options=>window.requests.push(options);
       ${functions}
@@ -50,13 +50,16 @@ const functions = ['quoteWorkflowRequestAction', 'omniWorkflowSnapshot', 'omniWo
     assert.equal(snapshot.fullyDispatched, false, 'Packing is distinct from dispatch');
     await page.waitForFunction(() => requests.length===1);
     assert.equal(await page.evaluate(() => JSON.parse(requests[0].data).stage), 'Fully Packed - WMS', 'Native dropdown change syncs without a DOM mutation or Save click');
+    assert.equal(await page.evaluate(() => JSON.parse(requests[0].data).includeProgress),true,'Stage sync requests progress in its own response');
     await page.locator('#stage').selectOption('9');
     await page.waitForTimeout(450);
     assert.equal(await page.evaluate(() => requests.length),1,'No overlapping POST can overwrite the newest stage');
-    await page.evaluate(() => requests[0].onload({status:200,responseText:'{}'}));
+    await page.evaluate(() => requests[0].onload({status:200,responseText:JSON.stringify({jobProgress:{orderNumber:'NZSO-15512',steps:[{label:'Packed',status:'Packed'}]}})}));
+    assert.equal(await page.evaluate(()=>progressResponses.length),0,'Older stage response cannot overwrite a newer dropdown selection');
     await page.waitForFunction(() => requests.length===2);
     assert.equal(await page.evaluate(() => JSON.parse(requests[1].data).stage),'Dispatched','Queued sync reads the latest stage');
-    await page.evaluate(() => requests[1].onload({status:200,responseText:'{}'}));
+    await page.evaluate(() => requests[1].onload({status:200,responseText:JSON.stringify({jobProgress:{orderNumber:'NZSO-15512',steps:[{label:'Collection',status:'Collected'}]}})}));
+    assert.equal(await page.evaluate(()=>progressResponses[0].jobProgress.steps[0].status),'Collected','Updated progress is rendered directly from the save response without waiting for polling');
     assert.equal((await page.evaluate(() => omniWorkflowSnapshot())).stage, 'Dispatched');
     await page.evaluate(() => document.querySelector('#stage').removeAttribute('id'));
     assert.equal((await page.evaluate(() => omniWorkflowSnapshot())).stage, 'Dispatched', 'Unlinked inline Stage label also works');

@@ -21,6 +21,7 @@ const progress = { orderNumber: 'NZSO-17003', nextAction: 'Arrange installation'
     await page.setContent('<style>body{margin:20px;background:#eee;font:14px Arial}li{font-size:50px;color:red}button{background:red}main{max-width:1300px;margin:auto}h1{font-size:22px}</style><main><h1>Edit Sales Order - Customer - NZSO-17003</h1><form><h2>Delivery address</h2><input value="Unsaved edit"><button id="save" type="button">Save As Draft</button></form></main>');
     await page.addScriptTag({ content: `let omniJobProgressCache=null;let heading={orderId:'NZSO-17003',documentType:'sales-order'};const omniHeadingDraft=()=>heading;const extractOrderId=text=>text.match(/NZSO-\\d+/)?.[0]||'';const clean=value=>String(value||'').trim();const normalizeLabel=value=>clean(value).toLowerCase();const OMNI_TOOLS_BAR_ID='lc-omni-tools';const isVisible=node=>node.getBoundingClientRect().width>0;const isOmniPage=()=>true;let opened=0,saved=0,requests=[],openedUrls=[];const WORKFLOW_PLANNER_URL='https://living-culture-workflow.vercel.app/';const hubSpotGateOrderId=()=>heading.orderId;window.open=url=>{opened++;openedUrls.push(url);return {opener:window,focus(){}};};document.getElementById('save').onclick=()=>saved++;let collectionDispatchInFlight=false,omniQuoteConversionLoaded=false;const omniFullyDispatchedInputs=()=>[];const API_KEY='';const OMNI_ORDER_SYNC_API_URL='https://workflow.test/api/omni/orders';const GM_xmlhttpRequest=options=>requests.push(options);const applyOmniWorkflowResponse=payload=>renderOmniJobProgress(payload.jobProgress);${functions.join('\n')}` });
     await page.evaluate(value => renderOmniJobProgress(value), progress);
+    await page.addScriptTag({content:'let currentStage="Fully Packed - WMS";const omniWorkflowStage=()=>currentStage;'});
     assert.equal(await page.locator('#lc-omni-job-progress .step').count(), 11);
     assert.equal(await page.evaluate(() => document.querySelector('h1').nextElementSibling.id), 'lc-omni-job-progress');
     assert.equal(await page.evaluate(() => opened), 0, 'No popup on loading');
@@ -41,6 +42,9 @@ const progress = { orderNumber: 'NZSO-17003', nextAction: 'Arrange installation'
     await page.evaluate(() => requests[0].ontimeout());
     assert.equal(await page.locator('#lc-omni-job-progress .updated').textContent(), 'Progress refresh timed out');
     assert.equal(await page.locator('#lc-omni-job-progress .step').count(), 11, 'Failure preserves the previous strip with a stale warning');
+    await page.evaluate(()=>{checkOmniShowroomCollection();currentStage='Dispatched';requests[1].onload({status:200,responseText:JSON.stringify({jobProgress:{orderNumber:'NZSO-17003',steps:[],nextAction:'Old stage'}})});});
+    assert.equal(await page.locator('#lc-omni-job-progress .step').count(),11,'A poll started before the dropdown change cannot overwrite newer progress');
+    await page.evaluate(()=>currentStage='Fully Packed - WMS');
     await page.evaluate(value => renderOmniJobProgress(value), { ...progress, steps: [{ label: '<img src=x onerror=alert(1)>', status: '<script>bad</script>', state: 'done evil' }] });
     assert.equal(await page.locator('#lc-omni-job-progress img').count(), 0, 'Display values are escaped');
     await page.evaluate(value => renderOmniJobProgress(value), progress);

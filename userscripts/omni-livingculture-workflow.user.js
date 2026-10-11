@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.130
+// @version      0.1.131
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -1933,14 +1933,18 @@
       method: 'POST',
       url: OMNI_ORDER_SYNC_API_URL,
       headers,
-      data: digest,
+      data: JSON.stringify({ ...payload, includeProgress:true }),
       timeout: 20000,
       onload: (response) => {
         finishOmniWorkflowSync();
         if (response.status >= 200 && response.status < 300) {
           lastOmniOrderSyncDigest = digest;
           void linkExistingCustomerAlbumToQuote({ ...payload, orderId:payload.orderNumber });
-          try { applyOmniWorkflowResponse(JSON.parse(response.responseText)); } catch (error) { console.warn('[LC Workflow] Workflow status could not be read.', error); }
+          try {
+            if (omniHeadingDraft().orderId === payload.orderNumber && omniWorkflowStage() === payload.stage) {
+              applyOmniWorkflowResponse(JSON.parse(response.responseText));
+            }
+          } catch (error) { console.warn('[LC Workflow] Workflow status could not be read.', error); }
           return;
         }
         console.warn(`[LC Workflow] Omni order sync failed (${response.status}).`);
@@ -2105,6 +2109,7 @@
     if (omniQuoteConversionLoaded || new URL(window.location.href).searchParams.get('ConvertQuoteToSalesOrder')?.toLowerCase() === 'yes') return;
     const heading = omniHeadingDraft();
     if (!['sales-order','quote'].includes(heading.documentType) || !/^NZSO-\d+$/.test(heading.orderId)) return;
+    const requestedStage = omniWorkflowStage();
     const [dateInput] = omniFullyDispatchedInputs();
     collectionDispatchInFlight = true;
     const headers = { 'Content-Type': 'application/json' };
@@ -2113,7 +2118,7 @@
       data: JSON.stringify({ action: 'fulfillment-dispatch', orderNumber: heading.orderId, includeProgress:true }), timeout: 15000,
       onload: response => {
         collectionDispatchInFlight = false;
-        if (omniHeadingDraft().orderId !== heading.orderId) return;
+        if (omniHeadingDraft().orderId !== heading.orderId || omniWorkflowStage() !== requestedStage) return;
         if (response.status < 200 || response.status >= 300) { omniJobProgressStatus('Progress refresh failed',heading.orderId); return; }
         try { applyOmniWorkflowResponse(JSON.parse(response.responseText)); } catch (error) { omniJobProgressStatus('Progress refresh failed',heading.orderId); console.warn('[LC Workflow] Workflow status lookup failed.', error); }
       },
