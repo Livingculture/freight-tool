@@ -33,6 +33,9 @@ const functions = ['omniWorkflowSnapshot', 'omniWorkflowStageControl', 'omniWork
     let snapshot = await page.evaluate(() => omniWorkflowSnapshot());
     assert.equal(snapshot.stage, 'New', 'Capture the selected label, not numeric option ID');
     assert.equal(snapshot.freightDescription, 'Collect from Showroom');
+    assert.equal(snapshot.documentType,'sales-order');
+    const pageObservedAt=snapshot.documentTypeObservedAt;
+    assert(Number.isFinite(Date.parse(pageObservedAt)),'Snapshot includes the page observation time');
     await page.evaluate(() => {
       const label=document.querySelector('label');label.outerHTML='<strong>Stage:</strong>';
       document.querySelector('#stage option[value="7"]').textContent='Fully Packed - WMS';
@@ -41,6 +44,8 @@ const functions = ['omniWorkflowSnapshot', 'omniWorkflowStageControl', 'omniWork
     await page.locator('#stage').selectOption('7');
     snapshot = await page.evaluate(() => omniWorkflowSnapshot());
     assert.equal(snapshot.stage, 'Fully Packed - WMS');
+    assert.equal(snapshot.documentType,'sales-order','Changing fulfilment stage does not change document type');
+    assert.equal(snapshot.documentTypeObservedAt,pageObservedAt,'Polling does not make a stale page observation newer');
     assert.equal(snapshot.fullyDispatched, false, 'Packing is distinct from dispatch');
     await page.waitForFunction(() => requests.length===1);
     assert.equal(await page.evaluate(() => JSON.parse(requests[0].data).stage), 'Fully Packed - WMS', 'Native dropdown change syncs without a DOM mutation or Save click');

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.122
+// @version      0.1.123
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -1822,6 +1822,7 @@
     return {
       orderNumber: heading.orderId,
       documentType: heading.documentType,
+      documentTypeObservedAt: new Date(window.performance?.timeOrigin || Date.now()).toISOString(),
       secondaryType: labelled('Secondary Type'),
       customerName: heading.customerName || draft.customerName,
       address: draft.address,
@@ -2073,7 +2074,7 @@
     if (!isOmniPage() || document.visibilityState !== 'visible' || collectionDispatchInFlight) return;
     if (omniQuoteConversionLoaded || new URL(window.location.href).searchParams.get('ConvertQuoteToSalesOrder')?.toLowerCase() === 'yes') return;
     const heading = omniHeadingDraft();
-    if (heading.documentType !== 'sales-order' || !/^NZSO-\d+$/.test(heading.orderId)) return;
+    if (!['sales-order','quote'].includes(heading.documentType) || !/^NZSO-\d+$/.test(heading.orderId)) return;
     const [dateInput] = omniFullyDispatchedInputs();
     collectionDispatchInFlight = true;
     const headers = { 'Content-Type': 'application/json' };
@@ -4671,7 +4672,7 @@
     }
     const matches = node => {
       const text = clean(node.textContent || '');
-      return text.length <= 300 && /^(?:Edit|New)\s+Sales Order\b/i.test(text) && extractOrderId(text) === heading.orderId;
+      return text.length <= 300 && /^(?:Edit|New)\s+(?:Sales Order|Quote)\b/i.test(text) && extractOrderId(text) === heading.orderId;
     };
     const candidates = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"],div,span,td'))
       .filter(node => !node.closest('#lc-omni-job-progress') && isVisible(node) && matches(node));
@@ -4700,7 +4701,7 @@
   function ensureOmniJobProgress(){
     const heading=omniHeadingDraft();
     let panel=document.getElementById('lc-omni-job-progress');
-    if(heading.documentType!=='sales-order'||!/^NZSO-\d+$/.test(heading.orderId)){panel?.remove();return null;}
+    if(!['sales-order','quote'].includes(heading.documentType)||!/^NZSO-\d+$/.test(heading.orderId)){panel?.remove();return null;}
     if(panel&&panel.dataset.order!==heading.orderId){panel.remove();panel=null;}
     const placement=omniJobProgressPlacement(heading);
     if(!placement)return panel;
@@ -4708,7 +4709,7 @@
     panel=document.createElement('section');panel.id='lc-omni-job-progress';panel.dataset.order=heading.orderId;panel.style.cssText='display:block;position:relative;top:auto;left:auto;right:auto;bottom:auto;float:none;clear:both;box-sizing:border-box;min-width:0;margin:12px 0 18px;max-width:100%;';
     const shadow=panel.attachShadow({mode:'open'});
     shadow.innerHTML=`<style>:host{font:12px Arial,sans-serif;color:#29434b}*{box-sizing:border-box}.strip{background:white;border-top:1px solid #d5e3e6;border-bottom:1px solid #d5e3e6;padding:14px 16px}.head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:14px}.head strong{font-size:14px}.steps{display:grid;grid-template-columns:repeat(11,minmax(0,1fr));list-style:none;margin:0;padding:0}.step{position:relative;text-align:center;min-width:0;padding:0 2px;font-size:11px}.step:before{content:'';position:absolute;top:12px;left:0;right:0;height:2px;background:#dce6e9}.step:first-child:before{left:50%}.step:last-child:before{right:50%}.dot{position:relative;display:flex;align-items:center;justify-content:center;width:26px;height:26px;margin:0 auto 8px;border:2px solid #cad8dd;border-radius:50%;background:white;font-size:14px;font-weight:700}.label{display:block;min-height:28px;overflow-wrap:anywhere}.state{display:block;font-size:10px;color:#6d8189;line-height:1.4;overflow-wrap:anywhere}.done .dot{background:#26805b;border-color:#26805b;color:white}.done:before{background:#83bda1}.done .state{color:#26704e}.active .dot{border-color:#00889f;box-shadow:0 0 0 4px #e2f3f6}.waiting .dot,.partial .dot{border-color:#d09a31;background:#fff4dd;color:#986b18}.skip .dot{background:#f0f4f5;border-color:#dce6e9}.foot{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:12px;font-size:11px;color:#637b83}.next{font-weight:600;color:#29434b;margin-left:auto;text-align:right;overflow-wrap:anywhere;max-width:100%}@media(max-width:700px){.steps{grid-template-columns:repeat(4,minmax(0,1fr));row-gap:16px}.step:nth-child(4n):before{right:50%}.step:nth-child(4n+1):before{left:50%}.label{min-height:0;margin-bottom:5px}}</style><div class="strip"><div class="head"><strong>Job progress</strong></div><ol class="steps" aria-label="Job progress"></ol><div class="foot"><span class="updated" role="status">Loading job progress...</span><span class="next"></span></div></div>`;
-    shadow.querySelector('style').textContent += '.strip{container-type:inline-size}@container(max-width:700px){.steps{grid-template-columns:repeat(4,minmax(0,1fr));row-gap:16px}.step:nth-child(4n):before{right:50%}.step:nth-child(4n+1):before{left:50%}.label{min-height:0;margin-bottom:5px}}';
+    shadow.querySelector('style').textContent += '.steps{grid-template-columns:repeat(var(--step-count,11),minmax(0,1fr))}@media(max-width:700px){.steps{grid-template-columns:repeat(4,minmax(0,1fr))}}.strip{container-type:inline-size}@container(max-width:700px){.steps{grid-template-columns:repeat(4,minmax(0,1fr));row-gap:16px}.step:nth-child(4n):before{right:50%}.step:nth-child(4n+1):before{left:50%}.label{min-height:0;margin-bottom:5px}}';
     alignOmniJobProgress(panel,placement);
     if(omniJobProgressCache?.orderNumber===heading.orderId)renderOmniJobProgress(omniJobProgressCache);
     return panel;
@@ -4722,6 +4723,7 @@
     if(progress.orderNumber!==panel.dataset.order||!Array.isArray(progress.steps))return;
     omniJobProgressCache=progress;
     const states=new Set(['done','skip','partial','waiting','active','pending']);
+    panel.shadowRoot.querySelector('.steps').style.setProperty('--step-count',String(progress.steps.length));
     panel.shadowRoot.querySelector('.steps').innerHTML=progress.steps.map(step=>`<li class="step ${states.has(step.state)?step.state:'pending'}" title="${escapeHtml(`${step.label}: ${step.status}`)}"><span class="dot" aria-hidden="true">${step.state==='done'?'&#10003;':step.state==='skip'?'&ndash;':step.state==='partial'?'&#9680;':step.state==='waiting'?'!':''}</span><strong class="label">${escapeHtml(step.label)}</strong><span class="state">${escapeHtml(step.status)}</span></li>`).join('');
     panel.shadowRoot.querySelector('.next').textContent=progress.nextAction||'';
     panel.shadowRoot.querySelector('.updated').textContent=`Checked ${new Intl.DateTimeFormat('en-NZ',{timeZone:'Pacific/Auckland',hour:'numeric',minute:'2-digit'}).format(new Date())}`;

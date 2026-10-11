@@ -54,8 +54,21 @@ const progress = { orderNumber: 'NZSO-17003', nextAction: 'Arrange installation'
     await page.evaluate(value => renderOmniJobProgress(value), { ...progress, orderNumber: 'NZSO-17004' });
     await page.evaluate(() => renderOmniJobProgress(null));
     assert.equal(await page.locator('#lc-omni-job-progress .step').count(), 0, 'Missing job clears stale values');
-    await page.evaluate(() => { heading.documentType='quote';ensureOmniJobProgress(); });
-    assert.equal(await page.locator('#lc-omni-job-progress').count(), 0, 'Only sales orders show the strip');
+    await page.evaluate(() => { heading.documentType='quote';document.querySelector('h1').textContent='Edit Quote - Customer - NZSO-17004';ensureOmniJobProgress(); });
+    assert.equal(await page.locator('#lc-omni-job-progress').count(), 1, 'Quotes also show their pre-sale progress');
+    const quoteProgress={...progress,orderNumber:'NZSO-17004',nextAction:'Awaiting acceptance',steps:[...progress.steps.slice(0,3),{label:'Acceptance',status:'Awaiting acceptance',state:'active'},progress.steps[3],...progress.steps.slice(4).map(step=>({...step,status:'After conversion',state:'skip'}))]};
+    await page.evaluate(value=>renderOmniJobProgress(value),quoteProgress);
+    assert.equal(await page.locator('#lc-omni-job-progress .step').count(),12);
+    assert.equal(await page.locator('#lc-omni-job-progress .skip').count(),7);
+    for(const width of [1440,900,390]) {
+      await page.setViewportSize({width,height:900});
+      await page.evaluate(()=>ensureOmniJobProgress());
+      assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+      await page.screenshot({path:`/tmp/omni-quote-progress-${width}.png`});
+    }
+    const requestCount=await page.evaluate(()=>requests.length);
+    await page.evaluate(()=>checkOmniShowroomCollection());
+    assert.equal(await page.evaluate(()=>requests.length),requestCount+1,'Quotes can fetch the progress strip');
     assert.equal(await page.evaluate(() => saved), 0, 'No automatic saves or approval');
     await page.evaluate(() => { heading.documentType='sales-order';heading.orderId='NZSO-17003'; });
     for (const tag of ['h4', 'h5', 'div', 'span']) {
