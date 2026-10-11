@@ -27,6 +27,7 @@ const functions = ['omniWorkflowSnapshot', 'omniWorkflowStageControl', 'omniWork
       const fillOmniShowroomDispatch=()=>{};
       const applyOmniWorkflowDispatch=()=>{};
       const applyOmniWorkflowResponse=()=>{};
+      const linkExistingCustomerAlbumToQuote=()=>Promise.resolve();
       window.requests=[];const GM_xmlhttpRequest=options=>window.requests.push(options);
       ${functions}
     ` });

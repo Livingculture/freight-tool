@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.123
+// @version      0.1.124
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -155,14 +155,23 @@
 
   function omniHeadingDraft() {
     if (!isOmniPage()) return { customerName: '', orderId: '', documentType: '' };
-    const pageText = clean(document.body?.innerText || document.body?.textContent || '');
+    const headingTextOf = node => clean(Array.from(node.childNodes).filter(child => !child.id?.startsWith('lc-')).map(child => child.textContent || '').join(' '));
+    const cached = omniHeadingDraft.cache;
+    const headingText = cached?.node?.isConnected ? headingTextOf(cached.node) : '';
+    if (cached?.url === location.href && headingText === cached.text && headingText) return { ...cached.value };
+    if (cached?.url === location.href && !cached.node && Date.now() - cached.at < 100) return { ...cached.value };
+    const headingNodes = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"]'));
+    const node = headingNodes.find(element => /(?:Edit|New)\s+(?:Quote|Sales Order)\s*-/i.test(headingTextOf(element)) && extractOrderId(headingTextOf(element)) && isVisible(element));
+    const pageText = node ? headingTextOf(node) : clean(document.body?.innerText || document.body?.textContent || '');
     const pageMatch = pageText.match(/(?:Edit|New)\s+(Quote|Sales Order)\s*-\s*(.+?)\s*-\s*((?:NZSO-?\d+|SFOR\d+(?:-[A-Z0-9]+)?))\b/i);
     if (pageMatch) {
-      return {
+      const value = {
         customerName: clean(pageMatch[2]),
         orderId: extractOrderId(pageMatch[3]),
         documentType: /sales order/i.test(pageMatch[1]) ? 'sales-order' : 'quote'
       };
+      omniHeadingDraft.cache = { node, text:node ? headingTextOf(node) : '', value, url:location.href, at:Date.now() };
+      return { ...value };
     }
     const headings = Array.from(document.querySelectorAll('h1, h2, h3, [role="heading"]'))
       .filter(isVisible)
@@ -1910,6 +1919,7 @@
         finishOmniWorkflowSync();
         if (response.status >= 200 && response.status < 300) {
           lastOmniOrderSyncDigest = digest;
+          void linkExistingCustomerAlbumToQuote({ ...payload, orderId:payload.orderNumber });
           try { applyOmniWorkflowResponse(JSON.parse(response.responseText)); } catch (error) { console.warn('[LC Workflow] Workflow status could not be read.', error); }
           return;
         }
@@ -3760,9 +3770,9 @@
 
   const customerAlbumLinkAttempts = new Set();
 
-  async function linkExistingCustomerAlbumToQuote() {
+  async function linkExistingCustomerAlbumToQuote(snapshot = null) {
     if (!isOmniPage() || !isSimpleSaleReady()) return;
-    const draft = cin7Draft();
+    const draft = snapshot || cin7Draft();
     const quoteNumber = clean(draft.orderId);
     const email = clean(draft.email).toLowerCase();
     const customerName = clean(draft.customerName).toLowerCase();
@@ -4660,6 +4670,8 @@
   }
 
   let buttonPassScheduled = false;
+  let omniDomObserver = null;
+  let lastButtonPassAt = 0;
   let omniJobProgressCache = null;
   function omniJobProgressPlacement(heading) {
     const createdBy = Array.from(document.querySelectorAll('label,div,span,td'))
@@ -4871,30 +4883,38 @@
   }
 
   function runButtonPass() {
-    ensureOmniJobProgress();
     buttonPassScheduled = false;
-    finishOmniConversionNavigation();
-    observeOmniLayout();
-    addCustomerPhotosButton();
-    addButton();
-    addHubSpotButton();
-    applyHubSpotPrerequisiteGate();
-    addQuoteReviewButton();
-    addQuotePdfButton();
-    addCloneQuoteButton();
-    applyHubSpotApprovalGate();
-    addJobsOverviewButton();
-    addStaffHelpButton();
-    addIssueReportButton();
-    layoutOmniWorkflowButtons();
-    void linkExistingCustomerAlbumToQuote();
-    scheduleOmniWorkflowSync();
+    lastButtonPassAt = Date.now();
+    // Our own toolbar changes must not trigger another full native-form scan.
+    omniDomObserver?.disconnect();
+    try {
+      ensureOmniJobProgress();
+      finishOmniConversionNavigation();
+      observeOmniLayout();
+      addCustomerPhotosButton();
+      addButton();
+      addHubSpotButton();
+      applyHubSpotPrerequisiteGate();
+      addQuoteReviewButton();
+      addQuotePdfButton();
+      addCloneQuoteButton();
+      applyHubSpotApprovalGate();
+      addJobsOverviewButton();
+      addStaffHelpButton();
+      addIssueReportButton();
+      layoutOmniWorkflowButtons();
+      scheduleOmniWorkflowSync();
+    } finally {
+      omniDomObserver?.observe(document.documentElement, { childList:true, subtree:true });
+    }
   }
 
   function scheduleButtonPass() {
     if (buttonPassScheduled) return;
     buttonPassScheduled = true;
-    window.requestAnimationFrame(runButtonPass);
+    const delay = Math.max(0, 200 - (Date.now() - lastButtonPassAt));
+    if (delay) window.setTimeout(() => window.requestAnimationFrame(runButtonPass), delay);
+    else window.requestAnimationFrame(runButtonPass);
   }
 
   function boot() {
@@ -4919,7 +4939,7 @@
     if (isOmniPage()) document.getElementById('lc-omni-hubspot-shortcut-button')?.remove();
     ensureDelegatedClickHandler();
     void loadRepOptions();
-    void fetchHubSpotLeadSourceOptions().catch(() => {});
+    setTimeout(() => { void linkExistingCustomerAlbumToQuote(); }, 2000);
     scheduleButtonPass();
     setTimeout(scheduleButtonPass, 500);
     setTimeout(scheduleButtonPass, 1500);
@@ -4945,13 +4965,13 @@
 
   hookNetworkForProductLines();
 
-  const observer = new MutationObserver((records) => {
+  omniDomObserver = new MutationObserver((records) => {
     if (!document.body) return;
     if (records.some(record => !record.target.closest?.(`#${CUSTOMER_PHOTOS_ACTIONS_ID}, #${OMNI_TOOLS_BAR_ID}, #${STAFF_HELP_BAR_ID}, #${STAFF_HELP_DIALOG_ID}, #${OVERLAY_ID}`))) {
       scheduleButtonPass();
     }
   });
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+  omniDomObserver.observe(document.documentElement, { childList: true, subtree: true });
   if (isOmniPage() && document.body) scheduleButtonPass();
 
   window.addEventListener('resize', scheduleButtonPass);
