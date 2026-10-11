@@ -104,6 +104,13 @@ const attempts = 'const collectionDispatchAttempts = new Set();let omniQuoteConv
     assert.equal(await page.locator('#dispatch').inputValue(),'');
     assert.equal(await page.locator('#dispatch-time').inputValue(),'');
     assert.equal(await page.evaluate(p=>applyOmniWorkflowResponse(p),reversal),false,'A reversal only applies once');
+    const completedAgain={fulfillmentDispatch:confirmed,workflowUndo:reversal.workflowUndo};
+    assert.equal(await page.evaluate(p=>applyOmniWorkflowResponse(p),completedAgain),true,'Re-completion supersedes an earlier undo even when its completion timestamp was retained');
+    assert.equal(await page.locator('#stage').inputValue(),'9','Collected again selects Dispatched in the same browser session');
+    assert.equal(await page.locator('#dispatch').inputValue(),'2026-10-10','Re-completion restores the dispatch date after reversal');
+    assert.equal(await page.evaluate(p=>applyOmniWorkflowResponse(p),completedAgain),false,'Repeated completion polls do not fire native events again');
+    await page.evaluate(()=>{collectionDispatchAttempts.clear();claimOmniCollectionDispatch.cycles=new Map();document.getElementById('stage').value='7';document.getElementById('dispatch').value='';});
+    assert.equal(await page.evaluate(p=>applyOmniWorkflowResponse(p),completedAgain),false,'Completion guard survives reload within the new cycle');
     assert.equal(await page.evaluate(p=>applyOmniWorkflowResponse(p),{workflowUndo:{...reversal.workflowUndo,id:'undo-2',orderNumber:'NZSO-155160'}}),false,'Undo cannot target a near-number order');
     console.log('PASS: Completion and explicit reversal synchronize native Omni stage/date fields without auto-saving or warning loops. Browser/API mocked.');
   } finally { await browser.close(); }

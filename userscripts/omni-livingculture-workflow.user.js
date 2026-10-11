@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.133
+// @version      0.1.134
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -2021,7 +2021,10 @@
   }
 
   function claimOmniCollectionDispatch(collection, kind = 'date') {
-    const key = `lc-omni-collection-dispatch:${kind}:${collection.orderNumber}:${collection.dispatchedAt || collection.collectedAt}`;
+    const cycles = claimOmniCollectionDispatch.cycles || (claimOmniCollectionDispatch.cycles = new Map());
+    let cycle = cycles.get(collection.orderNumber) || '';
+    try { cycle = sessionStorage.getItem(`lc-omni-dispatch-cycle:${collection.orderNumber}`) || cycle; } catch {}
+    const key = `lc-omni-collection-dispatch:${kind}:${collection.orderNumber}:${collection.dispatchedAt || collection.collectedAt}${kind !== 'undo' && cycle ? `:${cycle}` : ''}`;
     if (collectionDispatchAttempts.has(key)) return false;
     try { if (sessionStorage.getItem(key)) return false; } catch {}
     // Mark before native events: stock validation may clear the field or reload the page.
@@ -2051,13 +2054,16 @@
 
   function applyOmniWorkflowResponse(payload) {
     if(Object.prototype.hasOwnProperty.call(payload,'jobProgress'))renderOmniJobProgress(payload.jobProgress);
-    if (!payload.workflowUndo) return applyOmniWorkflowDispatch(payload.fulfillmentDispatch);
+    // A fresh full completion supersedes an outstanding reversal from an earlier cycle.
+    if (payload.fulfillmentDispatch || !payload.workflowUndo) return applyOmniWorkflowDispatch(payload.fulfillmentDispatch);
     const heading = omniHeadingDraft(), undo = payload.workflowUndo;
     if (!isOmniPage() || heading.documentType !== 'sales-order' || undo.orderNumber !== heading.orderId || omniQuoteConversionLoaded) return false;
     const stage = omniWorkflowStageControl();
     const key = value => clean(value).toLowerCase().replace(/\s*-\s*wms$/, '');
     const options = stage && Array.from(stage.options).filter(option => !option.disabled && key(option.textContent) === key(undo.stage));
     if (!stage || stage.disabled || options.length !== 1 || !claimOmniCollectionDispatch({orderNumber:heading.orderId,dispatchedAt:undo.id}, 'undo')) return false;
+    claimOmniCollectionDispatch.cycles.set(heading.orderId, undo.id);
+    try { sessionStorage.setItem(`lc-omni-dispatch-cycle:${heading.orderId}`, undo.id); } catch {}
     stage.value = options[0].value;
     if (undo.clearDispatchDate) {
       for (const input of omniFullyDispatchedInputs()) {
