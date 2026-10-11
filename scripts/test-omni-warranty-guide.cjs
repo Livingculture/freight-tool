@@ -8,11 +8,11 @@ const body='<style>body{font:14px Arial;margin:0}.tools{display:flex;flex-wrap:w
 (async()=>{
   const browser=await chromium.launch();
   try{
-    for(const width of [1280,390]){
+    for(const width of [1280,820,390]){
       const page=await browser.newPage({viewport:{width,height:850}});const errors=[];page.on('pageerror',error=>errors.push(error.message));
       await page.context().route('https://living-culture-workflow.vercel.app/**',route=>{
         const filename=path.basename(new URL(route.request().url()).pathname);
-        assert(['warranty-guide.html','warranty-guide.css','warranty-guide.js','warranty-infographic.png','warranty-infographic-2.png','living-culture-warranty-infographic.pdf'].includes(filename));
+        assert(['warranty-guide.html','warranty-guide.css','warranty-guide.js','warranty-infographic.png','warranty-infographic-2.png','warranty-quick-summary.png','living-culture-warranty-infographic.pdf'].includes(filename));
         return route.fulfill({contentType:filename.endsWith('.png')?'image/png':filename.endsWith('.js')?'application/javascript':filename.endsWith('.css')?'text/css':'text/html',body:fs.readFileSync(path.join(root,filename))});
       });
       await page.route('https://go.cin7.com/**',route=>route.fulfill({contentType:'text/html',body}));
@@ -21,19 +21,31 @@ const body='<style>body{font:14px Arial;margin:0}.tools{display:flex;flex-wrap:w
       const button=page.getByRole('button',{name:'Warranty',exact:true});assert.equal(await button.count(),1);
       await button.click();const dialog=page.locator('#lc-omni-warranty-dialog');await dialog.waitFor();
       const guide=page.frameLocator('#lc-omni-warranty-dialog iframe');
-      await guide.locator('img').first().waitFor();
+      const detailed=guide.locator('#detailed-guide');
+      await detailed.locator('img').first().waitFor();
       await page.waitForFunction(()=>{const frame=document.querySelector('iframe');return !!frame;});
-      assert.equal(await guide.locator('img').count(),2);
-      await guide.locator('img').first().evaluate(el=>el.decode());
-      assert.equal(await guide.locator('img').first().evaluate(el=>el.naturalWidth),1500);
+      assert.equal(await guide.locator('img').count(),3);
+      await detailed.locator('img').first().evaluate(el=>el.decode());
+      assert.equal(await detailed.locator('img').first().evaluate(el=>el.naturalWidth),1500);
       assert.equal(await guide.getByRole('link',{name:'Full terms',exact:true}).getAttribute('href'),'https://livingculture.co.nz/pages/warranty-information');
       const frame=page.frames().find(frame=>frame.url().includes('/warranty-guide.html'));
       assert.equal(await guide.getByRole('link',{name:'Open PDF',exact:true}).getAttribute('href'),'/living-culture-warranty-infographic.pdf');
       assert.equal(await guide.getByRole('link',{name:'Download PDF',exact:true}).getAttribute('download'),'Living Culture Warranty Infographic.pdf');
-      await guide.locator('img').nth(1).scrollIntoViewIfNeeded();
-      await frame.waitForFunction(()=>document.querySelectorAll('img')[1].complete && document.querySelectorAll('img')[1].naturalWidth>0);
-      await guide.locator('img').nth(1).evaluate(el=>el.decode());
-      assert.equal(await guide.locator('img').nth(1).evaluate(el=>el.naturalHeight),7320);
+      await detailed.locator('img').nth(1).scrollIntoViewIfNeeded();
+      await frame.waitForFunction(()=>{const image=document.querySelectorAll('#detailed-guide img')[1];return image.complete&&image.naturalWidth>0;});
+      await detailed.locator('img').nth(1).evaluate(el=>el.decode());
+      assert.equal(await detailed.locator('img').nth(1).evaluate(el=>el.naturalHeight),7320);
+      await frame.evaluate(()=>window.scrollTo(0,0));
+      await guide.getByRole('tab',{name:'Quick Summary',exact:true}).click();
+      assert(await guide.locator('#quick-guide').isVisible());assert(!await detailed.isVisible());
+      await frame.waitForFunction(()=>{const image=document.querySelector('#quick-guide img');return image.complete&&image.naturalWidth>0;});
+      await guide.locator('#quick-guide img').evaluate(el=>el.decode());
+      assert.equal(await guide.locator('#quick-guide img').evaluate(el=>el.naturalWidth),1024);
+      assert.equal(await guide.getByRole('link',{name:'Download Quick Summary',exact:true}).getAttribute('download'),'Living Culture Warranty Quick Summary.png');
+      assert(await frame.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+      await page.screenshot({path:`/tmp/lc-warranty-quick-${width}.png`});
+      await guide.getByRole('tab',{name:'Quick Summary',exact:true}).focus();await page.keyboard.press('ArrowRight');
+      assert(await detailed.isVisible());assert(!await guide.locator('#quick-guide').isVisible());
       const text=guide.locator('#text-version');if(!await text.evaluate(el=>el.open))await text.locator('summary').click();
       assert((await text.innerText()).includes('25 years'));assert((await text.innerText()).includes('French Dickson'));
       assert((await text.innerText()).includes('Confirm the applicable date.'));
