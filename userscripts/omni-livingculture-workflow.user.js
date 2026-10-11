@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.128
+// @version      0.1.129
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -1355,8 +1355,7 @@
       document.getElementById(QUOTE_PDF_BUTTON_ID),
       document.getElementById(CLONE_QUOTE_BUTTON_ID),
       document.getElementById(CONVERT_ORDER_BUTTON_ID),
-      document.getElementById('lc-omni-jobs-overview-button'),
-      document.getElementById(STAFF_HELP_BUTTON_ID)
+      document.getElementById('lc-omni-jobs-overview-button')
     ].filter(Boolean);
     if (!buttons.length) return;
 
@@ -4821,7 +4820,7 @@
 
   function addStaffHelpButton() {
     if (!isOmniPage()) return;
-    const toolsBar = document.getElementById(OMNI_TOOLS_BAR_ID);
+    const toolsBar = document.getElementById('lc-omni-heading-actions') || document.getElementById(OMNI_TOOLS_BAR_ID);
     if (!toolsBar) return;
     let help = document.getElementById(STAFF_HELP_BUTTON_ID);
     if (help?.tagName !== 'BUTTON') { help?.remove(); help = null; }
@@ -4833,12 +4832,12 @@
       help.setAttribute('aria-label', 'Staff Guide');
       help.title = 'Omni instructions and connected workflow guide';
       help.textContent = 'Staff Guide';
-      help.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;padding:0 14px;border:1px solid #2563eb;border-radius:4px;background:#2563eb;color:#fff;font:700 14px Arial,sans-serif;text-decoration:none;white-space:nowrap;cursor:pointer;';
+      help.style.cssText = 'box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;height:36px;flex:0 0 auto;padding:0 14px;border:1px solid #2563eb;border-radius:4px;background:#2563eb;color:#fff;font:700 14px Arial,sans-serif;text-decoration:none;white-space:nowrap;cursor:pointer;';
     }
     help.style.background = '#2563eb';
     help.style.color = '#fff';
     help.style.borderColor = '#2563eb';
-    if (help.parentElement !== toolsBar) toolsBar.appendChild(help);
+    if (help.parentElement !== toolsBar || (toolsBar.id === 'lc-omni-heading-actions' && toolsBar.firstElementChild !== help)) toolsBar.prepend(help);
     document.getElementById(STAFF_HELP_BAR_ID)?.remove();
   }
 
@@ -4880,7 +4879,8 @@
   function openIssueReportPopup() {
     const heading = omniHeadingDraft();
     const url = new URL('issue-report.html', WORKFLOW_PLANNER_URL);
-    const nativeHeading = document.getElementById('lc-omni-report-issue')?.parentElement;
+    const parent = document.getElementById('lc-omni-report-issue')?.parentElement;
+    const nativeHeading = parent?.id === 'lc-omni-heading-actions' ? parent.parentElement : parent;
     const order = nativeHeading ? extractOrderId(issueReportHeadingText(nativeHeading)) : heading.orderId;
     url.searchParams.set('order', /^NZSO-\d+$/i.test(order) ? order : '');
     const customer = heading.customerName || readOmniControlByLabel('Selected Customer') || readValueNearLabel('Selected Customer') || readOmniControlByLabel('Customer') || readValueNearLabel('Customer');
@@ -4893,7 +4893,7 @@
   }
 
   function issueReportHeadingText(node) {
-    return clean(Array.from(node.childNodes).filter(child => child.id !== 'lc-omni-report-issue').map(child => child.textContent || '').join(' '));
+    return clean(Array.from(node.childNodes).filter(child => !child.id?.startsWith('lc-')).map(child => child.textContent || '').join(' '));
   }
 
   function addIssueReportButton() {
@@ -4906,15 +4906,21 @@
     };
     const heading = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"],div,span,td'))
       .find(node => !node.closest('#lc-omni-job-progress') && isVisible(node) && matches(node) && !Array.from(node.children).some(matches));
-    if(!heading){button?.remove();return;}
+    if(!heading){document.getElementById('lc-omni-heading-actions')?.remove();button?.remove();return;}
     if(!button){
       button = document.createElement('button');button.id = 'lc-omni-report-issue';button.type = 'button';
       button.textContent = 'Report Issue';button.title = 'Report any issue or error affecting Living Culture: sales, quotes, orders, stock, suppliers, production, assembly, products, delivery, installation, customer service, systems or internal processes';
-      button.style.cssText = 'display:inline-flex;flex:0 0 auto;vertical-align:middle;align-items:center;margin-left:auto;padding:7px 12px;border:1px solid #b85130;border-radius:4px;background:#fff0e9;color:#933c22;font:700 14px Arial,sans-serif;cursor:pointer;';
+      button.style.cssText = 'box-sizing:border-box;display:inline-flex;flex:0 0 auto;vertical-align:middle;align-items:center;height:36px;padding:7px 12px;border:1px solid #b85130;border-radius:4px;background:#fff0e9;color:#933c22;font:700 14px Arial,sans-serif;white-space:nowrap;cursor:pointer;';
       button.addEventListener('click', openIssueReportPopup);
     }
     heading.style.display = 'flex';heading.style.alignItems = 'center';heading.style.flexWrap = 'wrap';heading.style.gap = '8px 16px';heading.style.width = '100%';
-    if(button.parentElement !== heading || heading.lastElementChild !== button) heading.appendChild(button);
+    let actions = document.getElementById('lc-omni-heading-actions');
+    if (!actions) {
+      actions = document.createElement('span');actions.id = 'lc-omni-heading-actions';
+      actions.style.cssText = 'display:inline-flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px;margin-left:auto;max-width:100%;';
+    }
+    if(actions.parentElement !== heading) heading.appendChild(actions);
+    if(button.parentElement !== actions || actions.lastElementChild !== button) actions.appendChild(button);
   }
 
   function runButtonPass() {
@@ -4935,8 +4941,8 @@
       addCloneQuoteButton();
       applyHubSpotApprovalGate();
       addJobsOverviewButton();
-      addStaffHelpButton();
       addIssueReportButton();
+      addStaffHelpButton();
       layoutOmniWorkflowButtons();
       scheduleOmniWorkflowSync();
     } finally {

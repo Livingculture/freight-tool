@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Omni Warranty Guide
 // @namespace    livingculture
-// @version      0.1.0
+// @version      0.1.1
 // @description  Opens a visual warranty reference from Omni quotes and sales orders.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @run-at       document-idle
@@ -33,10 +33,15 @@
     document.body.appendChild(dialog);dialog.showModal();document.body.style.overflow='hidden';close.focus();
   }
   function addButton(){
-    const bar=document.getElementById('lc-omni-workflow-tools-bar');if(!bar||document.getElementById(buttonId))return;
-    const button=document.createElement('button');button.id=buttonId;button.type='button';button.textContent='Warranty';button.title='Warranty periods and claim steps';
-    button.style.cssText='box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;width:160px;min-width:160px;height:36px;flex:0 0 auto;margin:0;padding:0 14px;border:1px solid #087e91;border-radius:4px;background:#087e91;color:white;font:700 14px Arial,sans-serif;white-space:nowrap;cursor:pointer;';
-    button.onclick=openGuide;bar.appendChild(button);
+    const bar=document.getElementById('lc-omni-heading-actions')||document.getElementById('lc-omni-workflow-tools-bar');if(!bar)return;
+    let button=document.getElementById(buttonId);
+    if(!button){
+      button=document.createElement('button');button.id=buttonId;button.type='button';button.textContent='Warranty';button.title='Warranty periods and claim steps';
+      button.style.cssText='box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;height:36px;flex:0 0 auto;margin:0;padding:0 14px;border:1px solid #087e91;border-radius:4px;background:#087e91;color:white;font:700 14px Arial,sans-serif;white-space:nowrap;cursor:pointer;';
+      button.onclick=openGuide;
+    }
+    const issue=bar.querySelector('#lc-omni-report-issue');
+    if(button.parentElement!==bar||(issue&&button.nextElementSibling!==issue))bar.insertBefore(button,issue);
   }
   addButton();
   let scheduled=false;
