@@ -24,14 +24,13 @@ const progress = { orderNumber: 'NZSO-17003', nextAction: 'Arrange installation'
     assert.equal(await page.locator('#lc-omni-job-progress .step').count(), 11);
     assert.equal(await page.evaluate(() => document.querySelector('h1').nextElementSibling.id), 'lc-omni-job-progress');
     assert.equal(await page.evaluate(() => opened), 0, 'No popup on loading');
-    await page.locator('#lc-omni-job-progress button').click();
-    assert.equal(await page.evaluate(() => opened), 1);
-    assert.equal(await page.evaluate(()=>new URL(openedUrls[0]).searchParams.get('order')), 'NZSO-17003', 'Details opens the current job');
+    assert.equal(await page.locator('#lc-omni-job-progress button').count(), 0, 'Omni progress does not have a Details button');
+    assert.equal(await page.locator('#lc-omni-job-progress .next').evaluate(el=>Math.abs(el.getBoundingClientRect().right-el.parentElement.getBoundingClientRect().right)<1),true,'Job status appears at the right-hand end');
     await page.evaluate(()=>{const bar=document.createElement('div');bar.id=OMNI_TOOLS_BAR_ID;document.querySelector('form').append(bar);addJobsOverviewButton();addJobsOverviewButton();});
     assert.equal(await page.locator('#lc-omni-jobs-overview-button').count(),1);
     await page.locator('#lc-omni-jobs-overview-button').click();
-    assert.equal(await page.evaluate(()=>new URL(openedUrls[1]).pathname),'/jobs');
-    assert.equal(await page.evaluate(()=>new URL(openedUrls[1]).search), '', 'Jobs Overview opens the all-jobs view without an order filter');
+    assert.equal(await page.evaluate(()=>new URL(openedUrls[0]).pathname),'/jobs');
+    assert.equal(await page.evaluate(()=>new URL(openedUrls[0]).search), '', 'Jobs Overview opens the all-jobs view without an order filter');
     await page.evaluate(() => { ensureOmniJobProgress(); ensureOmniJobProgress(); checkOmniShowroomCollection(); checkOmniShowroomCollection(); });
     assert.equal(await page.locator('#lc-omni-job-progress').count(), 1);
     assert.equal(await page.evaluate(() => requests.length), 1, 'Uses one existing sync lookup with an in-flight guard');
@@ -85,6 +84,6 @@ const progress = { orderNumber: 'NZSO-17003', nextAction: 'Arrange installation'
       assert.equal(await page.locator('#lc-omni-job-progress .step').count(), 11);
       await page.screenshot({ path: `/tmp/omni-job-progress-aligned-${width}.png` });
     }
-    console.log('PASS: Omni inline progress, Details, order switching, escaped values, failures, single read-only request, desktop/mobile layouts. Browser fixture, no live customer writes.');
+    console.log('PASS: Omni inline progress, right-aligned status, no Details button, all-jobs popup, order switching, escaped values, failures, single read-only request, desktop/mobile layouts. Browser fixture, no live customer writes.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
