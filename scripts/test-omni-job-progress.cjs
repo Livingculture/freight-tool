@@ -34,7 +34,7 @@ const progress = { orderNumber: 'NZSO-17003', nextAction: 'Arrange installation'
     assert.equal(await page.evaluate(()=>new URL(openedUrls[0]).pathname),'/jobs');
     assert.equal(await page.evaluate(()=>new URL(openedUrls[0]).searchParams.get('order')), null, 'Jobs Overview opens the all-jobs view without an order filter');
     assert.equal(await page.evaluate(()=>new URL(openedUrls[0]).searchParams.get('popup')), '1', 'Popup uses the compact layout');
-    assert((await page.evaluate(()=>popupFeatures[0])).includes('width=1080'),'Overview popup requests a narrower window');
+    assert((await page.evaluate(()=>popupFeatures[0])).includes('width=900'),'Overview popup requests a narrower window');
     await page.evaluate(() => { ensureOmniJobProgress(); ensureOmniJobProgress(); checkOmniShowroomCollection(); checkOmniShowroomCollection(); });
     assert.equal(await page.locator('#lc-omni-job-progress').count(), 1);
     assert.equal(await page.evaluate(() => requests.length), 1, 'Uses one existing sync lookup with an in-flight guard');

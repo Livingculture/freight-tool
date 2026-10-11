@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.131
+// @version      0.1.132
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -4852,7 +4852,7 @@
     const order = hubSpotGateOrderId();
     if (currentJob === true && /^NZSO-\d+$/i.test(order)) url.searchParams.set('order', order.toUpperCase());
     // A top-level popup preserves Workflow's same-site authenticated session.
-    const width = Math.min(1080, screen.availWidth || window.innerWidth);
+    const width = Math.min(900, screen.availWidth || window.innerWidth);
     const height = Math.min(900, screen.availHeight || window.innerHeight);
     const left = Math.round((screen.availLeft || 0) + ((screen.availWidth || width) - width) / 2);
     const top = Math.round((screen.availTop || 0) + ((screen.availHeight || height) - height) / 2);
