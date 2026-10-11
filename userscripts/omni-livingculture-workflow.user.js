@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.120
+// @version      0.1.121
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -4836,6 +4836,36 @@
     if (button.parentElement !== toolsBar) toolsBar.appendChild(button);
   }
 
+  function openIssueReportPopup() {
+    const heading = omniHeadingDraft();
+    const url = new URL('issue-report.html', WORKFLOW_PLANNER_URL);
+    url.searchParams.set('order', heading.orderId);
+    url.searchParams.set('customer', heading.customerName);
+    url.searchParams.set('sourceUrl', location.href);
+    const popup = window.open(url.href, '_blank', 'popup=yes,width=620,height=720,resizable=yes,scrollbars=yes');
+    if(!popup){window.alert('Please allow popups for go.cin7.com, then click Report Issue again.');return;}
+    popup.opener = null;
+    popup.focus();
+  }
+
+  function addIssueReportButton() {
+    if(!isOmniPage()) return;
+    const draft = omniHeadingDraft();
+    let button = document.getElementById('lc-omni-report-issue');
+    if(draft.documentType !== 'sales-order' || !/^NZSO-\d+$/.test(draft.orderId)){button?.remove();return;}
+    const matches = node => /^(?:Edit|New)\s+Sales Order\b/i.test(clean(node.textContent || '')) && extractOrderId(node.textContent || '') === draft.orderId && clean(node.textContent || '').length < 350;
+    const heading = Array.from(document.querySelectorAll('h1,h2,h3,h4,[role="heading"],div,span,td'))
+      .find(node => !node.closest('#lc-omni-job-progress') && isVisible(node) && matches(node) && !Array.from(node.children).some(matches));
+    if(!heading) return;
+    if(!button){
+      button = document.createElement('button');button.id = 'lc-omni-report-issue';button.type = 'button';
+      button.textContent = 'Report Issue';button.title = 'Report an issue with this job';
+      button.style.cssText = 'display:inline-flex;vertical-align:middle;align-items:center;margin-left:16px;padding:7px 12px;border:1px solid #b85130;border-radius:4px;background:#fff0e9;color:#933c22;font:700 14px Arial,sans-serif;cursor:pointer;';
+      button.addEventListener('click', openIssueReportPopup);
+    }
+    if(button.parentElement !== heading || heading.lastElementChild !== button) heading.appendChild(button);
+  }
+
   function runButtonPass() {
     ensureOmniJobProgress();
     buttonPassScheduled = false;
@@ -4851,6 +4881,7 @@
     applyHubSpotApprovalGate();
     addJobsOverviewButton();
     addStaffHelpButton();
+    addIssueReportButton();
     layoutOmniWorkflowButtons();
     void linkExistingCustomerAlbumToQuote();
     scheduleOmniWorkflowSync();
