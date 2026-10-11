@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.127
+// @version      0.1.128
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -4909,7 +4909,7 @@
     if(!heading){button?.remove();return;}
     if(!button){
       button = document.createElement('button');button.id = 'lc-omni-report-issue';button.type = 'button';
-      button.textContent = 'Report Issue';button.title = 'Report missing quote items, production, assembly, product or system problems';
+      button.textContent = 'Report Issue';button.title = 'Report any issue or error affecting Living Culture: sales, quotes, orders, stock, suppliers, production, assembly, products, delivery, installation, customer service, systems or internal processes';
       button.style.cssText = 'display:inline-flex;flex:0 0 auto;vertical-align:middle;align-items:center;margin-left:auto;padding:7px 12px;border:1px solid #b85130;border-radius:4px;background:#fff0e9;color:#933c22;font:700 14px Arial,sans-serif;cursor:pointer;';
       button.addEventListener('click', openIssueReportPopup);
     }
