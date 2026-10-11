@@ -45,6 +45,10 @@ const progress = { orderNumber: 'NZSO-17003', nextAction: 'Arrange installation'
     await page.evaluate(()=>{checkOmniShowroomCollection();currentStage='Dispatched';requests[1].onload({status:200,responseText:JSON.stringify({jobProgress:{orderNumber:'NZSO-17003',steps:[],nextAction:'Old stage'}})});});
     assert.equal(await page.locator('#lc-omni-job-progress .step').count(),11,'A poll started before the dropdown change cannot overwrite newer progress');
     await page.evaluate(()=>currentStage='Fully Packed - WMS');
+    await page.evaluate(()=>{checkOmniShowroomCollection();requests.at(-1).onload({status:200,responseText:JSON.stringify({unchanged:true,syncVersion:'v1'})});checkOmniShowroomCollection();});
+    assert.equal(await page.evaluate(()=>JSON.parse(requests.at(-1).data).knownVersion),'v1','Fast polls reuse the saved version');
+    await page.evaluate(()=>requests.at(-1).onload({status:200,responseText:JSON.stringify({unchanged:true,syncVersion:'v1'})}));
+    assert.equal(await page.locator('#lc-omni-job-progress .step').count(),11,'Unchanged reads preserve the progress strip');
     await page.evaluate(value => renderOmniJobProgress(value), { ...progress, steps: [{ label: '<img src=x onerror=alert(1)>', status: '<script>bad</script>', state: 'done evil' }] });
     assert.equal(await page.locator('#lc-omni-job-progress img').count(), 0, 'Display values are escaped');
     await page.evaluate(value => renderOmniJobProgress(value), progress);

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.132
+// @version      0.1.133
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -2110,17 +2110,25 @@
     const heading = omniHeadingDraft();
     if (!['sales-order','quote'].includes(heading.documentType) || !/^NZSO-\d+$/.test(heading.orderId)) return;
     const requestedStage = omniWorkflowStage();
-    const [dateInput] = omniFullyDispatchedInputs();
+    const versionKey = `${heading.orderId}|${heading.documentType}|${requestedStage}`;
+    const cachedVersion = checkOmniShowroomCollection.cachedVersion;
     collectionDispatchInFlight = true;
     const headers = { 'Content-Type': 'application/json' };
     if (API_KEY) headers.Authorization = `Bearer ${API_KEY}`;
     GM_xmlhttpRequest({ method: 'POST', url: OMNI_ORDER_SYNC_API_URL, headers,
-      data: JSON.stringify({ action: 'fulfillment-dispatch', orderNumber: heading.orderId, includeProgress:true }), timeout: 15000,
+      data: JSON.stringify({ action: 'fulfillment-dispatch', orderNumber: heading.orderId, includeProgress:true,
+        knownVersion:cachedVersion?.key === versionKey ? cachedVersion.version : undefined }), timeout: 15000,
       onload: response => {
         collectionDispatchInFlight = false;
         if (omniHeadingDraft().orderId !== heading.orderId || omniWorkflowStage() !== requestedStage) return;
         if (response.status < 200 || response.status >= 300) { omniJobProgressStatus('Progress refresh failed',heading.orderId); return; }
-        try { applyOmniWorkflowResponse(JSON.parse(response.responseText)); } catch (error) { omniJobProgressStatus('Progress refresh failed',heading.orderId); console.warn('[LC Workflow] Workflow status lookup failed.', error); }
+        try {
+          const payload = JSON.parse(response.responseText);
+          if (!payload.unchanged) applyOmniWorkflowResponse(payload);
+          if (payload.syncVersion) checkOmniShowroomCollection.cachedVersion = {
+            key:`${heading.orderId}|${heading.documentType}|${omniWorkflowStage()}`, version:payload.syncVersion
+          };
+        } catch (error) { omniJobProgressStatus('Progress refresh failed',heading.orderId); console.warn('[LC Workflow] Workflow status lookup failed.', error); }
       },
       onerror: () => { collectionDispatchInFlight = false; omniJobProgressStatus('Progress refresh failed',heading.orderId); },
       ontimeout: () => { collectionDispatchInFlight = false; omniJobProgressStatus('Progress refresh timed out',heading.orderId); }
@@ -4980,7 +4988,7 @@
     if (isOmniPage() && window.parent === window) {
       installOmniWorkflowChangeHooks();
       setTimeout(checkOmniShowroomCollection, 1500);
-      setInterval(checkOmniShowroomCollection, 30000);
+      setInterval(checkOmniShowroomCollection, 2500);
       document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkOmniShowroomCollection(); });
     }
     if (isOmniPage()) document.getElementById('lc-omni-hubspot-shortcut-button')?.remove();
