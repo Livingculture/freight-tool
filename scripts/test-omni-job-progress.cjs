@@ -5,7 +5,7 @@ const path = require('node:path');
 const ts = require(process.env.TYPESCRIPT_MODULE || path.resolve(__dirname, '../../workflow-speed-fix/node_modules/typescript'));
 const source = fs.readFileSync('userscripts/omni-livingculture-workflow.user.js', 'utf8');
 const parsed = ts.createSourceFile('workflow.js', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
-const names = new Set(['ensureOmniJobProgress', 'omniJobProgressStatus', 'renderOmniJobProgress', 'escapeHtml', 'checkOmniShowroomCollection']);
+const names = new Set(['omniJobProgressPlacement', 'ensureOmniJobProgress', 'omniJobProgressStatus', 'renderOmniJobProgress', 'escapeHtml', 'checkOmniShowroomCollection']);
 const functions = [];
 function visit(node) { if (ts.isFunctionDeclaration(node) && names.has(node.name?.text)) functions.push(node.getText(parsed)); ts.forEachChild(node, visit); }
 visit(parsed);
@@ -19,7 +19,7 @@ const progress = { orderNumber: 'NZSO-17003', nextAction: 'Arrange installation'
     await page.route('https://go.cin7.com/**', route => route.fulfill({ body: '<html><body></body></html>', contentType: 'text/html' }));
     await page.goto('https://go.cin7.com/test');
     await page.setContent('<style>body{margin:20px;background:#eee;font:14px Arial}li{font-size:50px;color:red}button{background:red}main{max-width:1300px;margin:auto}h1{font-size:22px}</style><main><h1>Edit Sales Order - Customer - NZSO-17003</h1><form><h2>Delivery address</h2><input value="Unsaved edit"><button id="save" type="button">Save As Draft</button></form></main>');
-    await page.addScriptTag({ content: `let omniJobProgressCache=null;let heading={orderId:'NZSO-17003',documentType:'sales-order'};const omniHeadingDraft=()=>heading;const extractOrderId=text=>text.match(/NZSO-\\d+/)?.[0]||'';const isVisible=node=>node.getBoundingClientRect().width>0;const isOmniPage=()=>true;let opened=0,saved=0,requests=[];const openJobsOverviewPopup=()=>opened++;document.getElementById('save').onclick=()=>saved++;let collectionDispatchInFlight=false,omniQuoteConversionLoaded=false;const omniFullyDispatchedInputs=()=>[];const API_KEY='';const OMNI_ORDER_SYNC_API_URL='https://workflow.test/api/omni/orders';const GM_xmlhttpRequest=options=>requests.push(options);const applyOmniWorkflowResponse=payload=>renderOmniJobProgress(payload.jobProgress);${functions.join('\n')}` });
+    await page.addScriptTag({ content: `let omniJobProgressCache=null;let heading={orderId:'NZSO-17003',documentType:'sales-order'};const omniHeadingDraft=()=>heading;const extractOrderId=text=>text.match(/NZSO-\\d+/)?.[0]||'';const clean=value=>String(value||'').trim();const normalizeLabel=value=>clean(value).toLowerCase();const OMNI_TOOLS_BAR_ID='lc-omni-tools';const isVisible=node=>node.getBoundingClientRect().width>0;const isOmniPage=()=>true;let opened=0,saved=0,requests=[];const openJobsOverviewPopup=()=>opened++;document.getElementById('save').onclick=()=>saved++;let collectionDispatchInFlight=false,omniQuoteConversionLoaded=false;const omniFullyDispatchedInputs=()=>[];const API_KEY='';const OMNI_ORDER_SYNC_API_URL='https://workflow.test/api/omni/orders';const GM_xmlhttpRequest=options=>requests.push(options);const applyOmniWorkflowResponse=payload=>renderOmniJobProgress(payload.jobProgress);${functions.join('\n')}` });
     await page.evaluate(value => renderOmniJobProgress(value), progress);
     assert.equal(await page.locator('#lc-omni-job-progress .step').count(), 11);
     assert.equal(await page.evaluate(() => document.querySelector('h1').nextElementSibling.id), 'lc-omni-job-progress');
@@ -52,6 +52,19 @@ const progress = { orderNumber: 'NZSO-17003', nextAction: 'Arrange installation'
     await page.evaluate(() => { heading.documentType='quote';ensureOmniJobProgress(); });
     assert.equal(await page.locator('#lc-omni-job-progress').count(), 0, 'Only sales orders show the strip');
     assert.equal(await page.evaluate(() => saved), 0, 'No automatic saves or approval');
+    await page.evaluate(() => { heading.documentType='sales-order';heading.orderId='NZSO-17003'; });
+    for (const tag of ['h4', 'h5', 'div', 'span']) {
+      await page.evaluate(tag => { document.querySelector('main').innerHTML=`<div><${tag}>Edit Sales Order - Customer - NZSO-17003</${tag}></div><form>Native order controls</form>`;ensureOmniJobProgress(); }, tag);
+      assert.equal(await page.locator('#lc-omni-job-progress').count(), 1, `Works with ${tag} headings`);
+      assert(await page.locator('#lc-omni-job-progress').isVisible());
+    }
+    await page.evaluate(() => { document.querySelector('main').innerHTML='<section id="creator"><div><label>Created By:</label><select><option>Steve</option></select></div><div>Processed By: Steve</div></section><form>Native controls</form>';ensureOmniJobProgress(); });
+    assert.equal(await page.evaluate(() => document.querySelector('#creator').previousElementSibling.id), 'lc-omni-job-progress', 'No heading: fallback above existing creator controls');
+    await page.evaluate(() => { document.querySelector('main').innerHTML='<form><div id="lc-omni-tools">Jobs Overview</div></form>';ensureOmniJobProgress(); });
+    assert.equal(await page.evaluate(() => document.querySelector('#lc-omni-tools').previousElementSibling.id), 'lc-omni-job-progress', 'Toolbar fallback works without heading or creator controls');
+    await page.evaluate(() => { document.querySelector('main').innerHTML='<div><table><tbody><tr><td>Edit Sales Order - Customer - NZSO-17003</td></tr></tbody></table></div><form>Native controls</form>';ensureOmniJobProgress(); });
+    assert.equal(await page.locator('table #lc-omni-job-progress').count(), 0, 'Table headings never insert a section inside table structure');
+    assert(await page.locator('#lc-omni-job-progress').isVisible());
     console.log('PASS: Omni inline progress, Details, order switching, escaped values, failures, single read-only request, desktop/mobile layouts. Browser fixture, no live customer writes.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
