@@ -22,9 +22,9 @@ assert(source.includes("const STAFF_GUIDE_URL = 'https://living-culture-freight.
       });
       await page.goto('https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx');
       await page.addScriptTag({content:`const OMNI_TOOLS_BAR_ID='tools',STAFF_HELP_BAR_ID='old',STAFF_HELP_BUTTON_ID='help',STAFF_HELP_DIALOG_ID='lc-omni-staff-help-dialog',STAFF_GUIDE_URL='https://living-culture-freight.vercel.app/omni-help.html';const isOmniPage=()=>true;${functions};addStaffHelpButton();`});
-      const help=page.getByRole('button',{name:'Living Culture Help'});
+      const help=page.getByRole('button',{name:'Staff Guide',exact:true});
       await help.click();
-      const dialog=page.getByRole('dialog',{name:'Living Culture Help'});
+      const dialog=page.getByRole('dialog',{name:'Living Culture Staff Guide'});
       const guide=page.frameLocator('iframe[title="Living Culture staff reference"]');
       await guide.getByRole('heading',{name:'Using Omni',exact:true}).waitFor();
       assert.equal(await guide.getByRole('tab',{name:'Using Omni'}).getAttribute('aria-selected'),'true');

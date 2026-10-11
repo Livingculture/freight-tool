@@ -31,7 +31,8 @@ assert(source.includes('addStaffHelpButton();\n    layoutOmniWorkflowButtons();'
       Array.from(document.querySelectorAll('.tools button')).forEach((button, index) => { button.id = ['site', 'review', 'hubspot', 'download'][index]; });
       addStaffHelpButton(); layoutOmniWorkflowButtons(); addStaffHelpButton(); layoutOmniWorkflowButtons();
     });
-    const help = page.getByRole('button', { name: 'Living Culture Help' });
+    const help = page.getByRole('button', { name: 'Staff Guide', exact: true });
+    assert.equal(await help.textContent(), 'Staff Guide');
     assert.equal(await help.count(), 1, 'Repeated layout passes create one control');
     assert.equal(await help.getAttribute('type'), 'button');
     assert.equal(await help.getAttribute('target'), null);
@@ -60,7 +61,7 @@ assert(source.includes('addStaffHelpButton();\n    layoutOmniWorkflowButtons();'
     assert.equal(await help.evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(37, 99, 235)', 'Existing Help controls also get the filled style');
     await page.screenshot({ path: '/tmp/lc-staff-help-desktop.png' });
     await help.click();
-    const popup = page.getByRole('dialog', { name: 'Living Culture Help' });
+    const popup = page.getByRole('dialog', { name: 'Living Culture Staff Guide' });
     await popup.waitFor({ state: 'visible' });
     const embedded = page.frameLocator('iframe[title="Living Culture staff reference"]');
     await embedded.getByRole('heading', { name: 'Find a button' }).waitFor();
@@ -68,7 +69,7 @@ assert(source.includes('addStaffHelpButton();\n    layoutOmniWorkflowButtons();'
     assert.equal(desktopPopupBox.width, 1060, 'Desktop Help has room for the connection guide');
     assert(Math.abs(desktopPopupBox.x - (page.viewportSize().width - 1060) / 2) <= 1, 'Desktop Help remains centred');
     assert(await embedded.locator('html').evaluate(el => el.scrollWidth <= window.innerWidth), 'Embedded guide fits the narrower popup');
-    assert.equal(await embedded.getByText('Living Culture Help', { exact: true }).count(), 0, 'Only the outer popup carries the Help heading');
+    assert.equal(await embedded.getByText('Living Culture Staff Guide', { exact: true }).count(), 0, 'Only the outer popup carries the Staff Guide heading');
     const search = embedded.getByRole('searchbox', { name: 'Search help' });
     await search.fill('CLONE quote');
     const cloneHelp = embedded.locator('#section-1 .entry').filter({ has: embedded.locator('.help-item-title').getByText('Clone Quote', { exact: true }) });

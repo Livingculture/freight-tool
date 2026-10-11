@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.119
+// @version      0.1.120
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -4734,14 +4734,14 @@
     const previousFocus = document.activeElement;
     const dialog = document.createElement('dialog');
     dialog.id = STAFF_HELP_DIALOG_ID;
-    dialog.setAttribute('aria-label', 'Living Culture Help');
+    dialog.setAttribute('aria-label', 'Living Culture Staff Guide');
     dialog.style.cssText = 'box-sizing:border-box;width:min(1060px,calc(100vw - 24px));height:min(900px,calc(100dvh - 24px));max-width:none;max-height:none;padding:0;border:1px solid #a6bddb;border-radius:6px;background:#fff;color:#172b49;overflow:hidden;box-shadow:0 20px 60px rgba(7,28,58,.3);';
     const style = document.createElement('style');
     style.textContent = `#${STAFF_HELP_DIALOG_ID}[open]{display:flex;flex-direction:column}#${STAFF_HELP_DIALOG_ID}::backdrop{background:rgba(7,28,58,.45)}`;
     const header = document.createElement('div');
     header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;background:#063b78;color:#fff;font:700 18px Arial,sans-serif;flex-shrink:0;';
     const title = document.createElement('span');
-    title.textContent = 'Living Culture Help';
+    title.textContent = 'Living Culture Staff Guide';
     const close = document.createElement('button');
     close.type = 'button';
     close.textContent = 'Close';
@@ -4749,7 +4749,7 @@
     close.addEventListener('click', () => dialog.close());
     header.append(title, close);
     const status = document.createElement('div');
-    status.textContent = 'Loading help...';
+    status.textContent = 'Loading staff guide...';
     status.setAttribute('role', 'status');
     status.style.cssText = 'padding:12px 16px;font:14px Arial,sans-serif;';
     const frame = document.createElement('iframe');
@@ -4789,9 +4789,9 @@
       help.id = STAFF_HELP_BUTTON_ID;
       help.type = 'button';
       help.addEventListener('click', openStaffHelpPopup);
-      help.setAttribute('aria-label', 'Living Culture Help');
-      help.title = 'Living Culture staff reference';
-      help.textContent = '? Help';
+      help.setAttribute('aria-label', 'Staff Guide');
+      help.title = 'Omni instructions and connected workflow guide';
+      help.textContent = 'Staff Guide';
       help.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;padding:0 14px;border:1px solid #2563eb;border-radius:4px;background:#2563eb;color:#fff;font:700 14px Arial,sans-serif;text-decoration:none;white-space:nowrap;cursor:pointer;';
     }
     help.style.background = '#2563eb';

@@ -5,8 +5,8 @@ const path = require('node:path');
 const output = path.resolve(__dirname, '../public/staff-button-guide.pdf');
 const htmlPath = path.resolve(__dirname, '../public/staff-button-guide.html');
 const pages = [
-  ['Opening Help in Omni', 'Tampermonkey | Top of the quote or sales-order action area', [
-    ['Help', 'Opens the Living Culture staff reference in a popup over the current Omni screen.', 'Click Help on an Omni quote or sales order. Choose a topic from the contents. Click Close or press Escape to return to your quote or sales order.', 'Help is available without completing the HubSpot step.'],
+  ['Opening Staff Guide in Omni', 'Tampermonkey | Top of the quote or sales-order action area', [
+    ['Staff Guide', 'Opens the Living Culture staff reference in a popup over the current Omni screen.', 'Click Staff Guide on an Omni quote or sales order. Choose Using Omni for daily instructions or How Everything Connects for the connection diagram. Click Close or press Escape to return to your quote or sales order.', 'Staff Guide is available without completing the HubSpot step.'],
     ['Download PDF', 'Opens a printable copy of the staff guide.', 'Use Download PDF in the guide toolbar to open the document, then use your browser or PDF viewer to save or print it.', 'The online guide is the shared reference for staff.'],
     ['Contents / Topic links', 'Jump directly to a section of the guide.', 'Select a screen or topic in the contents. Use Contents in the toolbar to return to the topic list.', 'Buttons can vary by screen, document type and staff permissions.'],
     ['Search / Clear search', 'Find button instructions by name, task or screen.', 'Type in Search help to filter the instructions as you type. Use the clear icon or Contents to show all topics again.', 'Search includes button names, descriptions and instructions.'],
