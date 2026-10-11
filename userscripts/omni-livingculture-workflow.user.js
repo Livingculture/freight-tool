@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.126
+// @version      0.1.127
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -4880,7 +4880,9 @@
   function openIssueReportPopup() {
     const heading = omniHeadingDraft();
     const url = new URL('issue-report.html', WORKFLOW_PLANNER_URL);
-    url.searchParams.set('order', heading.orderId);
+    const nativeHeading = document.getElementById('lc-omni-report-issue')?.parentElement;
+    const order = nativeHeading ? extractOrderId(issueReportHeadingText(nativeHeading)) : heading.orderId;
+    url.searchParams.set('order', /^NZSO-\d+$/i.test(order) ? order : '');
     const customer = heading.customerName || readOmniControlByLabel('Selected Customer') || readValueNearLabel('Selected Customer') || readOmniControlByLabel('Customer') || readValueNearLabel('Customer');
     url.searchParams.set('customer', clean(customer));
     url.searchParams.set('sourceUrl', location.href);
@@ -4890,15 +4892,21 @@
     popup.focus();
   }
 
+  function issueReportHeadingText(node) {
+    return clean(Array.from(node.childNodes).filter(child => child.id !== 'lc-omni-report-issue').map(child => child.textContent || '').join(' '));
+  }
+
   function addIssueReportButton() {
     if(!isOmniPage()) return;
     const draft = omniHeadingDraft();
     let button = document.getElementById('lc-omni-report-issue');
-    if(draft.documentType !== 'sales-order' || !/^NZSO-\d+$/.test(draft.orderId)){button?.remove();return;}
-    const matches = node => /^(?:Edit|New)\s+Sales Order\b/i.test(clean(node.textContent || '')) && extractOrderId(node.textContent || '') === draft.orderId && clean(node.textContent || '').length < 350;
-    const heading = Array.from(document.querySelectorAll('h1,h2,h3,h4,[role="heading"],div,span,td'))
+    const matches = node => {
+      const text=issueReportHeadingText(node), order=extractOrderId(text);
+      return /^(?:Edit|New)\s+(?:Quote|Sales Order)\b/i.test(text) && (!order || !draft.orderId || order===draft.orderId) && text.length<350;
+    };
+    const heading = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"],div,span,td'))
       .find(node => !node.closest('#lc-omni-job-progress') && isVisible(node) && matches(node) && !Array.from(node.children).some(matches));
-    if(!heading) return;
+    if(!heading){button?.remove();return;}
     if(!button){
       button = document.createElement('button');button.id = 'lc-omni-report-issue';button.type = 'button';
       button.textContent = 'Report Issue';button.title = 'Report missing quote items, production, assembly, product or system problems';
