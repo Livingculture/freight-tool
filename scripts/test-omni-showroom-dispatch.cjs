@@ -36,13 +36,13 @@ const attempts = 'const collectionDispatchAttempts = new Set();let omniQuoteConv
     assert.equal(await page.evaluate(() => requests.length), 1, 'Concurrent lookups do not duplicate requests');
     assert.equal(await page.evaluate(() => JSON.parse(requests[0].data).action),'fulfillment-dispatch');
     await page.evaluate(c => requests[0].onload({ status: 200, responseText: JSON.stringify({ fulfillmentDispatch: {orderNumber:c.orderNumber,dispatchedAt:c.collectedAt} }) }), collected);
-    assert.equal(await page.locator('#dispatch').inputValue(), '9-10-2026', 'Use Auckland collection date, not host timezone or today');
+    assert.equal(await page.locator('#dispatch').inputValue(), '09-10-2026', 'Use Auckland collection date, not host timezone or today');
     assert.equal(await page.locator('#dispatch-time').inputValue(), '1:59 am');
     assert.equal(await page.locator('#stage').inputValue(),'9','Workflow completion selects Dispatched');
     await page.evaluate(() => document.getElementById('stage').value='7');
     assert.equal(await page.evaluate(c=>applyOmniWorkflowDispatch(c),{orderNumber:collected.orderNumber,dispatchedAt:'2026-10-08T12:59:02.000Z'}),true,'Existing dispatch date does not prevent stage update');
     assert.equal(await page.locator('#stage').inputValue(),'9');
-    assert.equal(await page.locator('#dispatch').inputValue(),'9-10-2026','Existing dispatch date is preserved during stage update');
+    assert.equal(await page.locator('#dispatch').inputValue(),'09-10-2026','Existing dispatch date is preserved during stage update');
     assert.equal(await page.evaluate(()=>applyOmniWorkflowDispatch(null)),false,'Partial or incomplete jobs return no completion and cannot set Dispatched');
     assert.equal(await page.evaluate(c=>applyOmniWorkflowDispatch(c),{orderNumber:'NZSO-155160',dispatchedAt:collected.collectedAt}),false,'Near-number orders never change the dropdown');
     assert.equal(await page.locator('#invoice').inputValue(), '7-10-2026', 'Invoice Date is untouched');
@@ -123,6 +123,25 @@ const attempts = 'const collectionDispatchAttempts = new Set();let omniQuoteConv
       assert.equal(await page.evaluate(p=>applyOmniWorkflowResponse(p),deliveryInstruction),true,`Delivery and collection match ${label}`);
       assert.equal(await page.locator('#stage').inputValue(),'9');
     }
+    await page.evaluate(()=>{
+      const date=document.getElementById('dispatch'),time=document.getElementById('dispatch-time');
+      date.type='text';date.readOnly=true;date.value='';date.classList.add('hasDatepicker');
+      time.type='text';time.value='1:42 pm';date.parentElement.appendChild(date);
+      date.parentElement.style.display='flex';date.style.order='0';time.style.order='1';
+      window.calendarCalls=0;
+      window.jQuery=input=>({data:name=>name==='datepicker'?{}:null,hasClass:name=>input.classList.contains(name),datepicker(command,day){
+        if(command!=='setDate')throw Error('Unexpected widget command');
+        calendarCalls++;input.value=`${String(day.getDate()).padStart(2,'0')}-${String(day.getMonth()+1).padStart(2,'0')}-${day.getFullYear()}`;return this;
+      }});
+    });
+    const calendarCompletion={orderNumber:collected.orderNumber,dispatchedAt:'2026-10-12T00:42:00.000Z'};
+    assert.equal(await page.evaluate(()=>omniFullyDispatchedInputs().map(input=>input.id).join(',')),'dispatch,dispatch-time','A prefilled time and reversed DOM order cannot masquerade as the date');
+    assert.equal(await page.evaluate(c=>fillOmniShowroomDispatch(c),calendarCompletion),true,'A readonly calendar-managed date is filled through its widget');
+    assert.equal(await page.locator('#dispatch').inputValue(),'12-10-2026');
+    assert.equal(await page.locator('#dispatch-time').inputValue(),'1:42 pm','Existing native time is retained');
+    assert.equal(await page.evaluate(()=>calendarCalls),1);
+    assert.equal(await page.locator('#invoice').inputValue(),'7-10-2026','Invoice Date remains untouched');
+    assert.equal(await page.evaluate(()=>saved),0,'Calendar events never submit the order');
     console.log('PASS: Completion and explicit reversal synchronize native Omni stage/date fields without auto-saving or warning loops. Browser/API mocked.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

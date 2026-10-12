@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.135
+// @version      0.1.136
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -1804,7 +1804,13 @@
         return field.left >= rect.left - 4 && field.left < rect.left + 200 && field.top >= rect.bottom - 4 && field.top < rect.bottom + 120;
       }).sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top || a.getBoundingClientRect().left - b.getBoundingClientRect().left);
     }
-    return controls;
+    return controls.filter(input => input instanceof HTMLInputElement && !['hidden','image','button','submit'].includes(input.type)).sort((a, b) => {
+      const timeField = input => input.type === 'time' || /time|hour|minute/i.test(`${input.id} ${input.name} ${input.getAttribute('aria-label') || ''}`)
+        || /^\d{1,2}:\d{2}/.test(clean(input.value));
+      const timeDifference = Number(timeField(a)) - Number(timeField(b));
+      const first = a.getBoundingClientRect(), second = b.getBoundingClientRect();
+      return timeDifference || first.top - second.top || first.left - second.left;
+    });
   }
 
   function omniFullyDispatchedState() {
@@ -2092,12 +2098,20 @@
     const collected = new Date(collection.dispatchedAt || collection.collectedAt);
     if (!Number.isFinite(collected.getTime())) return false;
     const [dateInput, timeInput] = omniFullyDispatchedInputs();
-    if (!dateInput || dateInput.disabled || dateInput.readOnly || clean(dateInput.value)) return false;
+    if (!dateInput || dateInput.disabled || clean(dateInput.value)) return false;
+    let jq = null, kendo = null, datepicker = false;
+    try {
+      jq = typeof window.jQuery === 'function' ? window.jQuery(dateInput) : null;
+      kendo = jq?.data?.('kendoDatePicker');
+      datepicker = typeof jq?.datepicker === 'function' && (jq.hasClass?.('hasDatepicker') || jq.data?.('datepicker'));
+    } catch {}
+    const flatpickr = dateInput._flatpickr;
+    if (dateInput.readOnly && !kendo?.value && !datepicker && !flatpickr?.setDate) return false;
     if (!omniCollectionDispatchAllowed()) {
       if (omniQuoteConversionLoaded || new URL(window.location.href).searchParams.get('ConvertQuoteToSalesOrder')?.toLowerCase() === 'yes'
         || !collection.dispatchedAt || omniWorkflowStageKey(omniWorkflowStage()) !== 'dispatched') return false;
     }
-    if (!claimOmniCollectionDispatch(collection)) return false;
+    if (!claimOmniCollectionDispatch(collection, 'date-v2')) return false;
     const parts = Object.fromEntries(new Intl.DateTimeFormat('en-NZ', { timeZone: 'Pacific/Auckland',
       year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
       .formatToParts(collected).map(part => [part.type, part.value]));
@@ -2106,7 +2120,19 @@
       input.dispatchEvent(new Event('input', { bubbles: true }));
       input.dispatchEvent(new Event('change', { bubbles: true }));
     };
-    set(dateInput, dateInput.type === 'date' ? `${parts.year}-${parts.month}-${parts.day}` : `${Number(parts.day)}-${Number(parts.month)}-${parts.year}`);
+    const day = new Date(Number(parts.year), Number(parts.month) - 1, Number(parts.day), 12);
+    let widgetUsed = false;
+    try {
+      if (kendo?.value) { kendo.value(day); kendo.trigger?.('change'); widgetUsed = true; }
+      else if (datepicker) { jq.datepicker('setDate', day); widgetUsed = true; }
+      else if (flatpickr?.setDate) { flatpickr.setDate(day, true); widgetUsed = true; }
+    } catch (error) { console.warn('[LC Workflow] Dispatch calendar update failed.', error); }
+    if (widgetUsed && clean(dateInput.value)) {
+      dateInput.dispatchEvent(new Event('input', { bubbles:true }));
+      dateInput.dispatchEvent(new Event('change', { bubbles:true }));
+    } else if (!dateInput.readOnly) {
+      set(dateInput, dateInput.type === 'date' ? `${parts.year}-${parts.month}-${parts.day}` : `${parts.day}-${parts.month}-${parts.year}`);
+    }
     if (!clean(dateInput.value)) return false;
     if (timeInput && !timeInput.disabled && !timeInput.readOnly && !clean(timeInput.value)) {
       set(timeInput, timeInput.type === 'time' ? `${parts.hour}:${parts.minute}` : `${Number(parts.hour) % 12 || 12}:${parts.minute} ${Number(parts.hour) < 12 ? 'am' : 'pm'}`);
