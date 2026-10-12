@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture All-in-One
 // @namespace    livingculture
-// @version      0.1.137
+// @version      0.1.138
 // @description  Approved Living Culture Omni, Cin7 Core, Gmail, HubSpot and website tools in one Tampermonkey install.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -23,6 +23,7 @@
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_registerMenuCommand
+// @grant        unsafeWindow
 // @connect      livingculture.co.nz
 // @connect      photon.komoot.io
 // @connect      docs.google.com
@@ -56,7 +57,7 @@
 // @resource     emailHelperCompose https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-email-helper-compose.user.js?v=0.1.45
 // @resource     pdfAttachments https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-pdf-attachments.user.js?v=0.4.9
 // @resource     hubspotShortcut https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-hubspot-shortcut.user.js?v=0.2.0
-// @resource     workflow https://raw.githubusercontent.com/Livingculture/freight-tool/c66249ef31ad7b9ae87db2da68e136e8f35745c0/userscripts/omni-livingculture-workflow.user.js
+// @resource     workflow https://raw.githubusercontent.com/Livingculture/freight-tool/c2e1fe17eb3e946aa8298944eeccbcca490d24db/userscripts/omni-livingculture-workflow.user.js
 // @resource     workflowNavigation https://raw.githubusercontent.com/Livingculture/freight-tool/9c31f55dd66ffdcf3716c5582f6e1351aa0f4e37/userscripts/omni-workflow-navigation.user.js
 // @resource     warrantyGuide https://raw.githubusercontent.com/Livingculture/freight-tool/4c8f7709f96fdbd17c59fa9fe4e81cd5dab6345a/userscripts/omni-warranty-guide.user.js
 // @resource     emailHelperOnly https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-email-helper-only.user.js?v=0.1.1
@@ -1845,10 +1846,10 @@
       const source = GM_getResourceText(component.resource);
       if (!source) throw new Error('Bundled resource is empty');
       const run = new Function(
-        'GM_xmlhttpRequest', 'GM_getValue', 'GM_setValue', 'GM_registerMenuCommand', 'GM_getResourceText',
+        'GM_xmlhttpRequest', 'GM_getValue', 'GM_setValue', 'GM_registerMenuCommand', 'GM_getResourceText', 'unsafeWindow',
         `${source}\n//# sourceURL=lc-all-in-one/${component.file}`
       );
-      run(GM_xmlhttpRequest, GM_getValue, GM_setValue, GM_registerMenuCommand, GM_getResourceText);
+      run(GM_xmlhttpRequest, GM_getValue, GM_setValue, GM_registerMenuCommand, GM_getResourceText, typeof unsafeWindow !== 'undefined' ? unsafeWindow : window);
       status.loaded.push(component.file);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
