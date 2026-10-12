@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.134
+// @version      0.1.135
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -2033,13 +2033,18 @@
     return true;
   }
 
+  function omniWorkflowStageKey(value) {
+    return clean(value).toLowerCase().replace(/\s+/g, ' ').replace(/\s*-\s*wms$/, '')
+      .replace(/^fully\s+dispatched$/, 'dispatched').replace(/^full\s+packed$/, 'fully packed');
+  }
+
   function applyOmniWorkflowDispatch(completion) {
     const heading = omniHeadingDraft();
     if (omniQuoteConversionLoaded || new URL(window.location.href).searchParams.get('ConvertQuoteToSalesOrder')?.toLowerCase() === 'yes') return false;
     if (!isOmniPage() || heading.documentType !== 'sales-order' || completion?.orderNumber !== heading.orderId
       || !Number.isFinite(Date.parse(completion?.dispatchedAt || completion?.collectedAt || ''))) return false;
     const stage = omniWorkflowStageControl();
-    const dispatched = stage && Array.from(stage.options).filter(option => /^(?:fully\s+)?dispatched$/i.test(clean(option.textContent)) && !option.disabled);
+    const dispatched = stage && Array.from(stage.options).filter(option => omniWorkflowStageKey(option.textContent) === 'dispatched' && !option.disabled);
     let changed = false;
     if (stage && !stage.disabled && dispatched.length === 1 && stage.value !== dispatched[0].value
       && claimOmniCollectionDispatch(completion, 'stage')) {
@@ -2054,12 +2059,12 @@
 
   function applyOmniWorkflowResponse(payload) {
     if(Object.prototype.hasOwnProperty.call(payload,'jobProgress'))renderOmniJobProgress(payload.jobProgress);
-    // A fresh full completion supersedes an outstanding reversal from an earlier cycle.
-    if (payload.fulfillmentDispatch || !payload.workflowUndo) return applyOmniWorkflowDispatch(payload.fulfillmentDispatch);
+    // Only a stale reversal is superseded by completion; a fresh Dispatch instruction uses its own ID.
+    if (!payload.workflowUndo || (payload.fulfillmentDispatch && omniWorkflowStageKey(payload.workflowUndo.stage) !== 'dispatched')) return applyOmniWorkflowDispatch(payload.fulfillmentDispatch);
     const heading = omniHeadingDraft(), undo = payload.workflowUndo;
     if (!isOmniPage() || heading.documentType !== 'sales-order' || undo.orderNumber !== heading.orderId || omniQuoteConversionLoaded) return false;
     const stage = omniWorkflowStageControl();
-    const key = value => clean(value).toLowerCase().replace(/\s*-\s*wms$/, '');
+    const key = omniWorkflowStageKey;
     const options = stage && Array.from(stage.options).filter(option => !option.disabled && key(option.textContent) === key(undo.stage));
     if (!stage || stage.disabled || options.length !== 1 || !claimOmniCollectionDispatch({orderNumber:heading.orderId,dispatchedAt:undo.id}, 'undo')) return false;
     claimOmniCollectionDispatch.cycles.set(heading.orderId, undo.id);
@@ -2075,7 +2080,8 @@
     }
     stage.dispatchEvent(new Event('input', {bubbles:true}));
     stage.dispatchEvent(new Event('change', {bubbles:true}));
-    stage.title = 'Reopened from Workflow. Save the Omni order to retain this correction.';
+    stage.title = 'Stage updated from Workflow. Save the Omni order to retain it.';
+    if (key(undo.stage) === 'dispatched' && payload.fulfillmentDispatch) fillOmniShowroomDispatch(payload.fulfillmentDispatch);
     return true;
   }
 
@@ -2089,7 +2095,7 @@
     if (!dateInput || dateInput.disabled || dateInput.readOnly || clean(dateInput.value)) return false;
     if (!omniCollectionDispatchAllowed()) {
       if (omniQuoteConversionLoaded || new URL(window.location.href).searchParams.get('ConvertQuoteToSalesOrder')?.toLowerCase() === 'yes'
-        || !collection.dispatchedAt || !/^(?:fully\s+)?dispatched$/i.test(omniWorkflowStage() || '')) return false;
+        || !collection.dispatchedAt || omniWorkflowStageKey(omniWorkflowStage()) !== 'dispatched') return false;
     }
     if (!claimOmniCollectionDispatch(collection)) return false;
     const parts = Object.fromEntries(new Intl.DateTimeFormat('en-NZ', { timeZone: 'Pacific/Auckland',

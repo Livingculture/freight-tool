@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { chromium } = require('playwright');
 const source = fs.readFileSync('userscripts/omni-livingculture-workflow.user.js', 'utf8');
-const names = ['omniFullyDispatchedInputs', 'omniFullyDispatchedState', 'claimOmniCollectionDispatch', 'fillOmniShowroomDispatch', 'checkOmniShowroomCollection', 'omniCollectionDispatchAllowed', 'omniWorkflowStageControl', 'omniWorkflowStage', 'applyOmniWorkflowDispatch', 'applyOmniWorkflowResponse'];
+const names = ['omniFullyDispatchedInputs', 'omniFullyDispatchedState', 'claimOmniCollectionDispatch', 'fillOmniShowroomDispatch', 'checkOmniShowroomCollection', 'omniCollectionDispatchAllowed', 'omniWorkflowStageControl', 'omniWorkflowStage', 'omniWorkflowStageKey', 'applyOmniWorkflowDispatch', 'applyOmniWorkflowResponse'];
 const functions = names.map(name => {
   const start = source.indexOf(`  function ${name}(`);
   const next = source.slice(start + 1).search(/\n  (?:async )?function /);
@@ -112,6 +112,17 @@ const attempts = 'const collectionDispatchAttempts = new Set();let omniQuoteConv
     await page.evaluate(()=>{collectionDispatchAttempts.clear();claimOmniCollectionDispatch.cycles=new Map();document.getElementById('stage').value='7';document.getElementById('dispatch').value='';});
     assert.equal(await page.evaluate(p=>applyOmniWorkflowResponse(p),completedAgain),false,'Completion guard survives reload within the new cycle');
     assert.equal(await page.evaluate(p=>applyOmniWorkflowResponse(p),{workflowUndo:{...reversal.workflowUndo,id:'undo-2',orderNumber:'NZSO-155160'}}),false,'Undo cannot target a near-number order');
+    const explicitDispatch={fulfillmentDispatch:confirmed,workflowUndo:{id:'dispatch-new-id',orderNumber:collected.orderNumber,stage:'Dispatched',clearDispatchDate:false}};
+    assert.equal(await page.evaluate(p=>applyOmniWorkflowResponse(p),explicitDispatch),true,'A new stage instruction is not blocked by an already-claimed completion timestamp');
+    assert.equal(await page.locator('#stage').inputValue(),'9');
+    assert.equal(await page.locator('#dispatch').inputValue(),'2026-10-10');
+    assert.equal(await page.evaluate(p=>applyOmniWorkflowResponse(p),explicitDispatch),false,'The same Dispatch instruction cannot loop through native validation');
+    for(const label of ['Dispatched','Fully Dispatched',' Dispatched - WMS ','Fully   Dispatched - WMS']){
+      await page.evaluate(label=>{document.getElementById('stage').value='7';document.querySelector('#stage option[value="9"]').textContent=label;},label);
+      const deliveryInstruction={fulfillmentDispatch:{orderNumber:collected.orderNumber,dispatchedAt:confirmed.dispatchedAt},workflowUndo:{...explicitDispatch.workflowUndo,id:`delivery-${label}`}};
+      assert.equal(await page.evaluate(p=>applyOmniWorkflowResponse(p),deliveryInstruction),true,`Delivery and collection match ${label}`);
+      assert.equal(await page.locator('#stage').inputValue(),'9');
+    }
     console.log('PASS: Completion and explicit reversal synchronize native Omni stage/date fields without auto-saving or warning loops. Browser/API mocked.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
