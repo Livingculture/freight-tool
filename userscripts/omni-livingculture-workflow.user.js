@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.141
+// @version      0.1.142
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -4853,6 +4853,11 @@
     drawingUrl.searchParams.set('order',progress.orderNumber);
     panel.shadowRoot.querySelector('.steps').innerHTML=progress.steps.map(step=>`<li class="step ${states.has(step.state)?step.state:'pending'}${step.label==='Drawing'&&['Uploaded','Awaiting approval'].includes(step.status)?' drawing-uploaded':''}" title="${escapeHtml(`${step.label}: ${step.status}`)}"><span class="dot" aria-hidden="true">${step.state==='done'||step.label==='Drawing'&&step.status==='Awaiting approval'?'&#10003;':step.state==='skip'?'&ndash;':step.state==='partial'?'&#9680;':step.state==='waiting'?'!':''}</span><strong class="label">${escapeHtml(step.label)}</strong><span class="state">${escapeHtml(step.status)}</span>${step.label==='Drawing'&&step.status==='Required'?`<a class="drawing-upload-link" href="${escapeHtml(drawingUrl.href)}" target="_blank" rel="noopener noreferrer" aria-label="Upload drawing for ${escapeHtml(progress.orderNumber)}">Upload</a>`:''}</li>`).join('');
     panel.shadowRoot.querySelector('.next').textContent=progress.nextAction||'';
+    panel.shadowRoot.querySelector('.drawing-upload-link')?.addEventListener('click',event=>{
+      if(event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
+      event.preventDefault();
+      openDrawingsPopup(progress.orderNumber);
+    });
     panel.shadowRoot.querySelector('.updated').textContent=`Checked ${new Intl.DateTimeFormat('en-NZ',{timeZone:'Pacific/Auckland',hour:'numeric',minute:'2-digit'}).format(new Date())}`;
   }
 
@@ -4966,6 +4971,22 @@
     if (button.parentElement !== toolsBar) toolsBar.appendChild(button);
   }
 
+  function openDrawingsPopup(order) {
+    const url = new URL('/drawings', WORKFLOW_PLANNER_URL);
+    if (/^NZSO-\d+$/i.test(order || '')) url.searchParams.set('order', order.toUpperCase());
+    const width = Math.min(800, screen.availWidth || window.innerWidth);
+    const height = Math.min(760, screen.availHeight || window.innerHeight);
+    const left = Math.round((screen.availLeft || 0) + ((screen.availWidth || width) - width) / 2);
+    const top = Math.round((screen.availTop || 0) + ((screen.availHeight || height) - height) / 2);
+    const drawings = window.open(url.href, '_blank', `popup=yes,width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`);
+    if (!drawings) {
+      window.alert('Please allow popups for go.cin7.com, then click Drawings again.');
+      return;
+    }
+    drawings.opener = null;
+    drawings.focus();
+  }
+
   function addDrawingsButton() {
     if (!isOmniPage()) return;
     const toolsBar = document.getElementById(OMNI_TOOLS_BAR_ID);
@@ -4978,18 +4999,7 @@
       button.textContent = 'Drawings';
       button.title = 'Open job drawings, uploads and signed approvals';
       button.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;border:1px solid #00889f;border-radius:4px;background:#00889f;color:#fff;font:700 14px Arial,sans-serif;cursor:pointer;';
-      button.addEventListener('click', () => {
-        const url = new URL('/drawings', WORKFLOW_PLANNER_URL);
-        const order = omniHeadingDraft().orderId;
-        if (/^NZSO-\d+$/i.test(order)) url.searchParams.set('order', order.toUpperCase());
-        const drawings = window.open(url.href, '_blank');
-        if (!drawings) {
-          window.alert('Please allow popups for go.cin7.com, then click Drawings again.');
-          return;
-        }
-        drawings.opener = null;
-        drawings.focus();
-      });
+      button.addEventListener('click', () => openDrawingsPopup(omniHeadingDraft().orderId));
     }
     if (button.parentElement !== toolsBar) toolsBar.appendChild(button);
   }

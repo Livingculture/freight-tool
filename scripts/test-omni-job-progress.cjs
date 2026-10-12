@@ -5,7 +5,7 @@ const path = require('node:path');
 const ts = require(process.env.TYPESCRIPT_MODULE || path.resolve(__dirname, '../../workflow-speed-fix/node_modules/typescript'));
 const source = fs.readFileSync('userscripts/omni-livingculture-workflow.user.js', 'utf8');
 const parsed = ts.createSourceFile('workflow.js', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
-const names = new Set(['omniJobProgressPlacement', 'alignOmniJobProgress', 'ensureOmniJobProgress', 'omniJobProgressStatus', 'renderOmniJobProgress', 'escapeHtml', 'checkOmniShowroomCollection', 'openJobsOverviewPopup', 'addJobsOverviewButton', 'addDrawingsButton']);
+const names = new Set(['omniJobProgressPlacement', 'alignOmniJobProgress', 'ensureOmniJobProgress', 'omniJobProgressStatus', 'renderOmniJobProgress', 'escapeHtml', 'checkOmniShowroomCollection', 'openJobsOverviewPopup', 'addJobsOverviewButton', 'addDrawingsButton', 'openDrawingsPopup']);
 const functions = [];
 function visit(node) { if (ts.isFunctionDeclaration(node) && names.has(node.name?.text)) functions.push(node.getText(parsed)); ts.forEachChild(node, visit); }
 visit(parsed);
@@ -38,11 +38,11 @@ const progress = { orderNumber: 'NZSO-17003', nextAction: 'Arrange installation'
         const statusBounds=await page.locator('#lc-omni-job-progress li[title="Drawing: Required"] .state').boundingBox();
         const linkBounds=await upload.boundingBox();
         assert(linkBounds.y>=statusBounds.y+statusBounds.height,'Upload is beneath Required');
-        await page.context().route('https://living-culture-workflow.vercel.app/drawings?order=*',route=>route.fulfill({body:'<h1>Drawing Approvals</h1>',contentType:'text/html'}));
-        const [drawings]=await Promise.all([page.context().waitForEvent('page'),upload.click()]);
-        await drawings.waitForLoadState();
-        assert.equal(drawings.url(),'https://living-culture-workflow.vercel.app/drawings?order=NZSO-17003');
-        await drawings.close();
+        await page.evaluate(()=>{window.savedOpen=window.open;window.open=(url,name,features)=>{window.uploadPopupFeatures=features;return savedOpen(url,name,features);};});
+        await upload.click();
+        assert.equal(await page.evaluate(()=>openedUrls.pop()),'https://living-culture-workflow.vercel.app/drawings?order=NZSO-17003');
+        assert((await page.evaluate(()=>uploadPopupFeatures)).includes('popup=yes,width=800'));
+        await page.evaluate(()=>{window.open=savedOpen;opened=0;});
       }
       assert.equal((await dot.textContent()).trim(),['Awaiting approval','Approved'].includes(status)?'\u2713':'');
       assert.equal(await dot.evaluate(el=>getComputedStyle(el).backgroundColor),status==='Approved'?'rgb(38, 128, 91)':status==='Required'?'rgb(255, 255, 255)':'rgb(158, 220, 232)');
@@ -66,6 +66,9 @@ const progress = { orderNumber: 'NZSO-17003', nextAction: 'Arrange installation'
     assert.equal(await page.locator('#lc-omni-drawings-button').count(),1,'No duplicate Drawings buttons');
     await page.locator('#lc-omni-drawings-button').click();
     assert.equal(await page.evaluate(()=>openedUrls.pop()),'https://living-culture-workflow.vercel.app/drawings?order=NZSO-17003');
+    const drawingFeatures=await page.evaluate(()=>popupFeatures.at(-1));
+    assert(drawingFeatures.includes('popup=yes,width=800')&&drawingFeatures.includes('resizable=yes,scrollbars=yes'),'Drawings requests a compact resizable popup');
+    assert(Number(drawingFeatures.match(/height=(\d+)/)[1])<=760);
     await page.evaluate(()=>{heading.orderId='NZSO-17004';heading.documentType='quote';});
     await page.locator('#lc-omni-drawings-button').click();
     assert.equal(await page.evaluate(()=>openedUrls.pop()),'https://living-culture-workflow.vercel.app/drawings?order=NZSO-17004','Reads current quote number on click');
