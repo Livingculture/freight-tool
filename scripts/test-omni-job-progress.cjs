@@ -5,7 +5,7 @@ const path = require('node:path');
 const ts = require(process.env.TYPESCRIPT_MODULE || path.resolve(__dirname, '../../workflow-speed-fix/node_modules/typescript'));
 const source = fs.readFileSync('userscripts/omni-livingculture-workflow.user.js', 'utf8');
 const parsed = ts.createSourceFile('workflow.js', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
-const names = new Set(['omniJobProgressPlacement', 'alignOmniJobProgress', 'ensureOmniJobProgress', 'omniJobProgressStatus', 'renderOmniJobProgress', 'escapeHtml', 'checkOmniShowroomCollection', 'openJobsOverviewPopup', 'addJobsOverviewButton']);
+const names = new Set(['omniJobProgressPlacement', 'alignOmniJobProgress', 'ensureOmniJobProgress', 'omniJobProgressStatus', 'renderOmniJobProgress', 'escapeHtml', 'checkOmniShowroomCollection', 'openJobsOverviewPopup', 'addJobsOverviewButton', 'addDrawingsButton']);
 const functions = [];
 function visit(node) { if (ts.isFunctionDeclaration(node) && names.has(node.name?.text)) functions.push(node.getText(parsed)); ts.forEachChild(node, visit); }
 visit(parsed);
@@ -62,6 +62,17 @@ const progress = { orderNumber: 'NZSO-17003', nextAction: 'Arrange installation'
     await page.evaluate(()=>{const bar=document.createElement('div');bar.id=OMNI_TOOLS_BAR_ID;document.querySelector('form').append(bar);addJobsOverviewButton();addJobsOverviewButton();});
     await page.evaluate(()=>{const open=window.open;window.popupFeatures=[];window.open=(url,name,features)=>{popupFeatures.push(features);return open(url,name,features);};});
     assert.equal(await page.locator('#lc-omni-jobs-overview-button').count(),1);
+    await page.evaluate(()=>{addDrawingsButton();addDrawingsButton();});
+    assert.equal(await page.locator('#lc-omni-drawings-button').count(),1,'No duplicate Drawings buttons');
+    await page.locator('#lc-omni-drawings-button').click();
+    assert.equal(await page.evaluate(()=>openedUrls.pop()),'https://living-culture-workflow.vercel.app/drawings?order=NZSO-17003');
+    await page.evaluate(()=>{heading.orderId='NZSO-17004';heading.documentType='quote';});
+    await page.locator('#lc-omni-drawings-button').click();
+    assert.equal(await page.evaluate(()=>openedUrls.pop()),'https://living-culture-workflow.vercel.app/drawings?order=NZSO-17004','Reads current quote number on click');
+    await page.evaluate(()=>{heading.orderId='';});
+    await page.locator('#lc-omni-drawings-button').click();
+    assert.equal(await page.evaluate(()=>openedUrls.pop()),'https://living-culture-workflow.vercel.app/drawings','Unsaved quotes open the job finder without inventing an NZSO');
+    await page.evaluate(()=>{heading.orderId='NZSO-17003';heading.documentType='sales-order';popupFeatures.length=0;});
     await page.locator('#lc-omni-jobs-overview-button').click();
     assert.equal(await page.evaluate(()=>new URL(openedUrls[0]).pathname),'/jobs');
     assert.equal(await page.evaluate(()=>new URL(openedUrls[0]).searchParams.get('order')), null, 'Jobs Overview opens the all-jobs view without an order filter');

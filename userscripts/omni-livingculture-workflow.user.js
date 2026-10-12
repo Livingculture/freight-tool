@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.140
+// @version      0.1.141
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -1356,7 +1356,8 @@
       document.getElementById(QUOTE_PDF_BUTTON_ID),
       document.getElementById(CLONE_QUOTE_BUTTON_ID),
       document.getElementById(CONVERT_ORDER_BUTTON_ID),
-      document.getElementById('lc-omni-jobs-overview-button')
+      document.getElementById('lc-omni-jobs-overview-button'),
+      document.getElementById('lc-omni-drawings-button')
     ].filter(Boolean);
     if (!buttons.length) return;
 
@@ -4965,6 +4966,34 @@
     if (button.parentElement !== toolsBar) toolsBar.appendChild(button);
   }
 
+  function addDrawingsButton() {
+    if (!isOmniPage()) return;
+    const toolsBar = document.getElementById(OMNI_TOOLS_BAR_ID);
+    if (!toolsBar) return;
+    let button = document.getElementById('lc-omni-drawings-button');
+    if (!button) {
+      button = document.createElement('button');
+      button.id = 'lc-omni-drawings-button';
+      button.type = 'button';
+      button.textContent = 'Drawings';
+      button.title = 'Open job drawings, uploads and signed approvals';
+      button.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;border:1px solid #00889f;border-radius:4px;background:#00889f;color:#fff;font:700 14px Arial,sans-serif;cursor:pointer;';
+      button.addEventListener('click', () => {
+        const url = new URL('/drawings', WORKFLOW_PLANNER_URL);
+        const order = omniHeadingDraft().orderId;
+        if (/^NZSO-\d+$/i.test(order)) url.searchParams.set('order', order.toUpperCase());
+        const drawings = window.open(url.href, '_blank');
+        if (!drawings) {
+          window.alert('Please allow popups for go.cin7.com, then click Drawings again.');
+          return;
+        }
+        drawings.opener = null;
+        drawings.focus();
+      });
+    }
+    if (button.parentElement !== toolsBar) toolsBar.appendChild(button);
+  }
+
   function openIssueReportPopup() {
     const heading = omniHeadingDraft();
     const url = new URL('issue-report.html', WORKFLOW_PLANNER_URL);
@@ -5030,6 +5059,7 @@
       addCloneQuoteButton();
       applyHubSpotApprovalGate();
       addJobsOverviewButton();
+      addDrawingsButton();
       addIssueReportButton();
       addStaffHelpButton();
       layoutOmniWorkflowButtons();
