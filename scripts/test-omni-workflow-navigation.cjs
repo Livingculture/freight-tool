@@ -58,6 +58,31 @@ const body = `<style>body{margin:0;font:13px Arial}nav{background:#06346d;color:
       const menuBounds=await menu.boundingBox();
       assert(menuBounds.x>=0&&menuBounds.x+menuBounds.width<=width&&menuBounds.y+menuBounds.height<=600,'Dropdown stays within the viewport');
       await page.screenshot({path:`/tmp/lc-workflow-nav-${width}.png`});
+      await page.keyboard.press('Escape');
+      await page.evaluate(()=>{
+        const tools=document.createElement('div');tools.id='lc-omni-workflow-tools-bar';
+        tools.style.cssText='display:flex;flex-wrap:wrap;gap:12px;margin-top:220px;padding:8px';
+        const drawings=document.createElement('button');drawings.id='lc-omni-drawings-button';drawings.textContent='Drawings';
+        drawings.style.cssText='width:160px;height:36px';tools.append(drawings);document.body.append(tools);
+      });
+      await page.waitForFunction(()=>document.getElementById('lc-omni-workflow-nav-link').previousElementSibling?.id==='lc-omni-drawings-button');
+      assert.equal(await page.locator('nav #lc-omni-workflow-nav-link').count(),0,'Old top navigation control is removed');
+      assert.equal(await page.locator('nav li').count(),4,'No empty old navigation item');
+      await link.click();
+      await menu.waitFor({state:'visible'});
+      assert.equal(await menu.getByRole('menuitem').count(),10,'Existing menu preserved');
+      const movedMenuBounds=await menu.boundingBox();
+      assert(movedMenuBounds.y>=0&&movedMenuBounds.y+movedMenuBounds.height<=600,'Menu beside lower action row stays within viewport');
+      assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+      await page.screenshot({path:`/tmp/lc-workflow-beside-drawings-${width}.png`});
+      await page.keyboard.press('Escape');
+      await page.evaluate(()=>{
+        const tools=document.getElementById('lc-omni-workflow-tools-bar');
+        const other=document.createElement('span');other.textContent='Refresh';tools.prepend(other);
+      });
+      await page.waitForTimeout(100);
+      assert.equal(await link.count(),1,'Toolbar rerenders do not duplicate the control');
+      assert.equal(await link.evaluate(el=>el.previousElementSibling.id),'lc-omni-drawings-button');
       await page.close();
     }
     const core=await browser.newPage();

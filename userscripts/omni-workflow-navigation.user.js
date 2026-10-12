@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Living Culture Omni Workflow Navigation
 // @namespace    livingculture
-// @version      0.1.2
-// @description  Adds a Workflow pages dropdown to the Omni top navigation.
+// @version      0.1.3
+// @description  Adds an Omni-style Workflow dropdown beside Drawings, with top navigation fallback.
 // @match        https://go.cin7.com/*
 // @run-at       document-idle
 // @grant        none
@@ -41,9 +41,12 @@
     if (!button || !menu || menu.hidden) return;
     const rect = button.getBoundingClientRect();
     menu.style.width = `${Math.min(240, innerWidth - 16)}px`;
-    menu.style.maxHeight = `${Math.max(80, Math.min(440, innerHeight - rect.bottom - 12))}px`;
+    const below = innerHeight - rect.bottom - 12;
+    const above = rect.top - 12;
+    const upwards = below < 160 && above > below;
+    menu.style.maxHeight = `${Math.max(40, Math.min(440, innerHeight - 16, upwards ? above : below))}px`;
     menu.style.left = `${Math.max(8, Math.min(rect.left, innerWidth - menu.offsetWidth - 8))}px`;
-    menu.style.top = `${rect.bottom + 4}px`;
+    menu.style.top = `${Math.max(8, upwards ? rect.top - menu.offsetHeight - 4 : rect.bottom + 4)}px`;
   }
 
   function openMenu(focus = false) {
@@ -78,7 +81,22 @@
 
   function addLink() {
     scheduled = false;
-    if (document.getElementById(id)) return;
+    const drawings = document.getElementById('lc-omni-drawings-button');
+    const toolsBar = document.getElementById('lc-omni-workflow-tools-bar');
+    const placeBesideDrawings = link => {
+      if (!toolsBar || drawings?.parentElement !== toolsBar) return false;
+      if (link.parentElement !== toolsBar || link.previousElementSibling !== drawings) {
+        closeMenu();
+        const oldParent = link.parentElement;
+        link.className = '';
+        link.style.cssText = 'box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:7px;width:160px;min-width:160px;height:36px;flex:0 0 auto;padding:0 14px;border:1px solid #06346d;border-radius:4px;background:#06346d;color:white;font:700 14px Arial,sans-serif;cursor:pointer;white-space:nowrap;';
+        drawings.after(link);
+        if (oldParent?.tagName === 'LI' && !oldParent.childNodes.length) oldParent.remove();
+      }
+      return true;
+    };
+    const existing = document.getElementById(id);
+    if (existing) { placeBesideDrawings(existing); return; }
     closeMenu();
     const controls = Array.from(document.querySelectorAll('a,button')).filter(element => {
       const rect = element.getBoundingClientRect();
@@ -110,6 +128,7 @@
     link.addEventListener('keydown', event => {
       if (event.key === 'ArrowDown') { event.preventDefault(); openMenu(true); }
     });
+    if (placeBesideDrawings(link)) return;
     const more = controls.find(element => nav.contains(element) && label(element) === 'more');
     let anchor = more || newQuote;
     while (anchor.parentElement !== nav) anchor = anchor.parentElement;
