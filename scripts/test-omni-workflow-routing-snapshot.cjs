@@ -25,6 +25,8 @@ const functions = ['quoteWorkflowRequestAction', 'omniWorkflowSnapshot', 'omniWo
       const API_KEY='';const OMNI_ORDER_SYNC_API_URL='https://workflow.test';
       let omniOrderSyncInFlight=false,omniOrderSyncQueued=false,omniOrderSyncTimer=null,lastOmniOrderSyncDigest='';
       const fillOmniShowroomDispatch=()=>{};
+      const omniWorkflowStageKey=value=>String(value||'').toLowerCase();
+      const scheduleOmniDispatchDate=()=>{};
       const applyOmniWorkflowDispatch=()=>{};
       window.progressResponses=[];const applyOmniWorkflowResponse=payload=>progressResponses.push(payload);
       const linkExistingCustomerAlbumToQuote=()=>Promise.resolve();

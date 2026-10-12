@@ -2,11 +2,12 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { chromium } = require('playwright');
 const source = fs.readFileSync('userscripts/omni-livingculture-workflow.user.js', 'utf8');
-const names = ['omniFullyDispatchedInputs', 'omniFullyDispatchedState', 'claimOmniCollectionDispatch', 'fillOmniShowroomDispatch', 'checkOmniShowroomCollection', 'omniCollectionDispatchAllowed', 'omniWorkflowStageControl', 'omniWorkflowStage', 'omniWorkflowStageKey', 'applyOmniWorkflowDispatch', 'applyOmniWorkflowResponse'];
+const names = ['omniFullyDispatchedInputs', 'omniFullyDispatchedState', 'claimOmniCollectionDispatch', 'fillOmniShowroomDispatch', 'checkOmniShowroomCollection', 'omniCollectionDispatchAllowed', 'omniWorkflowStageControl', 'omniWorkflowStage', 'omniWorkflowStageKey', 'applyOmniWorkflowDispatch', 'applyOmniWorkflowResponse', 'scheduleOmniDispatchDate', 'installOmniWorkflowChangeHooks'];
 const functions = names.map(name => {
   const start = source.indexOf(`  function ${name}(`);
   const next = source.slice(start + 1).search(/\n  (?:async )?function /);
-  return source.slice(start, start + next + 1);
+  const extracted = source.slice(start, start + next + 1);
+  return name === 'installOmniWorkflowChangeHooks' ? extracted.split('  let omniQuoteConversionLoaded')[0] : extracted;
 }).join('\n');
 const attempts = 'const collectionDispatchAttempts = new Set();let omniQuoteConversionLoaded=false;let forceShortage=false;const omniHasStockShortage=()=>forceShortage;';
 (async () => {
@@ -16,7 +17,7 @@ const attempts = 'const collectionDispatchAttempts = new Set();let omniQuoteConv
     await page.route('https://go.cin7.com/**', route => route.fulfill({ body: '<html><body></body></html>', contentType: 'text/html' }));
     await page.goto('https://go.cin7.com/test');
     await page.setContent('<div style="display:flex;gap:40px"><div><label><b>2</b> Fully Dispatched</label><div><input id="dispatch"><input id="dispatch-time"></div></div><div><label>Invoice Date</label><div><input id="invoice" value="7-10-2026"><input value="8:36 pm"></div></div></div><button id="save">Save As Draft</button>');
-    await page.addScriptTag({ content: `const clean=value=>String(value||'').trim();const normalizeLabel=value=>clean(value).toLowerCase();const isVisible=node=>node.getBoundingClientRect().width>0&&node.getBoundingClientRect().height>0;const isOmniPage=()=>true;let heading={orderId:'NZSO-15516',documentType:'sales-order'};const omniHeadingDraft=()=>heading;const API_KEY='';const OMNI_ORDER_SYNC_API_URL='https://workflow.test/api/omni/orders';let requests=[];let saved=0;let changes=0;document.getElementById('save').onclick=()=>saved++;document.getElementById('dispatch').onchange=()=>changes++;const GM_xmlhttpRequest=options=>requests.push(options);${attempts}${functions}` });
+    await page.addScriptTag({ content: `const clean=value=>String(value||'').trim();const normalizeLabel=value=>clean(value).toLowerCase();const isVisible=node=>node.getBoundingClientRect().width>0&&node.getBoundingClientRect().height>0;const isOmniPage=()=>true;let heading={orderId:'NZSO-15516',documentType:'sales-order'};const omniHeadingDraft=()=>heading;const API_KEY='';const OMNI_ORDER_SYNC_API_URL='https://workflow.test/api/omni/orders';let requests=[];let saved=0;let changes=0;let syncs=0;const scheduleOmniWorkflowSync=()=>syncs++;document.getElementById('save').onclick=()=>saved++;document.getElementById('dispatch').onchange=()=>changes++;const GM_xmlhttpRequest=options=>requests.push(options);${attempts}${functions}` });
     const collected = { orderNumber: 'NZSO-15516', collectedAt: '2026-10-08T12:59:00.000Z' };
     await page.evaluate(() => {
       const date=document.getElementById('dispatch');
@@ -130,6 +131,7 @@ const attempts = 'const collectionDispatchAttempts = new Set();let omniQuoteConv
       date.parentElement.style.display='flex';date.style.order='0';time.style.order='1';
       window.calendarCalls=0;
       window.jQuery=input=>({data:name=>name==='datepicker'?{}:null,hasClass:name=>input.classList.contains(name),datepicker(command,day){
+        if(command==='option')return ()=>{window.calendarSelects=(window.calendarSelects||0)+1;};
         if(command!=='setDate')throw Error('Unexpected widget command');
         calendarCalls++;input.value=`${String(day.getDate()).padStart(2,'0')}-${String(day.getMonth()+1).padStart(2,'0')}-${day.getFullYear()}`;return this;
       }});
@@ -140,8 +142,38 @@ const attempts = 'const collectionDispatchAttempts = new Set();let omniQuoteConv
     assert.equal(await page.locator('#dispatch').inputValue(),'12-10-2026');
     assert.equal(await page.locator('#dispatch-time').inputValue(),'1:42 pm','Existing native time is retained');
     assert.equal(await page.evaluate(()=>calendarCalls),1);
+    assert.equal(await page.evaluate(()=>calendarSelects),1,'Native calendar selection handler receives the date');
     assert.equal(await page.locator('#invoice').inputValue(),'7-10-2026','Invoice Date remains untouched');
     assert.equal(await page.evaluate(()=>saved),0,'Calendar events never submit the order');
+    await page.evaluate(()=>{
+      clearTimeout(scheduleOmniDispatchDate.timer);
+      document.getElementById('dispatch').value='';
+      document.getElementById('stage').value='7';
+      document.querySelector('#stage option[value="9"]').textContent='Dispatched';
+      window.jQuery.active=1;
+      installOmniWorkflowChangeHooks();
+    });
+    await page.locator('#stage').selectOption('9');
+    assert.equal(await page.locator('#stage').inputValue(),'9','Dropdown selects Dispatched');
+    assert.equal(await page.evaluate(()=>Boolean(scheduleOmniDispatchDate.timer)),true,'Native stage selection schedules a date update');
+    await page.waitForTimeout(1700);
+    assert.equal(await page.locator('#dispatch').inputValue(),'','Date waits until native stage requests finish');
+    await page.evaluate(()=>window.jQuery.active=0);
+    await page.waitForFunction(()=>document.getElementById('dispatch').value!=='');
+    assert.equal(await page.evaluate(()=>omniFullyDispatchedState()),true,'A direct Omni Dispatched selection fills its date');
+    const settled={orderNumber:collected.orderNumber,dispatchedAt:'2026-10-12T03:00:00.000Z'};
+    await page.evaluate(c=>{
+      document.getElementById('dispatch').value='';
+      fillOmniShowroomDispatch(c);
+      scheduleOmniDispatchDate(c);
+      setTimeout(()=>document.getElementById('dispatch').value='',100);
+    },settled);
+    await page.waitForTimeout(1800);
+    assert.equal(await page.locator('#dispatch').inputValue(),'12-10-2026','One settled update repairs a date cleared by the native stage refresh');
+    await page.evaluate(c=>{document.getElementById('dispatch').value='';scheduleOmniDispatchDate(c);document.getElementById('stage').value='7';}, {...settled,dispatchedAt:'2026-10-12T04:00:00.000Z'});
+    await page.waitForTimeout(1800);
+    assert.equal(await page.locator('#dispatch').inputValue(),'','A stage reversal cancels deferred date filling');
+    assert.equal(await page.evaluate(()=>saved),0,'Direct stage and settled date changes do not auto-save');
     console.log('PASS: Completion and explicit reversal synchronize native Omni stage/date fields without auto-saving or warning loops. Browser/API mocked.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

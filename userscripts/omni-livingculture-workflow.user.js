@@ -1,13 +1,14 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.136
+// @version      0.1.138
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @match        https://go.cin7.com/Cloud/ShoppingCartAdmin/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getResourceText
+// @grant        unsafeWindow
 // @resource     staffReps https://raw.githubusercontent.com/Livingculture/freight-tool/3cc7c5d5391066307b53282bd4cd89a63adc99ea/userscripts/livingculture-reps.json
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
@@ -1977,6 +1978,9 @@
   function installOmniWorkflowChangeHooks() {
     document.addEventListener('change', (event) => {
       if (!(event.target instanceof HTMLSelectElement)) return;
+      if (event.target === omniWorkflowStageControl() && omniWorkflowStageKey(omniWorkflowStage()) === 'dispatched') {
+        scheduleOmniDispatchDate({ orderNumber:omniHeadingDraft().orderId, dispatchedAt:new Date().toISOString() });
+      }
       scheduleOmniWorkflowSync(350, true);
     }, true);
     document.addEventListener('visibilitychange', () => {
@@ -2044,6 +2048,22 @@
       .replace(/^fully\s+dispatched$/, 'dispatched').replace(/^full\s+packed$/, 'fully packed');
   }
 
+  function scheduleOmniDispatchDate(completion) {
+    clearTimeout(scheduleOmniDispatchDate.timer);
+    let waits = 0;
+    const settle = () => {
+      if (omniHeadingDraft().orderId !== completion.orderNumber || omniWorkflowStageKey(omniWorkflowStage()) !== 'dispatched') return;
+      const pageWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+      if (pageWindow.jQuery?.active > 0) {
+        if (waits++ < 5) scheduleOmniDispatchDate.timer = setTimeout(settle, 1000);
+        return;
+      }
+      fillOmniShowroomDispatch(completion, 'date-settled-v3');
+      scheduleOmniWorkflowSync(350, true);
+    };
+    scheduleOmniDispatchDate.timer = setTimeout(settle, 1500);
+  }
+
   function applyOmniWorkflowDispatch(completion) {
     const heading = omniHeadingDraft();
     if (omniQuoteConversionLoaded || new URL(window.location.href).searchParams.get('ConvertQuoteToSalesOrder')?.toLowerCase() === 'yes') return false;
@@ -2060,7 +2080,9 @@
       stage.title = 'Dispatched from Workflow completion. Save the Omni order to retain it.';
       changed = true;
     }
-    return fillOmniShowroomDispatch(completion) || changed;
+    const filled = fillOmniShowroomDispatch(completion);
+    if (changed || filled) scheduleOmniDispatchDate(completion);
+    return filled || changed;
   }
 
   function applyOmniWorkflowResponse(payload) {
@@ -2087,11 +2109,14 @@
     stage.dispatchEvent(new Event('input', {bubbles:true}));
     stage.dispatchEvent(new Event('change', {bubbles:true}));
     stage.title = 'Stage updated from Workflow. Save the Omni order to retain it.';
-    if (key(undo.stage) === 'dispatched' && payload.fulfillmentDispatch) fillOmniShowroomDispatch(payload.fulfillmentDispatch);
+    if (key(undo.stage) === 'dispatched' && payload.fulfillmentDispatch) {
+      fillOmniShowroomDispatch(payload.fulfillmentDispatch);
+      scheduleOmniDispatchDate(payload.fulfillmentDispatch);
+    }
     return true;
   }
 
-  function fillOmniShowroomDispatch(collection) {
+  function fillOmniShowroomDispatch(collection, attemptKind = 'date-v3') {
     const heading = omniHeadingDraft();
     if (!isOmniPage() || heading.documentType !== 'sales-order' || !collection
       || collection.orderNumber !== heading.orderId || !(collection.dispatchedAt || collection.collectedAt)) return false;
@@ -2101,7 +2126,8 @@
     if (!dateInput || dateInput.disabled || clean(dateInput.value)) return false;
     let jq = null, kendo = null, datepicker = false;
     try {
-      jq = typeof window.jQuery === 'function' ? window.jQuery(dateInput) : null;
+      const pageWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+      jq = typeof pageWindow.jQuery === 'function' ? pageWindow.jQuery(dateInput) : null;
       kendo = jq?.data?.('kendoDatePicker');
       datepicker = typeof jq?.datepicker === 'function' && (jq.hasClass?.('hasDatepicker') || jq.data?.('datepicker'));
     } catch {}
@@ -2111,7 +2137,7 @@
       if (omniQuoteConversionLoaded || new URL(window.location.href).searchParams.get('ConvertQuoteToSalesOrder')?.toLowerCase() === 'yes'
         || !collection.dispatchedAt || omniWorkflowStageKey(omniWorkflowStage()) !== 'dispatched') return false;
     }
-    if (!claimOmniCollectionDispatch(collection, 'date-v2')) return false;
+    if (!claimOmniCollectionDispatch(collection, attemptKind)) return false;
     const parts = Object.fromEntries(new Intl.DateTimeFormat('en-NZ', { timeZone: 'Pacific/Auckland',
       year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
       .formatToParts(collected).map(part => [part.type, part.value]));
@@ -2124,7 +2150,12 @@
     let widgetUsed = false;
     try {
       if (kendo?.value) { kendo.value(day); kendo.trigger?.('change'); widgetUsed = true; }
-      else if (datepicker) { jq.datepicker('setDate', day); widgetUsed = true; }
+      else if (datepicker) {
+        jq.datepicker('setDate', day);
+        const onSelect = jq.datepicker('option', 'onSelect');
+        if (typeof onSelect === 'function') onSelect.call(dateInput, dateInput.value, jq.data?.('datepicker'));
+        widgetUsed = true;
+      }
       else if (flatpickr?.setDate) { flatpickr.setDate(day, true); widgetUsed = true; }
     } catch (error) { console.warn('[LC Workflow] Dispatch calendar update failed.', error); }
     if (widgetUsed && clean(dateInput.value)) {
@@ -2137,7 +2168,7 @@
     if (timeInput && !timeInput.disabled && !timeInput.readOnly && !clean(timeInput.value)) {
       set(timeInput, timeInput.type === 'time' ? `${parts.hour}:${parts.minute}` : `${Number(parts.hour) % 12 || 12}:${parts.minute} ${Number(parts.hour) < 12 ? 'am' : 'pm'}`);
     }
-    dateInput.title = 'Filled from the Workflow delivery or collection completion date. Save the Omni order to retain it.';
+    dateInput.title = 'Filled from the dispatch or Workflow completion time. Save the Omni order to retain it.';
     return true;
   }
 
