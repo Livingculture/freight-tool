@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.139
+// @version      0.1.140
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -4844,11 +4844,13 @@
     omniJobProgressCache=progress;
     const states=new Set(['done','skip','partial','waiting','active','pending']);
     if(!panel.dataset.drawingStyles){
-      panel.shadowRoot.querySelector('style').textContent += '.drawing-uploaded .dot{background:#9edce8;border-color:#00889f;color:#006d80}.drawing-uploaded .state{color:#006d80;font-weight:700}';
+      panel.shadowRoot.querySelector('style').textContent += '.drawing-uploaded .dot{background:#9edce8;border-color:#00889f;color:#006d80}.drawing-uploaded .state{color:#006d80;font-weight:700}.drawing-upload-link{display:inline-block;margin-top:5px;color:#007c92;font-size:11px;text-decoration:underline}.drawing-upload-link:focus-visible{outline:2px solid #00889f;outline-offset:3px}';
       panel.dataset.drawingStyles='1';
     }
     panel.shadowRoot.querySelector('.steps').style.setProperty('--step-count',String(progress.steps.length));
-    panel.shadowRoot.querySelector('.steps').innerHTML=progress.steps.map(step=>`<li class="step ${states.has(step.state)?step.state:'pending'}${step.label==='Drawing'&&['Uploaded','Awaiting approval'].includes(step.status)?' drawing-uploaded':''}" title="${escapeHtml(`${step.label}: ${step.status}`)}"><span class="dot" aria-hidden="true">${step.state==='done'||step.label==='Drawing'&&step.status==='Awaiting approval'?'&#10003;':step.state==='skip'?'&ndash;':step.state==='partial'?'&#9680;':step.state==='waiting'?'!':''}</span><strong class="label">${escapeHtml(step.label)}</strong><span class="state">${escapeHtml(step.status)}</span></li>`).join('');
+    const drawingUrl=new URL('/drawings',WORKFLOW_PLANNER_URL);
+    drawingUrl.searchParams.set('order',progress.orderNumber);
+    panel.shadowRoot.querySelector('.steps').innerHTML=progress.steps.map(step=>`<li class="step ${states.has(step.state)?step.state:'pending'}${step.label==='Drawing'&&['Uploaded','Awaiting approval'].includes(step.status)?' drawing-uploaded':''}" title="${escapeHtml(`${step.label}: ${step.status}`)}"><span class="dot" aria-hidden="true">${step.state==='done'||step.label==='Drawing'&&step.status==='Awaiting approval'?'&#10003;':step.state==='skip'?'&ndash;':step.state==='partial'?'&#9680;':step.state==='waiting'?'!':''}</span><strong class="label">${escapeHtml(step.label)}</strong><span class="state">${escapeHtml(step.status)}</span>${step.label==='Drawing'&&step.status==='Required'?`<a class="drawing-upload-link" href="${escapeHtml(drawingUrl.href)}" target="_blank" rel="noopener noreferrer" aria-label="Upload drawing for ${escapeHtml(progress.orderNumber)}">Upload</a>`:''}</li>`).join('');
     panel.shadowRoot.querySelector('.next').textContent=progress.nextAction||'';
     panel.shadowRoot.querySelector('.updated').textContent=`Checked ${new Intl.DateTimeFormat('en-NZ',{timeZone:'Pacific/Auckland',hour:'numeric',minute:'2-digit'}).format(new Date())}`;
   }

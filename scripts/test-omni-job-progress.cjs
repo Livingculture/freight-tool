@@ -27,6 +27,23 @@ const progress = { orderNumber: 'NZSO-17003', nextAction: 'Arrange installation'
       const drawing={label:'Drawing',status,state:status==='Approved'?'done':'active'};
       await page.evaluate(value=>renderOmniJobProgress(value),{...progress,steps:[...progress.steps.slice(0,3),drawing,...progress.steps.slice(3)]});
       const dot=page.locator('#lc-omni-job-progress li[title="Drawing: '+status+'"] .dot');
+      const upload=page.locator('#lc-omni-job-progress .drawing-upload-link');
+      assert.equal(await upload.count(),status==='Required'?1:0,'Upload appears only beneath Required');
+      if(status==='Required'){
+        assert.equal(await upload.textContent(),'Upload');
+        assert.equal(await upload.getAttribute('href'),'https://living-culture-workflow.vercel.app/drawings?order=NZSO-17003');
+        assert.equal(await upload.getAttribute('target'),'_blank');
+        assert.equal(await upload.getAttribute('rel'),'noopener noreferrer');
+        assert.equal(await upload.getAttribute('aria-label'),'Upload drawing for NZSO-17003');
+        const statusBounds=await page.locator('#lc-omni-job-progress li[title="Drawing: Required"] .state').boundingBox();
+        const linkBounds=await upload.boundingBox();
+        assert(linkBounds.y>=statusBounds.y+statusBounds.height,'Upload is beneath Required');
+        await page.context().route('https://living-culture-workflow.vercel.app/drawings?order=*',route=>route.fulfill({body:'<h1>Drawing Approvals</h1>',contentType:'text/html'}));
+        const [drawings]=await Promise.all([page.context().waitForEvent('page'),upload.click()]);
+        await drawings.waitForLoadState();
+        assert.equal(drawings.url(),'https://living-culture-workflow.vercel.app/drawings?order=NZSO-17003');
+        await drawings.close();
+      }
       assert.equal((await dot.textContent()).trim(),['Awaiting approval','Approved'].includes(status)?'\u2713':'');
       assert.equal(await dot.evaluate(el=>getComputedStyle(el).backgroundColor),status==='Approved'?'rgb(38, 128, 91)':status==='Required'?'rgb(255, 255, 255)':'rgb(158, 220, 232)');
       for(const width of [1440,820,390]){
