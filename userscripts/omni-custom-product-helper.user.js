@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Custom Product Helper
 // @namespace    livingculture-omni
-// @version      0.1.10
+// @version      0.1.11
 // @description  Shows Living Culture custom products and adds the selected SKU to the next empty Cin7 Omni product line.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-custom-product-helper.user.js
@@ -31,9 +31,26 @@
   function isCode(value) { return /^(?:SK|CS)-?\d{5}$/i.test(clean(value)); }
   function isPrice(value) { return /^\$?\s*\d[\d,]*(?:\.\d+)?\s*$/.test(clean(value)); }
   function csv(line){const out=[];let value='',quoted=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'&&quoted&&line[i+1]==='"'){value+='"';i++;}else if(c==='"')quoted=!quoted;else if(c===','&&!quoted){out.push(value);value='';}else value+=c;}out.push(value);return out;}
+  function sharedBalticMemo(products) {
+    const baltic = products.filter(item => /^(?:SK-?00067|SK-?00072)$/i.test(item.code));
+    const notes = new Set();
+    for (const item of baltic) {
+      const name = item.name.match(/Baltic\s+(?:Manual|Motorised)\s+Pergola/i);
+      if (name) {
+        // Plain-text exports can put a merged memo before the next product name.
+        const displacedMemo = clean(item.name.slice(0, name.index));
+        if (displacedMemo) notes.add(displacedMemo);
+        item.name = name[0];
+      }
+      if (item.memo) notes.add(item.memo);
+    }
+    const memo = [...notes].join(' ');
+    for (const item of baltic) item.memo = memo;
+    return products;
+  }
   function parse(raw) {
     const lines=String(raw||'').split(/\r?\n/).map(clean).filter(Boolean);
-    if (/^name\s*,\s*cs\s*code/i.test(lines[0]||'')) return lines.slice(1).map(line=>{const p=csv(line);return{name:clean(p[0]),code:clean(p[1]),price:clean(p[2]),memo:clean(p.slice(3).join(','))};}).filter(item=>item.name&&isCode(item.code));
+    if (/^name\s*,\s*cs\s*code/i.test(lines[0]||'')) return sharedBalticMemo(lines.slice(1).map(line=>{const p=csv(line);return{name:clean(p[0]),code:clean(p[1]),price:clean(p[2]),memo:clean(p.slice(3).join(','))};}).filter(item=>item.name&&isCode(item.code)));
     let i=lines.findIndex((line,index)=>/^name$/i.test(line)&&/cs\s*code/i.test(lines[index+1]||''));
     i=i<0?0:i+4; const result=[];
     while(i<lines.length){
@@ -41,10 +58,10 @@
       if(!isCode(lines[i])&&isCode(lines[i+1])) name=`${name} ${lines[i++]}`;
       const code=lines[i++]; if(!isCode(code)){ continue; }
       const price=isPrice(lines[i])?lines[i++]:''; const notes=[];
-      while(i<lines.length&&!isCode(lines[i+1])&&!isCode(lines[i+2])) notes.push(lines[i++]);
+      while(i<lines.length&&!isCode(lines[i+1])&&(!isCode(lines[i+2])||/\bMOQ\b|standard colou?r|custom colou?rs|please quote/i.test(lines[i]))) notes.push(lines[i++]);
       result.push({name,code,price,memo:notes.join(' ')});
     }
-    return result.filter(item=>item.name&&item.code);
+    return sharedBalticMemo(result.filter(item=>item.name&&item.code));
   }
   function request(url) { return new Promise((resolve,reject)=>GM_xmlhttpRequest({method:'GET',url:`${url}${url.includes('?')?'&':'?'}cache=${Date.now()}`,timeout:20000,onload:r=>r.status>=200&&r.status<300?resolve(r.responseText||''):reject(new Error(`Product source returned ${r.status}`)),onerror:()=>reject(new Error('Could not load custom products')),ontimeout:()=>reject(new Error('Custom product request timed out'))})); }
   async function load() {
