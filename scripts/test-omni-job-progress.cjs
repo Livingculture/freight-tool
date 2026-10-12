@@ -23,6 +23,21 @@ const progress = { orderNumber: 'NZSO-17003', nextAction: 'Arrange installation'
     await page.evaluate(value => renderOmniJobProgress(value), progress);
     await page.addScriptTag({content:'let currentStage="Fully Packed - WMS";const omniWorkflowStage=()=>currentStage;'});
     assert.equal(await page.locator('#lc-omni-job-progress .step').count(), 11);
+    for(const status of ['Required','Uploaded','Awaiting approval','Approved']){
+      const drawing={label:'Drawing',status,state:status==='Approved'?'done':'active'};
+      await page.evaluate(value=>renderOmniJobProgress(value),{...progress,steps:[...progress.steps.slice(0,3),drawing,...progress.steps.slice(3)]});
+      const dot=page.locator('#lc-omni-job-progress li[title="Drawing: '+status+'"] .dot');
+      assert.equal((await dot.textContent()).trim(),['Awaiting approval','Approved'].includes(status)?'\u2713':'');
+      assert.equal(await dot.evaluate(el=>getComputedStyle(el).backgroundColor),status==='Approved'?'rgb(38, 128, 91)':status==='Required'?'rgb(255, 255, 255)':'rgb(158, 220, 232)');
+      for(const width of [1440,820,390]){
+        await page.setViewportSize({width,height:900});
+        await page.evaluate(()=>ensureOmniJobProgress());
+        assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+        await page.screenshot({path:`/tmp/omni-drawing-${status.replaceAll(' ','-')}-${width}.png`});
+      }
+    }
+    await page.setViewportSize({width:1440,height:900});
+    await page.evaluate(value=>renderOmniJobProgress(value),progress);
     assert.equal(await page.evaluate(() => document.querySelector('h1').nextElementSibling.id), 'lc-omni-job-progress');
     assert.equal(await page.evaluate(() => opened), 0, 'No popup on loading');
     assert.equal(await page.locator('#lc-omni-job-progress button').count(), 0, 'Omni progress does not have a Details button');
