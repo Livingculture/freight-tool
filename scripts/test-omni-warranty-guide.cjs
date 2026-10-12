@@ -22,6 +22,10 @@ const body='<style>body{font:14px Arial;margin:0}.tools{display:flex;flex-wrap:w
       await button.click();const dialog=page.locator('#lc-omni-warranty-dialog');await dialog.waitFor();
       const guide=page.frameLocator('#lc-omni-warranty-dialog iframe');
       const detailed=guide.locator('#detailed-guide');
+      await guide.locator('#quick-guide').waitFor();
+      assert.equal(await guide.getByRole('tab',{name:'Quick Summary',exact:true}).getAttribute('aria-selected'),'true','Quick Summary is the default');
+      assert(!await detailed.isVisible());
+      await guide.getByRole('tab',{name:'Detailed Guide',exact:true}).click();
       await detailed.locator('img').first().waitFor();
       await page.waitForFunction(()=>{const frame=document.querySelector('iframe');return !!frame;});
       assert.equal(await guide.locator('img').count(),3);
@@ -58,7 +62,7 @@ const body='<style>body{font:14px Arial;margin:0}.tools{display:flex;flex-wrap:w
       await guide.locator('summary').focus();await page.keyboard.press('Escape');await dialog.waitFor({state:'detached'});
       assert.equal(await page.evaluate(()=>document.activeElement.id),'lc-omni-warranty-button');
       assert.equal(await page.evaluate(()=>document.body.style.overflow),'');
-      await button.click();await page.getByRole('button',{name:'Close',exact:true}).click();await dialog.waitFor({state:'detached'});
+      await button.click();await guide.locator('#quick-guide').waitFor();assert(!await detailed.isVisible(),'Reopening defaults to Quick Summary');await page.getByRole('button',{name:'Close',exact:true}).click();await dialog.waitFor({state:'detached'});
       await page.evaluate(()=>document.getElementById('lc-omni-warranty-button').remove());await button.waitFor();
       assert.equal(await button.count(),1);assert.deepEqual(errors,[]);await page.close();
     }
