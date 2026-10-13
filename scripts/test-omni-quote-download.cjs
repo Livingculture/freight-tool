@@ -23,6 +23,7 @@ function extract(name) {
         window.saved = 0; window.alerts = []; window.adminRequests = 0; window.pdfUrls = [];
         window.alert = message => window.alerts.push(message);
         window.isHubSpotStepComplete = () => true;
+        window.isQuotePdfUnlocked = () => true;
         window.hubSpotGateOrderId = () => 'NZSO-123';
         window.omniHeadingDraft = () => ({ orderId: 'NZSO-123' });
         window.currentQuotePdfOrderId = () => '388';
@@ -97,17 +98,40 @@ function extract(name) {
     }), 'A missing Dynamic Invoice must not silently select Quote');
     await templates.close();
     console.log('PASS PDF: Exact admin templates, isolated caches, missing-template rejection, menu selection and dismissal');
+    const persistence = await browser.newPage();
+    await persistence.route('https://go.cin7.com/**', route => route.fulfill({ contentType:'text/html', body:'<p>Quote</p>' }));
+    await persistence.goto('https://go.cin7.com/quote/NZSO-123');
+    await persistence.addScriptTag({ content: `const QUOTE_PDF_UNLOCK_PREFIX='test-quote-pdf-unlocked:';
+      window.complete=true;const extractOrderId=value=>String(value||'').match(/NZSO-\\d+/i)?.[0].toUpperCase()||'';
+      const isHubSpotStepComplete=()=>window.complete;
+      ${extract('quotePdfUnlockKey')}
+      ${extract('isQuotePdfUnlocked')}` });
+    assert.equal(await persistence.evaluate(() => isQuotePdfUnlocked('NZSO-123')), true);
+    await persistence.evaluate(() => { window.complete=false; });
+    assert.equal(await persistence.evaluate(() => isQuotePdfUnlocked('NZSO-123')), true, 'Quote download unlock survives leaving and reopening the NZSO');
+    await persistence.close();
+    console.log('PASS PDF: Per-NZSO quote download unlock persists after HubSpot completion');
     const page = await browser.newPage();
     await page.setContent('<button id="pdf">Download Quote</button>');
     await page.evaluate(() => {
-      window.alerts = []; window.alert = message => window.alerts.push(message);
-      window.hubSpotGateOrderId = () => 'NZSO-123'; window.isHubSpotStepComplete = () => false;
-      window.applyHubSpotApprovalGate = () => {};
+      window.alerts = []; window.saved = 0; window.alert = message => window.alerts.push(message);
+      window.docType = 'quote'; window.isQuotePdfUnlocked = () => false;
+      window.hubSpotGateOrderId = () => 'NZSO-123'; window.applyHubSpotApprovalGate = () => {};
+      window.omniHeadingDraft = () => ({ documentType:window.docType, orderId:'NZSO-123' }); window.extractOrderId = () => '';
+      window.currentQuotePdfOrderId = () => '388'; window.quotePdfSidCandidates = () => [];
+      window.prepareQuotePdfLink = async () => 'https://go.cin7.com/pdf';
+      window.fetchSignedQuotePdf = async () => new ArrayBuffer(4000);
+      window.saveQuotePdfBuffer = () => { window.saved++; };
     });
     await page.addScriptTag({ content: extract('downloadCurrentQuotePdf') });
     await page.evaluate(() => downloadCurrentQuotePdf(document.getElementById('pdf')));
     assert.equal(await page.evaluate(() => window.alerts.length), 1);
-    assert.equal(await page.locator('iframe').count(), 0, 'HubSpot gate remains enforced');
-    console.log('PASS PDF: HubSpot gate remains enforced');
+    assert.equal(await page.evaluate(() => window.saved), 0, 'Locked quote still follows the HubSpot rule');
+    await page.evaluate(() => { window.docType='sales-order'; window.alerts=[]; downloadCurrentQuotePdf(document.getElementById('pdf'),'invoice'); });
+    await page.waitForFunction(() => window.saved === 1);
+    assert.deepEqual(await page.evaluate(() => window.alerts), []);
+    assert.equal(await page.locator('#pdf').isEnabled(), true);
+    assert.equal(await page.locator('iframe').count(), 0, 'Invoice download does not wait for HubSpot');
+    console.log('PASS PDF: Quote remains gated; invoice is always available');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

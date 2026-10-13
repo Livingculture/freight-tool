@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.144
+// @version      0.1.145
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -62,6 +62,7 @@
   };
   const HUBSPOT_GATE_CLASS = 'lc-omni-hubspot-gated-action';
   const HUBSPOT_GATE_STORAGE_PREFIX = 'lc-omni-hubspot-deal-complete:';
+  const QUOTE_PDF_UNLOCK_PREFIX = 'lc-omni-quote-pdf-unlocked:';
   const completedHubSpotSteps = new Set();
   const hubSpotPrerequisiteClicks = new Map();
   let hubSpotPrerequisiteHooksInstalled = false;
@@ -210,6 +211,21 @@
     }
   }
 
+  function quotePdfUnlockKey(orderId) {
+    const normalizedOrderId = extractOrderId(orderId);
+    return normalizedOrderId ? `${QUOTE_PDF_UNLOCK_PREFIX}${normalizedOrderId}` : '';
+  }
+
+  function isQuotePdfUnlocked(orderId) {
+    const key = quotePdfUnlockKey(orderId);
+    if (!key) return false;
+    if (isHubSpotStepComplete(orderId)) {
+      try { window.localStorage.setItem(key, '1'); } catch (error) { /* HubSpot completion still unlocks this page. */ }
+      return true;
+    }
+    try { return window.localStorage.getItem(key) === '1'; } catch (error) { return false; }
+  }
+
   function markHubSpotStepComplete(orderId) {
     const key = hubSpotGateStorageKey(orderId);
     if (!key) return;
@@ -217,6 +233,7 @@
     void prepareQuotePdfLink(currentQuotePdfOrderId()).catch(() => {});
     try {
       window.localStorage.setItem(key, '1');
+      window.localStorage.setItem(quotePdfUnlockKey(orderId), '1');
     } catch (error) {
       // The controls still unlock for the current page even if storage is unavailable.
     }
@@ -305,7 +322,8 @@
     const downloadButton = document.getElementById(QUOTE_PDF_BUTTON_ID);
     if (downloadButton) {
       downloadButton.classList.remove(HUBSPOT_GATE_CLASS);
-      if (!unlocked) {
+      const downloadUnlocked = omniHeadingDraft().documentType === 'sales-order' || isQuotePdfUnlocked(currentOrderId);
+      if (!downloadUnlocked) {
         downloadButton.dataset.hubspotLocked = '1';
         downloadButton.disabled = true;
         downloadButton.title = 'Confirm the HubSpot Deal step before downloading this quote.';
@@ -3633,12 +3651,13 @@
 
   async function downloadCurrentQuotePdf(button, template = 'quote') {
     const downloadLabel = template === 'invoice' ? 'Download Invoice' : 'Download Quote';
-    if (!isHubSpotStepComplete(hubSpotGateOrderId())) {
+    const heading = omniHeadingDraft();
+    if (heading.documentType !== 'sales-order' && !isQuotePdfUnlocked(hubSpotGateOrderId())) {
       applyHubSpotApprovalGate();
       window.alert('Confirm the HubSpot Deal step before downloading this quote.');
       return;
     }
-    const quoteNumber = omniHeadingDraft().orderId || extractOrderId(document.body?.innerText || '');
+    const quoteNumber = heading.orderId || extractOrderId(document.body?.innerText || '');
     if (!quoteNumber) {
       window.alert('The NZSO quote number could not be found on this page.');
       return;
@@ -4682,7 +4701,8 @@
       return;
     }
     const hubspotButton = document.getElementById(HUBSPOT_BUTTON_ID);
-    if (!hubspotButton) return;
+    const anchor = hubspotButton || document.getElementById(QUOTE_REVIEW_BUTTON_ID) || document.getElementById(BUTTON_ID) || findOmniActionAnchor();
+    if (!anchor) return;
     let button = document.getElementById(QUOTE_PDF_BUTTON_ID);
     if (!button) {
       button = document.createElement('button');
@@ -4695,8 +4715,8 @@
       wireActionButton(button);
     }
     button.classList.remove(HUBSPOT_GATE_CLASS);
-    if (!button.disabled) button.textContent = omniHeadingDraft().documentType === 'sales-order' ? 'Download Invoice' : 'Download Quote';
-    placeOmniActionButton(button, hubspotButton);
+    if (button.textContent !== 'Downloading…') button.textContent = omniHeadingDraft().documentType === 'sales-order' ? 'Download Invoice' : 'Download Quote';
+    placeOmniActionButton(button, anchor);
   }
 
   function fillOmniInvoiceDate() {
