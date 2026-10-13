@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const ts = require('../../workflow-speed-fix/node_modules/typescript');
+const path = require('node:path');
+const ts = require(process.env.TYPESCRIPT_MODULE || path.resolve(__dirname, '../../workflow/node_modules/typescript'));
 const { chromium } = require('playwright');
 const source = fs.readFileSync('userscripts/omni-livingculture-workflow.user.js', 'utf8');
 const warranty = fs.readFileSync('userscripts/omni-warranty-guide.user.js', 'utf8');
@@ -21,7 +22,7 @@ assert(!layout.includes('document.getElementById(STAFF_HELP_BUTTON_ID)'), 'Foote
       const page = await browser.newPage({ viewport: { width, height: 900 } });
       const errors = [];
       page.on('pageerror', error => errors.push(error.message));
-      await page.route('https://go.cin7.com/**', route => route.fulfill({ contentType: 'text/html', body: '<style>body{margin:16px;font:16px Arial}h4{box-sizing:border-box;font-size:20px}button{cursor:pointer}</style><h4>Edit Sales Order - Customer - NZSO-17003</h4><div id="lc-omni-workflow-tools-bar"></div>' }));
+      await page.route('https://go.cin7.com/**', route => route.fulfill({ contentType: 'text/html', body: '<style>body{margin:16px;font:16px Arial}h4{box-sizing:border-box;font-size:20px}button{cursor:pointer}#omni-navigation span{display:none}#omni-navigation[data-expanded="true"] span{display:block}</style><aside id="omni-navigation"><span>New Quote</span></aside><h4>Edit Sales Order - Customer - NZSO-17003</h4><div id="lc-omni-workflow-tools-bar"></div>' }));
       await page.route('https://living-culture-*.vercel.app/**', route => route.fulfill({ contentType: 'text/html', body: 'Guide fixture' }));
       await page.goto('https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx?OrderId=406');
       await page.addScriptTag({ content: `
@@ -44,6 +45,13 @@ assert(!layout.includes('document.getElementById(STAFF_HELP_BUTTON_ID)'), 'Foote
       for (const id of ids) assert.equal(await page.locator(`#${id}`).count(), 1);
       assert.equal(await page.locator('#lc-omni-workflow-tools-bar button').count(), 0);
       assert.deepEqual(await page.evaluate(() => omniHeadingDraft()), { customerName:'Customer', orderId:'NZSO-17003', documentType:'sales-order' });
+      await page.evaluate(() => {
+        document.querySelector('#omni-navigation').dataset.expanded='true';
+        addIssueReportButton();addStaffHelpButton();
+      });
+      await page.waitForFunction(() => document.querySelector('#lc-omni-heading-actions #lc-omni-warranty-button'));
+      assert.equal(await page.locator('h4 > #lc-omni-heading-actions').count(), 1, 'Heading actions stay beside the document title when the Omni navigation expands');
+      assert.equal(await page.locator('#omni-navigation #lc-omni-heading-actions').count(), 0, 'Heading actions never move into the expanded Omni navigation');
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Heading actions fit narrow screens');
       await page.screenshot({ path: `/tmp/lc-omni-heading-actions-${width}.png` });
       await page.getByRole('button', { name:'Staff Guide', exact:true }).click();

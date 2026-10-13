@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.143
+// @version      0.1.144
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -5031,10 +5031,18 @@
     let button = document.getElementById('lc-omni-report-issue');
     const matches = node => {
       const text=issueReportHeadingText(node), order=extractOrderId(text);
-      return /^(?:Edit|New)\s+(?:Quote|Sales Order)\b/i.test(text) && (!order || !draft.orderId || order===draft.orderId) && text.length<350;
+      if (!/^(?:Edit|New)\s+(?:Quote|Sales Order)\b/i.test(text) || text.length>=350) return false;
+      // When an NZSO is present, only its exact document title is eligible. This
+      // prevents the expanded Omni navigation's "New Quote" item becoming the
+      // anchor for the Staff Guide, Warranty and Report Issue buttons.
+      if (draft.orderId) return order===draft.orderId;
+      // A genuinely new quote has no NZSO yet, so only accept a semantic page
+      // heading rather than similarly named links or labels in the navigation.
+      return !order && node.matches('h1,h2,h3,h4,h5,h6,[role="heading"]');
     };
-    const heading = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"],div,span,td'))
-      .find(node => !node.closest('#lc-omni-job-progress') && isVisible(node) && matches(node) && !Array.from(node.children).some(matches));
+    const candidates = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"],div,span,td'))
+      .filter(node => !node.closest('#lc-omni-job-progress') && isVisible(node) && matches(node) && !Array.from(node.children).some(matches));
+    const heading = candidates.find(node => node.matches('h1,h2,h3,h4,h5,h6,[role="heading"]')) || candidates[0];
     if(!heading){document.getElementById('lc-omni-heading-actions')?.remove();button?.remove();return;}
     if(!button){
       button = document.createElement('button');button.id = 'lc-omni-report-issue';button.type = 'button';

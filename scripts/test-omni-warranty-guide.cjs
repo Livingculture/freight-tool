@@ -2,7 +2,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const {chromium}=require('playwright');
-const root='/Users/steveforeman/projects/workflow-speed-fix/public';
+const root=process.env.WORKFLOW_PUBLIC_DIR||path.resolve(__dirname,'../../workflow/public');
 const source=fs.readFileSync('userscripts/omni-warranty-guide.user.js','utf8');
 const body='<style>body{font:14px Arial;margin:0}.tools{display:flex;flex-wrap:wrap;gap:10px;padding:20px}.tools button{height:38px}</style><div id="lc-omni-workflow-tools-bar" class="tools"><button>Jobs Overview</button><button>Help</button></div>';
 (async()=>{
