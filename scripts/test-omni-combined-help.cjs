@@ -27,6 +27,7 @@ assert(source.includes("const STAFF_GUIDE_URL = 'https://living-culture-freight.
       const dialog=page.getByRole('dialog',{name:'Living Culture Staff Guide'});
       const guide=page.frameLocator('iframe[title="Living Culture staff reference"]');
       await guide.getByRole('heading',{name:'Using Omni',exact:true}).waitFor();
+      await guide.getByRole('heading',{name:'Drawing approvals',exact:true}).waitFor();
       assert.equal(await guide.getByRole('tab',{name:'Using Omni'}).getAttribute('aria-selected'),'true');
       assert.equal(await guide.locator('#connections-frame').getAttribute('src'),null,'Diagram loads only when selected');
       await page.screenshot({path:`/tmp/omni-combined-help-using-${width}.png`});
@@ -46,11 +47,14 @@ assert(source.includes("const STAFF_GUIDE_URL = 'https://living-culture-freight.
       const reference=guide.frameLocator('#reference-frame');
       await reference.getByRole('searchbox',{name:'Search help'}).fill('Clone Quote');
       assert(await reference.locator('#section-1 .help-item-title').getByText('Clone Quote',{exact:true}).isVisible(),'Existing searchable reference remains available');
+      await reference.getByRole('searchbox',{name:'Search help'}).fill('Prepare Approval Email');
+      assert(await reference.locator('.help-item-title').getByText('Prepare Approval Email / customer response',{exact:true}).isVisible(),'Drawing approval instructions are searchable from the Omni Staff Guide');
       assert.equal(page.context().pages().length,1,'Help stays in one popup');
       await page.evaluate(()=>window.dispatchEvent(new MessageEvent('message',{origin:'https://living-culture-freight.vercel.app',source:window,data:{type:'lc-staff-help-close'}})));
       assert(await dialog.isVisible(),'Forged close messages are ignored');
       await reference.getByRole('searchbox',{name:'Search help'}).focus();await page.keyboard.press('Escape');
       await dialog.waitFor({state:'detached'});
+      await page.waitForFunction(()=>document.body.style.overflow==='');
       assert.equal(await page.evaluate(()=>document.activeElement.id),'help');
       assert.equal(await page.evaluate(()=>document.body.style.overflow),'');
       await help.click();await guide.getByRole('tab',{name:'How Everything Connects'}).click();

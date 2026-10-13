@@ -16,7 +16,7 @@ assert(guide.includes('How to use:'));
 assert(guide.includes('Download PDF'));
 assert(guide.includes('staff-button-guide.pdf'));
 assert(guide.includes('Your daily workflow'));
-assert(source.includes('addStaffHelpButton();\n    layoutOmniWorkflowButtons();'));
+assert(/addStaffHelpButton\(\);\s*layoutOmniWorkflowButtons\(\);/.test(source));
 (async () => {
   const browser = await chromium.launch();
   try {
@@ -151,7 +151,7 @@ assert(source.includes('addStaffHelpButton();\n    layoutOmniWorkflowButtons();'
     await page.getByRole('link', { name: 'Automatic features & common questions', exact: true }).click();
     assert(await page.locator('#guide-automatic-features summary').first().isVisible());
     await page.emulateMedia({ media: 'print' });
-    assert.equal(await page.locator('.sheet:visible').count(), 21, 'Printing includes all topics regardless of online navigation');
+    assert.equal(await page.locator('.sheet:visible').count(), 22, 'Printing includes all topics regardless of online navigation');
     console.log('PASS: Help opens one inline popup with the guide, never a new tab; Close/Escape restore focus and scroll; matching action-row sizes and mobile framing remain correct.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
