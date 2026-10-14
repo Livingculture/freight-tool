@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.148
+// @version      0.1.149
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -9,7 +9,7 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getResourceText
 // @grant        unsafeWindow
-// @resource     staffReps https://raw.githubusercontent.com/Livingculture/freight-tool/3cc7c5d5391066307b53282bd4cd89a63adc99ea/userscripts/livingculture-reps.json
+// @resource     staffReps https://raw.githubusercontent.com/Livingculture/freight-tool/5381f783522d23f0a243b970fa8bd9cf0edd0d74/userscripts/livingculture-reps.json
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @connect      qvoacxmzsmulhnllfntfl.supabase.co

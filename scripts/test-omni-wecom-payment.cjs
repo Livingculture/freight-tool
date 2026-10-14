@@ -36,6 +36,7 @@ const staff = JSON.parse(reps);
     await button.click();
     assert(await page.evaluate(() => document.getElementById('lc-send-as-wecom-menu').parentElement === document.body), 'Menu must escape clipping and transformed payment containers');
     assert.equal(await page.locator('#lc-send-as-wecom-menu button').count(), staff.length);
+    assert.equal(await page.locator('#lc-send-as-wecom-menu').getByRole('button', { name: 'CHCH-Jennifer', exact: true }).count(), 1, 'Jennifer appears in the shared Omni/Core rep menu');
     await page.locator('#lc-send-as-wecom-menu').getByRole('button', { name: 'PEN-Steve', exact: true }).click();
     const preview = page.locator('#lc-wecom-payment-confirm-overlay textarea');
     assert.equal(await preview.inputValue(), 'NZSO-15502 EFTPOS payment $12,899.99 paid in full — Steve, PEN');

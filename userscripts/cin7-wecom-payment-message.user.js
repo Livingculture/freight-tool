@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 WeCom Payment Message Sender
 // @namespace    livingculture
-// @version      4.12
+// @version      4.13
 // @description  Sends a WeCom payment message from Cin7 invoice/payment screen only.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -15,7 +15,7 @@
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getResourceText
-// @resource     staffReps https://raw.githubusercontent.com/Livingculture/freight-tool/3cc7c5d5391066307b53282bd4cd89a63adc99ea/userscripts/livingculture-reps.json
+// @resource     staffReps https://raw.githubusercontent.com/Livingculture/freight-tool/5381f783522d23f0a243b970fa8bd9cf0edd0d74/userscripts/livingculture-reps.json
 // @connect      qyapi.weixin.qq.com
 // ==/UserScript==
 
