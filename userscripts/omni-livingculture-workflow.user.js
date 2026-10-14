@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.145
+// @version      0.1.146
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -40,6 +40,7 @@
   const STAFF_HELP_BAR_ID = 'lc-omni-staff-help-bar';
   const STAFF_HELP_BUTTON_ID = 'lc-omni-staff-help-button';
   const STAFF_HELP_DIALOG_ID = 'lc-omni-staff-help-dialog';
+  const COPY_DELIVERY_BILLING_ID = 'lc-omni-copy-delivery-to-billing';
   const STAFF_GUIDE_URL = 'https://living-culture-freight.vercel.app/omni-help.html';
   const FLOATING_BAR_ID = 'lc-cin7-floating-actions-v1';
   const OVERLAY_ID = 'lc-site-visit-overlay-v2';
@@ -1566,6 +1567,108 @@
       }
     }
     return '';
+  }
+
+  function findOmniSectionHeading(text) {
+    const wanted = normalizeLabel(text);
+    return Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"],legend,div,span'))
+      .filter(isVisible)
+      .filter(node => normalizeLabel(Array.from(node.childNodes).filter(child => !child.id?.startsWith('lc-')).map(child => child.textContent || '').join(' ')) === wanted)
+      .sort((left, right) => Number(!left.matches('h1,h2,h3,h4,h5,h6,[role="heading"],legend')) - Number(!right.matches('h1,h2,h3,h4,h5,h6,[role="heading"],legend')) || left.children.length - right.children.length)[0] || null;
+  }
+
+  function findOmniSectionField(heading, labels) {
+    if (!heading) return null;
+    const wanted = labels.map(normalizeLabel);
+    const headingRect = heading.getBoundingClientRect();
+    const labelNodes = Array.from(document.querySelectorAll('label,legend,span,div,td'))
+      .filter(isVisible)
+      .filter(node => wanted.includes(normalizeLabel(node.textContent || '')))
+      .map(node => ({ node, rect:node.getBoundingClientRect() }))
+      .filter(({ rect }) => rect.top >= headingRect.bottom - 12)
+      .sort((left, right) => {
+        const leftDistance = Math.abs(left.rect.left - headingRect.left) * 2 + Math.max(0, left.rect.top - headingRect.bottom);
+        const rightDistance = Math.abs(right.rect.left - headingRect.left) * 2 + Math.max(0, right.rect.top - headingRect.bottom);
+        return leftDistance - rightDistance;
+      });
+    for (const { node, rect:labelRect } of labelNodes) {
+      const direct = (node instanceof HTMLLabelElement && node.htmlFor ? document.getElementById(node.htmlFor) : null)
+        || node.querySelector?.('input:not([type="hidden"]),textarea,select');
+      if (direct && isVisible(direct)) return direct;
+      const nearby = Array.from(document.querySelectorAll('input:not([type="hidden"]),textarea,select'))
+        .filter(isVisible)
+        .map(control => ({ control, rect:control.getBoundingClientRect() }))
+        .filter(({ rect }) => Math.abs((rect.top + rect.height / 2) - (labelRect.top + labelRect.height / 2)) < 34)
+        .filter(({ rect }) => rect.left >= labelRect.right - 8)
+        .sort((left, right) => Math.abs(left.rect.left - labelRect.right) - Math.abs(right.rect.left - labelRect.right));
+      if (nearby[0]) return nearby[0].control;
+    }
+    return null;
+  }
+
+  function setOmniControlValue(control, value) {
+    if (!control || control.value === value) return;
+    const prototype = control instanceof HTMLSelectElement ? HTMLSelectElement.prototype
+      : control instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+    if (setter) setter.call(control, value);
+    else control.value = value;
+    control.dispatchEvent(new Event('input', { bubbles:true }));
+    control.dispatchEvent(new Event('change', { bubbles:true }));
+  }
+
+  function deliveryBillingFields() {
+    const delivery = findOmniSectionHeading('Delivery Address');
+    const billing = findOmniSectionHeading('Billing Address');
+    if (!delivery || !billing) return null;
+    const definitions = [
+      [['Delivery First Name','First Name'],['Billing First Name','First Name']],
+      [['Delivery Last Name','Last Name'],['Billing Last Name','Last Name']],
+      [['Delivery Company','Company'],['Billing Company','Company']],
+      [['Delivery Address 1'],['Billing Address 1']],
+      [['Delivery Address 2'],['Billing Address 2']],
+      [['Delivery City'],['Billing City']],
+      [['Delivery State/Region'],['Billing State/Region']],
+      [['Delivery Postal Code'],['Billing Postal Code']],
+      [['Delivery Country'],['Billing Country']]
+    ];
+    const fields = definitions.map(([sourceLabels,targetLabels]) => ({
+      source:findOmniSectionField(delivery,sourceLabels), target:findOmniSectionField(billing,targetLabels)
+    }));
+    return fields.some(({ source,target }) => source && target) ? { delivery,billing,fields } : null;
+  }
+
+  function copyDeliveryAddressToBilling() {
+    const address = deliveryBillingFields();
+    if (!address) return false;
+    address.fields.forEach(({ source,target }) => { if (source && target) setOmniControlValue(target, source.value || ''); });
+    return true;
+  }
+
+  function ensureDeliveryBillingCopy() {
+    if (!isOmniPage()) return;
+    const address = deliveryBillingFields();
+    if (!address) { document.getElementById(COPY_DELIVERY_BILLING_ID)?.remove(); return; }
+    let label = document.getElementById(COPY_DELIVERY_BILLING_ID);
+    if (!label) {
+      label = document.createElement('label');
+      label.id = COPY_DELIVERY_BILLING_ID;
+      label.title = 'Copy the delivery address to Billing Address and keep it matched while ticked.';
+      label.style.cssText = 'display:inline-flex;align-items:center;gap:7px;margin-left:12px;color:#173f6e;font:600 14px Arial,sans-serif;white-space:nowrap;cursor:pointer;';
+      label.innerHTML = '<input type="checkbox" style="width:18px;height:18px;margin:0;cursor:pointer"> Same as delivery address';
+      label.querySelector('input').addEventListener('change', event => { if (event.currentTarget.checked) copyDeliveryAddressToBilling(); });
+    }
+    address.delivery.style.display = 'flex';
+    address.delivery.style.alignItems = 'center';
+    address.delivery.style.flexWrap = 'wrap';
+    if (label.parentElement !== address.delivery) address.delivery.appendChild(label);
+    address.fields.forEach(({ source }) => {
+      if (!source || source.dataset.lcBillingCopyHook === '1') return;
+      source.dataset.lcBillingCopyHook = '1';
+      source.addEventListener('input', () => {
+        if (document.querySelector(`#${COPY_DELIVERY_BILLING_ID} input`)?.checked) copyDeliveryAddressToBilling();
+      });
+    });
   }
 
   function omniSalesRep() {
@@ -5087,6 +5190,7 @@
     omniDomObserver?.disconnect();
     try {
       ensureOmniJobProgress();
+      ensureDeliveryBillingCopy();
       finishOmniConversionNavigation();
       observeOmniLayout();
       addCustomerPhotosButton();
