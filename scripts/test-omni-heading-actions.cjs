@@ -65,11 +65,23 @@ assert(!layout.includes('document.getElementById(STAFF_HELP_BUTTON_ID)'), 'Foote
       assert.equal(url.searchParams.get('order'), 'NZSO-17003');assert.equal(url.searchParams.get('customer'), 'Customer');
       for (const title of ['Edit Quote - Quote Customer - NZSO-17002', 'New Quote']) {
         await page.evaluate(title => {
-          document.querySelector('h4').textContent=title;
+          const oldHeading=document.querySelector('#native-document-heading,h4');
+          if(title==='New Quote'){
+            const plainHeading=document.createElement('div');
+            plainHeading.id='native-document-heading';
+            plainHeading.textContent=title;
+            plainHeading.style.cssText='font-size:20px;font-weight:700';
+            oldHeading.replaceWith(plainHeading);
+          }else oldHeading.textContent=title;
           addIssueReportButton();addStaffHelpButton();
         }, title);
         await page.waitForFunction(() => document.querySelector('#lc-omni-heading-actions #lc-omni-warranty-button'));
         assert.deepEqual(await page.locator('#lc-omni-heading-actions').evaluate(el => [...el.children].map(child => child.id)), ids);
+        if(title==='New Quote'){
+          assert.equal(await page.locator('#native-document-heading > #lc-omni-heading-actions').count(),1,'Plain-div New Quote heading keeps all three actions at the top');
+          assert.equal(await page.locator('#lc-omni-workflow-tools-bar button').count(),0,'New Quote actions do not fall into the lower workflow row');
+          assert.equal(await page.locator('#omni-navigation #lc-omni-heading-actions').count(),0,'New Quote navigation item is never used as the action anchor');
+        }
         await page.getByRole('button', { name:'Report Issue', exact:true }).click();
         assert.equal(new URL(await page.evaluate(() => opened.at(-1))).searchParams.get('order'), title==='New Quote' ? '' : 'NZSO-17002');
       }

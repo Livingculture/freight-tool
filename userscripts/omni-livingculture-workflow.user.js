@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.146
+// @version      0.1.147
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -5159,9 +5159,12 @@
       // prevents the expanded Omni navigation's "New Quote" item becoming the
       // anchor for the Staff Guide, Warranty and Report Issue buttons.
       if (draft.orderId) return order===draft.orderId;
-      // A genuinely new quote has no NZSO yet, so only accept a semantic page
-      // heading rather than similarly named links or labels in the navigation.
-      return !order && node.matches('h1,h2,h3,h4,h5,h6,[role="heading"]');
+      // A genuinely new quote has no NZSO yet. Omni sometimes renders its page
+      // title as a plain div, so accept that title while explicitly excluding
+      // similarly named navigation links and menu items.
+      return !order
+        && !node.closest('nav,aside,[role="navigation"],#omni-navigation,.navigation,.sidebar,.side-menu')
+        && !node.matches('a,button,[role="link"],[role="menuitem"]');
     };
     const candidates = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"],div,span,td'))
       .filter(node => !node.closest('#lc-omni-job-progress') && isVisible(node) && matches(node) && !Array.from(node.children).some(matches));
