@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.147
+// @version      0.1.148
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -1571,10 +1571,18 @@
 
   function findOmniSectionHeading(text) {
     const wanted = normalizeLabel(text);
-    return Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"],legend,div,span'))
+    const candidates = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"],legend,div,span'))
       .filter(isVisible)
-      .filter(node => normalizeLabel(Array.from(node.childNodes).filter(child => !child.id?.startsWith('lc-')).map(child => child.textContent || '').join(' ')) === wanted)
-      .sort((left, right) => Number(!left.matches('h1,h2,h3,h4,h5,h6,[role="heading"],legend')) - Number(!right.matches('h1,h2,h3,h4,h5,h6,[role="heading"],legend')) || left.children.length - right.children.length)[0] || null;
+      .map(node => ({
+        node,
+        ownText:normalizeLabel(Array.from(node.childNodes).filter(child => !child.id?.startsWith('lc-')).map(child => child.textContent || '').join(' ')),
+        fullText:normalizeLabel(node.textContent || '')
+      }))
+      .filter(({ ownText,fullText }) => ownText === wanted || fullText === wanted)
+      .sort((left, right) => Number(left.ownText !== wanted) - Number(right.ownText !== wanted)
+        || Number(!left.node.matches('h1,h2,h3,h4,h5,h6,[role="heading"],legend')) - Number(!right.node.matches('h1,h2,h3,h4,h5,h6,[role="heading"],legend'))
+        || left.node.children.length - right.node.children.length);
+    return candidates[0]?.node || null;
   }
 
   function findOmniSectionField(heading, labels) {
@@ -1617,6 +1625,29 @@
     control.dispatchEvent(new Event('change', { bubbles:true }));
   }
 
+  function addressControlsForHeading(heading, otherHeading) {
+    if (!heading) return [];
+    const selector = 'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]),textarea,select';
+    const sortControls = controls => controls.filter(isVisible).sort((left,right) => {
+      const leftRect=left.getBoundingClientRect(),rightRect=right.getBoundingClientRect();
+      return leftRect.top-rightRect.top || leftRect.left-rightRect.left;
+    });
+    for (let container=heading.parentElement; container && container!==document.body; container=container.parentElement) {
+      if (otherHeading && container.contains(otherHeading)) continue;
+      const controls=sortControls(Array.from(container.querySelectorAll(selector)));
+      if (controls.length>=6) return controls.slice(0,9);
+    }
+    const headingRect=heading.getBoundingClientRect(),otherRect=otherHeading?.getBoundingClientRect();
+    const gap=otherRect ? Math.abs(otherRect.left-headingRect.left) : Math.max(420,headingRect.width);
+    const isLeft=!otherRect || headingRect.left<otherRect.left;
+    const left=isLeft ? headingRect.left-gap*.45 : (headingRect.left+otherRect.left)/2;
+    const right=isLeft && otherRect ? (headingRect.left+otherRect.left)/2 : headingRect.left+gap*.9;
+    return sortControls(Array.from(document.querySelectorAll(selector)).filter(control => {
+      const rect=control.getBoundingClientRect(),center=rect.left+rect.width/2;
+      return rect.top>=headingRect.bottom-12 && center>=left && center<right;
+    })).slice(0,9);
+  }
+
   function deliveryBillingFields() {
     const delivery = findOmniSectionHeading('Delivery Address');
     const billing = findOmniSectionHeading('Billing Address');
@@ -1632,10 +1663,13 @@
       [['Delivery Postal Code'],['Billing Postal Code']],
       [['Delivery Country'],['Billing Country']]
     ];
-    const fields = definitions.map(([sourceLabels,targetLabels]) => ({
-      source:findOmniSectionField(delivery,sourceLabels), target:findOmniSectionField(billing,targetLabels)
+    const deliveryControls=addressControlsForHeading(delivery,billing);
+    const billingControls=addressControlsForHeading(billing,delivery);
+    const fields = definitions.map(([sourceLabels,targetLabels],index) => ({
+      source:findOmniSectionField(delivery,sourceLabels) || deliveryControls[index] || null,
+      target:findOmniSectionField(billing,targetLabels) || billingControls[index] || null
     }));
-    return fields.some(({ source,target }) => source && target) ? { delivery,billing,fields } : null;
+    return { delivery,billing,fields };
   }
 
   function copyDeliveryAddressToBilling() {
@@ -1647,8 +1681,9 @@
 
   function ensureDeliveryBillingCopy() {
     if (!isOmniPage()) return;
-    const address = deliveryBillingFields();
-    if (!address) { document.getElementById(COPY_DELIVERY_BILLING_ID)?.remove(); return; }
+    const delivery=findOmniSectionHeading('Delivery Address');
+    const billing=findOmniSectionHeading('Billing Address');
+    if (!delivery || !billing) { document.getElementById(COPY_DELIVERY_BILLING_ID)?.remove(); return; }
     let label = document.getElementById(COPY_DELIVERY_BILLING_ID);
     if (!label) {
       label = document.createElement('label');
@@ -1658,11 +1693,12 @@
       label.innerHTML = '<input type="checkbox" style="width:18px;height:18px;margin:0;cursor:pointer"> Same as delivery address';
       label.querySelector('input').addEventListener('change', event => { if (event.currentTarget.checked) copyDeliveryAddressToBilling(); });
     }
-    address.delivery.style.display = 'flex';
-    address.delivery.style.alignItems = 'center';
-    address.delivery.style.flexWrap = 'wrap';
-    if (label.parentElement !== address.delivery) address.delivery.appendChild(label);
-    address.fields.forEach(({ source }) => {
+    delivery.style.display = 'flex';
+    delivery.style.alignItems = 'center';
+    delivery.style.flexWrap = 'wrap';
+    if (label.parentElement !== delivery) delivery.appendChild(label);
+    const address=deliveryBillingFields();
+    (address?.fields || []).forEach(({ source }) => {
       if (!source || source.dataset.lcBillingCopyHook === '1') return;
       source.dataset.lcBillingCopyHook = '1';
       source.addEventListener('input', () => {
