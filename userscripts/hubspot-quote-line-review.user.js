@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HubSpot Living Culture Quote Line Review
 // @namespace    livingculture-hubspot
-// @version      2.8
+// @version      2.9
 // @description  Reviews all of the logged-in rep's active HubSpot NZSO quotes with Cin7 Core line items and discounts.
 // @match        https://app.hubspot.com/*
 // @match        https://*.hubspot.com/*
@@ -18,7 +18,7 @@
 
   const ROOT_ID = 'lc-hs-quote-review-root';
   const BUTTON_ID = 'lc-hs-quote-review-button';
-  const SCRIPT_VERSION = '2.8';
+  const SCRIPT_VERSION = '2.9';
   const HUBSPOT_REVIEW_API_URL = 'https://living-culture-workflow.vercel.app/api/hubspot/quote-review';
   const WORKFLOW_SALES_API_URL = 'https://living-culture-workflow.vercel.app/api/cin7/sales';
   const QUOTE_RE = /\bNZSO[-\s]?\d+\b/i;
@@ -170,11 +170,22 @@
     return digits ? `NZSO-${digits}` : match[0].toUpperCase();
   }
 
+  function quoteTimestamp(value) {
+    const text = clean(value);
+    const localDate = text.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})(?:\D|$)/);
+    if (localDate) {
+      const parsed = new Date(Number(localDate[3]), Number(localDate[2]) - 1, Number(localDate[1])).getTime();
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+    const parsed = Date.parse(text);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
   function sortDealsNewestFirst() {
     deals.sort((left, right) => {
-      const leftDate = Date.parse(clean(left.quotedDate));
-      const rightDate = Date.parse(clean(right.quotedDate));
-      const dateDifference = (Number.isFinite(rightDate) ? rightDate : 0) - (Number.isFinite(leftDate) ? leftDate : 0);
+      const leftDate = quoteTimestamp(left.quotedDate);
+      const rightDate = quoteTimestamp(right.quotedDate);
+      const dateDifference = rightDate - leftDate;
       if (dateDifference) return dateDifference;
       const leftNumber = Number(clean(left.quoteNumber).replace(/\D/g, '')) || 0;
       const rightNumber = Number(clean(right.quoteNumber).replace(/\D/g, '')) || 0;
@@ -451,10 +462,15 @@
   function filteredDeals() {
     const shadow = document.getElementById(ROOT_ID)?.shadowRoot;
     const query = clean(shadow?.getElementById('lc-hs-search')?.value).toLowerCase();
-    const ageFilter = clean(shadow?.getElementById('lc-hs-age-filter')?.value) || 'week';
+    const period = clean(shadow?.getElementById('lc-hs-age-filter')?.value) || '7';
+    const customFrom = clean(shadow?.getElementById('lc-hs-custom-from')?.value);
+    const customTo = clean(shadow?.getElementById('lc-hs-custom-to')?.value);
     const noDiscountOnly = Boolean(shadow?.getElementById('lc-hs-no-discount-only')?.checked);
     const hideFirstCustom = Boolean(shadow?.getElementById('lc-hs-hide-first-custom')?.checked);
-    const weekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+    const periodDays = Number(period);
+    const periodStart = Number.isFinite(periodDays) ? Date.now() - (periodDays * 24 * 60 * 60 * 1000) : 0;
+    const customStart = customFrom ? Date.parse(`${customFrom}T00:00:00`) : 0;
+    const customEnd = customTo ? Date.parse(`${customTo}T23:59:59.999`) : Number.POSITIVE_INFINITY;
 
     return deals.filter(deal => {
       const haystack = [
@@ -470,10 +486,9 @@
       ].join(' ').toLowerCase();
 
       if (query && !haystack.includes(query)) return false;
-      const quotedAt = Date.parse(clean(deal.quotedDate));
-      const isPastWeek = Number.isFinite(quotedAt) && quotedAt >= weekAgo;
-      if (ageFilter === 'week' && !isPastWeek) return false;
-      if (ageFilter === 'older' && isPastWeek) return false;
+      const quotedAt = quoteTimestamp(deal.quotedDate);
+      if (period === 'custom' && (!quotedAt || quotedAt < customStart || quotedAt > customEnd)) return false;
+      if (period !== 'custom' && (!quotedAt || quotedAt < periodStart)) return false;
       if (noDiscountOnly && !dealHasLoadedNoDiscount(deal)) return false;
       if (hideFirstCustom && dealFirstLineMentionsCustom(deal)) return false;
       return true;
@@ -548,6 +563,13 @@
   function setStatus(message) {
     const status = document.getElementById(ROOT_ID)?.shadowRoot?.getElementById('lc-hs-status');
     if (status) status.textContent = message || '';
+  }
+
+  function updateCustomDateControls() {
+    const shadow = document.getElementById(ROOT_ID)?.shadowRoot;
+    const custom = shadow?.getElementById('lc-hs-age-filter')?.value === 'custom';
+    const fields = shadow?.getElementById('lc-hs-custom-dates');
+    if (fields) fields.hidden = !custom;
   }
 
   async function scanDeals() {
@@ -847,6 +869,16 @@
           padding: 0 30px 0 10px;
           font: 700 13px Arial, sans-serif;
         }
+        .custom-dates { display: inline-flex; align-items: center; gap: 6px; }
+        .custom-dates[hidden] { display: none !important; }
+        .custom-dates input[type="date"] {
+          height: 34px;
+          width: 132px;
+          border: 1px solid #b9c7d6;
+          border-radius: 4px;
+          padding: 0 6px;
+          font: 12px Arial, sans-serif;
+        }
         label {
           display: inline-flex;
           align-items: center;
@@ -938,10 +970,15 @@
               <button type="button" class="action" id="lc-hs-pdf">Export PDF</button>
               <input id="lc-hs-search" type="search" placeholder="Search quote, customer, SKU" />
               <select id="lc-hs-age-filter" aria-label="Quote age">
-                <option value="week" selected>Past 7 days</option>
-                <option value="older">Older than 7 days</option>
-                <option value="all">All quotes</option>
+                <option value="7" selected>Past 7 days</option>
+                <option value="14">Past 2 weeks</option>
+                <option value="30">Past 1 month</option>
+                <option value="custom">Custom dates</option>
               </select>
+              <span class="custom-dates" id="lc-hs-custom-dates" hidden>
+                <label>From <input id="lc-hs-custom-from" type="date" /></label>
+                <label>To <input id="lc-hs-custom-to" type="date" /></label>
+              </span>
               <label><input id="lc-hs-no-discount-only" type="checkbox" /> No discount only</label>
               <label><input id="lc-hs-hide-first-custom" type="checkbox" /> Hide first custom</label>
               <div id="lc-hs-count"></div>
@@ -963,7 +1000,12 @@
     shadow.getElementById('lc-hs-copy').addEventListener('click', copyCsv);
     shadow.getElementById('lc-hs-pdf').addEventListener('click', exportPdf);
     shadow.getElementById('lc-hs-search').addEventListener('input', renderDeals);
-    shadow.getElementById('lc-hs-age-filter').addEventListener('change', renderDeals);
+    shadow.getElementById('lc-hs-age-filter').addEventListener('change', () => {
+      updateCustomDateControls();
+      renderDeals();
+    });
+    shadow.getElementById('lc-hs-custom-from').addEventListener('change', renderDeals);
+    shadow.getElementById('lc-hs-custom-to').addEventListener('change', renderDeals);
     shadow.getElementById('lc-hs-no-discount-only').addEventListener('change', renderDeals);
     shadow.getElementById('lc-hs-hide-first-custom').addEventListener('change', renderDeals);
 
