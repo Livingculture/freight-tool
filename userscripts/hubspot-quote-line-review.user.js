@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         HubSpot Living Culture Quote Line Review
 // @namespace    livingculture-hubspot
-// @version      2.2
-// @description  Reviews visible HubSpot quote deals by stage, with customer, quote number, line items, and Cin7 discounts.
+// @version      2.3
+// @description  Reviews the complete HubSpot follow-up list with customer, quote number, Cin7 Core line items, and discounts.
 // @match        https://app.hubspot.com/*
 // @match        https://*.hubspot.com/*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/hubspot-quote-line-review.user.js
@@ -18,15 +18,18 @@
 
   const ROOT_ID = 'lc-hs-quote-review-root';
   const BUTTON_ID = 'lc-hs-quote-review-button';
+  const SCRIPT_VERSION = '2.3';
+  const HUBSPOT_REVIEW_API_URL = 'https://living-culture-workflow.vercel.app/api/hubspot/quote-review';
   const WORKFLOW_SALES_API_URL = 'https://living-culture-workflow.vercel.app/api/cin7/sales';
   const QUOTE_RE = /\bNZSO[-\s]?\d+\b/i;
   const INCLUDED_STAGE_RE = /quote\s*[-–]\s*quote sent|quote sent|followed up|follow\s*up|wait(?:ing)?\s+on\s+customer/i;
   const HUBSPOT_APP_HOST_RE = /^(?:app|app-[a-z0-9-]+)\.hubspot\.com$/i;
-  const CACHE_PREFIX = 'lc-hs-quote-review-v3:';
+  const CACHE_PREFIX = 'lc-hs-quote-review-v4:';
   const CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 
   let deals = [];
   let loading = false;
+  let scanning = false;
 
   function clean(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
@@ -275,6 +278,32 @@
     return deal;
   }
 
+  function dealFromWorkflow(raw) {
+    const dealName = clean(raw?.dealName);
+    const quoteNumber = extractQuoteNumber(raw?.order) || extractQuoteNumber(dealName);
+    const deal = {
+      id: clean(raw?.id) || quoteNumber || dealName,
+      quoteNumber,
+      dealName,
+      orderName: clean(raw?.order) || quoteNumber,
+      customer: clean(raw?.customer),
+      hubspotLineItems: '',
+      salesNote: '',
+      status: '',
+      stage: clean(raw?.stage),
+      quotedDate: clean(raw?.quotedDate),
+      lastActivity: clean(raw?.updatedAt),
+      url: clean(raw?.url),
+      cin7Url: cin7QuoteUrl(quoteNumber),
+      cin7Lines: [],
+      discountSummary: '',
+      loadStatus: quoteNumber ? 'Waiting for Cin7 Core' : 'No quote number'
+    };
+
+    applyCachedQuote(deal, readCachedQuote(quoteNumber));
+    return deal;
+  }
+
   function readVisibleHubSpotDeals() {
     const rows = Array.from(document.querySelectorAll('[role="row"], tr'))
       .filter(isVisible)
@@ -331,59 +360,78 @@
     return /\bcustom\b/i.test(clean(firstLineText));
   }
 
-  async function loadDealLines() {
+  async function loadDealLines(options = {}) {
     if (loading) return;
+    const forceRefresh = Boolean(options.forceRefresh);
+    const loadableDeals = deals.filter(deal => deal.quoteNumber);
+    if (!loadableDeals.length) return;
+
     loading = true;
-    setStatus(`Loading ${deals.filter(deal => deal.quoteNumber).length} HubSpot quote deals...`);
+    let completed = 0;
+    let nextIndex = 0;
+    setStatus(`Loading Cin7 Core discounts for ${loadableDeals.length} HubSpot quotes...`);
     renderDeals();
 
-    for (let index = 0; index < deals.length; index += 1) {
-      const deal = deals[index];
-      if (!deal.quoteNumber) {
-        deal.loadStatus = 'No quote number in deal name';
-        renderDeals();
-        continue;
-      }
+    async function worker() {
+      while (nextIndex < deals.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        const deal = deals[index];
 
-      if (applyCachedQuote(deal, readCachedQuote(deal.quoteNumber))) {
-        renderDeals();
-        continue;
-      }
-
-      deal.loadStatus = `Loading ${index + 1} of ${deals.length}`;
-      renderDeals();
-
-      try {
-        const data = await requestJson(workflowSalesUrl(deal.quoteNumber));
-        const sale = data?.sale || {};
-        const lines = Array.isArray(sale.lineItems)
-          ? sale.lineItems.map(normalizeWorkflowLine).filter(line => line.product || line.sku)
-          : [];
-
-        deal.customer = clean(sale.customer) || deal.customer;
-        deal.quotedDate = clean(sale.orderDate) || deal.quotedDate;
-        deal.cin7Url = cin7QuoteUrl(deal.quoteNumber, sale.id);
-        deal.cin7Lines = lines;
-        deal.discountSummary = summarizeDiscount(lines);
-        deal.loadStatus = lines.length ? 'Loaded from Cin7 Core' : 'No Cin7 Core line items found';
-        if (lines.length) {
-          writeCachedQuote(deal.quoteNumber, {
-            customer: deal.customer,
-            quotedDate: deal.quotedDate,
-            cin7Url: deal.cin7Url,
-            cin7Lines: deal.cin7Lines,
-            discountSummary: deal.discountSummary
-          });
+        if (!deal.quoteNumber) {
+          deal.loadStatus = 'No quote number in deal name';
+          continue;
         }
-      } catch (error) {
-        deal.loadStatus = error?.message || 'Could not load Cin7 lines';
-      }
 
-      renderDeals();
+        if (!forceRefresh && applyCachedQuote(deal, readCachedQuote(deal.quoteNumber))) {
+          completed += 1;
+          renderDeals();
+          continue;
+        }
+
+        deal.loadStatus = `Loading ${completed + 1} of ${loadableDeals.length}`;
+        renderDeals();
+
+        try {
+          const data = await requestJson(workflowSalesUrl(deal.quoteNumber));
+          const sale = data?.sale || {};
+          const lines = Array.isArray(sale.lineItems)
+            ? sale.lineItems.map(normalizeWorkflowLine).filter(line => line.product || line.sku)
+            : [];
+
+          deal.customer = clean(sale.customer) || deal.customer;
+          deal.quotedDate = clean(sale.orderDate) || deal.quotedDate;
+          deal.cin7Url = cin7QuoteUrl(deal.quoteNumber, sale.id);
+          deal.cin7Lines = lines;
+          deal.discountSummary = summarizeDiscount(lines);
+          deal.loadStatus = lines.length ? 'Loaded from Cin7 Core' : 'No Cin7 Core line items found';
+          if (lines.length) {
+            writeCachedQuote(deal.quoteNumber, {
+              customer: deal.customer,
+              quotedDate: deal.quotedDate,
+              cin7Url: deal.cin7Url,
+              cin7Lines: deal.cin7Lines,
+              discountSummary: deal.discountSummary
+            });
+          }
+        } catch (error) {
+          deal.loadStatus = error?.message || 'Could not load Cin7 Core lines';
+        }
+
+        completed += 1;
+        setStatus(`Loaded Cin7 Core discounts for ${completed} of ${loadableDeals.length} quotes...`);
+        renderDeals();
+      }
     }
 
+    await Promise.all(Array.from({ length: Math.min(4, Math.max(1, deals.length)) }, () => worker()));
+
     loading = false;
-    setStatus(`Loaded ${deals.filter(deal => deal.cin7Lines.length).length} of ${deals.length} shown HubSpot deals. Cached quotes are reused for 12 hours.`);
+    const loaded = deals.filter(deal => deal.cin7Lines.length);
+    const discounted = loaded.filter(deal => deal.cin7Lines.some(line => hasDiscount(line.discount))).length;
+    const noDiscount = loaded.filter(dealHasLoadedNoDiscount).length;
+    setStatus(`Complete: ${loaded.length} quotes loaded from Cin7 Core — ${discounted} discounted and ${noDiscount} with no discount.`);
+    renderDeals();
   }
 
   function filteredDeals() {
@@ -419,10 +467,10 @@
     if (!list) return;
 
     const shown = filteredDeals();
-    if (count) count.textContent = `${shown.length} shown / ${deals.length} matching visible rows`;
+    if (count) count.textContent = `${shown.length} shown / ${deals.length} matching deals`;
 
     if (!deals.length) {
-      list.innerHTML = '<div class="empty">No visible HubSpot deals found in Quote sent, Followed up, or Wait On Customer stages.</div>';
+      list.innerHTML = '<div class="empty">No HubSpot deals were found in Quote Sent, Followed Up, or Wait On Customer stages.</div>';
       return;
     }
 
@@ -482,11 +530,32 @@
     if (status) status.textContent = message || '';
   }
 
-  function scanDeals() {
-    deals = readVisibleHubSpotDeals();
-    const cachedCount = deals.filter(deal => deal.cacheLoaded).length;
-    setStatus(`${deals.length} visible HubSpot deals matched the quote/follow-up stages.${cachedCount ? ` ${cachedCount} loaded from cache.` : ''}`);
-    renderDeals();
+  async function scanDeals() {
+    if (scanning) return;
+    scanning = true;
+    setStatus('Loading the complete HubSpot quote follow-up list...');
+
+    try {
+      const data = await requestJson(HUBSPOT_REVIEW_API_URL);
+      if (!data?.complete || !Array.isArray(data.deals)) throw new Error('Workflow did not return a complete quote list.');
+      const seen = new Set();
+      deals = data.deals.map(dealFromWorkflow).filter(deal => {
+        const key = deal.quoteNumber || deal.id;
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      const cachedCount = deals.filter(deal => deal.cacheLoaded).length;
+      setStatus(`${deals.length} HubSpot deals loaded across Quote Sent, Followed Up, and Wait On Customer.${cachedCount ? ` ${cachedCount} Cin7 Core quotes restored from cache.` : ''}`);
+      renderDeals();
+      await loadDealLines();
+    } catch (error) {
+      deals = readVisibleHubSpotDeals();
+      setStatus(`Could not load the complete list: ${error?.message || 'Unknown error'} Showing only ${deals.length} visible rows as a fallback.`);
+      renderDeals();
+    } finally {
+      scanning = false;
+    }
   }
 
   function buildCsv() {
@@ -599,7 +668,7 @@
     const modal = document.getElementById(ROOT_ID).shadowRoot.getElementById('lc-hs-modal');
     modal.classList.add('open');
     modal.classList.remove('minimized');
-    scanDeals();
+    void scanDeals();
   }
 
   function closePanel() {
@@ -648,10 +717,16 @@
 
   function ensureRoot() {
     let root = document.getElementById(ROOT_ID);
+    if (root && root.dataset.lcQuoteReviewVersion !== SCRIPT_VERSION) {
+      root.remove();
+      document.getElementById(BUTTON_ID)?.remove();
+      root = null;
+    }
     if (root) return root;
 
     root = document.createElement('div');
     root.id = ROOT_ID;
+    root.dataset.lcQuoteReviewVersion = SCRIPT_VERSION;
     document.body.appendChild(root);
 
     const shadow = root.attachShadow({ mode: 'open' });
@@ -816,7 +891,7 @@
             <div class="header">
               <div>
                 <h2 id="lc-hs-title">HubSpot Quote Review</h2>
-                <div class="sub">Visible deals in Quote sent, Followed up, or Wait On Customer stages.</div>
+                <div class="sub">Complete HubSpot list from Quote Sent, Followed Up, and Wait On Customer.</div>
               </div>
               <div class="header-actions">
                 <button type="button" class="icon-button" id="lc-hs-minimize" aria-label="Minimise">-</button>
@@ -824,8 +899,8 @@
               </div>
             </div>
             <div class="toolbar">
-              <button type="button" class="action" id="lc-hs-rescan">Rescan HubSpot</button>
-              <button type="button" class="action primary" id="lc-hs-load">Load Cin7 Core discounts</button>
+              <button type="button" class="action" id="lc-hs-rescan">Reload full HubSpot list</button>
+              <button type="button" class="action primary" id="lc-hs-load">Refresh all Cin7 Core discounts</button>
               <button type="button" class="action" id="lc-hs-copy">Copy CSV</button>
               <button type="button" class="action" id="lc-hs-pdf">Export PDF</button>
               <input id="lc-hs-search" type="search" placeholder="Search quote, customer, SKU" />
@@ -845,8 +920,8 @@
     shadow.getElementById('lc-hs-modal').addEventListener('click', event => {
       if (event.target?.id === 'lc-hs-modal') closePanel();
     });
-    shadow.getElementById('lc-hs-rescan').addEventListener('click', scanDeals);
-    shadow.getElementById('lc-hs-load').addEventListener('click', loadDealLines);
+    shadow.getElementById('lc-hs-rescan').addEventListener('click', () => void scanDeals());
+    shadow.getElementById('lc-hs-load').addEventListener('click', () => void loadDealLines({ forceRefresh: true }));
     shadow.getElementById('lc-hs-copy').addEventListener('click', copyCsv);
     shadow.getElementById('lc-hs-pdf').addEventListener('click', exportPdf);
     shadow.getElementById('lc-hs-search').addEventListener('input', renderDeals);

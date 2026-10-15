@@ -11,7 +11,11 @@ for (const stage of ['Quote - Quote Sent', 'Quote sent', 'Followed up', 'Follow 
 }
 assert(!stageMatcher.test('Paid'), 'Paid deals are not included');
 assert.match(source, /searchParams\.set\('source', 'core'\)/);
-assert.match(source, /Load Cin7 Core discounts/);
+assert.match(source, /HUBSPOT_REVIEW_API_URL = 'https:\/\/living-culture-workflow\.vercel\.app\/api\/hubspot\/quote-review'/);
+assert.match(source, /data\.deals\.map\(dealFromWorkflow\)/);
+assert.match(source, /Refresh all Cin7 Core discounts/);
 assert.match(source, /Loaded from Cin7 Core/);
+assert.match(source, /No discount only/);
+assert.doesNotMatch(source, /matching visible rows/);
 
-console.log('PASS: HubSpot quote review recognises all required stages and explicitly loads Cin7 Core discounts.');
+console.log('PASS: HubSpot quote review loads the complete staged deal list and explicitly loads Cin7 Core discounts.');
