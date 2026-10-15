@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HubSpot Living Culture Quote Line Review
 // @namespace    livingculture-hubspot
-// @version      2.5
+// @version      2.6
 // @description  Reviews the logged-in rep's HubSpot follow-up quotes with Cin7 Core line items and discounts.
 // @match        https://app.hubspot.com/*
 // @match        https://*.hubspot.com/*
@@ -18,7 +18,7 @@
 
   const ROOT_ID = 'lc-hs-quote-review-root';
   const BUTTON_ID = 'lc-hs-quote-review-button';
-  const SCRIPT_VERSION = '2.5';
+  const SCRIPT_VERSION = '2.6';
   const HUBSPOT_REVIEW_API_URL = 'https://living-culture-workflow.vercel.app/api/hubspot/quote-review';
   const WORKFLOW_SALES_API_URL = 'https://living-culture-workflow.vercel.app/api/cin7/sales';
   const QUOTE_RE = /\bNZSO[-\s]?\d+\b/i;
@@ -30,6 +30,7 @@
   let deals = [];
   let loading = false;
   let scanning = false;
+  let excludedCompleted = 0;
 
   function clean(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
@@ -443,7 +444,7 @@
     const discounted = loaded.filter(deal => deal.cin7Lines.some(line => hasDiscount(line.discount))).length;
     const noDiscount = loaded.filter(dealHasLoadedNoDiscount).length;
     sortDealsNewestFirst();
-    setStatus(`Complete: ${loaded.length} quotes loaded from Cin7 Core — ${discounted} discounted and ${noDiscount} with no discount.`);
+    setStatus(`Complete: ${loaded.length} quotes loaded from Cin7 Core — ${discounted} discounted and ${noDiscount} with no discount.${excludedCompleted ? ` ${excludedCompleted} quote variation${excludedCompleted === 1 ? '' : 's'} excluded because that customer already has a won job.` : ''}`);
     renderDeals();
   }
 
@@ -558,14 +559,16 @@
         seen.add(key);
         return true;
       });
+      excludedCompleted = Math.max(0, Number(data.excludedCompleted) || 0);
       sortDealsNewestFirst();
       const cachedCount = deals.filter(deal => deal.cacheLoaded).length;
       const owner = clean(data.owner?.name) || clean(data.owner?.email) || 'the logged-in rep';
-      setStatus(`${deals.length} HubSpot quotes loaded for ${owner}.${cachedCount ? ` ${cachedCount} Cin7 Core quotes restored from cache.` : ''}`);
+      setStatus(`${deals.length} HubSpot quotes loaded for ${owner}.${excludedCompleted ? ` ${excludedCompleted} completed-customer variation${excludedCompleted === 1 ? '' : 's'} excluded.` : ''}${cachedCount ? ` ${cachedCount} Cin7 Core quotes restored from cache.` : ''}`);
       renderDeals();
       await loadDealLines();
     } catch (error) {
       deals = [];
+      excludedCompleted = 0;
       setStatus(`Could not load your HubSpot quote list: ${error?.message || 'Unknown error'}`);
       renderDeals();
     } finally {
@@ -906,7 +909,7 @@
             <div class="header">
               <div>
                 <h2 id="lc-hs-title">HubSpot Quote Review</h2>
-                <div class="sub">Only the logged-in rep's Quote Sent, Followed Up, and Wait On Customer deals.</div>
+                <div class="sub">The logged-in rep's active quotes; customers with a won job are excluded.</div>
               </div>
               <div class="header-actions">
                 <button type="button" class="icon-button" id="lc-hs-minimize" aria-label="Minimise">-</button>
