@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         HubSpot Living Culture Quote Line Review
 // @namespace    livingculture-hubspot
-// @version      2.3
-// @description  Reviews the complete HubSpot follow-up list with customer, quote number, Cin7 Core line items, and discounts.
+// @version      2.4
+// @description  Reviews the logged-in rep's HubSpot follow-up quotes with Cin7 Core line items and discounts.
 // @match        https://app.hubspot.com/*
 // @match        https://*.hubspot.com/*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/hubspot-quote-line-review.user.js
@@ -18,7 +18,7 @@
 
   const ROOT_ID = 'lc-hs-quote-review-root';
   const BUTTON_ID = 'lc-hs-quote-review-button';
-  const SCRIPT_VERSION = '2.3';
+  const SCRIPT_VERSION = '2.4';
   const HUBSPOT_REVIEW_API_URL = 'https://living-culture-workflow.vercel.app/api/hubspot/quote-review';
   const WORKFLOW_SALES_API_URL = 'https://living-culture-workflow.vercel.app/api/cin7/sales';
   const QUOTE_RE = /\bNZSO[-\s]?\d+\b/i;
@@ -546,12 +546,13 @@
         return true;
       });
       const cachedCount = deals.filter(deal => deal.cacheLoaded).length;
-      setStatus(`${deals.length} HubSpot deals loaded across Quote Sent, Followed Up, and Wait On Customer.${cachedCount ? ` ${cachedCount} Cin7 Core quotes restored from cache.` : ''}`);
+      const owner = clean(data.owner?.name) || clean(data.owner?.email) || 'the logged-in rep';
+      setStatus(`${deals.length} HubSpot quotes loaded for ${owner}.${cachedCount ? ` ${cachedCount} Cin7 Core quotes restored from cache.` : ''}`);
       renderDeals();
       await loadDealLines();
     } catch (error) {
-      deals = readVisibleHubSpotDeals();
-      setStatus(`Could not load the complete list: ${error?.message || 'Unknown error'} Showing only ${deals.length} visible rows as a fallback.`);
+      deals = [];
+      setStatus(`Could not load your HubSpot quote list: ${error?.message || 'Unknown error'}`);
       renderDeals();
     } finally {
       scanning = false;
@@ -891,7 +892,7 @@
             <div class="header">
               <div>
                 <h2 id="lc-hs-title">HubSpot Quote Review</h2>
-                <div class="sub">Complete HubSpot list from Quote Sent, Followed Up, and Wait On Customer.</div>
+                <div class="sub">Only the logged-in rep's Quote Sent, Followed Up, and Wait On Customer deals.</div>
               </div>
               <div class="header-actions">
                 <button type="button" class="icon-button" id="lc-hs-minimize" aria-label="Minimise">-</button>
