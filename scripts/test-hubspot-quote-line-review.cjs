@@ -7,6 +7,12 @@ assert.match(source, /HUBSPOT_REVIEW_API_URL = 'https:\/\/living-culture-workflo
 assert.match(source, /data\.deals\.map\(dealFromWorkflow\)/);
 assert.match(source, /All active NZSO quotes for the logged-in rep/);
 assert.match(source, /including every product and assembly type/);
+assert.match(source, /id="lc-hs-age-filter"/);
+assert.match(source, /<option value="week" selected>Past 7 days<\/option>/);
+assert.match(source, /<option value="older">Older than 7 days<\/option>/);
+assert.match(source, /<option value="all">All quotes<\/option>/);
+assert.match(source, /ageFilter === 'week' && !isPastWeek/);
+assert.match(source, /ageFilter === 'older' && isPastWeek/);
 assert.match(source, /deals = \[\];[\s\S]{0,100}setStatus\(`Could not load your HubSpot quote list/);
 assert.match(source, /Refresh all Cin7 Core discounts/);
 assert.match(source, /Loaded from Cin7 Core/);

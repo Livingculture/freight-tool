@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HubSpot Living Culture Quote Line Review
 // @namespace    livingculture-hubspot
-// @version      2.7
+// @version      2.8
 // @description  Reviews all of the logged-in rep's active HubSpot NZSO quotes with Cin7 Core line items and discounts.
 // @match        https://app.hubspot.com/*
 // @match        https://*.hubspot.com/*
@@ -18,7 +18,7 @@
 
   const ROOT_ID = 'lc-hs-quote-review-root';
   const BUTTON_ID = 'lc-hs-quote-review-button';
-  const SCRIPT_VERSION = '2.7';
+  const SCRIPT_VERSION = '2.8';
   const HUBSPOT_REVIEW_API_URL = 'https://living-culture-workflow.vercel.app/api/hubspot/quote-review';
   const WORKFLOW_SALES_API_URL = 'https://living-culture-workflow.vercel.app/api/cin7/sales';
   const QUOTE_RE = /\bNZSO[-\s]?\d+\b/i;
@@ -451,8 +451,10 @@
   function filteredDeals() {
     const shadow = document.getElementById(ROOT_ID)?.shadowRoot;
     const query = clean(shadow?.getElementById('lc-hs-search')?.value).toLowerCase();
+    const ageFilter = clean(shadow?.getElementById('lc-hs-age-filter')?.value) || 'week';
     const noDiscountOnly = Boolean(shadow?.getElementById('lc-hs-no-discount-only')?.checked);
     const hideFirstCustom = Boolean(shadow?.getElementById('lc-hs-hide-first-custom')?.checked);
+    const weekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
 
     return deals.filter(deal => {
       const haystack = [
@@ -468,6 +470,10 @@
       ].join(' ').toLowerCase();
 
       if (query && !haystack.includes(query)) return false;
+      const quotedAt = Date.parse(clean(deal.quotedDate));
+      const isPastWeek = Number.isFinite(quotedAt) && quotedAt >= weekAgo;
+      if (ageFilter === 'week' && !isPastWeek) return false;
+      if (ageFilter === 'older' && isPastWeek) return false;
       if (noDiscountOnly && !dealHasLoadedNoDiscount(deal)) return false;
       if (hideFirstCustom && dealFirstLineMentionsCustom(deal)) return false;
       return true;
@@ -832,6 +838,15 @@
           padding: 0 10px;
           font: 14px Arial, sans-serif;
         }
+        select {
+          height: 36px;
+          border: 1px solid #b9c7d6;
+          border-radius: 4px;
+          background: #fff;
+          color: #35404a;
+          padding: 0 30px 0 10px;
+          font: 700 13px Arial, sans-serif;
+        }
         label {
           display: inline-flex;
           align-items: center;
@@ -922,6 +937,11 @@
               <button type="button" class="action" id="lc-hs-copy">Copy CSV</button>
               <button type="button" class="action" id="lc-hs-pdf">Export PDF</button>
               <input id="lc-hs-search" type="search" placeholder="Search quote, customer, SKU" />
+              <select id="lc-hs-age-filter" aria-label="Quote age">
+                <option value="week" selected>Past 7 days</option>
+                <option value="older">Older than 7 days</option>
+                <option value="all">All quotes</option>
+              </select>
               <label><input id="lc-hs-no-discount-only" type="checkbox" /> No discount only</label>
               <label><input id="lc-hs-hide-first-custom" type="checkbox" /> Hide first custom</label>
               <div id="lc-hs-count"></div>
@@ -943,6 +963,7 @@
     shadow.getElementById('lc-hs-copy').addEventListener('click', copyCsv);
     shadow.getElementById('lc-hs-pdf').addEventListener('click', exportPdf);
     shadow.getElementById('lc-hs-search').addEventListener('input', renderDeals);
+    shadow.getElementById('lc-hs-age-filter').addEventListener('change', renderDeals);
     shadow.getElementById('lc-hs-no-discount-only').addEventListener('change', renderDeals);
     shadow.getElementById('lc-hs-hide-first-custom').addEventListener('change', renderDeals);
 
