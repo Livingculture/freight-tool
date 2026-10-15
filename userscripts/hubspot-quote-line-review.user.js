@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         HubSpot Living Culture Quote Line Review
 // @namespace    livingculture-hubspot
-// @version      2.6
-// @description  Reviews the logged-in rep's HubSpot follow-up quotes with Cin7 Core line items and discounts.
+// @version      2.7
+// @description  Reviews all of the logged-in rep's active HubSpot NZSO quotes with Cin7 Core line items and discounts.
 // @match        https://app.hubspot.com/*
 // @match        https://*.hubspot.com/*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/hubspot-quote-line-review.user.js
@@ -18,7 +18,7 @@
 
   const ROOT_ID = 'lc-hs-quote-review-root';
   const BUTTON_ID = 'lc-hs-quote-review-button';
-  const SCRIPT_VERSION = '2.6';
+  const SCRIPT_VERSION = '2.7';
   const HUBSPOT_REVIEW_API_URL = 'https://living-culture-workflow.vercel.app/api/hubspot/quote-review';
   const WORKFLOW_SALES_API_URL = 'https://living-culture-workflow.vercel.app/api/cin7/sales';
   const QUOTE_RE = /\bNZSO[-\s]?\d+\b/i;
@@ -484,7 +484,7 @@
     if (count) count.textContent = `${shown.length} shown / ${deals.length} matching deals`;
 
     if (!deals.length) {
-      list.innerHTML = '<div class="empty">No HubSpot deals were found in Quote Sent, Followed Up, or Wait On Customer stages.</div>';
+      list.innerHTML = '<div class="empty">No active HubSpot NZSO quotes were found for the logged-in rep.</div>';
       return;
     }
 
@@ -909,7 +909,7 @@
             <div class="header">
               <div>
                 <h2 id="lc-hs-title">HubSpot Quote Review</h2>
-                <div class="sub">The logged-in rep's active quotes; customers with a won job are excluded.</div>
+                <div class="sub">All active NZSO quotes for the logged-in rep, including every product and assembly type.</div>
               </div>
               <div class="header-actions">
                 <button type="button" class="icon-button" id="lc-hs-minimize" aria-label="Minimise">-</button>
