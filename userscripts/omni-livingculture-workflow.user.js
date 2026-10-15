@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.150
+// @version      0.1.151
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -517,7 +517,6 @@
       const optionIndex = indexForHeader(headers, ['option1', 'option 1']);
       const commentsIndex = indexForHeader(headers, ['comments', 'comment']);
       const priceIndex = indexForHeader(headers, ['unit price', 'price']);
-      const discountIndex = indexForHeader(headers, ['% disc', 'discount', 'disc']);
       const amountIndex = indexForHeader(headers, ['amount nzd', 'amount', 'total']);
       if (codeIndex < 0 || productIndex < 0 || quantityIndex < 0) continue;
 
@@ -533,9 +532,8 @@
         const option = clean(cellText(cells, optionIndex));
         const comments = clean(cellText(cells, commentsIndex));
         const price = parseMoneyText(cellText(cells, priceIndex));
-        const discount = clean(cellText(cells, discountIndex));
         const total = parseMoneyText(cellText(cells, amountIndex));
-        items.push({ sku, name, quantity, option, comments, price, discount, total });
+        items.push({ sku, name, quantity, option, comments, price, total });
       }
     }
     const seen = new Set();
@@ -2014,14 +2012,6 @@
     const stockValue = labelled('Stock Status', 'Stock Ready', 'In Stock');
     const internalComments = readMultilineNearLabel('Internal Comments');
     const deliveryInstructions = readMultilineNearLabel('Delivery Instructions');
-    const lineItems = extractOmniTableLineItems().map(item => ({
-      sku: item.sku,
-      product: item.option ? `${item.name} - ${item.option}` : item.name,
-      qty: item.quantity,
-      price: item.price,
-      discount: item.discount,
-      total: item.total
-    }));
 
     return {
       orderNumber: heading.orderId,
@@ -2036,7 +2026,6 @@
       salesRep: draft.placedBy,
       branch,
       product: draft.product,
-      lineItems,
       notes: draft.comments,
       internalComments,
       deliveryInstructions,

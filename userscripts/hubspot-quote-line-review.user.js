@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HubSpot Living Culture Quote Line Review
 // @namespace    livingculture-hubspot
-// @version      2.1
+// @version      2.2
 // @description  Reviews visible HubSpot quote deals by stage, with customer, quote number, line items, and Cin7 discounts.
 // @match        https://app.hubspot.com/*
 // @match        https://*.hubspot.com/*
@@ -22,7 +22,7 @@
   const QUOTE_RE = /\bNZSO[-\s]?\d+\b/i;
   const INCLUDED_STAGE_RE = /quote\s*[-–]\s*quote sent|quote sent|followed up|follow\s*up|wait(?:ing)?\s+on\s+customer/i;
   const HUBSPOT_APP_HOST_RE = /^(?:app|app-[a-z0-9-]+)\.hubspot\.com$/i;
-  const CACHE_PREFIX = 'lc-hs-quote-review-v2:';
+  const CACHE_PREFIX = 'lc-hs-quote-review-v3:';
   const CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 
   let deals = [];
@@ -95,7 +95,16 @@
   function workflowSalesUrl(quoteNumber) {
     const url = new URL(WORKFLOW_SALES_API_URL);
     url.searchParams.set('search', quoteNumber);
+    url.searchParams.set('source', 'core');
     return url.toString();
+  }
+
+  function cin7QuoteUrl(quoteNumber, saleId = '') {
+    const id = clean(saleId);
+    if (id) return `https://inventory.dearsystems.com/Sale#${encodeURIComponent(id)}`;
+
+    const quote = clean(quoteNumber);
+    return quote ? `https://inventory.dearsystems.com/SaleList?search=${encodeURIComponent(quote)}` : '';
   }
 
   function cacheKey(quoteNumber) {
@@ -256,7 +265,7 @@
       quotedDate,
       lastActivity: cells[stageIndex + 1] || '',
       url: findDealUrl(row),
-      cin7Url: '',
+      cin7Url: cin7QuoteUrl(quoteNumber),
       cin7Lines: [],
       discountSummary: '',
       loadStatus: quoteNumber ? 'Waiting' : 'No quote number'
@@ -353,10 +362,10 @@
 
         deal.customer = clean(sale.customer) || deal.customer;
         deal.quotedDate = clean(sale.orderDate) || deal.quotedDate;
-        deal.cin7Url = clean(sale.sourceUrl) || '';
+        deal.cin7Url = cin7QuoteUrl(deal.quoteNumber, sale.id);
         deal.cin7Lines = lines;
         deal.discountSummary = summarizeDiscount(lines);
-        deal.loadStatus = lines.length ? 'Loaded from Cin7 Omni' : 'No Omni line items found';
+        deal.loadStatus = lines.length ? 'Loaded from Cin7 Core' : 'No Cin7 Core line items found';
         if (lines.length) {
           writeCachedQuote(deal.quoteNumber, {
             customer: deal.customer,
@@ -816,7 +825,7 @@
             </div>
             <div class="toolbar">
               <button type="button" class="action" id="lc-hs-rescan">Rescan HubSpot</button>
-              <button type="button" class="action primary" id="lc-hs-load">Load Omni discounts</button>
+              <button type="button" class="action primary" id="lc-hs-load">Load Cin7 Core discounts</button>
               <button type="button" class="action" id="lc-hs-copy">Copy CSV</button>
               <button type="button" class="action" id="lc-hs-pdf">Export PDF</button>
               <input id="lc-hs-search" type="search" placeholder="Search quote, customer, SKU" />

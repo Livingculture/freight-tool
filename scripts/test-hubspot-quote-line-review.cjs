@@ -10,7 +10,8 @@ for (const stage of ['Quote - Quote Sent', 'Quote sent', 'Followed up', 'Follow 
   assert(stageMatcher.test(stage), `Includes ${stage}`);
 }
 assert(!stageMatcher.test('Paid'), 'Paid deals are not included');
-assert.match(source, /Load Omni discounts/);
-assert.match(source, /Loaded from Cin7 Omni/);
+assert.match(source, /searchParams\.set\('source', 'core'\)/);
+assert.match(source, /Load Cin7 Core discounts/);
+assert.match(source, /Loaded from Cin7 Core/);
 
-console.log('PASS: HubSpot quote review recognises all required stages and labels the Omni discount source.');
+console.log('PASS: HubSpot quote review recognises all required stages and explicitly loads Cin7 Core discounts.');
