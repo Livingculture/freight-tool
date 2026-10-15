@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HubSpot Living Culture Quote Line Review
 // @namespace    livingculture-hubspot
-// @version      2.4
+// @version      2.5
 // @description  Reviews the logged-in rep's HubSpot follow-up quotes with Cin7 Core line items and discounts.
 // @match        https://app.hubspot.com/*
 // @match        https://*.hubspot.com/*
@@ -18,7 +18,7 @@
 
   const ROOT_ID = 'lc-hs-quote-review-root';
   const BUTTON_ID = 'lc-hs-quote-review-button';
-  const SCRIPT_VERSION = '2.4';
+  const SCRIPT_VERSION = '2.5';
   const HUBSPOT_REVIEW_API_URL = 'https://living-culture-workflow.vercel.app/api/hubspot/quote-review';
   const WORKFLOW_SALES_API_URL = 'https://living-culture-workflow.vercel.app/api/cin7/sales';
   const QUOTE_RE = /\bNZSO[-\s]?\d+\b/i;
@@ -167,6 +167,18 @@
     if (!match) return '';
     const digits = match[0].match(/\d+/)?.[0] || '';
     return digits ? `NZSO-${digits}` : match[0].toUpperCase();
+  }
+
+  function sortDealsNewestFirst() {
+    deals.sort((left, right) => {
+      const leftDate = Date.parse(clean(left.quotedDate));
+      const rightDate = Date.parse(clean(right.quotedDate));
+      const dateDifference = (Number.isFinite(rightDate) ? rightDate : 0) - (Number.isFinite(leftDate) ? leftDate : 0);
+      if (dateDifference) return dateDifference;
+      const leftNumber = Number(clean(left.quoteNumber).replace(/\D/g, '')) || 0;
+      const rightNumber = Number(clean(right.quoteNumber).replace(/\D/g, '')) || 0;
+      return rightNumber - leftNumber;
+    });
   }
 
   function cellTexts(row) {
@@ -430,6 +442,7 @@
     const loaded = deals.filter(deal => deal.cin7Lines.length);
     const discounted = loaded.filter(deal => deal.cin7Lines.some(line => hasDiscount(line.discount))).length;
     const noDiscount = loaded.filter(dealHasLoadedNoDiscount).length;
+    sortDealsNewestFirst();
     setStatus(`Complete: ${loaded.length} quotes loaded from Cin7 Core — ${discounted} discounted and ${noDiscount} with no discount.`);
     renderDeals();
   }
@@ -545,6 +558,7 @@
         seen.add(key);
         return true;
       });
+      sortDealsNewestFirst();
       const cachedCount = deals.filter(deal => deal.cacheLoaded).length;
       const owner = clean(data.owner?.name) || clean(data.owner?.email) || 'the logged-in rep';
       setStatus(`${deals.length} HubSpot quotes loaded for ${owner}.${cachedCount ? ` ${cachedCount} Cin7 Core quotes restored from cache.` : ''}`);

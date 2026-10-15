@@ -18,6 +18,8 @@ assert.match(source, /deals = \[\];\s*setStatus\(`Could not load your HubSpot qu
 assert.match(source, /Refresh all Cin7 Core discounts/);
 assert.match(source, /Loaded from Cin7 Core/);
 assert.match(source, /No discount only/);
+assert.match(source, /function sortDealsNewestFirst\(\)/);
+assert.match(source, /sortDealsNewestFirst\(\);/);
 assert.doesNotMatch(source, /matching visible rows/);
 assert.doesNotMatch(source, /Showing only .* visible rows as a fallback/);
 
