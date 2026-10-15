@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HubSpot Living Culture Quote Line Review
 // @namespace    livingculture-hubspot
-// @version      2.0
+// @version      2.1
 // @description  Reviews visible HubSpot quote deals by stage, with customer, quote number, line items, and Cin7 discounts.
 // @match        https://app.hubspot.com/*
 // @match        https://*.hubspot.com/*
@@ -20,9 +20,9 @@
   const BUTTON_ID = 'lc-hs-quote-review-button';
   const WORKFLOW_SALES_API_URL = 'https://living-culture-workflow.vercel.app/api/cin7/sales';
   const QUOTE_RE = /\bNZSO[-\s]?\d+\b/i;
-  const INCLUDED_STAGE_RE = /quote\s*[-–]\s*quote sent|quote sent|followed up|follow\s*up|waiting on customer/i;
+  const INCLUDED_STAGE_RE = /quote\s*[-–]\s*quote sent|quote sent|followed up|follow\s*up|wait(?:ing)?\s+on\s+customer/i;
   const HUBSPOT_APP_HOST_RE = /^(?:app|app-[a-z0-9-]+)\.hubspot\.com$/i;
-  const CACHE_PREFIX = 'lc-hs-quote-review-v1:';
+  const CACHE_PREFIX = 'lc-hs-quote-review-v2:';
   const CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 
   let deals = [];
@@ -98,14 +98,6 @@
     return url.toString();
   }
 
-  function cin7QuoteUrl(quoteNumber, saleId = '') {
-    const id = clean(saleId);
-    if (id) return `https://inventory.dearsystems.com/Sale#${encodeURIComponent(id)}`;
-
-    const quote = clean(quoteNumber);
-    return quote ? `https://inventory.dearsystems.com/SaleList?search=${encodeURIComponent(quote)}` : '';
-  }
-
   function cacheKey(quoteNumber) {
     return `${CACHE_PREFIX}${clean(quoteNumber).toUpperCase()}`;
   }
@@ -146,7 +138,7 @@
   }
 
   function applyCachedQuote(deal, cached) {
-    if (!cached) return false;
+    if (!cached || !Array.isArray(cached.cin7Lines) || !cached.cin7Lines.length) return false;
 
     deal.customer = clean(cached.customer) || deal.customer;
     deal.quotedDate = clean(cached.quotedDate) || deal.quotedDate;
@@ -264,7 +256,7 @@
       quotedDate,
       lastActivity: cells[stageIndex + 1] || '',
       url: findDealUrl(row),
-      cin7Url: cin7QuoteUrl(quoteNumber),
+      cin7Url: '',
       cin7Lines: [],
       discountSummary: '',
       loadStatus: quoteNumber ? 'Waiting' : 'No quote number'
@@ -361,17 +353,19 @@
 
         deal.customer = clean(sale.customer) || deal.customer;
         deal.quotedDate = clean(sale.orderDate) || deal.quotedDate;
-        deal.cin7Url = cin7QuoteUrl(deal.quoteNumber, sale.id);
+        deal.cin7Url = clean(sale.sourceUrl) || '';
         deal.cin7Lines = lines;
         deal.discountSummary = summarizeDiscount(lines);
-        deal.loadStatus = lines.length ? 'Loaded from Cin7 Core' : 'No Cin7 line items found';
-        writeCachedQuote(deal.quoteNumber, {
-          customer: deal.customer,
-          quotedDate: deal.quotedDate,
-          cin7Url: deal.cin7Url,
-          cin7Lines: deal.cin7Lines,
-          discountSummary: deal.discountSummary
-        });
+        deal.loadStatus = lines.length ? 'Loaded from Cin7 Omni' : 'No Omni line items found';
+        if (lines.length) {
+          writeCachedQuote(deal.quoteNumber, {
+            customer: deal.customer,
+            quotedDate: deal.quotedDate,
+            cin7Url: deal.cin7Url,
+            cin7Lines: deal.cin7Lines,
+            discountSummary: deal.discountSummary
+          });
+        }
       } catch (error) {
         deal.loadStatus = error?.message || 'Could not load Cin7 lines';
       }
@@ -419,7 +413,7 @@
     if (count) count.textContent = `${shown.length} shown / ${deals.length} matching visible rows`;
 
     if (!deals.length) {
-      list.innerHTML = '<div class="empty">No visible HubSpot deals found in Quote sent, Followed up, or Waiting on customer stages.</div>';
+      list.innerHTML = '<div class="empty">No visible HubSpot deals found in Quote sent, Followed up, or Wait On Customer stages.</div>';
       return;
     }
 
@@ -813,7 +807,7 @@
             <div class="header">
               <div>
                 <h2 id="lc-hs-title">HubSpot Quote Review</h2>
-                <div class="sub">Visible deals in Quote sent, Followed up, or Waiting on customer stages.</div>
+                <div class="sub">Visible deals in Quote sent, Followed up, or Wait On Customer stages.</div>
               </div>
               <div class="header-actions">
                 <button type="button" class="icon-button" id="lc-hs-minimize" aria-label="Minimise">-</button>
@@ -822,7 +816,7 @@
             </div>
             <div class="toolbar">
               <button type="button" class="action" id="lc-hs-rescan">Rescan HubSpot</button>
-              <button type="button" class="action primary" id="lc-hs-load">Load Cin7 discounts</button>
+              <button type="button" class="action primary" id="lc-hs-load">Load Omni discounts</button>
               <button type="button" class="action" id="lc-hs-copy">Copy CSV</button>
               <button type="button" class="action" id="lc-hs-pdf">Export PDF</button>
               <input id="lc-hs-search" type="search" placeholder="Search quote, customer, SKU" />

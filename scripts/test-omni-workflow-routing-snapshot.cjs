@@ -19,6 +19,7 @@ const functions = ['quoteWorkflowRequestAction', 'omniWorkflowSnapshot', 'omniWo
       const isOmniPage=()=>true;
       const omniHeadingDraft=()=>({orderId:'NZSO-15512',documentType:'sales-order',customerName:'Customer'});
       const cin7Draft=()=>({placedBy:'AKL-Steve',product:'Pergola; Assembly Pergola'});
+      const extractOmniTableLineItems=()=>[{sku:'CS15512',name:'Pergola',quantity:'1',option:'Charcoal',price:'1000.00',discount:'10.00',total:'900.00'}];
       const readOmniControlByLabel=()=>''; const readValueNearLabel=()=>'';
       const deriveBranchFromRep=()=> 'AKL'; const readMultilineNearLabel=()=>'';
       const omniPaymentSummary=()=>({}); const readMoneyNearLabels=()=>0; const omniFullyDispatchedState=()=>false;
@@ -37,6 +38,7 @@ const functions = ['quoteWorkflowRequestAction', 'omniWorkflowSnapshot', 'omniWo
     assert.equal(snapshot.stage, 'New', 'Capture the selected label, not numeric option ID');
     assert.equal(snapshot.freightDescription, 'Collect from Showroom');
     assert.equal(snapshot.documentType,'sales-order');
+    assert.deepEqual(snapshot.lineItems,[{sku:'CS15512',product:'Pergola - Charcoal',qty:'1',price:'1000.00',discount:'10.00',total:'900.00'}]);
     const pageObservedAt=snapshot.documentTypeObservedAt;
     assert(Number.isFinite(Date.parse(pageObservedAt)),'Snapshot includes the page observation time');
     await page.evaluate(() => {
