@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Product Availability
 // @namespace    livingculture-omni
-// @version      0.1.6
+// @version      0.1.7
 // @description  Checks Omni products-page stock for all SKUs on the current quote.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-product-availability.user.js
@@ -19,7 +19,12 @@
   const REPORT_ID = 'lc-omni-quote-stock';
   const clean = value => String(value ?? '').replace(/\s+/g, ' ').trim();
   const header = value => clean(value).toLowerCase().replace(/[^a-z]/g, '');
-  const value = cell => clean(cell?.querySelector('input:not([type="hidden"]),textarea,select')?.value ?? cell?.textContent);
+  function value(cell) {
+    const field = cell?.querySelector('input:not([type="hidden"]),textarea,select');
+    // Omni commonly reopens a saved line with an empty editor over the persisted
+    // cell text. Prefer a real editor value, but fall back to that saved text.
+    return clean(field?.value) || clean(cell?.textContent);
+  }
   const number = text => /^-?\d+(?:\.\d+)?$/.test(clean(text).replace(/,/g, '')) ? Number(clean(text).replace(/,/g, '')) : null;
 
   function quoteItems() {
