@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Installation Fee Helper
 // @namespace    livingculture-omni
-// @version      0.1.16
+// @version      0.1.17
 // @description  Automatically matches pergola and blind installation fees in Cin7 Omni, with a manual installation fee picker.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-install-fee-helper.user.js
@@ -26,6 +26,7 @@
   let observedQuoteKey = '', observedSince = 0, processedQuoteKey = '';
   let feesLoading = null;
   let automaticFeesTimer = null;
+  let failedQuoteKey = '', failedQuoteAttempts = 0;
   const maskedOptionStyles = new WeakMap();
 
   function dimensions(text) {
@@ -376,6 +377,15 @@
       .filter(item => /^search\.{0,3}$/i.test(item.value) || /search/i.test(item.placeholder))
       .sort((a, b) => a.rect.top - b.rect.top || a.field.children.length - b.field.children.length)[0] || null;
   }
+  async function waitForEmptyCodeField(sku = '', timeout = 3000) {
+    const deadline = Date.now() + timeout;
+    let empty = emptyCodeField(sku);
+    while (!empty && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      empty = emptyCodeField(sku);
+    }
+    return empty;
+  }
   async function chooseDropdown(sku, input, confirmed = () => false) {
     const wanted = sku.toLowerCase();
     let lastSelectionAt = 0;
@@ -454,7 +464,9 @@
     setTimeout(() => element.classList.remove('show'), 2600);
   }
   async function addItem(item) {
-    const empty = emptyCodeField(item.code);
+    // After a pergola is chosen, Omni sometimes finishes the saved line before
+    // it renders the next blank line. Wait briefly instead of abandoning the fee.
+    const empty = await waitForEmptyCodeField(item.code);
     if (!empty) { toast('No empty Omni product line was found.', true); return false; }
     empty.field.scrollIntoView({ block: 'nearest' });
     empty.rect = empty.field.getBoundingClientRect();
@@ -585,16 +597,33 @@
         // Recheck after each insertion; Omni may rerender the entire quote table.
         const stillNeeded = matchedFeePlan(quoteLines(), items).fees.find(item => item.code === fee.code);
         if (!stillNeeded) continue;
-        if (!await addItem(stillNeeded)) { processedQuoteKey = quoteKey(); return; }
+        if (!await addItem(stillNeeded)) {
+          const failedKey = quoteKey();
+          if (failedKey === failedQuoteKey) failedQuoteAttempts += 1;
+          else { failedQuoteKey = failedKey; failedQuoteAttempts = 1; }
+          if (failedQuoteAttempts < 3) {
+            observedQuoteKey = '';
+            scheduleAutomaticFees(1200 * failedQuoteAttempts, true);
+          } else {
+            processedQuoteKey = failedKey;
+            toast('The installation fee could not be inserted automatically. Use Install Fees to add it manually.', true);
+          }
+          return;
+        }
       }
       processedQuoteKey = quoteKey();
+      failedQuoteKey = '';
+      failedQuoteAttempts = 0;
     } finally {
       addingMatchedFees = false;
       button.disabled = false;
     }
   }
-  function scheduleAutomaticFees(delay = 100) {
-    if (automaticFeesTimer !== null) return;
+  function scheduleAutomaticFees(delay = 100, replace = false) {
+    if (automaticFeesTimer !== null) {
+      if (!replace) return;
+      clearTimeout(automaticFeesTimer);
+    }
     automaticFeesTimer = setTimeout(() => {
       automaticFeesTimer = null;
       checkAutomaticFees();
@@ -609,9 +638,13 @@
     const key = quoteKey();
     if (key === processedQuoteKey) return;
     if (key !== observedQuoteKey) {
-      observedQuoteKey = key; observedSince = Date.now(); scheduleAutomaticFees(300); return;
+      observedQuoteKey = key;
+      observedSince = Date.now();
+      if (key !== failedQuoteKey) { failedQuoteKey = ''; failedQuoteAttempts = 0; }
+      scheduleAutomaticFees(900, true);
+      return;
     }
-    const remaining = 300 - (Date.now() - observedSince);
+    const remaining = 900 - (Date.now() - observedSince);
     if (remaining > 0) { scheduleAutomaticFees(remaining); return; }
     void addMatchedFees().catch(error => {
       processedQuoteKey = quoteKey();
