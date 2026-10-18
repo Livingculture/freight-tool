@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture All-in-One
 // @namespace    livingculture
-// @version      0.1.160
+// @version      0.1.161
 // @description  Approved Living Culture Omni, Cin7 Core, Gmail, HubSpot and website tools in one Tampermonkey install.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -47,7 +47,7 @@
 // @resource     omniFreight https://raw.githubusercontent.com/Livingculture/freight-tool/fecdba1735d2e82e9fae7fc2895efd740c182b00/userscripts/omni-cin7-lc-freight.user.js
 // @resource     addressAutocomplete https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-address-autocomplete.user.js?v=0.1.10
 // @resource     customComments https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-custom-comments.user.js?v=0.1.15
-// @resource     installFees https://raw.githubusercontent.com/Livingculture/freight-tool/d001393cb0f965596ee472b24d5bdb004ebd9a20/userscripts/omni-install-fee-helper.user.js
+// @resource     installFees https://raw.githubusercontent.com/Livingculture/freight-tool/fb2983a3642d9ebedf63d123eec080a59f2bcc69/userscripts/omni-install-fee-helper.user.js
 // @resource     customProducts https://raw.githubusercontent.com/Livingculture/freight-tool/bb74c90d3434a261d3bc526027a694d4b50b4d5c/userscripts/omni-custom-product-helper.user.js?v=0.1.11
 // @resource     websiteShortcuts https://raw.githubusercontent.com/Livingculture/freight-tool/86774fbd10544cbc5d6b301c74599fa30ec48df5/userscripts/omni-website-shortcuts.user.js
 // @resource     productAvailability https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-product-availability.user.js?v=0.1.7
@@ -130,7 +130,7 @@
     if (earlyOmniTools.has(component.resource)) component.runAt = 'body';
   });
 
-  const status = { version: '0.1.160', loaded: [], skipped: [], errors: [] };
+  const status = { version: '0.1.161', loaded: [], skipped: [], errors: [] };
   window.__lcAllInOneStatus = status;
 
   // BEGIN GENERATED GMAIL COMPONENTS
