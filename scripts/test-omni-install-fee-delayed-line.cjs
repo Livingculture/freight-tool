@@ -16,6 +16,7 @@ const { chromium } = require('playwright');
     await page.goto('https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx?OrderId=456');
     await page.evaluate(() => {
       window.blankLineAddedAt = 0;
+      window.codeEditorReplaced = false;
       window.setTimeout(() => {
         const row = document.createElement('tr');
         row.innerHTML = '<td class="code">Search...</td><td class="product">Search...</td><td></td><td></td><td></td><td><input value="1"></td><td><input value="2000"></td>';
@@ -27,10 +28,19 @@ const { chromium } = require('playwright');
           codeCell.innerHTML = '<input>';
           const input = codeCell.firstChild;
           input.focus();
-          input.addEventListener('input', () => window.setTimeout(() => {
-            if (!input.isConnected || document.getElementById('fee-option')) return;
+          const watch = editor => editor.addEventListener('input', () => {
+            if (!window.codeEditorReplaced) {
+              window.codeEditorReplaced = true;
+              const replacement = document.createElement('input');
+              editor.replaceWith(replacement);
+              replacement.focus();
+              watch(replacement);
+              return;
+            }
+            window.setTimeout(() => {
+            if (!editor.isConnected || document.getElementById('fee-option')) return;
             const option = document.createElement('div');
-            option.id = 'fee-option'; option.setAttribute('role', 'option'); option.textContent = input.value;
+            option.id = 'fee-option'; option.setAttribute('role', 'option'); option.textContent = editor.value;
             option.style.cssText = 'position:fixed;left:20px;top:500px;width:180px;height:32px;background:white';
             option.addEventListener('click', () => {
               codeCell.textContent = option.textContent;
@@ -38,7 +48,9 @@ const { chromium } = require('playwright');
               option.remove();
             });
             document.body.appendChild(option);
-          }, 100));
+            }, 100);
+          });
+          watch(input);
         });
       }, 1600);
     });
@@ -52,6 +64,7 @@ const { chromium } = require('playwright');
     await page.addScriptTag({ content: fs.readFileSync(path.join(__dirname, '../userscripts/omni-install-fee-helper.user.js'), 'utf8') });
     await page.waitForFunction(() => [...document.querySelectorAll('#quote td')].some(cell => cell.textContent === 'AS10037'), null, { timeout: 15000 });
     assert(await page.evaluate(() => window.blankLineAddedAt > 0), 'The blank line was deliberately added after automatic matching began');
+    assert.equal(await page.evaluate(() => window.codeEditorReplaced), true, 'The fixture reproduced Omni replacing the first Code editor');
     assert.equal(await page.locator('#quote td').filter({ hasText: /^AS10037$/ }).count(), 1);
     console.log('PASS: Automatic installation waits for Omni to create its delayed blank product line.');
   } finally {

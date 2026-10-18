@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Installation Fee Helper
 // @namespace    livingculture-omni
-// @version      0.1.17
+// @version      0.1.18
 // @description  Automatically matches pergola and blind installation fees in Cin7 Omni, with a manual installation fee picker.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-install-fee-helper.user.js
@@ -386,9 +386,11 @@
     }
     return empty;
   }
-  async function chooseDropdown(sku, input, confirmed = () => false) {
+  async function chooseDropdown(sku, input, confirmed = () => false, locateInput = () => input) {
     const wanted = sku.toLowerCase();
     let lastSelectionAt = 0;
+    let lastValueAt = Date.now();
+    let valueAttempts = 1;
     const startedAt = Date.now();
     let commitAttempts = 0;
     const commitCode = () => {
@@ -401,7 +403,21 @@
     for (let attempt = 0; attempt < 200; attempt += 1) {
       await new Promise(resolve => setTimeout(resolve, 60));
       if (confirmed()) return true;
+      const liveInput = locateInput();
+      if (liveInput && liveInput !== input) {
+        input = liveInput;
+        commitAttempts = 0;
+        lastSelectionAt = 0;
+      }
       if (!input.isConnected) continue;
+      // Some Omni rows replace the editor after the first input event. Reapply
+      // the SKU to the live editor instead of waiting on the detached field.
+      if (clean(input.value).toLowerCase() !== wanted && valueAttempts < 4 && Date.now() - lastValueAt >= 300) {
+        setValue(input, sku);
+        valueAttempts += 1;
+        lastValueAt = Date.now();
+        continue;
+      }
       const inputRect = input.getBoundingClientRect();
       const quoteTable = quoteTableInfo()?.table;
       const option = pageElements('[role="option"], li, a, div, span, td')
@@ -491,7 +507,7 @@
     }
     if (!codeInput) { toast('Could not open the Omni Code search field.', true); return false; }
     setValue(codeInput, item.code);
-    await chooseDropdown(item.code, codeInput, confirmedRow);
+    await chooseDropdown(item.code, codeInput, confirmedRow, () => fieldNear(empty.rect.left + empty.rect.width / 2, rowY));
     let insertedRow = null;
     for (let attempt = 0; attempt < 30; attempt += 1) {
       await new Promise(resolve => setTimeout(resolve, 60));
