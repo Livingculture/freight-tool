@@ -15,6 +15,8 @@
 (function () {
   'use strict';
   if (location.hostname !== 'go.cin7.com' || window.parent !== window) return;
+  if (document.documentElement.dataset.lcOmniHelpTooltipsInstalled === '1') return;
+  document.documentElement.dataset.lcOmniHelpTooltipsInstalled = '1';
 
   const TOGGLE_ID = 'lc-omni-help-tips-toggle';
   const TOOLTIP_ID = 'lc-omni-help-tooltip';
