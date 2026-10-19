@@ -21,6 +21,7 @@ const source = fs.readFileSync('userscripts/omni-help-tooltips.user.js', 'utf8')
     }));
     await page.goto('https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx');
     await page.addScriptTag({ content: source });
+    await page.addScriptTag({ content: source });
 
     const toggle = page.locator('#lc-omni-help-tips-toggle');
     await toggle.waitFor();
@@ -75,7 +76,7 @@ const source = fs.readFileSync('userscripts/omni-help-tooltips.user.js', 'utf8')
     tip = await page.locator('#lc-omni-help-tooltip').innerText();
     assert.match(tip, /approved installation services/);
 
-    assert.equal(await page.locator('#lc-omni-help-tips-toggle').count(), 1, 'Only one toggle is created');
+    assert.equal(await page.locator('#lc-omni-help-tips-toggle').count(), 1, 'Standalone and All-in-One loading together still creates only one toggle');
     assert.deepEqual(errors, []);
     console.log('PASS: Omni Help Tips default on, rich explanations, dynamic controls, shadow panels, keyboard focus, persistent off/on switch and no duplicate toggle.');
   } finally {

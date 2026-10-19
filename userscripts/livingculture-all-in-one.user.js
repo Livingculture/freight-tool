@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture All-in-One
 // @namespace    livingculture
-// @version      0.1.162
+// @version      0.1.163
 // @description  Approved Living Culture Omni, Cin7 Core, Gmail, HubSpot and website tools in one Tampermonkey install.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -60,7 +60,7 @@
 // @resource     workflow https://raw.githubusercontent.com/Livingculture/freight-tool/2c12856/userscripts/omni-livingculture-workflow.user.js
 // @resource     workflowNavigation https://raw.githubusercontent.com/Livingculture/freight-tool/74f1c12230baa69f83abc615595888c0ddb71b98/userscripts/omni-workflow-navigation.user.js
 // @resource     warrantyGuide https://raw.githubusercontent.com/Livingculture/freight-tool/4c8f7709f96fdbd17c59fa9fe4e81cd5dab6345a/userscripts/omni-warranty-guide.user.js
-// @resource     omniHelpTooltips https://raw.githubusercontent.com/Livingculture/freight-tool/76e26b923edf78ef55a1cc72eef78a4082504aaf/userscripts/omni-help-tooltips.user.js
+// @resource     omniHelpTooltips https://raw.githubusercontent.com/Livingculture/freight-tool/9e588e4c6b8d130e85fa4da17bb2a2280acc873f/userscripts/omni-help-tooltips.user.js
 // @resource     emailHelperOnly https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-email-helper-only.user.js?v=0.1.1
 // @resource     quoteMemo https://raw.githubusercontent.com/Livingculture/freight-tool/b3e3a323b1b0ba6a9aed3bf11f328375a7728e34/userscripts/omni-quote-memo-info.user.js
 // @resource     pergolaGuide https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-pergola-modification-guide.user.js?v=0.1.1
@@ -132,7 +132,7 @@
     if (earlyOmniTools.has(component.resource)) component.runAt = 'body';
   });
 
-  const status = { version: '0.1.162', loaded: [], skipped: [], errors: [] };
+  const status = { version: '0.1.163', loaded: [], skipped: [], errors: [] };
   window.__lcAllInOneStatus = status;
 
   // BEGIN GENERATED GMAIL COMPONENTS
