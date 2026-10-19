@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture All-in-One
 // @namespace    livingculture
-// @version      0.1.161
+// @version      0.1.162
 // @description  Approved Living Culture Omni, Cin7 Core, Gmail, HubSpot and website tools in one Tampermonkey install.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -60,6 +60,7 @@
 // @resource     workflow https://raw.githubusercontent.com/Livingculture/freight-tool/2c12856/userscripts/omni-livingculture-workflow.user.js
 // @resource     workflowNavigation https://raw.githubusercontent.com/Livingculture/freight-tool/74f1c12230baa69f83abc615595888c0ddb71b98/userscripts/omni-workflow-navigation.user.js
 // @resource     warrantyGuide https://raw.githubusercontent.com/Livingculture/freight-tool/4c8f7709f96fdbd17c59fa9fe4e81cd5dab6345a/userscripts/omni-warranty-guide.user.js
+// @resource     omniHelpTooltips https://raw.githubusercontent.com/Livingculture/freight-tool/76e26b923edf78ef55a1cc72eef78a4082504aaf/userscripts/omni-help-tooltips.user.js
 // @resource     emailHelperOnly https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-email-helper-only.user.js?v=0.1.1
 // @resource     quoteMemo https://raw.githubusercontent.com/Livingculture/freight-tool/b3e3a323b1b0ba6a9aed3bf11f328375a7728e34/userscripts/omni-quote-memo-info.user.js
 // @resource     pergolaGuide https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-pergola-modification-guide.user.js?v=0.1.1
@@ -112,6 +113,7 @@
     { resource: 'workflow', file: 'omni-livingculture-workflow.user.js', runAt: 'start', enabled: isOmniQuote || isOmniShoppingAdmin },
     { resource: 'workflowNavigation', file: 'omni-workflow-navigation.user.js', runAt: 'idle', enabled: isOmni },
     { resource: 'warrantyGuide', file: 'omni-warranty-guide.user.js', runAt: 'idle', enabled: isOmniQuote },
+    { resource: 'omniHelpTooltips', file: 'omni-help-tooltips.user.js', runAt: 'idle', enabled: isOmni },
     { resource: 'gmailHubspotAttachments', file: 'gmail-hubspot-attachments.user.js', runAt: 'start', enabled: isGmail },
     { resource: 'gmailQuotePdfs', file: 'gmail-omni-quote-pdfs.user.js', runAt: 'idle', enabled: isOmniQuote || isOmniShoppingAdmin || isGmail },
     { resource: 'emailHelperOnly', file: 'omni-email-helper-only.user.js', runAt: 'start', enabled: isOmniContactLog || isEmailHelper },
@@ -130,7 +132,7 @@
     if (earlyOmniTools.has(component.resource)) component.runAt = 'body';
   });
 
-  const status = { version: '0.1.161', loaded: [], skipped: [], errors: [] };
+  const status = { version: '0.1.162', loaded: [], skipped: [], errors: [] };
   window.__lcAllInOneStatus = status;
 
   // BEGIN GENERATED GMAIL COMPONENTS
