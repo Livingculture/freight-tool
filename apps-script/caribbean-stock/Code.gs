@@ -2,6 +2,7 @@ const STOCK_SHEET_ID = '1tHDqaApj978tVT8SnSlQ0S-EytkmNM0MlnD8i5cIapc';
 const STOCK_TAB_ID = 0;
 const UNIT_KEY = 'LC_CARIBBEAN_UNIT_V1';
 const ALLOCATION_KEY = 'LC_CARIBBEAN_ALLOCATION_V1';
+const INTEREST_KEY = 'LC_CARIBBEAN_INTEREST_V1';
 const STOCK_DAY_MS = 86400000;
 
 function stockActor_() {
@@ -57,10 +58,21 @@ function stockColourState_(backgrounds) {
   if (yellow) return 'Held';
   return other ? 'Review status' : 'Available';
 }
+function stockInterests_(sheet) {
+  const result = {};
+  sheet.createDeveloperMetadataFinder().withKey(INTEREST_KEY).find().forEach(item => {
+    const row = item.getLocation().getRow();
+    if (!row) return;
+    let record;
+    try { record = JSON.parse(item.getValue()); } catch (error) { throw new Error('Invalid interested-customer details. Ask Admin to review the sheet.'); }
+    (result[row.getRow()] || (result[row.getRow()] = [])).push(record);
+  });
+  return result;
+}
 function stockRows_(sheet, assignIds) {
   const range = sheet.getDataRange(), values = range.getValues(), display = range.getDisplayValues(), backgrounds = range.getBackgrounds();
   if (!values.length) throw new Error('The stock sheet is empty.');
-  const columns = stockColumns_(display[0]), ids = stockMetadata_(sheet,UNIT_KEY), allocations = stockMetadata_(sheet,ALLOCATION_KEY);
+  const columns = stockColumns_(display[0]), ids = stockMetadata_(sheet,UNIT_KEY), allocations = stockMetadata_(sheet,ALLOCATION_KEY), interests = stockInterests_(sheet);
   const rows = [], requests = [], unique = {};
   for (let i = 1; i < values.length; i++) {
     const code = stockText_(display[i][columns.code]),name = stockText_(display[i][columns.name]);
@@ -91,7 +103,8 @@ function stockRows_(sheet, assignIds) {
     const serialValues = values[i].map(value => value instanceof Date ? value.toISOString() : value);
     rows.push({id,rowNumber,code,name,type:columns.type < 0 ? '' : stockText_(display[i][columns.type]),size:columns.size < 0 ? '' : stockText_(display[i][columns.size]),colour:columns.colour < 0 ? '' : stockText_(display[i][columns.colour]),
       location:stock.filter(item => item.quantity > 0).map(item => item.name).join(' / ') || 'Not recorded',notes:columns.notes < 0 ? '' : stockText_(display[i][columns.notes]),
-      quote,date:stockText_(display[i][columns.date]),status,validUnit,revision:stockHash_([id,serialValues,backgrounds[i],allocations[rowNumber] && allocations[rowNumber].value || '']),
+      quote,date:stockText_(display[i][columns.date]),status,validUnit,revision:stockHash_([id,serialValues,backgrounds[i],allocations[rowNumber] && allocations[rowNumber].value || '',interests[rowNumber] || []]),
+      interests:(interests[rowNumber] || []).filter(item => item.unitId === id).map(item => ({quote:item.quote,customer:item.customer,rep:item.rep,at:item.at})),
       allocation:currentAllocation ? {actor:currentAllocation.actor,customer:currentAllocation.customer,rep:currentAllocation.rep,at:currentAllocation.at,expiresAt:currentAllocation.expiresAt} : null,
       _record:allocation,_metadataId:allocations[rowNumber] && allocations[rowNumber].id});
   }
@@ -110,25 +123,67 @@ function doGet() {
   stockActor_();
   return HtmlService.createHtmlOutputFromFile('Stock').setTitle('Living Culture - Caribbean Stock').addMetaTag('viewport','width=device-width, initial-scale=1');
 }
+function stockDay_(at) { return Utilities.formatDate(new Date(at),'Pacific/Auckland','yyyy-MM-dd').split('-'); }
+function stockExpire_(sheet,data) {
+  const requests = [];
+  data.rows.filter(unit => unit.status === 'Expired hold').forEach(unit => {
+    const record = unit._record;
+    // Only release unchanged app-created holds, never paid or manually reassigned stock.
+    if (!Number.isFinite(record.at) || !Number.isFinite(record.expiresAt)) return;
+    const day = stockDay_(record.at);
+    if (unit.date !== [day[2],day[1],day[0]].join('/')) return;
+    const row = unit.rowNumber-1;
+    [data.columns.quote,data.columns.date].forEach(column => requests.push({updateCells:{start:{sheetId:STOCK_TAB_ID,rowIndex:row,columnIndex:column},rows:[{values:[{}]}],fields:'userEnteredValue'}}));
+    requests.push({repeatCell:{range:{sheetId:STOCK_TAB_ID,startRowIndex:row,endRowIndex:row+1,startColumnIndex:0,endColumnIndex:data.width},cell:{userEnteredFormat:{backgroundColor:{red:1,green:1,blue:1}}},fields:'userEnteredFormat.backgroundColor'}});
+    requests.push({updateDeveloperMetadata:{dataFilters:[{developerMetadataLookup:{metadataId:unit._metadataId}}],developerMetadata:{metadataValue:JSON.stringify(Object.assign({},record,{status:'Released',releasedAt:Date.now()}))},fields:'metadataValue'}});
+  });
+  if (!requests.length) return data;
+  Sheets.Spreadsheets.batchUpdate({requests},STOCK_SHEET_ID);
+  SpreadsheetApp.flush();
+  return stockRows_(sheet,false);
+}
+function stockReleaseExpiredHolds_() {
+  const lock = LockService.getScriptLock();lock.waitLock(15000);
+  try { const sheet = stockSheet_();stockExpire_(sheet,stockRows_(sheet,true)); }
+  finally { lock.releaseLock(); }
+}
+function enableStockAutomation() {
+  stockActor_();
+  const handler = 'stockReleaseExpiredHolds_';
+  if (!ScriptApp.getProjectTriggers().some(trigger => trigger.getHandlerFunction() === handler)) ScriptApp.newTrigger(handler).timeBased().everyMinutes(1).create();
+  stockReleaseExpiredHolds_();
+  return 'Automatic 24-hour release enabled. Google checks approximately every minute.';
+}
 function getStock() {
   const actor = stockActor_(), lock = LockService.getScriptLock();
   lock.waitLock(15000);
-  try { const sheet = stockSheet_();return stockPayload_(sheet,stockRows_(sheet,true),actor); }
+  try { const sheet = stockSheet_();return stockPayload_(sheet,stockExpire_(sheet,stockRows_(sheet,true)),actor); }
   finally { lock.releaseLock(); }
 }
 function updateStock(input) {
   const actor = stockActor_();
-  if (!input || ['hold','paid'].indexOf(input.action) === -1) throw new Error('Choose Hold or Mark paid.');
+  if (!input || ['hold','paid','interest'].indexOf(input.action) === -1) throw new Error('Choose Hold, Mark paid or Interested customer.');
   const quote = stockText_(input.quote).toUpperCase(),customer = stockText_(input.customer),rep = stockText_(input.rep);
   if (!/^(?:NZSO-?\d+|SFOR\d+(?:-[A-Z0-9]+)?)$/.test(quote) || quote.length > 40) throw new Error('Enter a valid NZSO or SFOR quote number.');
   if (!customer || customer.length > 150 || !rep || rep.length > 100) throw new Error('Enter the customer and rep.');
-  if (input.confirmed !== true) throw new Error(input.action === 'hold' ? 'Confirm the quote is valid and the customer has verbally agreed to pay.' : 'Confirm payment has been received.');
+  if (input.confirmed !== true) throw new Error(input.action === 'interest' ? 'Confirm the interested customer details.' : input.action === 'hold' ? 'Confirm the quote is valid and the customer has verbally agreed to pay.' : 'Confirm payment has been received.');
   if (!/^[a-zA-Z0-9-]{16,80}$/.test(String(input.requestId || ''))) throw new Error('A request ID is required. Refresh and try again.');
   const requestHash = stockHash_([input.unitId,input.action,quote,customer,rep,actor]);
   const lock = LockService.getScriptLock();lock.waitLock(15000);
   try {
-    const sheet = stockSheet_(),data = stockRows_(sheet,false),unit = data.rows.find(row => row.id === input.unitId);
+    const sheet = stockSheet_(),data = stockExpire_(sheet,stockRows_(sheet,false)),unit = data.rows.find(row => row.id === input.unitId);
     if (!unit) throw new Error('This unit was removed. Refresh the stock list.');
+    if (input.action === 'interest') {
+      if (unit.interests.some(item => item.quote === quote)) return stockPayload_(sheet,data,actor);
+      if (unit.revision !== input.revision) throw new Error('This unit changed. Refresh before trying again.');
+      if (unit.status !== 'Held' || !unit.validUnit || unit.quote === quote) throw new Error('Register interest against another customer\'s active hold.');
+      if (unit.interests.length >= 20) throw new Error('This unit already has 20 interested customers. Contact Customer Service.');
+      const record = JSON.stringify({unitId:unit.id,quote,customer,rep,actor,at:Date.now()});
+      if (Utilities.newBlob(record).getBytes().length > 1024) throw new Error('Customer or rep details are too long. Please shorten them.');
+      Sheets.Spreadsheets.batchUpdate({requests:[{createDeveloperMetadata:{developerMetadata:{metadataKey:INTEREST_KEY,metadataValue:record,visibility:'DOCUMENT',location:{dimensionRange:{sheetId:STOCK_TAB_ID,dimension:'ROWS',startIndex:unit.rowNumber-1,endIndex:unit.rowNumber}}}}}]},STOCK_SHEET_ID);
+      SpreadsheetApp.flush();
+      return stockPayload_(sheet,stockRows_(sheet,false),actor);
+    }
     if (unit._record && unit._record.requestId === input.requestId) {
       if (unit._record.requestHash !== requestHash) throw new Error('Request details changed. Refresh before trying again.');
       if (unit.quote !== quote || ['Held','Expired hold','Paid'].indexOf(unit.status) === -1) throw new Error('The sheet changed after this request. Refresh the list.');
@@ -140,6 +195,7 @@ function updateStock(input) {
     if (!unit.validUnit) throw new Error('This row does not contain exactly one unit. Ask Customer Service to check it.');
     const at = Date.now(),status = input.action === 'hold' ? 'Held' : 'Paid';
     const record = {requestId:input.requestId,requestHash,status,quote,customer,rep,actor,at,expiresAt:input.action === 'hold' ? at+STOCK_DAY_MS : null};
+    if (Utilities.newBlob(JSON.stringify(record)).getBytes().length > 950) throw new Error('Customer or rep details are too long. Please shorten them.');
     const day = Utilities.formatDate(new Date(at),'Pacific/Auckland','yyyy-MM-dd').split('-').map(Number);
     const serialDate = Date.UTC(day[0],day[1]-1,day[2])/STOCK_DAY_MS+25569;
     const colour = status === 'Held' ? {red:1,green:242/255,blue:204/255} : {red:234/255,green:153/255,blue:153/255};

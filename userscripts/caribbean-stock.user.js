@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Caribbean Stock
 // @namespace    livingculture-stock
-// @version      0.1.0
+// @version      0.1.1
 // @description  Opens the live Caribbean stock list and Google-authorised hold/paid controls in Cin7 Core and Omni.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -19,13 +19,14 @@
   'use strict';
   if(window.parent!==window||!/^(?:go\.cin7\.com|(?:[^.]+\.)*dearsystems\.com|(?:[^.]+\.)*cin7core\.com)$/.test(location.hostname))return;
   const ID='lc-caribbean-stock-button',KEY='lcCaribbeanStockWebAppV1';
+  const DEFAULT_APP_URL='https://script.google.com/a/macros/livingculture.co.nz/s/AKfycbwmxFo0-94s8lBr9jDjmMWk6FbxZKTaUDaUi9k3OW3MuSIi4QOmiCuqvm-1IJJlLJ5ZtA/exec';
   function appUrl(value){
     const url=new URL(String(value||'').trim());
     if(url.protocol!=='https:'||url.hostname!=='script.google.com'||!/^\/(?:a\/macros\/livingculture\.co\.nz\/|macros\/)s\/[a-zA-Z0-9_-]+\/exec$/.test(url.pathname))throw Error('Enter the Google Apps Script web-app URL ending in /exec.');
     url.search='';url.hash='';return url.href;
   }
   function configure(){
-    const input=prompt('One-time Google connection: enter the Caribbean stock Apps Script web-app URL (ending in /exec). A spreadsheet sharing link alone cannot authorise updates.',GM_getValue(KEY,''));
+    const input=prompt('Change the Caribbean stock Google app address (admin setup only).',GM_getValue(KEY,DEFAULT_APP_URL));
     if(input===null)return '';
     try{const url=appUrl(input);GM_setValue(KEY,url);return url;}catch(error){alert(error.message);return '';}
   }
@@ -42,8 +43,7 @@
     return {quote:heading.match(/\b(?:NZSO-?\d+|SFOR\d+(?:-[A-Z0-9]+)?)\b/i)?.[0]||field(/^(?:quote|order|sale)(?:\s+(?:no\.?|number))?\s*[:#]?$/i),customer:heading.match(/^(?:Edit|New)\s+(?:Sales Order|Quote)\s*-\s*(.+?)\s*-\s*(?:NZSO|SFOR)/i)?.[1]||field(/^(?:selected customer|customer|customer name)\s*:?$/i),rep:field(/^(?:sales rep|sales representative|salesperson)\s*:?$/i)};
   }
   function open(){
-    let configured=GM_getValue(KEY,'');
-    if(!configured)configured=configure();if(!configured)return;
+    const configured=GM_getValue(KEY,'')||DEFAULT_APP_URL;
     let url;try{url=new URL(appUrl(configured));}catch(error){alert(error.message);return;}
     url.hash=new URLSearchParams(context()).toString();
     const width=Math.min(1000,screen.availWidth||innerWidth),height=Math.min(800,screen.availHeight||innerHeight);
