@@ -131,7 +131,7 @@ assert.equal(context.stockColourState_(['#fff2cc','#ea9999']),'Review status');
     }
     for(const platform of ['omni','core'])for(const configured of [undefined,'','https://script.google.com/macros/s/test-app/exec']){
       const page=await browser.newPage({viewport:{width:1280,height:900}});
-      await page.route('https://**/*',route=>route.fulfill({contentType:'text/html',body:'<h1>'+(platform==='omni'?'Edit Sales Order - Customer Name - NZSO-17009':'Sale SFOR12345')+'</h1><div id="lc-omni-workflow-tools-bar" style="display:flex"></div><form><input value="Unsaved"><button type="submit">Save</button></form>'}));
+      await page.route('https://**/*',route=>route.fulfill({contentType:'text/html',body:'<h1>'+(platform==='omni'?'Edit Quote - Customer Name - NZSO-17009':'Sale SFOR12345')+'</h1><div id="lc-omni-workflow-tools-bar" style="display:flex"></div><form><input value="Unsaved"><button type="submit">Save</button></form>'}));
       await page.goto(platform==='omni'?'https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx':'https://inventory.dearsystems.com/Sale');
       await page.evaluate(configured=>{window.GM_getValue=(_,fallback)=>configured===undefined?fallback:configured;window.GM_setValue=()=>{};window.GM_registerMenuCommand=()=>{};window.prompt=()=>{throw Error('Staff should never be asked for the app address');};window.open=(url,name,features)=>{window.opened={url,features};return{opener:window,focus(){}};};},configured);
       await page.addScriptTag({content:launcher});await page.getByRole('button',{name:'Caribbean Stock',exact:true}).click();
@@ -139,7 +139,7 @@ assert.equal(context.stockColourState_(['#fff2cc','#ea9999']),'Review status');
       assert.equal(url.pathname,configured?'/macros/s/test-app/exec':'/a/macros/livingculture.co.nz/s/AKfycbwmxFo0-94s8lBr9jDjmMWk6FbxZKTaUDaUi9k3OW3MuSIi4QOmiCuqvm-1IJJlLJ5ZtA/exec','New users use the built-in address; existing admin overrides are preserved');
       assert.equal(await page.locator('input').inputValue(),'Unsaved');await page.close();
     }
-    for(const title of ['<div>Edit Quote - nobody important - NZSO-17012<span id="lc-omni-heading-actions">Staff Guide Warranty Report Issue</span></div>','<span>Edit Sales Order - nobody important - NZSO &#8211; 17012</span>','<h5>Edit Quote - nobody important - NZSO17012</h5>']){
+    for(const title of ['<div>Edit Quote - nobody important - NZSO-17012<span id="lc-omni-heading-actions">Staff Guide Warranty Report Issue</span></div>','<span>Edit Quote - nobody important - NZSO &#8211; 17012</span>','<h5>Edit Quote - nobody important - NZSO17012</h5>']){
       const page=await browser.newPage();
       await page.route('https://go.cin7.com/**',route=>route.fulfill({contentType:'text/html',body:'<nav>New Quote</nav><h1 style="display:none">Edit Quote - Old Customer - NZSO-11111</h1>'+title+'<p>Related order NZSO-99999</p><label for="rep">Sales Rep:</label><select id="rep"><option>PEN-Steve</option></select>'}));
       await page.goto('https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx');
@@ -148,6 +148,19 @@ assert.equal(context.stockColourState_(['#fff2cc','#ea9999']),'Review status');
       const params=new URLSearchParams(new URL(await page.evaluate(()=>window.opened)).hash.slice(1));
       assert.equal(params.get('quote'),'NZSO-17012','Omni plain div titles and spaced/different dashes populate the current quote');
       assert.equal(params.get('customer'),'nobody important');assert.equal(params.get('rep'),'PEN-Steve');await page.close();
+    }
+    for(const [url,body,visible] of [
+      ['https://go.cin7.com/Cloud/Dashboard/HomePageDashboard.aspx','<nav>New Quote</nav>',false],
+      ['https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx','<h1>Edit Sales Order - Customer - NZSO-17012</h1>',false],
+      ['https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx','<div>New Quote</div>',true],
+      ['https://inventory.dearsystems.com/Dashboard','<h1>Quotes</h1>',false],
+      ['https://inventory.dearsystems.com/Sales','<h1>Sales</h1>',false],
+    ]){
+      const page=await browser.newPage();await page.route('https://**/*',route=>route.fulfill({contentType:'text/html',body}));await page.goto(url);
+      await page.evaluate(()=>{window.GM_registerMenuCommand=()=>{};});await page.addScriptTag({content:launcher});
+      assert.equal(await page.locator('#lc-caribbean-stock-button').count(),visible?1:0,'Stock button is restricted to quote entry');
+      if(visible){await page.evaluate(()=>{document.body.innerHTML='<h1>Edit Sales Order - Customer - NZSO-17012</h1>';});await page.waitForTimeout(100);assert.equal(await page.locator('#lc-caribbean-stock-button').count(),0);}
+      await page.close();
     }
     console.log('PASS: Google-account access, individual stable units, atomic quote/date/yellow-red updates, competing/stale holds, idempotent retry, payment verification, no deletion API, move-safe row IDs, direct responsive list, failure guards and Core/Omni launchers. Google/Sheet services mocked; deployment/real writes not tested.');
   }finally{await browser.close();}

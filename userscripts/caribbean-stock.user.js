@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Caribbean Stock
 // @namespace    livingculture-stock
-// @version      0.1.2
+// @version      0.1.3
 // @description  Opens the live Caribbean stock list and Google-authorised hold/paid controls in Cin7 Core and Omni.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -49,12 +49,21 @@
     const plainTitles=Array.from(document.querySelectorAll('div,span,td')).filter(node=>visible(node)&&!node.closest('nav,aside,[role="navigation"],#lc-omni-job-progress')).map(textOf).filter(text=>text.length<500&&titlePattern.test(text));
     const title=[...headings,...plainTitles].map(text=>text.match(titlePattern)).find(Boolean);
     const heading=headings.find(text=>text.length<350&&number(text))||'';
-    return {quote:number(title?.[3]||heading)||number(field(/^(?:quote|order|sale)(?:\s+(?:no\.?|number))?\s*[:#]?$/i)),customer:clean(title?.[2])||field(/^(?:selected customer|customer|customer name)\s*:?$/i),rep:field(/^(?:sales rep|sales representative|salesperson)\s*:?$/i)};
+    return {quote:number(title?.[3]||heading)||number(field(/^(?:quote|order|sale)(?:\s+(?:no\.?|number))?\s*[:#]?$/i)),customer:clean(title?.[2])||field(/^(?:selected customer|customer|customer name)\s*:?$/i),rep:field(/^(?:sales rep|sales representative|salesperson)\s*:?$/i),documentType:title?.[1]?.toLowerCase()||''};
+  }
+  function quoteScreen(){
+    const omni=location.hostname==='go.cin7.com';
+    if(omni?!/^\/Cloud\/TransactionEntry\/TransactionEntry\.aspx$/i.test(location.pathname):!/^\/Sale\/?$/i.test(location.pathname))return false;
+    const type=context().documentType;
+    if(omni)return type==='quote'||!type&&/^(?:Edit|New)\s+Quote\b/im.test(document.body?.innerText||'');
+    return type!=='sales order';
   }
   function open(){
     const configured=GM_getValue(KEY,'')||DEFAULT_APP_URL;
     let url;try{url=new URL(appUrl(configured));}catch(error){alert(error.message);return;}
-    url.hash=new URLSearchParams(context()).toString();
+    if(!quoteScreen())return;
+    const {quote,customer,rep}=context();
+    url.hash=new URLSearchParams({quote,customer,rep}).toString();
     const width=Math.min(1000,screen.availWidth||innerWidth),height=Math.min(800,screen.availHeight||innerHeight);
     const left=Math.round((screen.availLeft||0)+((screen.availWidth||width)-width)/2),top=Math.round((screen.availTop||0)+((screen.availHeight||height)-height)/2);
     const popup=window.open(url.href,'_blank',`popup=yes,width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`);
@@ -63,6 +72,7 @@
   function mount(){
     if(!document.body)return;
     let button=document.getElementById(ID);
+    if(!quoteScreen()){button?.remove();return;}
     if(!button){button=document.createElement('button');button.id=ID;button.type='button';button.textContent='Caribbean Stock';button.title='Open the live Caribbean stock list';button.addEventListener('click',open);}
     const toolbar=location.hostname==='go.cin7.com'?document.getElementById('lc-omni-workflow-tools-bar'):null,promo=document.getElementById('lc-promo-summary-inline-button');
     const parent=toolbar||(promo?.parentElement&&getComputedStyle(promo.parentElement).display.includes('flex')?promo.parentElement:null)||document.body;
@@ -72,5 +82,6 @@
   if(typeof GM_registerMenuCommand==='function')GM_registerMenuCommand('Connect Caribbean stock Google app',configure);
   let pending=false;
   new MutationObserver(()=>{if(!pending){pending=true;requestAnimationFrame(()=>{pending=false;mount();});}}).observe(document.documentElement,{childList:true,subtree:true});
+  window.addEventListener('popstate',mount);window.addEventListener('hashchange',mount);
   mount();
 })();
