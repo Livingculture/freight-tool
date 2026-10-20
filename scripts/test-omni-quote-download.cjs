@@ -30,7 +30,7 @@ function extract(name) {
         window.quotePdfSidCandidates = () => timings.template ? ['123456'] : [];
         window.requestQuotePdf = () => { throw new Error('Custom templates must never request the hardcoded standard PDF'); };
         window.normalizeLabel = value => String(value).trim().toLowerCase();
-        window.saveQuotePdfBuffer = (_, quoteNumber, customerName) => { window.saved++; window.savedNames.push([quoteNumber, customerName]); };
+        window.saveQuotePdfBuffer = (_, quoteNumber) => { window.saved++; window.savedNames.push(quoteNumber); };
         window.requestAdminQuoteHref = async (_, template) => { window.adminRequests++; window.selectedTemplate = template; return 'https://go.cin7.com/Cloud/Docs/PDF/?T=Quote&path=fast'; };
         window.GM_xmlhttpRequest = options => { window.pdfUrls.push(options.url); return setTimeout(() => {
           const bytes = new Uint8Array(3501); bytes.set(new TextEncoder().encode('%PDF'));
@@ -46,7 +46,7 @@ function extract(name) {
       const elapsed = Date.now() - started;
       await page.waitForTimeout(Math.max(timings.fast, timings.rendered) + 200);
       assert.equal(await page.evaluate(() => window.saved), 1, 'Fast and rendered routes must never save twice');
-      assert.deepEqual(await page.evaluate(() => window.savedNames[0]), ['NZSO-123', 'Test Customer'], 'Every PDF route receives both the NZSO and customer name');
+      assert.equal(await page.evaluate(() => window.savedNames[0]), 'NZSO-123', 'The working Cin7 retrieval chain keeps the original NZSO argument');
       assert.deepEqual(await page.evaluate(() => window.alerts), []);
       assert.equal(await page.locator('iframe').count(), 0);
       assert.equal(await page.locator('#pdf').isEnabled(), true);
@@ -97,9 +97,13 @@ function extract(name) {
       try { await requestAdminQuoteHref('388', 'invoice'); return false; }
       catch { return true; }
     }), 'A missing Dynamic Invoice must not silently select Quote');
-    await templates.addScriptTag({ content: `const clean=value=>String(value||'').replace(/\\s+/g,' ').trim();\n${extract('quotePdfFileName')}` });
-    assert.equal(await templates.evaluate(() => quotePdfFileName('NZSO-17012', 'Peter / Smith: Test?')), 'NZSO-17012 - Peter Smith Test.pdf');
-    assert.equal(await templates.evaluate(() => quotePdfFileName('NZSO-17012')), 'NZSO-17012.pdf', 'Missing customer data keeps the previous safe filename');
+    await templates.addScriptTag({ content: `const clean=value=>String(value||'').replace(/\\s+/g,' ').trim();\n${extract('quotePdfFileBase')}\n${extract('saveQuotePdfBuffer')}` });
+    assert.equal(await templates.evaluate(() => quotePdfFileBase('NZSO-17012', 'Peter / Smith: Test?')), 'NZSO-17012 - Peter Smith Test');
+    assert.equal(await templates.evaluate(() => quotePdfFileBase('NZSO-17012')), 'NZSO-17012', 'Missing customer data keeps the previous safe filename');
+    await templates.evaluate(() => { window.omniHeadingDraft = () => ({ customerName:'Peter Smith' }); });
+    const namedDownload = templates.waitForEvent('download');
+    await templates.evaluate(() => saveQuotePdfBuffer(new TextEncoder().encode('%PDF test').buffer, 'NZSO-17012'));
+    assert.equal((await namedDownload).suggestedFilename(), 'NZSO-17012 - Peter Smith.pdf', 'Only the final browser filename is changed');
     await templates.close();
     console.log('PASS PDF: Exact admin templates, isolated caches, missing-template rejection, menu selection and dismissal');
     const persistence = await browser.newPage();
