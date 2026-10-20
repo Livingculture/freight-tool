@@ -20,17 +20,17 @@ function extract(name) {
         : '<button id="pdf">Download Quote</button>' }));
       await page.goto('https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx?OrderId=388');
       await page.evaluate(timings => {
-        window.saved = 0; window.alerts = []; window.adminRequests = 0; window.pdfUrls = [];
+        window.saved = 0; window.savedNames = []; window.alerts = []; window.adminRequests = 0; window.pdfUrls = [];
         window.alert = message => window.alerts.push(message);
         window.isHubSpotStepComplete = () => true;
         window.isQuotePdfUnlocked = () => true;
         window.hubSpotGateOrderId = () => 'NZSO-123';
-        window.omniHeadingDraft = () => ({ orderId: 'NZSO-123' });
+        window.omniHeadingDraft = () => ({ orderId: 'NZSO-123', customerName: 'Test Customer' });
         window.currentQuotePdfOrderId = () => '388';
         window.quotePdfSidCandidates = () => timings.template ? ['123456'] : [];
         window.requestQuotePdf = () => { throw new Error('Custom templates must never request the hardcoded standard PDF'); };
         window.normalizeLabel = value => String(value).trim().toLowerCase();
-        window.saveQuotePdfBuffer = () => { window.saved++; };
+        window.saveQuotePdfBuffer = (_, quoteNumber, customerName) => { window.saved++; window.savedNames.push([quoteNumber, customerName]); };
         window.requestAdminQuoteHref = async (_, template) => { window.adminRequests++; window.selectedTemplate = template; return 'https://go.cin7.com/Cloud/Docs/PDF/?T=Quote&path=fast'; };
         window.GM_xmlhttpRequest = options => { window.pdfUrls.push(options.url); return setTimeout(() => {
           const bytes = new Uint8Array(3501); bytes.set(new TextEncoder().encode('%PDF'));
@@ -46,6 +46,7 @@ function extract(name) {
       const elapsed = Date.now() - started;
       await page.waitForTimeout(Math.max(timings.fast, timings.rendered) + 200);
       assert.equal(await page.evaluate(() => window.saved), 1, 'Fast and rendered routes must never save twice');
+      assert.deepEqual(await page.evaluate(() => window.savedNames[0]), ['NZSO-123', 'Test Customer'], 'Every PDF route receives both the NZSO and customer name');
       assert.deepEqual(await page.evaluate(() => window.alerts), []);
       assert.equal(await page.locator('iframe').count(), 0);
       assert.equal(await page.locator('#pdf').isEnabled(), true);
@@ -96,6 +97,9 @@ function extract(name) {
       try { await requestAdminQuoteHref('388', 'invoice'); return false; }
       catch { return true; }
     }), 'A missing Dynamic Invoice must not silently select Quote');
+    await templates.addScriptTag({ content: `const clean=value=>String(value||'').replace(/\\s+/g,' ').trim();\n${extract('quotePdfFileName')}` });
+    assert.equal(await templates.evaluate(() => quotePdfFileName('NZSO-17012', 'Peter / Smith: Test?')), 'NZSO-17012 - Peter Smith Test.pdf');
+    assert.equal(await templates.evaluate(() => quotePdfFileName('NZSO-17012')), 'NZSO-17012.pdf', 'Missing customer data keeps the previous safe filename');
     await templates.close();
     console.log('PASS PDF: Exact admin templates, isolated caches, missing-template rejection, menu selection and dismissal');
     const persistence = await browser.newPage();
@@ -117,7 +121,7 @@ function extract(name) {
       window.alerts = []; window.saved = 0; window.alert = message => window.alerts.push(message);
       window.docType = 'quote'; window.isQuotePdfUnlocked = () => false;
       window.hubSpotGateOrderId = () => 'NZSO-123'; window.applyHubSpotApprovalGate = () => {};
-      window.omniHeadingDraft = () => ({ documentType:window.docType, orderId:'NZSO-123' }); window.extractOrderId = () => '';
+      window.omniHeadingDraft = () => ({ documentType:window.docType, orderId:'NZSO-123', customerName:'Test Customer' }); window.extractOrderId = () => '';
       window.currentQuotePdfOrderId = () => '388'; window.quotePdfSidCandidates = () => [];
       window.prepareQuotePdfLink = async () => 'https://go.cin7.com/pdf';
       window.fetchSignedQuotePdf = async () => new ArrayBuffer(4000);
