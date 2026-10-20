@@ -139,6 +139,16 @@ assert.equal(context.stockColourState_(['#fff2cc','#ea9999']),'Review status');
       assert.equal(url.pathname,configured?'/macros/s/test-app/exec':'/a/macros/livingculture.co.nz/s/AKfycbwmxFo0-94s8lBr9jDjmMWk6FbxZKTaUDaUi9k3OW3MuSIi4QOmiCuqvm-1IJJlLJ5ZtA/exec','New users use the built-in address; existing admin overrides are preserved');
       assert.equal(await page.locator('input').inputValue(),'Unsaved');await page.close();
     }
+    for(const title of ['<div>Edit Quote - nobody important - NZSO-17012<span id="lc-omni-heading-actions">Staff Guide Warranty Report Issue</span></div>','<span>Edit Sales Order - nobody important - NZSO &#8211; 17012</span>','<h5>Edit Quote - nobody important - NZSO17012</h5>']){
+      const page=await browser.newPage();
+      await page.route('https://go.cin7.com/**',route=>route.fulfill({contentType:'text/html',body:'<nav>New Quote</nav><h1 style="display:none">Edit Quote - Old Customer - NZSO-11111</h1>'+title+'<p>Related order NZSO-99999</p><label for="rep">Sales Rep:</label><select id="rep"><option>PEN-Steve</option></select>'}));
+      await page.goto('https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx');
+      await page.evaluate(()=>{window.GM_getValue=(_,fallback)=>fallback;window.GM_registerMenuCommand=()=>{};window.open=url=>{window.opened=url;return{focus(){}};};});
+      await page.addScriptTag({content:launcher});await page.getByRole('button',{name:'Caribbean Stock',exact:true}).click();
+      const params=new URLSearchParams(new URL(await page.evaluate(()=>window.opened)).hash.slice(1));
+      assert.equal(params.get('quote'),'NZSO-17012','Omni plain div titles and spaced/different dashes populate the current quote');
+      assert.equal(params.get('customer'),'nobody important');assert.equal(params.get('rep'),'PEN-Steve');await page.close();
+    }
     console.log('PASS: Google-account access, individual stable units, atomic quote/date/yellow-red updates, competing/stale holds, idempotent retry, payment verification, no deletion API, move-safe row IDs, direct responsive list, failure guards and Core/Omni launchers. Google/Sheet services mocked; deployment/real writes not tested.');
   }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

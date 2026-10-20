@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Caribbean Stock
 // @namespace    livingculture-stock
-// @version      0.1.1
+// @version      0.1.2
 // @description  Opens the live Caribbean stock list and Google-authorised hold/paid controls in Cin7 Core and Omni.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -39,8 +39,17 @@
     return '';
   }
   function context(){
-    const heading=Array.from(document.querySelectorAll('h1,h2,h3,h4,[role="heading"]')).filter(element=>element.getClientRects().length).map(element=>element.textContent.trim()).find(text=>text.length<350&&/\b(?:NZSO-?\d+|SFOR\d+(?:-[A-Z0-9]+)?)\b/i.test(text))||'';
-    return {quote:heading.match(/\b(?:NZSO-?\d+|SFOR\d+(?:-[A-Z0-9]+)?)\b/i)?.[0]||field(/^(?:quote|order|sale)(?:\s+(?:no\.?|number))?\s*[:#]?$/i),customer:heading.match(/^(?:Edit|New)\s+(?:Sales Order|Quote)\s*-\s*(.+?)\s*-\s*(?:NZSO|SFOR)/i)?.[1]||field(/^(?:selected customer|customer|customer name)\s*:?$/i),rep:field(/^(?:sales rep|sales representative|salesperson)\s*:?$/i)};
+    const clean=value=>String(value||'').replace(/[\u2010-\u2015\u2212]/g,'-').replace(/\s+/g,' ').trim();
+    const number=value=>{const match=clean(value).match(/\b(NZSO|SFOR)\s*-?\s*(\d+(?:-[A-Z0-9]+)?)\b/i);return match?match[1].toUpperCase()+(match[1].toUpperCase()==='NZSO'?'-':'')+match[2].toUpperCase():'';};
+    const titlePattern=/^(?:Edit|New)\s+(Sales Order|Quote)\s*-\s*(.+?)\s*-\s*((?:NZSO|SFOR)\s*-?\s*\d+(?:-[A-Z0-9]+)?)\b/i;
+    const textOf=node=>clean(Array.from(node.childNodes).filter(child=>!child.id?.startsWith('lc-')).map(child=>child.textContent||'').join(' '));
+    const visible=node=>node.getClientRects().length&&getComputedStyle(node).visibility!=='hidden';
+    const headings=Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"]')).filter(visible).map(textOf);
+    // Omni also renders its transaction title as a plain div, not an HTML heading.
+    const plainTitles=Array.from(document.querySelectorAll('div,span,td')).filter(node=>visible(node)&&!node.closest('nav,aside,[role="navigation"],#lc-omni-job-progress')).map(textOf).filter(text=>text.length<500&&titlePattern.test(text));
+    const title=[...headings,...plainTitles].map(text=>text.match(titlePattern)).find(Boolean);
+    const heading=headings.find(text=>text.length<350&&number(text))||'';
+    return {quote:number(title?.[3]||heading)||number(field(/^(?:quote|order|sale)(?:\s+(?:no\.?|number))?\s*[:#]?$/i)),customer:clean(title?.[2])||field(/^(?:selected customer|customer|customer name)\s*:?$/i),rep:field(/^(?:sales rep|sales representative|salesperson)\s*:?$/i)};
   }
   function open(){
     const configured=GM_getValue(KEY,'')||DEFAULT_APP_URL;
