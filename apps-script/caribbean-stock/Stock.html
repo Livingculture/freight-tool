@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#f4f8f7;color:#283f43;font:14px Arial,sans-serif;letter-spacing:0}button,input{font:inherit;letter-spacing:0}button{cursor:pointer;min-height:35px;padding:6px 11px;border:1px solid #bcd0d1;border-radius:4px;background:white;color:#176458}button:disabled{cursor:not-allowed;opacity:.45}button:hover:enabled{background:#eaf4ee}a{color:#087e8d}input{width:100%;min-width:0;min-height:38px;border:1px solid #bfd3d4;border-radius:4px;background:white;padding:7px 9px;font-size:16px}header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 18px;background:white;border-bottom:1px solid #cbded9}header h1{font-size:21px;margin:3px 0 0}.brand{color:#16704f;font-size:11px;font-weight:700}.header-actions{display:flex;align-items:center;flex-wrap:wrap;gap:12px}.identity{padding:8px 18px;color:#597572;font-size:12px;background:#eaf4f0}.context{padding:12px 18px;display:grid;grid-template-columns:1fr 1.3fr 1fr;gap:10px}label{display:grid;gap:5px;color:#4e696b;font-size:12px}.summary{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:9px 18px;color:#56716f;font-size:12px}.message{margin:0 18px 12px;padding:10px;background:#e3f1e9;color:#245c43;border-left:3px solid #2a805a;font-size:13px}.message.error{background:#fff0e9;color:#a04428;border-color:#c46a4a}[hidden]{display:none!important}.unit{padding:13px 18px;background:#fff;border-top:1px solid #d5e1dd;display:grid;grid-template-columns:minmax(210px,1fr) 130px 170px 205px;gap:12px;align-items:center;min-height:93px}.code{font-size:13px;color:#007d8e;font-weight:700}.name{font-size:13px;line-height:1.4;margin-top:4px;overflow-wrap:anywhere}.spec{font-size:12px;color:#5d7574;margin-top:5px}.note{font-size:12px;color:#6b7d7c;margin-top:5px}.status{font-size:12px;font-weight:700}.status small{display:block;font-size:11px;line-height:1.5;font-weight:400;color:#58716f;margin-top:4px;overflow-wrap:anywhere}.actions{display:flex;justify-content:flex-end;gap:7px;flex-wrap:wrap}.actions button{font-size:12px;white-space:nowrap}.unit.held{background:#fff2cc;border-left:4px solid #d7af38;padding-left:14px}.unit.paid{background:#f9d8d5;border-left:4px solid #c65e55;padding-left:14px}.unit.review{background:#f5f5f1}.empty{padding:35px 18px;text-align:center;color:#657f7c}footer{padding:12px 18px;color:#627a77;font-size:11px;border-top:1px solid #cdded7}button:focus-visible,a:focus-visible{outline:2px solid #00889f;outline-offset:3px}@media(max-width:850px){.unit{grid-template-columns:minmax(200px,1fr) 125px 160px}.actions{grid-column:2/-1}.context{grid-template-columns:1fr 1fr}.context label:last-child{grid-column:1/-1}}@media(max-width:520px){header{align-items:flex-start;padding:12px}h1{font-size:19px!important}.header-actions{justify-content:flex-end;max-width:125px}.context{grid-template-columns:1fr;padding:12px}.context label:last-child{grid-column:auto}.unit{grid-template-columns:minmax(0,1fr) 120px;padding:12px}.unit.held,.unit.paid{padding-left:8px}.product{grid-column:1/-1}.actions{grid-column:1/-1;justify-content:flex-start}.message{margin-inline:12px}.identity,.summary,footer{padding-inline:12px}}
+  </style>
+</head>
+<body>
+  <header><div><div class="brand">LIVING CULTURE</div><h1>Caribbean Stock</h1></div><div class="header-actions"><a id="sheet" target="_blank" rel="noopener noreferrer">Spreadsheet</a><button type="button" id="refresh">Refresh</button></div></header>
+  <div class="identity" id="identity">Checking Google access...</div>
+  <form class="context" id="context"><label>Quote / job number<input name="quote" required maxlength="40" placeholder="NZSO-17009 or SFOR12345"></label><label>Customer<input name="customer" required maxlength="150"></label><label>Rep<input name="rep" required maxlength="100"></label></form>
+  <div class="summary"><span id="count">Loading stock list...</span><span id="read-at"></span></div>
+  <p id="message" class="message" role="status" hidden></p>
+  <main id="list"><div class="empty">Reading spreadsheet...</div></main>
+  <footer>Yellow: held for 24 hours. Red: paid. Customer Service removes paid rows from the sheet. Expired holds need review before reallocation.</footer>
+  <script>
+    'use strict';
+    const form=document.getElementById('context');
+    let rows=[],busy=false,failed=false,retry=null,contextReady=false;
+    const clean=value=>String(value??'').replace(/\s+/g,' ').trim();
+    const escape=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    const date=value=>new Intl.DateTimeFormat('en-NZ',{timeZone:'Pacific/Auckland',day:'numeric',month:'short',hour:'numeric',minute:'2-digit'}).format(new Date(value));
+    function notice(text,error=false){const element=document.getElementById('message');element.hidden=!text;element.textContent=text;element.className=error?'message error':'message';}
+    function api(name,input){return new Promise((resolve,reject)=>{const runner=google.script.run.withSuccessHandler(resolve).withFailureHandler(reject);if(name==='getStock')runner.getStock();else runner.updateStock(input);});}
+    function controls(){document.getElementById('refresh').disabled=busy;form.querySelectorAll('input').forEach(input=>input.disabled=busy);}
+    function render(){
+      document.getElementById('count').textContent=rows.length+' stock rows · '+rows.filter(row=>row.status==='Available').length+' available';
+      document.getElementById('list').innerHTML=rows.map(row=>{
+        const held=['Held','Expired hold'].includes(row.status),paid=row.status==='Paid',sameQuote=row.quote===clean(form.elements.quote.value).toUpperCase();
+        const disabled=busy||failed;
+        return `<section class="unit ${held?'held':paid?'paid':row.status==='Available'?'':'review'}" data-id="${escape(row.id)}"><div class="product"><div class="code">${escape(row.code)}</div><div class="name">${escape(row.name)}</div><div class="spec">${escape([row.type,row.size,row.colour].filter(Boolean).join(' · '))}</div>${row.notes?`<div class="note">${escape(row.notes)}</div>`:''}</div><div class="spec">${escape(row.location)}<br>Sheet row ${row.rowNumber}</div><div class="status">${escape(row.status)}${row.quote?`<small>${escape(row.quote)}${row.date?' · '+escape(row.date):''}</small>`:''}${row.allocation?`<small>${escape(row.allocation.rep)} · ${escape(row.allocation.customer)}</small>`:''}${held&&row.allocation?.expiresAt?`<small>${row.status==='Expired hold'?'Expired':'Until'} ${escape(date(row.allocation.expiresAt))}</small>`:''}</div><div class="actions">${row.status==='Available'?`<button type="button" data-action="hold" ${disabled?'disabled':''}>Hold 24 hours</button><button type="button" data-action="paid" ${disabled?'disabled':''}>Mark paid</button>`:held?`<button type="button" data-action="paid" ${disabled||!sameQuote?'disabled':''}>Mark paid</button>`:paid?'<span class="spec">Customer Service to process</span>':'<span class="spec">Check with Customer Service</span>'}</div></section>`;
+      }).join('')||'<div class="empty">No stock units remain in this sheet.</div>';
+      controls();
+    }
+    function apply(data){
+      if(!Array.isArray(data?.rows))throw Error('The stock list response was not recognised.');
+      rows=data.rows;failed=false;
+      document.getElementById('identity').textContent='Signed in as '+data.actor+' · Live spreadsheet updates';
+      if(!form.elements.rep.value)form.elements.rep.value=data.actor.split('@')[0];
+      document.getElementById('sheet').href=data.spreadsheetUrl;
+      document.getElementById('read-at').textContent='Read '+date(data.readAt);
+    }
+    async function load(){
+      if(busy)return;busy=true;controls();render();
+      try{apply(await api('getStock'));notice('');}
+      catch(error){failed=true;notice(error.message||'Could not read the stock list.',true);}
+      finally{busy=false;render();}
+    }
+    async function change(id,action){
+      if(busy||failed||!contextReady||!form.reportValidity())return;
+      const unit=rows.find(row=>row.id===id);if(!unit)return;
+      const quote=clean(form.elements.quote.value).toUpperCase(),customer=clean(form.elements.customer.value),rep=clean(form.elements.rep.value);
+      if(!/^(?:NZSO-?\d+|SFOR\d+(?:-[A-Z0-9]+)?)$/.test(quote)){notice('Enter a valid NZSO or SFOR quote number.',true);return;}
+      const text=action==='hold'?`Hold ${unit.code}, ${unit.location}, for ${quote}? Confirm the quote is valid and the customer has verbally agreed to pay. This will mark the spreadsheet row yellow for 24 hours.`:`Mark ${unit.code}, ${unit.location}, PAID for ${quote}? Confirm payment has actually been received. This updates the spreadsheet; it does not take a payment.`;
+      if(!confirm(text))return;
+      const signature=JSON.stringify([id,action,quote,customer,rep]);
+      if(!retry||retry.signature!==signature)retry={signature,requestId:crypto.randomUUID()};
+      const input={unitId:id,revision:unit.revision,action,quote,customer,rep,confirmed:true,requestId:retry.requestId};
+      busy=true;notice('Saving to spreadsheet...');render();
+      try{apply(await api('updateStock',input));retry=null;notice(action==='hold'?'Stock hold saved to spreadsheet.':'Paid status saved to spreadsheet. Customer Service will process the row.');}
+      catch(error){failed=true;notice((error.message||'The update could not be confirmed.')+' Refresh before trying again.',true);}
+      finally{busy=false;render();}
+    }
+    document.getElementById('refresh').addEventListener('click',load);
+    form.addEventListener('submit',event=>event.preventDefault());form.elements.quote.addEventListener('input',render);
+    document.getElementById('list').addEventListener('click',event=>{const button=event.target.closest('button[data-action]');if(button&&!button.disabled)change(button.closest('[data-id]').dataset.id,button.dataset.action);});
+    google.script.url.getLocation(location=>{
+      const values=new URLSearchParams(String(location.hash||'').replace(/^#/,''));
+      for(const field of ['quote','customer','rep'])form.elements[field].value=values.get(field)||'';
+      contextReady=true;load();
+    });
+    setInterval(()=>{if(!document.hidden&&!busy&&contextReady)load();},30000);
+  </script>
+</body>
+</html>
