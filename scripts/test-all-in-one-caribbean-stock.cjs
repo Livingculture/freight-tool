@@ -11,7 +11,7 @@ assert.match(loader, /@resource\s+caribbeanStock https:\/\/raw\.githubuserconten
   try {
     for (const fixture of [
       {url:'https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx',title:'Edit Quote - Customer Name - NZSO-17012',show:true,anchor:'lc-omni-china-warehouse-button'},
-      {url:'https://inventory.dearsystems.com/Sale#test',title:'Sale SFOR12345',show:true,anchor:'lc-core-pergola-guide-button'},
+      {url:'https://inventory.dearsystems.com/Sale#test',title:'Sale SFOR12345',show:true,anchor:'lc-quote-review-inline-button-v1'},
       {url:'https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx',title:'Edit Sales Order - Customer Name - NZSO-17012',show:false},
       {url:'https://go.cin7.com/Cloud/Dashboard/HomePageDashboard.aspx',title:'Dashboard',show:false},
       {url:'https://inventory.dearsystems.com/Dashboard',title:'Dashboard',show:false},
