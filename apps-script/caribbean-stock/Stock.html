@@ -40,59 +40,10 @@
   <script>
     'use strict';
     const form=document.getElementById('context');
-    let rows=[],busy=false,failed=false,retry=null,contextReady=false,confirming=false,tooltipTarget=null,tooltipTimer=0;
-    const containerCache=new Map(),containerTooltip=document.getElementById('container-tooltip');
+    let rows=[],busy=false,failed=false,retry=null,contextReady=false,confirming=false;
     const clean=value=>String(value??'').replace(/\s+/g,' ').trim();
     const escape=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     const date=value=>new Intl.DateTimeFormat('en-NZ',{timeZone:'Pacific/Auckland',day:'numeric',month:'short',hour:'numeric',minute:'2-digit'}).format(new Date(value));
-    function noteHtml(value){
-      const text=String(value??''),pattern=/\b(container(?:\s+(?:no\.?|number))?\s*[:#-]?\s*)(\d+[A-Z]?)\b/gi;
-      let html='',last=0,match;
-      while((match=pattern.exec(text))){
-        html+=escape(text.slice(last,match.index))+escape(match[1]);
-        const number=match[2].toUpperCase();
-        html+=`<a class="container-reference" data-container="${escape(number)}" href="https://living-culture-freight.vercel.app/containers.html?container=${encodeURIComponent(number)}" target="_blank" rel="noopener noreferrer" aria-describedby="container-tooltip">${escape(match[2])}</a>`;
-        last=pattern.lastIndex;
-      }
-      return html+escape(text.slice(last));
-    }
-    function trackerDate(value){
-      const values=String(value||'').match(/\b\d{4}-\d{1,2}-\d{1,2}\b|\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g)||[];
-      const raw=values.at(-1)||'';if(!raw)return '-';
-      const iso=raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/),slash=raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
-      const parsed=iso?new Date(+iso[1],+iso[2]-1,+iso[3],12):slash?new Date(+(slash[3].length===2?'20'+slash[3]:slash[3]),+slash[1]-1,+slash[2],12):null;
-      return parsed&&!Number.isNaN(parsed.getTime())?parsed.toLocaleDateString('en-NZ',{day:'2-digit',month:'short',year:'numeric'}):raw;
-    }
-    function trackerStage(container){
-      const status=clean(container.status),today=new Date(),eta=String(container.arrive||'').match(/\b\d{4}-\d{1,2}-\d{1,2}\b/g)?.at(-1),etaDate=eta?new Date(eta+'T12:00:00'):null;
-      if(/devan/i.test(status))return ['NZ port',status];
-      if(container.dehireDate)return ['Container returned','Dehired'];
-      if(container.dispatchToWarehouse)return ['Warehouse dispatch','To warehouse'];
-      if(container.dischargeDate)return ['NZ port','Discharged'];
-      if(etaDate&&etaDate<=today)return ['NZ port',status||'Arrived'];
-      if(container.departure)return ['At sea',status||'On water'];
-      if(container.loadingDate)return ['Supplier',status||'Loading planned'];
-      return ['Planning',status||'Dates required'];
-    }
-    async function containerDetails(number){
-      if(!containerCache.has(number))containerCache.set(number,fetch(`https://living-culture-freight.vercel.app/api/containers?container=${encodeURIComponent(number)}`,{cache:'no-store'}).then(async response=>{const data=await response.json();if(!response.ok)throw Error(data.error||'Container details unavailable');return data.containers?.[0]||null;}));
-      return containerCache.get(number);
-    }
-    function positionTooltip(anchor){
-      const rect=anchor.getBoundingClientRect(),width=Math.min(310,innerWidth-20),left=Math.max(10,Math.min(innerWidth-width-10,rect.left)),spaceBelow=innerHeight-rect.bottom;
-      containerTooltip.style.left=left+'px';containerTooltip.style.top=(spaceBelow>190?rect.bottom+8:Math.max(10,rect.top-containerTooltip.offsetHeight-8))+'px';
-    }
-    function hideContainerTooltip(){tooltipTarget=null;clearTimeout(tooltipTimer);containerTooltip.hidden=true;}
-    async function showContainerTooltip(anchor){
-      clearTimeout(tooltipTimer);tooltipTarget=anchor;const number=anchor.dataset.container;
-      containerTooltip.innerHTML=`<strong>Container ${escape(number)}</strong><div>Loading live container details...</div>`;containerTooltip.hidden=false;positionTooltip(anchor);
-      try{
-        const container=await containerDetails(number);if(tooltipTarget!==anchor)return;
-        if(!container){containerTooltip.innerHTML=`<strong>Container ${escape(number)}</strong><div>Not currently listed in LC Containers.</div><div class="container-hint">Click the number to open Container Tracker.</div>`;}
-        else{const [where,stage]=trackerStage(container);containerTooltip.innerHTML=`<strong>Container ${escape(container.container||number)}</strong><div class="container-stage">${escape(where)} · ${escape(stage)}</div><dl><dt>ETD</dt><dd>${escape(trackerDate(container.departure))}</dd><dt>ETA</dt><dd>${escape(trackerDate(container.arrive))}</dd><dt>Products</dt><dd>${escape([container.products,container.volume].filter(Boolean).join(' · ')||'-')}</dd><dt>Managers</dt><dd>${escape([container.categoryManager,container.shipper].filter(Boolean).join(' · ')||'-')}</dd></dl><div class="container-hint">Click the number to open this container in LC Containers.</div>`;}
-      }catch(error){if(tooltipTarget!==anchor)return;containerTooltip.innerHTML=`<strong>Container ${escape(number)}</strong><div>Live details could not be loaded.</div><div class="container-hint">Click the number to open Container Tracker.</div>`;}
-      positionTooltip(anchor);
-    }
     function notice(text,error=false){const element=document.getElementById('message');element.hidden=!text;element.textContent=text;element.className=error?'message error':'message';}
     function api(name,input){return new Promise((resolve,reject)=>{const runner=google.script.run.withSuccessHandler(resolve).withFailureHandler(reject);if(name==='getStock')runner.getStock();else runner.updateStock(input);});}
     function confirmChange(unit,action,quote,customer){
@@ -116,7 +67,7 @@
         const registered=(row.interests||[]).some(item=>item.quote===clean(form.elements.quote.value).toUpperCase());
         return `<section class="unit ${held?'held':paid?'paid':row.status==='Available'?'':'review'}" data-id="${escape(row.id)}">
           <div class="product"><div class="code">${escape(row.code)}</div><div class="name">${escape(row.name)}</div></div>
-          <div class="notes">${row.notes?`<span class="cell-label">Notes</span><p>${noteHtml(row.notes)}</p>`:!(row.interests||[]).length?'<span class="muted">-</span>':''}
+          <div class="notes">${row.notes?`<span class="cell-label">Notes</span><p>${escape(row.notes)}</p>`:!(row.interests||[]).length?'<span class="muted">-</span>':''}
           ${(row.interests||[]).length?`<div class="interests"><strong>${row.status==='Available'?'Available again · ':''}Interested customers</strong>${row.interests.map(item=>`<div>${escape(item.quote)}<br>${escape(item.customer)} · ${escape(item.rep)}</div>`).join('')}</div>`:''}</div>
           <div class="where"><div class="location"><span class="cell-label">Location</span>${escape(row.location)}</div><div class="status ${row.status==='Available'?'available':''}"><span class="cell-label">Status</span>${escape(row.status)}${row.quote?`<small>${escape(row.quote)}${row.date?' · '+escape(row.date):''}</small>`:''}${row.allocation?`<small>${escape(row.allocation.rep)} · ${escape(row.allocation.customer)}</small>`:''}${held&&row.allocation?.expiresAt?`<small>${row.status==='Expired hold'?'Expired · check with Customer Service':'Until'} ${escape(date(row.allocation.expiresAt))}</small>`:''}</div></div>
           <div class="actions">${row.status==='Available'?`<button type="button" data-action="hold" ${disabled?'disabled':''}>Hold 24 hours</button><button type="button" data-action="paid" ${disabled?'disabled':''}>Mark paid</button>`:held?`<button type="button" data-action="paid" ${disabled||!sameQuote?'disabled':''}>Mark paid</button>${row.status==='Held'&&!sameQuote?`<button type="button" data-action="interest" ${disabled||registered?'disabled':''}>${registered?'Interest registered':'Interested customer'}</button>`:''}`:paid?'<span class="spec">Customer Service to process</span>':'<span class="spec">Check with Customer Service</span>'}</div>
@@ -157,19 +108,154 @@
     }
     document.getElementById('refresh').addEventListener('click',load);
     form.addEventListener('submit',event=>event.preventDefault());form.elements.quote.addEventListener('input',render);
-    const list=document.getElementById('list');
-    list.addEventListener('click',event=>{const button=event.target.closest('button[data-action]');if(button&&!button.disabled)change(button.closest('[data-id]').dataset.id,button.dataset.action);});
-    list.addEventListener('mouseover',event=>{const anchor=event.target.closest('.container-reference');if(anchor&&!anchor.contains(event.relatedTarget))showContainerTooltip(anchor);});
-    list.addEventListener('mouseout',event=>{const anchor=event.target.closest('.container-reference');if(anchor&&!anchor.contains(event.relatedTarget))tooltipTimer=setTimeout(hideContainerTooltip,100);});
-    list.addEventListener('focusin',event=>{const anchor=event.target.closest('.container-reference');if(anchor)showContainerTooltip(anchor);});
-    list.addEventListener('focusout',event=>{if(event.target.closest('.container-reference'))hideContainerTooltip();});
-    addEventListener('scroll',hideContainerTooltip,{passive:true});addEventListener('resize',hideContainerTooltip);
+    document.getElementById('list').addEventListener('click',event=>{const button=event.target.closest('button[data-action]');if(button&&!button.disabled)change(button.closest('[data-id]').dataset.id,button.dataset.action);});
     google.script.url.getLocation(location=>{
       const values=new URLSearchParams(String(location.hash||'').replace(/^#/,''));
       for(const field of ['quote','customer','rep'])form.elements[field].value=values.get(field)||'';
       contextReady=true;load();
     });
     setInterval(()=>{if(!document.hidden&&!busy&&contextReady)load();},30000);
+  </script>
+  <script>
+    /* Optional container links and hover details are isolated from the stock loader above. */
+    (function(){
+      'use strict';
+      try{
+        var trackerUrl='https://living-culture-freight.vercel.app/containers.html?container=';
+        var apiUrl='https://living-culture-freight.vercel.app/api/containers?container=';
+        var stockList=document.getElementById('list');
+        var tooltip=document.getElementById('container-tooltip');
+        var cache={};
+        var activeAnchor=null;
+        var hideTimer=0;
+
+        function safe(value){
+          return String(value==null?'':value).replace(/[&<>"']/g,function(character){
+            return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character];
+          });
+        }
+
+        function linkText(value){
+          var text=String(value==null?'':value);
+          var pattern=/\b(container(?:\s+(?:no\.?|number))?\s*[:#-]?\s*)(\d+[A-Z]?)\b/gi;
+          var html='';
+          var last=0;
+          var match;
+          while((match=pattern.exec(text))){
+            var number=match[2].toUpperCase();
+            html+=safe(text.slice(last,match.index))+safe(match[1]);
+            html+='<a class="container-reference" data-container="'+safe(number)+'" href="'+trackerUrl+encodeURIComponent(number)+'" target="_blank" rel="noopener noreferrer" aria-describedby="container-tooltip">'+safe(match[2])+'</a>';
+            last=pattern.lastIndex;
+          }
+          return html+safe(text.slice(last));
+        }
+
+        function enhanceNotes(){
+          var notes=stockList.querySelectorAll('.notes p:not([data-container-links])');
+          for(var index=0;index<notes.length;index+=1){
+            notes[index].setAttribute('data-container-links','done');
+            notes[index].innerHTML=linkText(notes[index].textContent);
+          }
+        }
+
+        function displayDate(value){
+          var matches=String(value||'').match(/\b\d{4}-\d{1,2}-\d{1,2}\b|\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g)||[];
+          var raw=matches.length?matches[matches.length-1]:'';
+          var iso;
+          var slash;
+          var parsed=null;
+          if(!raw)return '-';
+          iso=raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+          slash=raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+          if(iso)parsed=new Date(Number(iso[1]),Number(iso[2])-1,Number(iso[3]),12);
+          if(slash)parsed=new Date(Number(slash[3].length===2?'20'+slash[3]:slash[3]),Number(slash[1])-1,Number(slash[2]),12);
+          return parsed&&!isNaN(parsed.getTime())?parsed.toLocaleDateString('en-NZ',{day:'2-digit',month:'short',year:'numeric'}):raw;
+        }
+
+        function stage(container){
+          var status=String(container.status||'').replace(/\s+/g,' ').trim();
+          var etaValues=String(container.arrive||'').match(/\b\d{4}-\d{1,2}-\d{1,2}\b/g)||[];
+          var eta=etaValues.length?new Date(etaValues[etaValues.length-1]+'T12:00:00'):null;
+          if(/devan/i.test(status))return ['NZ port',status];
+          if(container.dehireDate)return ['Container returned','Dehired'];
+          if(container.dispatchToWarehouse)return ['Warehouse dispatch','To warehouse'];
+          if(container.dischargeDate)return ['NZ port','Discharged'];
+          if(eta&&eta<=new Date())return ['NZ port',status||'Arrived'];
+          if(container.departure)return ['At sea',status||'On water'];
+          if(container.loadingDate)return ['Supplier',status||'Loading planned'];
+          return ['Planning',status||'Dates required'];
+        }
+
+        function loadDetails(number,done){
+          if(cache[number]){cache[number].then(done,done);return;}
+          cache[number]=new Promise(function(resolve,reject){
+            var request=new XMLHttpRequest();
+            request.open('GET',apiUrl+encodeURIComponent(number),true);
+            request.onreadystatechange=function(){
+              var data;
+              if(request.readyState!==4)return;
+              if(request.status<200||request.status>=300){reject(new Error('Container details unavailable'));return;}
+              try{data=JSON.parse(request.responseText);resolve(data.containers&&data.containers.length?data.containers[0]:null);}
+              catch(error){reject(error);}
+            };
+            request.onerror=function(){reject(new Error('Container details unavailable'));};
+            request.send();
+          });
+          cache[number].then(done,done);
+        }
+
+        function position(anchor){
+          var rectangle=anchor.getBoundingClientRect();
+          var width=Math.min(310,window.innerWidth-20);
+          var left=Math.max(10,Math.min(window.innerWidth-width-10,rectangle.left));
+          tooltip.style.left=left+'px';
+          tooltip.style.top=(window.innerHeight-rectangle.bottom>190?rectangle.bottom+8:Math.max(10,rectangle.top-tooltip.offsetHeight-8))+'px';
+        }
+
+        function hide(){
+          activeAnchor=null;
+          clearTimeout(hideTimer);
+          tooltip.hidden=true;
+        }
+
+        function show(anchor){
+          var number=anchor.getAttribute('data-container');
+          clearTimeout(hideTimer);
+          activeAnchor=anchor;
+          tooltip.innerHTML='<strong>Container '+safe(number)+'</strong><div>Loading live container details...</div>';
+          tooltip.hidden=false;
+          position(anchor);
+          loadDetails(number,function(result){
+            var status;
+            var products;
+            var managers;
+            if(activeAnchor!==anchor)return;
+            if(result instanceof Error){
+              tooltip.innerHTML='<strong>Container '+safe(number)+'</strong><div>Live details could not be loaded.</div><div class="container-hint">Click the number to open Container Tracker.</div>';
+            }else if(!result){
+              tooltip.innerHTML='<strong>Container '+safe(number)+'</strong><div>Not currently listed in LC Containers.</div><div class="container-hint">Click the number to open Container Tracker.</div>';
+            }else{
+              status=stage(result);
+              products=[result.products,result.volume].filter(Boolean).join(' · ')||'-';
+              managers=[result.categoryManager,result.shipper].filter(Boolean).join(' · ')||'-';
+              tooltip.innerHTML='<strong>Container '+safe(result.container||number)+'</strong><div class="container-stage">'+safe(status[0])+' · '+safe(status[1])+'</div><dl><dt>ETD</dt><dd>'+safe(displayDate(result.departure))+'</dd><dt>ETA</dt><dd>'+safe(displayDate(result.arrive))+'</dd><dt>Products</dt><dd>'+safe(products)+'</dd><dt>Managers</dt><dd>'+safe(managers)+'</dd></dl><div class="container-hint">Click the number to open this container in LC Containers.</div>';
+            }
+            position(anchor);
+          });
+        }
+
+        new MutationObserver(enhanceNotes).observe(stockList,{childList:true,subtree:true});
+        enhanceNotes();
+        stockList.addEventListener('mouseover',function(event){var anchor=event.target.closest('.container-reference');if(anchor&&!anchor.contains(event.relatedTarget))show(anchor);});
+        stockList.addEventListener('mouseout',function(event){var anchor=event.target.closest('.container-reference');if(anchor&&!anchor.contains(event.relatedTarget))hideTimer=setTimeout(hide,100);});
+        stockList.addEventListener('focusin',function(event){var anchor=event.target.closest('.container-reference');if(anchor)show(anchor);});
+        stockList.addEventListener('focusout',function(event){if(event.target.closest('.container-reference'))hide();});
+        window.addEventListener('scroll',hide,{passive:true});
+        window.addEventListener('resize',hide);
+      }catch(error){
+        /* Container details are optional. Never allow them to stop the stock list. */
+      }
+    }());
   </script>
 </body>
 </html>
