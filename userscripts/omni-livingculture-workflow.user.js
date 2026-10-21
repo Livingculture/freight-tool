@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.161
+// @version      0.1.162
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -258,13 +258,29 @@
     const heading = omniHeadingDraft();
     const order = extractOrderId(heading.orderId);
     if (!/^NZSO-\d+$/.test(order)) return ['Save as Draft to obtain an NZSO number'];
+    if (isQuotePdfUnlocked(order)) return [];
     if (heading.documentType !== 'quote' && !findButtonByLabel('Save As Draft')) return [];
     const key = order ? `lc-omni-hubspot-prerequisites:${order}` : '';
-    let clicks = hubSpotPrerequisiteClicks.get(key) || {};
-    if (key) {
-      try { clicks = { ...JSON.parse(sessionStorage.getItem(key) || '{}'), ...clicks }; } catch (error) { /* Keep the current-page click state. */ }
-    }
+    const clicks = readHubSpotPrerequisiteSteps(key);
     return [!clicks.savedDraft && 'Save as Draft', !clicks.quoteMemo && 'Quote Memo Info'].filter(Boolean);
+  }
+
+  function readHubSpotPrerequisiteSteps(key) {
+    const records = [hubSpotPrerequisiteClicks.get(key) || {}];
+    for (const storage of ['localStorage', 'sessionStorage']) {
+      try { records.push(JSON.parse(window[storage].getItem(key) || '{}')); } catch (error) { /* Other storage and in-memory steps remain usable. */ }
+    }
+    const steps = {};
+    for (const step of ['savedDraft', 'quoteMemo']) if (records.some(record => record?.[step] === true)) steps[step] = true;
+    hubSpotPrerequisiteClicks.set(key, steps);
+    // Also migrate completion recorded by earlier versions in session storage.
+    if (Object.keys(steps).length) {
+      try {
+        const value = JSON.stringify(steps);
+        if (localStorage.getItem(key) !== value) localStorage.setItem(key, value);
+      } catch (error) { /* Current-tab steps still work without persistent storage. */ }
+    }
+    return steps;
   }
 
   function applyHubSpotPrerequisiteGate() {
@@ -298,13 +314,19 @@
       const order = extractOrderId(hubSpotGateOrderId());
       if (!step || !order) return;
       const key = `lc-omni-hubspot-prerequisites:${order}`;
-      let clicks = hubSpotPrerequisiteClicks.get(key) || {};
-      try { clicks = { ...JSON.parse(sessionStorage.getItem(key) || '{}'), ...clicks }; } catch (error) { /* Storage may be unavailable. */ }
+      const clicks = readHubSpotPrerequisiteSteps(key);
       clicks[step] = true;
       hubSpotPrerequisiteClicks.set(key, clicks);
       try { sessionStorage.setItem(key, JSON.stringify(clicks)); } catch (error) { /* Current-page clicks still unlock the control. */ }
+      try { localStorage.setItem(key, JSON.stringify(clicks)); } catch (error) { /* Session and memory storage remain available. */ }
       applyHubSpotPrerequisiteGate();
     }, true);
+    window.addEventListener('storage', event => {
+      const order = extractOrderId(hubSpotGateOrderId());
+      if (!order || ![`lc-omni-hubspot-prerequisites:${order}`, hubSpotGateStorageKey(order), quotePdfUnlockKey(order)].includes(event.key)) return;
+      applyHubSpotPrerequisiteGate();
+      applyHubSpotApprovalGate();
+    });
   }
 
   function applyHubSpotApprovalGate(completedOrderId = '') {

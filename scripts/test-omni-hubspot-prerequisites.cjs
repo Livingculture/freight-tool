@@ -4,9 +4,11 @@ const {chromium}=require('playwright');
 const source=fs.readFileSync('userscripts/omni-livingculture-workflow.user.js','utf8');
 const gate=source.slice(source.indexOf('  function hubSpotPrerequisites()'),source.indexOf('  function applyHubSpotApprovalGate('));
 const submit=source.slice(source.indexOf('  async function submitHubSpotDeal('),source.indexOf('  function confirmOmniQuoteReview('));
+const completion=source.slice(source.indexOf('  function hubSpotGateStorageKey('),source.indexOf('  function ensureHubSpotGateStyles('));
 assert(gate&&submit);
 const setup=`
 const HUBSPOT_BUTTON_ID='hubspot';const hubSpotPrerequisiteClicks=new Map();let hubSpotPrerequisiteHooksInstalled=false;
+const HUBSPOT_GATE_STORAGE_PREFIX='lc-omni-hubspot-deal-complete:',QUOTE_PDF_UNLOCK_PREFIX='lc-omni-quote-pdf-unlocked:';const completedHubSpotSteps=new Set();
 window.order='NZSO-17002';window.docType='quote';window.isOmni=true;window.drafts=0;window.messages=[];
 window.isOmniPage=()=>isOmni;window.omniHeadingDraft=()=>({documentType:docType,orderId:order});window.hubSpotGateOrderId=()=>order;
 window.extractOrderId=value=>String(value||'').match(/NZSO-\\d+/i)?.[0].toUpperCase()||'';
@@ -14,12 +16,14 @@ window.normalizeLabel=value=>String(value||'').trim().toLowerCase();
 window.findButtonByLabel=label=>[...document.querySelectorAll('button')].find(button=>button.textContent.toLowerCase()===label.toLowerCase());
 window.hubSpotMessage=async(title,lines)=>messages.push(lines);
 window.hubspotDraft=()=>{drafts++;return{customerName:'Test',orderId:order};};window.chooseHubSpotLeadSource=async()=>null;
-${gate}${submit}
+window.applyHubSpotApprovalGate=()=>{};
+${completion}${gate}${submit}
 installHubSpotPrerequisiteHooks();installHubSpotPrerequisiteHooks();applyHubSpotPrerequisiteGate();`;
 (async()=>{
  const browser=await chromium.launch();
  try{
-  const page=await browser.newPage();
+  const context=await browser.newContext();
+  const page=await context.newPage();
   await page.route('https://go.cin7.com/**',route=>route.fulfill({contentType:'text/html',body:'<button id="hubspot">HubSpot Deal</button><button id="save">Save As Draft</button><button id="lc-omni-quote-memo-button">Quote Memo Info</button><button>Save</button>'}));
   await page.goto('https://go.cin7.com/quote');await page.addScriptTag({content:setup});
   const hubspot=page.locator('#hubspot');
@@ -33,6 +37,24 @@ installHubSpotPrerequisiteHooks();installHubSpotPrerequisiteHooks();applyHubSpot
   await page.locator('#save').click();assert(await hubspot.isEnabled());
   await page.evaluate(()=>submitHubSpotDeal(document.getElementById('hubspot')));assert.equal(await page.evaluate(()=>drafts),1);
   await page.reload();await page.addScriptTag({content:setup});assert(await hubspot.isEnabled(),'Click state survives the native save/reload');
+  await page.evaluate(()=>{sessionStorage.clear();hubSpotPrerequisiteClicks.clear();applyHubSpotPrerequisiteGate();});assert(await hubspot.isEnabled(),'Prerequisites survive losing tab/session state');
+  const reopened=await page.context().newPage();
+  await reopened.route('https://go.cin7.com/**',route=>route.fulfill({contentType:'text/html',body:'<button id="hubspot">HubSpot Deal</button><button>Save As Draft</button><button id="lc-omni-quote-memo-button">Quote Memo Info</button>'}));
+  await reopened.goto('https://go.cin7.com/quote');await reopened.addScriptTag({content:setup});
+  assert(await reopened.locator('#hubspot').isEnabled(),'Reopening in a new tab restores completed steps');
+  await reopened.evaluate(()=>{order='NZSO-17005';localStorage.setItem('lc-omni-hubspot-deal-complete:'+order,'1');applyHubSpotPrerequisiteGate();});
+  assert(await reopened.locator('#hubspot').isEnabled(),'Existing HubSpot completion proves prerequisites were already completed');
+  assert(await reopened.evaluate(()=>isQuotePdfUnlocked(order)),'Existing HubSpot completion restores download access');
+  await reopened.evaluate(()=>{order='NZSO-17006';localStorage.setItem('lc-omni-quote-pdf-unlocked:'+order,'1');applyHubSpotPrerequisiteGate();});
+  assert(await reopened.locator('#hubspot').isEnabled(),'Previously unlocked quotes do not require repeating prerequisites');
+  await reopened.evaluate(()=>{order='NZSO-17007';sessionStorage.setItem('lc-omni-hubspot-prerequisites:'+order,JSON.stringify({savedDraft:true,quoteMemo:true}));applyHubSpotPrerequisiteGate();});
+  assert(await reopened.locator('#hubspot').isEnabled(),'Older session-only steps migrate to persistent storage');
+  assert.equal(await reopened.evaluate(()=>JSON.parse(localStorage.getItem('lc-omni-hubspot-prerequisites:'+order)).quoteMemo),true);
+  await page.evaluate(()=>{order='NZSO-17008';applyHubSpotPrerequisiteGate();});assert(await hubspot.isDisabled());
+  await reopened.evaluate(()=>localStorage.setItem('lc-omni-hubspot-prerequisites:NZSO-17008',JSON.stringify({savedDraft:true,quoteMemo:true})));
+  await page.waitForFunction(()=>!document.getElementById('hubspot').disabled);
+  await page.evaluate(()=>{order='NZSO-17002';applyHubSpotPrerequisiteGate();});
+  await reopened.close();
   await page.evaluate(()=>{order='NZSO-17003';applyHubSpotPrerequisiteGate();});assert(await hubspot.isDisabled(),'Another quote cannot inherit these steps');
   await page.locator('#save').click();assert(await hubspot.isDisabled());
   await page.locator('#lc-omni-quote-memo-button').click();assert(await hubspot.isEnabled(),'Either click order works');
