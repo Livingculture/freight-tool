@@ -99,6 +99,9 @@ assert.equal(context.stockColourState_(['#fff2cc','#ea9999']),'Review status');
       await page.goto('https://stock.test/');await page.locator('#identity').filter({hasText:'@livingculture.co.nz'}).waitFor();
       assert.equal(await page.locator('input[type="search"],select').count(),0,'List is shown directly without searching');
       assert.equal(await page.locator('.unit').count(),3);
+      assert.equal(await page.locator('.product .spec').count(),0,'Repeated type, size and colour line is hidden');
+      assert.equal(await page.locator('.where .location + .status').count(),3,'Status sits beside location');
+      assert.equal(await page.locator('.status.available').first().evaluate(element=>getComputedStyle(element).color),'rgb(25, 135, 84)','Available status is green');
       assert.equal(await page.getByText(/Sheet row \d+/).count(),0,'Spreadsheet row numbers are not displayed');
       await page.locator('.notes').getByText('Aiming for container 972 (if fits or one after)',{exact:true}).waitFor();
       page.on('dialog',()=>{throw Error('Native browser confirmation must not be shown');});
@@ -136,6 +139,7 @@ assert.equal(context.stockColourState_(['#fff2cc','#ea9999']),'Review status');
       await page.evaluate(configured=>{window.GM_getValue=(_,fallback)=>configured===undefined?fallback:configured;window.GM_setValue=()=>{};window.GM_registerMenuCommand=()=>{};window.prompt=()=>{throw Error('Staff should never be asked for the app address');};window.open=(url,name,features)=>{window.opened={url,features};return{opener:window,focus(){}};};},configured);
       await page.addScriptTag({content:launcher});await page.getByRole('button',{name:'Caribbean Stock',exact:true}).click();
       const opened=await page.evaluate(()=>window.opened);const url=new URL(opened.url);assert.equal(url.origin,'https://script.google.com');assert.equal(url.search,'','Customer details stay in fragment, not server query logs');assert.equal(new URLSearchParams(url.hash.slice(1)).get('quote'),platform==='omni'?'NZSO-17009':'SFOR12345');assert(opened.features.includes('popup=yes'));
+      assert(opened.features.includes('width=900'),'The stock window opens at the narrower compact width');
       assert.equal(url.pathname,configured?'/macros/s/test-app/exec':'/a/macros/livingculture.co.nz/s/AKfycbwmxFo0-94s8lBr9jDjmMWk6FbxZKTaUDaUi9k3OW3MuSIi4QOmiCuqvm-1IJJlLJ5ZtA/exec','New users use the built-in address; existing admin overrides are preserved');
       assert.equal(await page.locator('input').inputValue(),'Unsaved');await page.close();
     }

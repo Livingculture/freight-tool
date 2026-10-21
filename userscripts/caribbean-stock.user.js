@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Caribbean Stock
 // @namespace    livingculture-stock
-// @version      0.1.5
+// @version      0.1.6
 // @description  Opens the live Caribbean stock list and Google-authorised hold/paid controls in Cin7 Core and Omni.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -64,7 +64,7 @@
     if(!quoteScreen())return;
     const {quote,customer,rep}=context();
     url.hash=new URLSearchParams({quote,customer,rep}).toString();
-    const width=Math.min(1000,screen.availWidth||innerWidth),height=Math.min(800,screen.availHeight||innerHeight);
+    const width=Math.min(900,screen.availWidth||innerWidth),height=Math.min(800,screen.availHeight||innerHeight);
     const left=Math.round((screen.availLeft||0)+((screen.availWidth||width)-width)/2),top=Math.round((screen.availTop||0)+((screen.availHeight||height)-height)/2);
     const popup=window.open(url.href,'_blank',`popup=yes,width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`);
     if(!popup){alert('Please allow popups for Cin7, then click Caribbean Stock again.');return;}popup.opener=null;popup.focus();
