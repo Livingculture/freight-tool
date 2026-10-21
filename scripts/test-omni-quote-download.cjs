@@ -25,8 +25,10 @@ function extract(name) {
     await parent.addScriptTag({ content:`const QUOTE_PDF_HANDOFF_KEY='test-handoff-v2',QUOTE_PDF_TIMEOUT_MS=45000;\n${extract('currentCustomerAppsLink')}\n${extract('downloadCurrentQuotePdf')}` });
     await parent.evaluate(() => downloadCurrentQuotePdf(document.getElementById('pdf'),'quote'));
     const openedUrl=new URL(await parent.evaluate(() => window.openedWorker.url));
+    assert.equal(openedUrl.pathname,'/Cloud/TransactionEntry/TransactionEntry.aspx');
     assert.equal(openedUrl.searchParams.get('idCustomerAppsLink'),'1328007');
-    assert.equal(openedUrl.searchParams.get('idOrder'),'388');
+    assert.equal(openedUrl.searchParams.get('OrderId'),'388');
+    assert.equal(openedUrl.searchParams.get('lcQuotePdfWorker'),'1');
     assert.equal(await parent.locator('iframe').count(),0,'The blocked hidden-frame route is removed');
     assert.equal(await parent.locator('#pdf').innerText(),'Downloading…');
     assert.deepEqual(JSON.parse(await parent.evaluate(() => localStorage.getItem('test-handoff-v2'))),{quoteNumber:'NZSO-123',template:'quote',startedAt:await parent.evaluate(() => JSON.parse(localStorage.getItem('test-handoff-v2')).startedAt)});
@@ -35,7 +37,23 @@ function extract(name) {
     assert.equal(await parent.evaluate(() => localStorage.getItem('test-handoff-v2')),null);
     assert.deepEqual(await parent.evaluate(() => window.alerts),[]);
     await parent.close();
-    console.log('PASS PDF: Native Admin popup replaces the blocked hidden frame and resets the parent button');
+    console.log('PASS PDF: Native quote worker replaces the blocked hidden frame and resets the parent button');
+
+    const editWorker = await browser.newPage();
+    await editWorker.route('https://go.cin7.com/**', route => route.fulfill({ contentType:'text/html', body:'<form><button id="admin">Go to Admin</button></form>' }));
+    await editWorker.goto('https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx?OrderId=388&lcQuotePdfWorker=1');
+    await editWorker.evaluate(() => {
+      localStorage.setItem('test-native-worker-v3', JSON.stringify({ quoteNumber:'NZSO-123', template:'quote', startedAt:Date.now() }));
+      window.normalizeLabel=value=>String(value).trim().toLowerCase(); window.isVisible=()=>true; window.nativeClicks=0;
+      document.getElementById('admin').addEventListener('click', event => { event.preventDefault(); window.nativeClicks += 1; });
+    });
+    await editWorker.addScriptTag({ content:`const QUOTE_PDF_HANDOFF_KEY='test-native-worker-v3',QUOTE_PDF_TIMEOUT_MS=45000;\n${extract('continueQuotePdfFromEditWorker')}` });
+    assert.equal(await editWorker.evaluate(() => continueQuotePdfFromEditWorker()), true);
+    await editWorker.waitForFunction(() => window.nativeClicks === 1);
+    assert.equal(await editWorker.locator('#admin').getAttribute('formtarget'), '_self');
+    assert.equal(await editWorker.locator('form').getAttribute('target'), '_self');
+    await editWorker.close();
+    console.log('PASS PDF: Worker uses Cin7 native Go to Admin conversion instead of an invalid constructed Admin URL');
 
     for(const template of ['quote','custom','invoice']){
       const admin=await browser.newPage();
@@ -129,7 +147,7 @@ function extract(name) {
     assert.equal(await page.evaluate(() => window.openedWorker || null), null, 'Locked quote still follows the HubSpot rule');
     await page.evaluate(() => { window.docType='sales-order'; window.alerts=[]; downloadCurrentQuotePdf(document.getElementById('pdf'),'invoice'); });
     await page.waitForFunction(() => Boolean(window.openedWorker));
-    assert.equal(new URL(await page.evaluate(() => window.openedWorker.url)).searchParams.get('idOrder'), '388');
+    assert.equal(new URL(await page.evaluate(() => window.openedWorker.url)).searchParams.get('lcQuotePdfWorker'), '1');
     assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem('test-invoice-handoff-v2'))).template, 'invoice');
     assert.deepEqual(await page.evaluate(() => window.alerts), []);
     assert.equal(await page.locator('#pdf').isDisabled(), true);

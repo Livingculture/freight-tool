@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.158
+// @version      0.1.159
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -68,7 +68,7 @@
   const completedHubSpotSteps = new Set();
   const hubSpotPrerequisiteClicks = new Map();
   let hubSpotPrerequisiteHooksInstalled = false;
-  const QUOTE_PDF_HANDOFF_KEY = 'lc-omni-quote-pdf-handoff-v2';
+  const QUOTE_PDF_HANDOFF_KEY = 'lc-omni-quote-pdf-handoff-v3';
   const QUOTE_PDF_TIMEOUT_MS = 45000;
   const quotePdfLinkCache = new Map();
   const HUBSPOT_GATED_LABELS = new Set([
@@ -3809,17 +3809,14 @@
       window.alert('The NZSO quote number could not be found on this page.');
       return;
     }
-    const orderId = currentQuotePdfOrderId();
-    if (!orderId) {
-      window.alert('Cin7\'s internal order ID could not be found for this quote. Refresh the quote and try again.');
-      return;
-    }
-    const adminUrl = new URL('https://go.cin7.com/Cloud/ShoppingCartAdmin/Orders/OrderDetail.aspx');
-    adminUrl.searchParams.set('idCustomerAppsLink', currentCustomerAppsLink());
-    adminUrl.searchParams.set('idOrder', orderId);
-    adminUrl.searchParams.set('idWebSite', '27265');
+    // Omni's OrderId is an edit-page ID, not the Admin order ID. Opening a
+    // hand-built Admin URL with it causes Cin7's unexpected-error page. Reopen
+    // the real quote in a worker window and let Cin7's native Go to Admin
+    // action perform the private ID conversion.
+    const workerUrl = new URL(location.href);
+    workerUrl.searchParams.set('lcQuotePdfWorker', '1');
     localStorage.setItem(QUOTE_PDF_HANDOFF_KEY, JSON.stringify({ quoteNumber, template, startedAt: Date.now() }));
-    const worker = window.open(adminUrl.href, `lc-quote-pdf-${Date.now()}`, 'popup=yes,width=1050,height=780,resizable=yes,scrollbars=yes');
+    const worker = window.open(workerUrl.href, `lc-quote-pdf-${Date.now()}`, 'popup=yes,width=1050,height=780,resizable=yes,scrollbars=yes');
     if (!worker) {
       localStorage.removeItem(QUOTE_PDF_HANDOFF_KEY);
       window.alert('Allow popups for go.cin7.com, then click Download again.');
@@ -3858,6 +3855,41 @@
       cleanup();
       window.alert('Cin7 took too long to prepare the quote PDF.');
     }, QUOTE_PDF_TIMEOUT_MS);
+  }
+
+  function continueQuotePdfFromEditWorker() {
+    if (window.parent !== window || new URL(location.href).searchParams.get('lcQuotePdfWorker') !== '1') return false;
+    let handoff = null;
+    try { handoff = JSON.parse(localStorage.getItem(QUOTE_PDF_HANDOFF_KEY) || 'null'); } catch (error) {}
+    if (!handoff?.quoteNumber || Date.now() - Number(handoff.startedAt || 0) > QUOTE_PDF_TIMEOUT_MS) {
+      window.close();
+      return true;
+    }
+    let attempts = 0;
+    let clicked = false;
+    const timer = window.setInterval(() => {
+      attempts += 1;
+      const goToAdmin = Array.from(document.querySelectorAll('a, button, input[type="button"], input[type="submit"]'))
+        .filter(isVisible)
+        .find(element => normalizeLabel(element.value || element.textContent || '') === 'go to admin' && !element.disabled);
+      if (!clicked && goToAdmin) {
+        clicked = true;
+        goToAdmin.setAttribute('target', '_self');
+        goToAdmin.setAttribute('formtarget', '_self');
+        if (goToAdmin.form) goToAdmin.form.target = '_self';
+        goToAdmin.click();
+        return;
+      }
+      if (attempts < 80) return;
+      window.clearInterval(timer);
+      localStorage.removeItem(QUOTE_PDF_HANDOFF_KEY);
+      window.alert(clicked
+        ? 'Cin7 did not open its Admin page from the quote.'
+        : 'Cin7\'s Go to Admin button could not be found on this quote.');
+      window.opener?.postMessage('lc-quote-pdf-finished', location.origin);
+      if (window.opener) window.close();
+    }, 250);
+    return true;
   }
 
   function continueQuotePdfFromEditFrame() {
@@ -5188,6 +5220,7 @@
       continueQuotePdfFromAdmin();
       return;
     }
+    if (continueQuotePdfFromEditWorker()) return;
     if (continueQuotePdfFromEditFrame()) return;
     continueSaveClonedQuote();
     installOmniInvoiceDateHooks();
