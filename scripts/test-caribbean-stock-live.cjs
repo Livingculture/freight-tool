@@ -90,6 +90,7 @@ assert.equal(context.stockColourState_(['#fff2cc','#ea9999']),'Review status');
   try{
     for(const width of [1440,820,390]){
       const page=await browser.newPage({viewport:{width,height:1000}});let failure=false,submitted=null;
+      await page.route('https://living-culture-freight.vercel.app/api/containers**',route=>route.fulfill({contentType:'application/json',headers:{'access-control-allow-origin':'*'},body:JSON.stringify({ok:true,containers:[{container:'972',departure:'2026-10-01',arrive:'2026-11-02',products:'pergola',volume:'40HQ',categoryManager:'Cindy',shipper:'YGL',status:''}]})}));
       await page.route('https://stock.test/**',route=>route.fulfill({contentType:'text/html',body:html.replace('<script>','<script>'+`window.google={script:{url:{getLocation:callback=>callback({hash:'quote=NZSO-17009&customer=Customer%20Name&rep=PEN-Tamara'})},run:{withSuccessHandler(callback){this.success=callback;return this;},withFailureHandler(callback){this.failure=callback;return this;},getStock(){const ok=this.success,fail=this.failure;window.liveApi('getStock').then(ok,fail);},updateStock(input){const ok=this.success,fail=this.failure;window.liveApi('updateStock',input).then(ok,fail);}}}};`)}));
       await page.exposeFunction('liveApi',async(name,input)=>{
         if(failure)throw Error('Permission denied');
@@ -104,6 +105,15 @@ assert.equal(context.stockColourState_(['#fff2cc','#ea9999']),'Review status');
       assert.equal(await page.locator('.status.available').first().evaluate(element=>getComputedStyle(element).color),'rgb(25, 135, 84)','Available status is green');
       assert.equal(await page.getByText(/Sheet row \d+/).count(),0,'Spreadsheet row numbers are not displayed');
       await page.locator('.notes').getByText('Aiming for container 972 (if fits or one after)',{exact:true}).waitFor();
+      const containerLink=page.getByRole('link',{name:'972',exact:true});
+      assert.equal(await containerLink.getAttribute('href'),'https://living-culture-freight.vercel.app/containers.html?container=972','Container number opens the filtered LC Container tracker');
+      await containerLink.hover();
+      const tooltip=page.getByRole('tooltip');await tooltip.getByText('Container 972',{exact:true}).waitFor();
+      await tooltip.getByText('At sea · On water',{exact:true}).waitFor();
+      await tooltip.getByText('02 Nov 2026',{exact:true}).waitFor();
+      await tooltip.getByText('pergola · 40HQ',{exact:true}).waitFor();
+      await page.screenshot({path:`/tmp/caribbean-stock-tooltip-${width}.png`,fullPage:true});
+      await page.locator('header').hover();
       page.on('dialog',()=>{throw Error('Native browser confirmation must not be shown');});
       await page.getByRole('button',{name:'Hold 24 hours'}).first().click();
       await page.getByRole('dialog').waitFor();

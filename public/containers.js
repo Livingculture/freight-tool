@@ -22,6 +22,12 @@ const elements = {
   containerTable: document.getElementById('containerTable')
 };
 
+const requestedContainer = clean(new URLSearchParams(location.search).get('container')).match(/\d+[A-Z]?/i)?.[0] || '';
+if (requestedContainer) {
+  state.query = requestedContainer;
+  elements.searchInput.value = requestedContainer;
+}
+
 const STAGES = [
   'Arriving soon',
   'On water',

@@ -345,6 +345,21 @@ function containerNumberKey(value) {
   return match ? String(Number(match[0])) : '';
 }
 
+function containerLookupKey(value) {
+  const match = cleanTextValue(value).toUpperCase().match(/(\d+)([A-Z]?)/);
+  return match ? `${Number(match[1])}${match[2]}` : '';
+}
+
+function isGoogleAppsScriptOrigin(origin) {
+  if (!origin) return false;
+  try {
+    const hostname = new URL(origin).hostname;
+    return hostname === 'script.google.com' || hostname === 'script.googleusercontent.com' || hostname.endsWith('.googleusercontent.com');
+  } catch (error) {
+    return false;
+  }
+}
+
 async function getContainerWorkbookDetails() {
   const response = await fetch(CONTAINER_SHEET_XLSX_URL, {
     headers: { Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,*/*' }
@@ -5002,10 +5017,19 @@ app.get('/api/health', (req, res) => {
 });
 
 app.get('/api/containers', async (req, res) => {
+  const origin = String(req.headers.origin || '');
+  if (isGoogleAppsScriptOrigin(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  }
   try {
     const payload = await getContainerSheetData();
+    const requestedContainer = containerLookupKey(req.query.container);
+    const containers = requestedContainer
+      ? payload.containers.filter(container => containerLookupKey(container.container) === requestedContainer)
+      : payload.containers;
     res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
-    return res.json(payload);
+    return res.json({ ...payload, count: containers.length, containers });
   } catch (error) {
     console.error('Container sheet fetch failed:', error);
     return res.status(502).json({
