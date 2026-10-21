@@ -38,7 +38,7 @@ const clone = source.slice(start, start + next + 1);
       window.extractOrderId = value => String(value).match(/NZSO-\d+/)?.[0] || '';
       window.alert = message => { throw Error(message); };
     });
-    await page.addScriptTag({ content: `const CLONE_QUOTE_BUTTON_ID='clone';\n${clone}\ndocument.getElementById('clone').onclick=cloneCurrentQuote;` });
+    await page.addScriptTag({ content: `const CLONE_QUOTE_BUTTON_ID='clone';\nfunction currentCustomerAppsLink(){return new URL(location.href).searchParams.get('idCustomerAppsLink')||'1328007';}\n${clone}\ndocument.getElementById('clone').onclick=cloneCurrentQuote;` });
     await page.locator('#clone').click();
     assert.equal(await page.locator('#clone').getAttribute('aria-busy'), 'true');
     assert.equal(await page.locator('#clone span').count(), 1, 'Spinner visible');

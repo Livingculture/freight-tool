@@ -25,7 +25,7 @@ function extract(name) {
         window.isHubSpotStepComplete = () => true;
         window.isQuotePdfUnlocked = () => true;
         window.hubSpotGateOrderId = () => 'NZSO-123';
-        window.omniHeadingDraft = () => ({ orderId: 'NZSO-123', customerName: 'Test Customer' });
+        window.omniHeadingDraft = () => ({ orderId: 'NZSO-123', documentType:timings.template === 'invoice' ? 'sales-order' : 'quote' });
         window.currentQuotePdfOrderId = () => '388';
         window.quotePdfSidCandidates = () => timings.template ? ['123456'] : [];
         window.requestQuotePdf = () => { throw new Error('Custom templates must never request the hardcoded standard PDF'); };
@@ -37,7 +37,7 @@ function extract(name) {
           options.onload({ status: 200, response: bytes.buffer });
         }, options.url.includes('path=fast') ? timings.fast : timings.rendered); };
       }, timings);
-      await page.addScriptTag({ content: `const quotePdfLinkCache = new Map(); const QUOTE_PDF_HANDOFF_KEY = 'test-handoff'; const clean=value=>String(value||'').replace(/\\s+/g,' ').trim();\n${extract('quotePdfFileBase')}\n${extract('quotePdfTemplateLabel')}\n${extract('prepareQuotePdfLink')}\n${extract('fetchSignedQuotePdf')}\n${extract('downloadCurrentQuotePdf')}` });
+      await page.addScriptTag({ content: `const quotePdfLinkCache = new Map(); const QUOTE_PDF_HANDOFF_KEY = 'test-handoff'; const QUOTE_PDF_TIMEOUT_MS=45000; const clean=value=>String(value||'').replace(/\\s+/g,' ').trim();\n${extract('currentCustomerAppsLink')}\n${extract('quotePdfFileBase')}\n${extract('quotePdfTemplateLabel')}\n${extract('prepareQuotePdfLink')}\n${extract('fetchSignedQuotePdf')}\n${extract('downloadCurrentQuotePdf')}` });
       await page.evaluate(async template => { await prepareQuotePdfLink('388', template); await prepareQuotePdfLink('388', template); }, timings.template);
       assert.equal(await page.evaluate(() => window.adminRequests), 1, 'Reuse the prepared link, not a cached PDF');
       const started = Date.now();
@@ -46,7 +46,7 @@ function extract(name) {
       const elapsed = Date.now() - started;
       await page.waitForTimeout(Math.max(timings.fast, timings.rendered) + 200);
       assert.equal(await page.evaluate(() => window.saved), 1, 'Fast and rendered routes must never save twice');
-      assert.equal(await page.evaluate(() => window.savedNames[0]), 'NZSO-123 - Test Customer', 'The browser save receives the safe customer filename after Cin7 retrieval succeeds');
+      assert.equal(await page.evaluate(() => window.savedNames[0]), timings.template === 'invoice' ? 'NZSO-123 - Sales Order' : 'NZSO-123 - Quote', 'The browser save distinguishes quotes from sales orders without changing Cin7 retrieval');
       assert.deepEqual(await page.evaluate(() => window.alerts), []);
       assert.equal(await page.locator('iframe').count(), 0);
       assert.equal(await page.locator('#pdf').isEnabled(), true);
@@ -61,18 +61,19 @@ function extract(name) {
     await templates.setContent('<button id="pdf" style="position:absolute;left:30px;top:30px">Download Quote</button>');
     await templates.evaluate(() => {
       window.normalizeLabel = value => String(value).trim().toLowerCase();
-      window.requests = 0;
+      window.requests = 0; window.requestUrls = [];
       window.GM_xmlhttpRequest = options => {
-        window.requests++;
+        window.requests++; window.requestUrls.push(options.url);
         options.onload({ status: 200, responseText: '<a href="/Cloud/Docs/PDF/?T=Quote&amp;ID=custom">Custom Quote</a><a href="/Cloud/Docs/PDF/?T=Quote&amp;ID=standard">Quote</a><a href="/Cloud/Docs/PDF/?T=Invoice&amp;ID=wrong">Invoice</a><a href="/Cloud/Docs/PDF/?T=Invoice&amp;ID=dynamic">Dynamic Invoice</a>' });
       };
       window.downloadCurrentQuotePdf = (_, template) => { window.downloadChoice = template; };
     });
-    await templates.addScriptTag({ content: `const quotePdfLinkCache = new Map();\n${extract('quotePdfTemplateLabel')}\n${extract('requestAdminQuoteHref')}\n${extract('prepareQuotePdfLink')}\n${extract('showQuotePdfTemplateMenu')}` });
+    await templates.addScriptTag({ content: `const quotePdfLinkCache = new Map();\n${extract('currentCustomerAppsLink')}\n${extract('quotePdfTemplateLabel')}\n${extract('requestAdminQuoteHref')}\n${extract('prepareQuotePdfLink')}\n${extract('showQuotePdfTemplateMenu')}` });
     const urls = await templates.evaluate(async () => [await prepareQuotePdfLink('388'), await prepareQuotePdfLink('388', 'custom'), await prepareQuotePdfLink('388')]);
     assert(urls[0].endsWith('ID=standard'));
     assert(urls[1].endsWith('ID=custom'));
     assert.equal(await templates.evaluate(() => window.requests), 2, 'Each template has its own signed-link cache');
+    assert((await templates.evaluate(() => window.requestUrls)).every(url => new URL(url).searchParams.get('idCustomerAppsLink') === '1328007'), 'Admin PDF requests use the current Cin7 customer-app link');
     assert((await templates.evaluate(() => prepareQuotePdfLink('388', 'invoice'))).endsWith('ID=dynamic'), 'Use Dynamic Invoice, not Invoice');
     await templates.evaluate(() => showQuotePdfTemplateMenu(document.getElementById('pdf')));
     assert.deepEqual(await templates.locator('[role="menuitem"]').allTextContents(), ['Quote', 'Custom Quote']);
@@ -98,11 +99,11 @@ function extract(name) {
       catch { return true; }
     }), 'A missing Dynamic Invoice must not silently select Quote');
     await templates.addScriptTag({ content: `const clean=value=>String(value||'').replace(/\\s+/g,' ').trim();\n${extract('quotePdfFileBase')}\n${extract('saveQuotePdfBuffer')}` });
-    assert.equal(await templates.evaluate(() => quotePdfFileBase('NZSO-17012', 'Peter / Smith: Test?')), 'NZSO-17012 - Peter Smith Test');
-    assert.equal(await templates.evaluate(() => quotePdfFileBase('NZSO-17012')), 'NZSO-17012', 'Missing customer data keeps the previous safe filename');
+    assert.equal(await templates.evaluate(() => quotePdfFileBase('NZSO-17012', 'quote')), 'NZSO-17012 - Quote');
+    assert.equal(await templates.evaluate(() => quotePdfFileBase('NZSO-17012', 'sales-order')), 'NZSO-17012 - Sales Order');
     const namedDownload = templates.waitForEvent('download');
-    await templates.evaluate(() => saveQuotePdfBuffer(new TextEncoder().encode('%PDF test').buffer, quotePdfFileBase('NZSO-17012', 'Peter Smith')));
-    assert.equal((await namedDownload).suggestedFilename(), 'NZSO-17012 - Peter Smith.pdf', 'Only the final browser filename is changed');
+    await templates.evaluate(() => saveQuotePdfBuffer(new TextEncoder().encode('%PDF test').buffer, quotePdfFileBase('NZSO-17012', 'quote')));
+    assert.equal((await namedDownload).suggestedFilename(), 'NZSO-17012 - Quote.pdf', 'Only the final browser filename is changed');
     await templates.close();
     console.log('PASS PDF: Exact admin templates, isolated caches, missing-template rejection, menu selection and dismissal');
     const persistence = await browser.newPage();

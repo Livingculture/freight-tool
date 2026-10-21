@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.154
+// @version      0.1.155
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -3487,7 +3487,7 @@
       } catch { /* Wait for same-origin navigation to finish. */ }
     }, 250);
     const adminUrl = new URL('https://go.cin7.com/Cloud/ShoppingCartAdmin/Orders/OrderDetail.aspx');
-    adminUrl.searchParams.set('idCustomerAppsLink', '1328006');
+    adminUrl.searchParams.set('idCustomerAppsLink', currentCustomerAppsLink());
     adminUrl.searchParams.set('idOrder', orderId);
     adminUrl.searchParams.set('idWebSite', '27265');
     document.body.appendChild(frame);
@@ -3574,6 +3574,12 @@
     return htmlMatch?.[1] || '';
   }
 
+  function currentCustomerAppsLink() {
+    const entry = Array.from(new URL(location.href).searchParams.entries())
+      .find(([key]) => key.toLowerCase() === 'idcustomerappslink');
+    return entry && /^\d+$/.test(entry[1]) ? entry[1] : '1328007';
+  }
+
   function quotePdfSidCandidates() {
     const candidates = [];
     const add = (value) => {
@@ -3646,7 +3652,7 @@
     });
   }
 
-  function quotePdfFileBase(quoteNumber, customerName = '') {
+  function quotePdfFileBase(quoteNumber, documentType = 'quote') {
     const safePart = (value, maximum) => clean(value)
       .replace(/[<>:"/\\|?*\u0000-\u001f]/g, ' ')
       .replace(/\s+/g, ' ')
@@ -3654,8 +3660,8 @@
       .slice(0, maximum)
       .replace(/[. ]+$/g, '');
     const number = safePart(quoteNumber, 40);
-    const customer = safePart(customerName, 100);
-    return [number, customer].filter(Boolean).join(' - ') || 'Living Culture document';
+    const label = documentType === 'sales-order' || documentType === 'invoice' ? 'Sales Order' : 'Quote';
+    return [number, label].filter(Boolean).join(' - ') || 'Living Culture document';
   }
 
   function saveQuotePdfBuffer(buffer, downloadBase) {
@@ -3733,7 +3739,7 @@
 
   function requestAdminQuoteHref(orderId, template = 'quote') {
     const adminUrl = new URL('https://go.cin7.com/Cloud/ShoppingCartAdmin/Orders/OrderDetail.aspx');
-    adminUrl.searchParams.set('idCustomerAppsLink', '1328006');
+    adminUrl.searchParams.set('idCustomerAppsLink', currentCustomerAppsLink());
     adminUrl.searchParams.set('idOrder', orderId);
     adminUrl.searchParams.set('idWebSite', '27265');
     return new Promise((resolve, reject) => {
@@ -3809,12 +3815,12 @@
       return;
     }
     const quoteNumber = heading.orderId || extractOrderId(document.body?.innerText || '');
-    const customerName = heading.customerName || '';
     if (!quoteNumber) {
       window.alert('The NZSO quote number could not be found on this page.');
       return;
     }
-    const downloadBase = quotePdfFileBase(quoteNumber, customerName);
+    const documentType = heading.documentType === 'sales-order' || template === 'invoice' ? 'sales-order' : 'quote';
+    const downloadBase = quotePdfFileBase(quoteNumber, documentType);
     try {
       button.disabled = true;
       button.textContent = 'Downloading…';
@@ -3851,7 +3857,7 @@
         return;
       }
 
-      localStorage.setItem(QUOTE_PDF_HANDOFF_KEY, JSON.stringify({ quoteNumber, customerName, downloadBase, template, startedAt: Date.now() }));
+      localStorage.setItem(QUOTE_PDF_HANDOFF_KEY, JSON.stringify({ quoteNumber, documentType, downloadBase, template, startedAt: Date.now() }));
       const frameName = `lc-quote-pdf-${Date.now()}`;
       const frame = document.createElement('iframe');
       frame.name = frameName;
@@ -3929,11 +3935,11 @@
       cleanupTimer = window.setTimeout(() => {
         cleanup();
         window.alert('Cin7 took too long to prepare the quote PDF.');
-      }, 120000);
+      }, QUOTE_PDF_TIMEOUT_MS);
 
       if (orderId) {
         const adminUrl = new URL('https://go.cin7.com/Cloud/ShoppingCartAdmin/Orders/OrderDetail.aspx');
-        adminUrl.searchParams.set('idCustomerAppsLink', '1328006');
+        adminUrl.searchParams.set('idCustomerAppsLink', currentCustomerAppsLink());
         adminUrl.searchParams.set('idOrder', orderId);
         adminUrl.searchParams.set('idWebSite', '27265');
         frame.src = adminUrl.href;
@@ -4005,7 +4011,7 @@
         return;
       }
       const href = quoteControl instanceof HTMLAnchorElement ? quoteControl.href : quoteControl.getAttribute('formaction');
-      const downloadBase = handoff.downloadBase || quotePdfFileBase(handoff.quoteNumber, handoff.customerName || '');
+      const downloadBase = handoff.downloadBase || quotePdfFileBase(handoff.quoteNumber, handoff.documentType || (handoff.template === 'invoice' ? 'sales-order' : 'quote'));
       if (href && /\/Cloud\/Docs\/PDF/i.test(href)) downloadSignedQuotePdf(href, downloadBase, () => {
         window.opener?.postMessage('lc-quote-pdf-finished', location.origin);
         if (window.opener) window.close();
