@@ -37,7 +37,7 @@ function extract(name) {
           options.onload({ status: 200, response: bytes.buffer });
         }, options.url.includes('path=fast') ? timings.fast : timings.rendered); };
       }, timings);
-      await page.addScriptTag({ content: `const quotePdfLinkCache = new Map(); const QUOTE_PDF_HANDOFF_KEY = 'test-handoff';\n${extract('quotePdfTemplateLabel')}\n${extract('prepareQuotePdfLink')}\n${extract('fetchSignedQuotePdf')}\n${extract('downloadCurrentQuotePdf')}` });
+      await page.addScriptTag({ content: `const quotePdfLinkCache = new Map(); const QUOTE_PDF_HANDOFF_KEY = 'test-handoff'; const clean=value=>String(value||'').replace(/\\s+/g,' ').trim();\n${extract('quotePdfFileBase')}\n${extract('quotePdfTemplateLabel')}\n${extract('prepareQuotePdfLink')}\n${extract('fetchSignedQuotePdf')}\n${extract('downloadCurrentQuotePdf')}` });
       await page.evaluate(async template => { await prepareQuotePdfLink('388', template); await prepareQuotePdfLink('388', template); }, timings.template);
       assert.equal(await page.evaluate(() => window.adminRequests), 1, 'Reuse the prepared link, not a cached PDF');
       const started = Date.now();
@@ -46,7 +46,7 @@ function extract(name) {
       const elapsed = Date.now() - started;
       await page.waitForTimeout(Math.max(timings.fast, timings.rendered) + 200);
       assert.equal(await page.evaluate(() => window.saved), 1, 'Fast and rendered routes must never save twice');
-      assert.equal(await page.evaluate(() => window.savedNames[0]), 'NZSO-123', 'The working Cin7 retrieval chain keeps the original NZSO argument');
+      assert.equal(await page.evaluate(() => window.savedNames[0]), 'NZSO-123 - Test Customer', 'The browser save receives the safe customer filename after Cin7 retrieval succeeds');
       assert.deepEqual(await page.evaluate(() => window.alerts), []);
       assert.equal(await page.locator('iframe').count(), 0);
       assert.equal(await page.locator('#pdf').isEnabled(), true);
@@ -100,9 +100,8 @@ function extract(name) {
     await templates.addScriptTag({ content: `const clean=value=>String(value||'').replace(/\\s+/g,' ').trim();\n${extract('quotePdfFileBase')}\n${extract('saveQuotePdfBuffer')}` });
     assert.equal(await templates.evaluate(() => quotePdfFileBase('NZSO-17012', 'Peter / Smith: Test?')), 'NZSO-17012 - Peter Smith Test');
     assert.equal(await templates.evaluate(() => quotePdfFileBase('NZSO-17012')), 'NZSO-17012', 'Missing customer data keeps the previous safe filename');
-    await templates.evaluate(() => { window.omniHeadingDraft = () => ({ customerName:'Peter Smith' }); });
     const namedDownload = templates.waitForEvent('download');
-    await templates.evaluate(() => saveQuotePdfBuffer(new TextEncoder().encode('%PDF test').buffer, 'NZSO-17012'));
+    await templates.evaluate(() => saveQuotePdfBuffer(new TextEncoder().encode('%PDF test').buffer, quotePdfFileBase('NZSO-17012', 'Peter Smith')));
     assert.equal((await namedDownload).suggestedFilename(), 'NZSO-17012 - Peter Smith.pdf', 'Only the final browser filename is changed');
     await templates.close();
     console.log('PASS PDF: Exact admin templates, isolated caches, missing-template rejection, menu selection and dismissal');
@@ -131,7 +130,7 @@ function extract(name) {
       window.fetchSignedQuotePdf = async () => new ArrayBuffer(4000);
       window.saveQuotePdfBuffer = () => { window.saved++; };
     });
-    await page.addScriptTag({ content: extract('downloadCurrentQuotePdf') });
+    await page.addScriptTag({ content: `const clean=value=>String(value||'').replace(/\\s+/g,' ').trim();\n${extract('quotePdfFileBase')}\n${extract('downloadCurrentQuotePdf')}` });
     await page.evaluate(() => downloadCurrentQuotePdf(document.getElementById('pdf')));
     assert.equal(await page.evaluate(() => window.alerts.length), 1);
     assert.equal(await page.evaluate(() => window.saved), 0, 'Locked quote still follows the HubSpot rule');
