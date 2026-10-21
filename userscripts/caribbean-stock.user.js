@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Caribbean Stock
 // @namespace    livingculture-stock
-// @version      0.1.6
+// @version      0.1.7
 // @description  Opens the live Caribbean stock list and Google-authorised hold/paid controls in Cin7 Core and Omni.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -70,7 +70,7 @@
     if(!popup){alert('Please allow popups for Cin7, then click Caribbean Stock again.');return;}popup.opener=null;popup.focus();
   }
   function placementAnchor(){
-    const id=location.hostname==='go.cin7.com'?'lc-omni-china-warehouse-button':'lc-core-pergola-guide-button';
+    const id=location.hostname==='go.cin7.com'?'lc-omni-china-warehouse-button':'lc-quote-review-inline-button-v1';
     return document.getElementById(id);
   }
   function mount(){
@@ -88,6 +88,10 @@
     if(omni&&anchor){
       const rect=anchor.getBoundingClientRect(),fixed=getComputedStyle(anchor).position==='fixed';
       button.style.cssText=base+`position:${fixed?'fixed':'absolute'};left:${(fixed?0:scrollX)+rect.right+8}px;top:${(fixed?0:scrollY)+rect.top}px;height:${Math.max(34,rect.height)}px;z-index:53;margin:0;`;
+    }else if(anchor){
+      if(getComputedStyle(parent).position==='static')parent.style.position='relative';
+      const rect=anchor.getBoundingClientRect(),parentRect=parent.getBoundingClientRect();
+      button.style.cssText=base+`position:absolute;left:${rect.right-parentRect.left+8}px;top:${rect.top-parentRect.top}px;height:${Math.max(34,rect.height)}px;z-index:2147483601;margin:0;`;
     }else button.style.cssText=base+(parent===document.body?'position:fixed;right:16px;bottom:18px;z-index:2147483000;':'position:static;margin-left:8px;');
   }
   if(typeof GM_registerMenuCommand==='function')GM_registerMenuCommand('Connect Caribbean stock Google app',configure);
