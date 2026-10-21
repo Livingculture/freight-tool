@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.155
+// @version      0.1.156
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -25,7 +25,8 @@
   const BUTTON_ID = 'lc-site-visit-inline-button-v2';
   const HUBSPOT_BUTTON_ID = 'lc-hubspot-deal-inline-button-v1';
   const QUOTE_REVIEW_BUTTON_ID = 'lc-quote-review-inline-button-v1';
-  const QUOTE_PDF_BUTTON_ID = 'lc-quote-pdf-download-button-v1';
+  const QUOTE_PDF_BUTTON_ID = 'lc-quote-pdf-download-button-v2';
+  const LEGACY_QUOTE_PDF_BUTTON_ID = 'lc-quote-pdf-download-button-v1';
   const CONVERT_ORDER_BUTTON_ID = 'lc-convert-sales-order-button';
   const CLONE_QUOTE_BUTTON_ID = 'lc-clone-quote-button';
   const CLONE_QUOTE_INTENT_KEY = 'lc-omni-clone-quote-intent';
@@ -246,6 +247,7 @@
     const style = document.createElement('style');
     style.id = 'lc-omni-hubspot-gate-styles';
     style.textContent = `.${HUBSPOT_GATE_CLASS} { display: none !important; }
+      #${LEGACY_QUOTE_PDF_BUTTON_ID} { display: none !important; }
       #${QUOTE_PDF_BUTTON_ID}[data-hubspot-locked] { opacity: .5 !important; cursor: not-allowed !important; }`;
     (document.head || document.documentElement).appendChild(style);
   }
@@ -4856,6 +4858,7 @@
   }
 
   function addQuotePdfButton() {
+    document.getElementById(LEGACY_QUOTE_PDF_BUTTON_ID)?.remove();
     if (!isOmniPage()) {
       document.getElementById(QUOTE_PDF_BUTTON_ID)?.remove();
       return;

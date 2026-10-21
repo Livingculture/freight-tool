@@ -141,5 +141,14 @@ function extract(name) {
     assert.equal(await page.locator('#pdf').isEnabled(), true);
     assert.equal(await page.locator('iframe').count(), 0, 'Invoice download does not wait for HubSpot');
     console.log('PASS PDF: Quote remains gated; invoice is always available');
+    const ownership = await browser.newPage();
+    await ownership.setContent('<button id="lc-hubspot-deal-inline-button-v1">HubSpot Deal</button><button id="lc-quote-pdf-download-button-v1">Old Download Quote</button>');
+    await ownership.addScriptTag({ content: `const QUOTE_PDF_BUTTON_ID='lc-quote-pdf-download-button-v2',LEGACY_QUOTE_PDF_BUTTON_ID='lc-quote-pdf-download-button-v1',HUBSPOT_BUTTON_ID='lc-hubspot-deal-inline-button-v1',QUOTE_REVIEW_BUTTON_ID='review',BUTTON_ID='visit',HUBSPOT_GATE_CLASS='gated';const isOmniPage=()=>true;const styleInlineButton=()=>{};const wireActionButton=button=>button.dataset.currentHandler='1';const placeOmniActionButton=(button,anchor)=>anchor.after(button);const omniHeadingDraft=()=>({documentType:'quote'});\n${extract('addQuotePdfButton')}` });
+    await ownership.evaluate(() => addQuotePdfButton());
+    assert.equal(await ownership.locator('#lc-quote-pdf-download-button-v1').count(), 0, 'Current workflow removes the old download button and its broken handler');
+    assert.equal(await ownership.locator('#lc-quote-pdf-download-button-v2').count(), 1, 'Current workflow owns a separate download button');
+    assert.equal(await ownership.locator('#lc-quote-pdf-download-button-v2').getAttribute('data-current-handler'), '1');
+    await ownership.close();
+    console.log('PASS PDF: Current button replaces legacy standalone-script handlers');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

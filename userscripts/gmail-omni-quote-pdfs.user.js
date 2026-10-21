@@ -222,7 +222,7 @@
     if (document.documentElement.dataset.lcGmailQuoteCacheBound) return;
     document.documentElement.dataset.lcGmailQuoteCacheBound = "1";
     document.addEventListener("pointerdown", (event) => {
-      const target = event.target instanceof Element ? event.target.closest("#lc-quote-pdf-download-button-v1") : null;
+      const target = event.target instanceof Element ? event.target.closest("#lc-quote-pdf-download-button-v2, #lc-quote-pdf-download-button-v1") : null;
       if (target) void rememberCurrentOmniPdf();
     }, true);
   }
