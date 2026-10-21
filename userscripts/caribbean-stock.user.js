@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Caribbean Stock
 // @namespace    livingculture-stock
-// @version      0.1.4
+// @version      0.1.5
 // @description  Opens the live Caribbean stock list and Google-authorised hold/paid controls in Cin7 Core and Omni.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -69,8 +69,8 @@
     const popup=window.open(url.href,'_blank',`popup=yes,width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`);
     if(!popup){alert('Please allow popups for Cin7, then click Caribbean Stock again.');return;}popup.opener=null;popup.focus();
   }
-  function guideButton(){
-    const id=location.hostname==='go.cin7.com'?'lc-omni-pergola-guide-button':'lc-core-pergola-guide-button';
+  function placementAnchor(){
+    const id=location.hostname==='go.cin7.com'?'lc-omni-china-warehouse-button':'lc-core-pergola-guide-button';
     return document.getElementById(id);
   }
   function mount(){
@@ -78,17 +78,23 @@
     let button=document.getElementById(ID);
     if(!quoteScreen()){button?.remove();return;}
     if(!button){button=document.createElement('button');button.id=ID;button.type='button';button.textContent='Caribbean Stock';button.title='Open the live Caribbean stock list';button.addEventListener('click',open);}
-    const guide=guideButton(),toolbar=location.hostname==='go.cin7.com'?document.getElementById('lc-omni-workflow-tools-bar'):null,promo=document.getElementById('lc-promo-summary-inline-button');
-    const parent=guide?.parentElement||toolbar||(promo?.parentElement&&getComputedStyle(promo.parentElement).display.includes('flex')?promo.parentElement:null)||document.body;
-    if(guide){
-      if(button.parentElement!==parent||button.previousElementSibling!==guide)guide.insertAdjacentElement('afterend',button);
+    const omni=location.hostname==='go.cin7.com',anchor=placementAnchor(),toolbar=omni?document.getElementById('lc-omni-workflow-tools-bar'):null,promo=document.getElementById('lc-promo-summary-inline-button');
+    const parent=anchor?.parentElement||toolbar||(promo?.parentElement&&getComputedStyle(promo.parentElement).display.includes('flex')?promo.parentElement:null)||document.body;
+    if(anchor){
+      if(button.parentElement!==parent||button.previousElementSibling!==anchor)anchor.insertAdjacentElement('afterend',button);
     }else if(button.parentElement!==parent)parent.append(button);
-    button.className=guide?.className||button.className||'';
-    button.style.cssText='box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;min-height:36px;max-width:calc(100vw - 24px);padding:7px 13px;border:1px solid #176e58;border-radius:4px;background:#176e58;color:white;font:700 13px Arial,sans-serif;cursor:pointer;'+(parent===document.body?'position:fixed;right:16px;bottom:18px;z-index:2147483000;':'position:static;margin-left:8px;');
+    button.className=anchor?.className||button.className||'';
+    const base='box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;min-height:36px;max-width:calc(100vw - 24px);padding:7px 13px;border:1px solid #176e58;border-radius:4px;background:#176e58;color:white;font:700 13px Arial,sans-serif;cursor:pointer;white-space:nowrap;';
+    if(omni&&anchor){
+      const rect=anchor.getBoundingClientRect(),fixed=getComputedStyle(anchor).position==='fixed';
+      button.style.cssText=base+`position:${fixed?'fixed':'absolute'};left:${(fixed?0:scrollX)+rect.right+8}px;top:${(fixed?0:scrollY)+rect.top}px;height:${Math.max(34,rect.height)}px;z-index:53;margin:0;`;
+    }else button.style.cssText=base+(parent===document.body?'position:fixed;right:16px;bottom:18px;z-index:2147483000;':'position:static;margin-left:8px;');
   }
   if(typeof GM_registerMenuCommand==='function')GM_registerMenuCommand('Connect Caribbean stock Google app',configure);
   let pending=false;
   new MutationObserver(()=>{if(!pending){pending=true;requestAnimationFrame(()=>{pending=false;mount();});}}).observe(document.documentElement,{childList:true,subtree:true});
   window.addEventListener('popstate',mount);window.addEventListener('hashchange',mount);
+  window.addEventListener('resize',mount);window.addEventListener('scroll',mount,{passive:true});
+  window.setInterval(mount,2500);
   mount();
 })();

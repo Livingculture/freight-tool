@@ -15,7 +15,7 @@ const source = fs.readFileSync('userscripts/caribbean-stock.user.js', 'utf8');
       },
       {
         url: 'https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx',
-        guideId: 'lc-omni-pergola-guide-button',
+        guideId: 'lc-omni-china-warehouse-button',
         toolbarId: 'lc-omni-workflow-tools-bar'
       }
     ]) {
@@ -41,7 +41,8 @@ const source = fs.readFileSync('userscripts/caribbean-stock.user.js', 'utf8');
         const guide = document.createElement('button');
         guide.id = guideId;
         guide.className = 'quote-tool';
-        guide.textContent = 'Pergola Guide';
+        guide.textContent = guideId === 'lc-omni-china-warehouse-button' ? 'Foshan Warehouse' : 'Pergola Guide';
+        if (guideId === 'lc-omni-china-warehouse-button') guide.style.cssText = 'position:absolute;left:200px;top:300px;width:145px;height:36px';
         toolbar.append(before, guide);
         document.getElementById('page').appendChild(toolbar);
       }, fixture);
@@ -51,16 +52,24 @@ const source = fs.readFileSync('userscripts/caribbean-stock.user.js', 'utf8');
         const stock = document.getElementById('lc-caribbean-stock-button');
         return stock?.previousElementSibling === guide;
       }, fixture.guideId);
-      assert.equal(await page.locator('#lc-caribbean-stock-button').evaluate(button => getComputedStyle(button).position), 'static');
+      assert.equal(await page.locator('#lc-caribbean-stock-button').evaluate(button => getComputedStyle(button).position), fixture.guideId === 'lc-omni-china-warehouse-button' ? 'absolute' : 'static');
       assert.equal(await page.locator(`#${fixture.toolbarId} > #lc-caribbean-stock-button`).count(), 1);
       assert.equal(await page.locator('#lc-caribbean-stock-button').getAttribute('class'), 'quote-tool', 'Button inherits the Pergola Guide styling class');
+      if (fixture.guideId === 'lc-omni-china-warehouse-button') {
+        const gap = await page.evaluate(guideId => {
+          const anchor = document.getElementById(guideId).getBoundingClientRect();
+          const stock = document.getElementById('lc-caribbean-stock-button').getBoundingClientRect();
+          return { horizontal: Math.round(stock.left - anchor.right), vertical: Math.round(stock.top - anchor.top) };
+        }, fixture.guideId);
+        assert.deepEqual(gap, { horizontal: 8, vertical: 0 }, 'Omni button sits directly to the right of Foshan Warehouse');
+      }
 
       await page.evaluate(({ guideId, toolbarId }) => {
         const old = document.getElementById(toolbarId);
         const replacement = document.createElement('div');
         replacement.id = toolbarId;
         replacement.style.display = 'flex';
-        replacement.innerHTML = `<button>Install Fees</button><button id="${guideId}" class="quote-tool">Pergola Guide</button><button>Temporary</button>`;
+        replacement.innerHTML = `<button>Install Fees</button><button id="${guideId}" class="quote-tool"${guideId === 'lc-omni-china-warehouse-button' ? ' style="position:absolute;left:240px;top:320px;width:145px;height:36px"' : ''}>${guideId === 'lc-omni-china-warehouse-button' ? 'Foshan Warehouse' : 'Pergola Guide'}</button><button>Temporary</button>`;
         old.replaceWith(replacement);
       }, fixture);
       await page.waitForFunction(guideId => document.getElementById('lc-caribbean-stock-button')?.previousElementSibling?.id === guideId, fixture.guideId);
@@ -68,7 +77,7 @@ const source = fs.readFileSync('userscripts/caribbean-stock.user.js', 'utf8');
       assert.deepEqual(errors, []);
       await page.close();
     }
-    console.log('PASS: Caribbean Stock moves from its temporary fallback to immediately after Pergola Guide in Core and Omni, survives redraws, and never duplicates.');
+    console.log('PASS: Caribbean Stock sits after Pergola Guide in Core and beside Foshan Warehouse in Omni, survives redraws, and never duplicates.');
   } finally {
     await browser.close();
   }
