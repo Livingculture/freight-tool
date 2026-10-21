@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.160
+// @version      0.1.161
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @match        https://go.cin7.com/Cloud/ShoppingCartAdmin/*
 // @grant        GM_xmlhttpRequest
+// @grant        GM_openInTab
 // @grant        GM_getResourceText
 // @grant        unsafeWindow
 // @resource     staffReps https://raw.githubusercontent.com/Livingculture/freight-tool/5381f783522d23f0a243b970fa8bd9cf0edd0d74/userscripts/livingculture-reps.json
@@ -3815,19 +3816,19 @@
       window.alert('The NZSO quote number could not be found on this page.');
       return;
     }
-    // Omni's OrderId is an edit-page ID, not the Admin order ID. Opening a
-    // hand-built Admin URL with it causes Cin7's unexpected-error page. Reopen
-    // the real quote in a worker window and let Cin7's native Go to Admin
-    // action perform the private ID conversion.
-    const workerUrl = new URL(location.href);
-    workerUrl.searchParams.set('lcQuotePdfWorker', '1');
-    localStorage.setItem(QUOTE_PDF_HANDOFF_KEY, JSON.stringify({ quoteNumber, template, startedAt: Date.now() }));
-    const worker = window.open(workerUrl.href, `lc-quote-pdf-${Date.now()}`, 'popup=yes,width=1050,height=780,resizable=yes,scrollbars=yes');
-    if (!worker) {
-      localStorage.removeItem(QUOTE_PDF_HANDOFF_KEY);
-      window.alert('Allow popups for go.cin7.com, then click Download again.');
+    if (typeof GM_openInTab !== 'function') {
+      window.alert('Update Living Culture All-in-One to enable background downloads.');
       return;
     }
+    // Keep Cin7's native ID conversion, but never select the worker tab.
+    const requestId = crypto.randomUUID();
+    const workerUrl = new URL(location.href);
+    workerUrl.searchParams.set('lcQuotePdfWorker', '1');
+    workerUrl.searchParams.set('lcQuotePdfRequest', requestId);
+    const handoffKey = `${QUOTE_PDF_HANDOFF_KEY}:${requestId}`;
+    const resultKey = `${handoffKey}:result`;
+    localStorage.setItem(handoffKey, JSON.stringify({ requestId, quoteNumber, template, startedAt: Date.now() }));
+    let worker = null;
     button.disabled = true;
     button.textContent = 'Downloading…';
     let finished = false;
@@ -3838,16 +3839,29 @@
       finished = true;
       window.clearTimeout(timeout);
       window.clearInterval(closedCheck);
-      window.removeEventListener('message', complete);
-      localStorage.removeItem(QUOTE_PDF_HANDOFF_KEY);
+      window.removeEventListener('storage', complete);
+      localStorage.removeItem(handoffKey);
+      localStorage.removeItem(resultKey);
+      try { worker?.close(); } catch (error) {}
       button.disabled = false;
       button.textContent = downloadLabel;
     };
     const complete = event => {
-      if (event.origin !== location.origin || event.data !== 'lc-quote-pdf-finished') return;
+      if (event.key !== resultKey || !event.newValue || event.storageArea !== localStorage) return;
+      let result;
+      try { result = JSON.parse(event.newValue); } catch (error) { return; }
       cleanup();
+      if (result.error) window.alert(result.error);
     };
-    window.addEventListener('message', complete);
+    window.addEventListener('storage', complete);
+    try {
+      worker = GM_openInTab(workerUrl.href, { active:false, insert:true, setParent:true });
+      if (!worker) throw new Error('Could not open the background download tab.');
+    } catch (error) {
+      cleanup();
+      window.alert(error.message || 'Could not open the background download tab.');
+      return;
+    }
     closedCheck = window.setInterval(() => {
       if (!worker.closed) return;
       window.setTimeout(() => {
@@ -3863,11 +3877,34 @@
     }, QUOTE_PDF_TIMEOUT_MS);
   }
 
+  function quotePdfWorkerHandoff() {
+    const sessionKey = `${QUOTE_PDF_HANDOFF_KEY}:worker`;
+    const urlId = new URL(location.href).searchParams.get('lcQuotePdfRequest');
+    if (urlId && /^[a-zA-Z0-9-]{16,80}$/.test(urlId)) sessionStorage.setItem(sessionKey, urlId);
+    const requestId = sessionStorage.getItem(sessionKey);
+    try {
+      return JSON.parse(localStorage.getItem(requestId ? `${QUOTE_PDF_HANDOFF_KEY}:${requestId}` : QUOTE_PDF_HANDOFF_KEY) || 'null');
+    } catch (error) { return null; }
+  }
+
+  function completeQuotePdfWorker(handoff, error = '') {
+    if (handoff.requestId) {
+      const key = `${QUOTE_PDF_HANDOFF_KEY}:${handoff.requestId}`;
+      localStorage.setItem(`${key}:result`, JSON.stringify({error}));
+      localStorage.removeItem(key);
+      sessionStorage.removeItem(`${QUOTE_PDF_HANDOFF_KEY}:worker`);
+    } else {
+      if (error) window.alert(error);
+      window.opener?.postMessage('lc-quote-pdf-finished', location.origin);
+      if (window.opener) window.close();
+    }
+  }
+
   function continueQuotePdfFromEditWorker() {
     if (window.parent !== window || new URL(location.href).searchParams.get('lcQuotePdfWorker') !== '1') return false;
-    let handoff = null;
-    try { handoff = JSON.parse(localStorage.getItem(QUOTE_PDF_HANDOFF_KEY) || 'null'); } catch (error) {}
+    const handoff = quotePdfWorkerHandoff();
     if (!handoff?.quoteNumber || Date.now() - Number(handoff.startedAt || 0) > QUOTE_PDF_TIMEOUT_MS) {
+      if (handoff?.requestId) completeQuotePdfWorker(handoff, 'The quote download request expired. Please try again.');
       window.close();
       return true;
     }
@@ -3875,6 +3912,12 @@
     let clicked = false;
     const timer = window.setInterval(() => {
       attempts += 1;
+      const current = omniHeadingDraft();
+      if (current.orderId && current.orderId !== handoff.quoteNumber) {
+        window.clearInterval(timer);
+        completeQuotePdfWorker(handoff, 'The background tab opened a different quote. Download cancelled.');
+        return;
+      }
       const goToAdmin = Array.from(document.querySelectorAll('a, button, input[type="button"], input[type="submit"]'))
         .filter(isVisible)
         .find(element => normalizeLabel(element.value || element.textContent || '') === 'go to admin' && !element.disabled);
@@ -3888,12 +3931,10 @@
       }
       if (attempts < 80) return;
       window.clearInterval(timer);
-      localStorage.removeItem(QUOTE_PDF_HANDOFF_KEY);
-      window.alert(clicked
+      if (!handoff.requestId) localStorage.removeItem(QUOTE_PDF_HANDOFF_KEY);
+      completeQuotePdfWorker(handoff, clicked
         ? 'Cin7 did not open its Admin page from the quote.'
         : 'Cin7\'s Go to Admin button could not be found on this quote.');
-      window.opener?.postMessage('lc-quote-pdf-finished', location.origin);
-      if (window.opener) window.close();
     }, 250);
     return true;
   }
@@ -3912,32 +3953,25 @@
         const bytes = new Uint8Array(response.response || new ArrayBuffer(0));
         const isPdf = bytes.length > 3000 && String.fromCharCode(...bytes.slice(0, 4)) === '%PDF';
         if (response.status < 200 || response.status >= 300 || !isPdf) {
-          window.alert('Cin7 did not return a valid quote PDF.');
-          finished();
+          finished('Cin7 did not return a valid quote PDF.');
           return;
         }
         saveQuotePdfBuffer(response.response, quoteNumber);
         finished();
       },
       onerror: () => {
-        window.alert('Could not connect to Cin7\'s quote PDF.');
-        finished();
+        finished('Could not connect to Cin7\'s quote PDF.');
       },
       ontimeout: () => {
-        window.alert('Cin7\'s quote PDF timed out.');
-        finished();
+        finished('Cin7\'s quote PDF timed out.');
       }
     });
   }
 
   function continueQuotePdfFromAdmin() {
-    let handoff = null;
-    try { handoff = JSON.parse(localStorage.getItem(QUOTE_PDF_HANDOFF_KEY) || 'null'); } catch (error) {}
+    const handoff = quotePdfWorkerHandoff();
     if (!handoff?.quoteNumber || Date.now() - Number(handoff.startedAt || 0) > QUOTE_PDF_TIMEOUT_MS) return;
-    const complete = () => {
-      window.opener?.postMessage('lc-quote-pdf-finished', location.origin);
-      if (window.opener) window.close();
-    };
+    const complete = error => completeQuotePdfWorker(handoff, error);
     let attempts = 0;
     const findQuote = window.setInterval(() => {
       attempts += 1;
@@ -3946,10 +3980,9 @@
         .find((element) => quotePdfTemplateMatches(element, handoff.template));
       if (!quoteControl && attempts < 40) return;
       window.clearInterval(findQuote);
-      localStorage.removeItem(QUOTE_PDF_HANDOFF_KEY);
+      if (!handoff.requestId) localStorage.removeItem(QUOTE_PDF_HANDOFF_KEY);
       if (!quoteControl) {
-        window.alert(`Cin7's ${quotePdfTemplateLabel(handoff.template)} link could not be found on the Admin page.`);
-        complete();
+        complete(`Cin7's ${quotePdfTemplateLabel(handoff.template)} link could not be found on the Admin page.`);
         return;
       }
       const href = quoteControl instanceof HTMLAnchorElement ? quoteControl.href : quoteControl.getAttribute('formaction');
