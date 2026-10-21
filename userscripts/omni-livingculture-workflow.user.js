@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.156
+// @version      0.1.157
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -3654,23 +3654,11 @@
     });
   }
 
-  function quotePdfFileBase(quoteNumber, documentType = 'quote') {
-    const safePart = (value, maximum) => clean(value)
-      .replace(/[<>:"/\\|?*\u0000-\u001f]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .replace(/^[. ]+|[. ]+$/g, '')
-      .slice(0, maximum)
-      .replace(/[. ]+$/g, '');
-    const number = safePart(quoteNumber, 40);
-    const label = documentType === 'sales-order' || documentType === 'invoice' ? 'Sales Order' : 'Quote';
-    return [number, label].filter(Boolean).join(' - ') || 'Living Culture document';
-  }
-
-  function saveQuotePdfBuffer(buffer, downloadBase) {
+  function saveQuotePdfBuffer(buffer, quoteNumber) {
     const blobUrl = URL.createObjectURL(new Blob([buffer], { type: 'application/pdf' }));
     const link = document.createElement('a');
     link.href = blobUrl;
-    link.download = `${downloadBase || 'Living Culture document'}.pdf`;
+    link.download = `${quoteNumber}.pdf`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -3821,8 +3809,6 @@
       window.alert('The NZSO quote number could not be found on this page.');
       return;
     }
-    const documentType = heading.documentType === 'sales-order' || template === 'invoice' ? 'sales-order' : 'quote';
-    const downloadBase = quotePdfFileBase(quoteNumber, documentType);
     try {
       button.disabled = true;
       button.textContent = 'Downloading…';
@@ -3842,7 +3828,7 @@
             fastTimer = window.setTimeout(() => reject(new Error('Fast PDF routes unavailable.')), 1000);
           });
           const pdfBuffer = await Promise.race([fastPdfPromise, fastLimit]).finally(() => window.clearTimeout(fastTimer));
-          saveQuotePdfBuffer(pdfBuffer, downloadBase);
+          saveQuotePdfBuffer(pdfBuffer, quoteNumber);
           button.disabled = false;
           button.textContent = downloadLabel;
           return;
@@ -3859,7 +3845,7 @@
         return;
       }
 
-      localStorage.setItem(QUOTE_PDF_HANDOFF_KEY, JSON.stringify({ quoteNumber, documentType, downloadBase, template, startedAt: Date.now() }));
+      localStorage.setItem(QUOTE_PDF_HANDOFF_KEY, JSON.stringify({ quoteNumber, template, startedAt: Date.now() }));
       const frameName = `lc-quote-pdf-${Date.now()}`;
       const frame = document.createElement('iframe');
       frame.name = frameName;
@@ -3885,7 +3871,7 @@
       };
       const completeDownload = (buffer) => {
         if (finished) return;
-        saveQuotePdfBuffer(buffer, downloadBase);
+        saveQuotePdfBuffer(buffer, quoteNumber);
         cleanup();
       };
       if (fastPdfPromise) void fastPdfPromise.then(completeDownload, () => {});
@@ -4013,8 +3999,7 @@
         return;
       }
       const href = quoteControl instanceof HTMLAnchorElement ? quoteControl.href : quoteControl.getAttribute('formaction');
-      const downloadBase = handoff.downloadBase || quotePdfFileBase(handoff.quoteNumber, handoff.documentType || (handoff.template === 'invoice' ? 'sales-order' : 'quote'));
-      if (href && /\/Cloud\/Docs\/PDF/i.test(href)) downloadSignedQuotePdf(href, downloadBase, () => {
+      if (href && /\/Cloud\/Docs\/PDF/i.test(href)) downloadSignedQuotePdf(href, handoff.quoteNumber, () => {
         window.opener?.postMessage('lc-quote-pdf-finished', location.origin);
         if (window.opener) window.close();
       });

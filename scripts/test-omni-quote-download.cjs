@@ -37,7 +37,7 @@ function extract(name) {
           options.onload({ status: 200, response: bytes.buffer });
         }, options.url.includes('path=fast') ? timings.fast : timings.rendered); };
       }, timings);
-      await page.addScriptTag({ content: `const quotePdfLinkCache = new Map(); const QUOTE_PDF_HANDOFF_KEY = 'test-handoff'; const QUOTE_PDF_TIMEOUT_MS=45000; const clean=value=>String(value||'').replace(/\\s+/g,' ').trim();\n${extract('currentCustomerAppsLink')}\n${extract('quotePdfFileBase')}\n${extract('quotePdfTemplateLabel')}\n${extract('prepareQuotePdfLink')}\n${extract('fetchSignedQuotePdf')}\n${extract('downloadCurrentQuotePdf')}` });
+      await page.addScriptTag({ content: `const quotePdfLinkCache = new Map(); const QUOTE_PDF_HANDOFF_KEY = 'test-handoff'; const QUOTE_PDF_TIMEOUT_MS=45000;\n${extract('currentCustomerAppsLink')}\n${extract('quotePdfTemplateLabel')}\n${extract('prepareQuotePdfLink')}\n${extract('fetchSignedQuotePdf')}\n${extract('downloadCurrentQuotePdf')}` });
       await page.evaluate(async template => { await prepareQuotePdfLink('388', template); await prepareQuotePdfLink('388', template); }, timings.template);
       assert.equal(await page.evaluate(() => window.adminRequests), 1, 'Reuse the prepared link, not a cached PDF');
       const started = Date.now();
@@ -46,7 +46,7 @@ function extract(name) {
       const elapsed = Date.now() - started;
       await page.waitForTimeout(Math.max(timings.fast, timings.rendered) + 200);
       assert.equal(await page.evaluate(() => window.saved), 1, 'Fast and rendered routes must never save twice');
-      assert.equal(await page.evaluate(() => window.savedNames[0]), timings.template === 'invoice' ? 'NZSO-123 - Sales Order' : 'NZSO-123 - Quote', 'The browser save distinguishes quotes from sales orders without changing Cin7 retrieval');
+      assert.equal(await page.evaluate(() => window.savedNames[0]), 'NZSO-123', 'Every route restores the original NZSO-only filename');
       assert.deepEqual(await page.evaluate(() => window.alerts), []);
       assert.equal(await page.locator('iframe').count(), 0);
       assert.equal(await page.locator('#pdf').isEnabled(), true);
@@ -98,12 +98,10 @@ function extract(name) {
       try { await requestAdminQuoteHref('388', 'invoice'); return false; }
       catch { return true; }
     }), 'A missing Dynamic Invoice must not silently select Quote');
-    await templates.addScriptTag({ content: `const clean=value=>String(value||'').replace(/\\s+/g,' ').trim();\n${extract('quotePdfFileBase')}\n${extract('saveQuotePdfBuffer')}` });
-    assert.equal(await templates.evaluate(() => quotePdfFileBase('NZSO-17012', 'quote')), 'NZSO-17012 - Quote');
-    assert.equal(await templates.evaluate(() => quotePdfFileBase('NZSO-17012', 'sales-order')), 'NZSO-17012 - Sales Order');
+    await templates.addScriptTag({ content: extract('saveQuotePdfBuffer') });
     const namedDownload = templates.waitForEvent('download');
-    await templates.evaluate(() => saveQuotePdfBuffer(new TextEncoder().encode('%PDF test').buffer, quotePdfFileBase('NZSO-17012', 'quote')));
-    assert.equal((await namedDownload).suggestedFilename(), 'NZSO-17012 - Quote.pdf', 'Only the final browser filename is changed');
+    await templates.evaluate(() => saveQuotePdfBuffer(new TextEncoder().encode('%PDF test').buffer, 'NZSO-17012'));
+    assert.equal((await namedDownload).suggestedFilename(), 'NZSO-17012.pdf', 'The original NZSO-only filename is restored');
     await templates.close();
     console.log('PASS PDF: Exact admin templates, isolated caches, missing-template rejection, menu selection and dismissal');
     const persistence = await browser.newPage();
@@ -131,7 +129,7 @@ function extract(name) {
       window.fetchSignedQuotePdf = async () => new ArrayBuffer(4000);
       window.saveQuotePdfBuffer = () => { window.saved++; };
     });
-    await page.addScriptTag({ content: `const clean=value=>String(value||'').replace(/\\s+/g,' ').trim();\n${extract('quotePdfFileBase')}\n${extract('downloadCurrentQuotePdf')}` });
+    await page.addScriptTag({ content: extract('downloadCurrentQuotePdf') });
     await page.evaluate(() => downloadCurrentQuotePdf(document.getElementById('pdf')));
     assert.equal(await page.evaluate(() => window.alerts.length), 1);
     assert.equal(await page.evaluate(() => window.saved), 0, 'Locked quote still follows the HubSpot rule');
