@@ -55,18 +55,39 @@ function extract(name) {
     await editWorker.close();
     console.log('PASS PDF: Worker uses Cin7 native Go to Admin conversion instead of an invalid constructed Admin URL');
 
-    for(const template of ['quote','custom','invoice']){
+    for(const variant of ['quote','standard','custom','invoice']){
+      const template=variant==='standard'?'quote':variant;
       const admin=await browser.newPage();
-      await admin.route('https://go.cin7.com/**',route=>route.fulfill({contentType:'text/html',body:'<a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Quote&ID=standard">Quote</a><a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Quote&ID=custom">Custom Quote</a><a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Invoice&ID=dynamic">Dynamic Invoice</a>'}));
+      await admin.route('https://go.cin7.com/**',route=>route.fulfill({contentType:'text/html',body:`<a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Quote&ID=custom">Custom Quote</a><a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Quote&ID=standard">${variant==='standard'?'Standard Quote':'Quote'}</a><a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Invoice&ID=dynamic">Dynamic Invoice</a>`}));
       await admin.goto('https://go.cin7.com/Cloud/ShoppingCartAdmin/Orders/OrderDetail.aspx?idOrder=388');
       await admin.evaluate(template=>{localStorage.setItem('test-handoff-v2',JSON.stringify({quoteNumber:'NZSO-123',template,startedAt:Date.now()}));window.saved=[];window.alert=()=>{};window.normalizeLabel=value=>String(value).trim().toLowerCase();window.isVisible=()=>true;window.saveQuotePdfBuffer=(_,name)=>window.saved.push(name);window.GM_xmlhttpRequest=options=>{const bytes=new Uint8Array(3501);bytes.set(new TextEncoder().encode('%PDF'));options.onload({status:200,response:bytes.buffer});};},template);
-      await admin.addScriptTag({content:`const QUOTE_PDF_HANDOFF_KEY='test-handoff-v2',QUOTE_PDF_TIMEOUT_MS=45000;\n${extract('quotePdfTemplateLabel')}\n${extract('downloadSignedQuotePdf')}\n${extract('continueQuotePdfFromAdmin')}`});
+      await admin.addScriptTag({content:`const QUOTE_PDF_HANDOFF_KEY='test-handoff-v2',QUOTE_PDF_TIMEOUT_MS=45000;\n${extract('quotePdfTemplateLabel')}\n${extract('quotePdfTemplateMatches')}\n${extract('downloadSignedQuotePdf')}\n${extract('continueQuotePdfFromAdmin')}`});
       await admin.evaluate(() => continueQuotePdfFromAdmin());
       await admin.waitForFunction(() => window.saved.length===1);
       assert.deepEqual(await admin.evaluate(() => window.saved),['NZSO-123']);
       await admin.close();
     }
     console.log('PASS PDF: Admin worker selects Quote, Custom Quote and Dynamic Invoice with NZSO-only filenames');
+    for(const failure of ['missing','invalid-pdf']){
+      const admin=await browser.newPage();
+      await admin.route('https://go.cin7.com/**',route=>route.fulfill({contentType:'text/html',body:failure==='missing'?'<a href="/Cloud/Docs/PDF/?T=Quote&ID=custom">Custom Quote</a>':'<a href="/Cloud/Docs/PDF/?T=Quote&ID=standard">Standard Quote</a>'}));
+      await admin.goto('https://go.cin7.com/Cloud/ShoppingCartAdmin/Orders/OrderDetails.aspx?idOrder=432');
+      await admin.evaluate(()=>{
+        localStorage.setItem('test-failed-worker',JSON.stringify({quoteNumber:'NZSO-17012',template:'quote',startedAt:Date.now()}));
+        window.alerts=[];window.messages=[];window.closeCalled=false;window.saved=false;
+        window.alert=message=>window.alerts.push(message);window.opener={postMessage:(...args)=>window.messages.push(args)};window.close=()=>window.closeCalled=true;
+        window.normalizeLabel=value=>String(value||'').trim().toLowerCase();window.isVisible=()=>true;
+        window.saveQuotePdfBuffer=()=>window.saved=true;
+        window.GM_xmlhttpRequest=options=>options.onload({status:403,response:new TextEncoder().encode('Access denied').buffer});
+        const interval=window.setInterval;window.setInterval=callback=>interval(callback,1);
+      });
+      await admin.addScriptTag({content:`const QUOTE_PDF_HANDOFF_KEY='test-failed-worker',QUOTE_PDF_TIMEOUT_MS=45000;\n${extract('quotePdfTemplateLabel')}\n${extract('quotePdfTemplateMatches')}\n${extract('downloadSignedQuotePdf')}\n${extract('continueQuotePdfFromAdmin')}\ncontinueQuotePdfFromAdmin();`});
+      await admin.waitForFunction(()=>window.closeCalled);
+      assert.equal(await admin.evaluate(()=>window.saved),false);assert.equal(await admin.evaluate(()=>window.alerts.length),1);
+      assert.deepEqual(await admin.evaluate(()=>window.messages),[['lc-quote-pdf-finished','https://go.cin7.com']],'Failures tell the quote window to restore its Download button');
+      await admin.close();
+    }
+    console.log('PASS PDF: Missing Standard Quote and invalid PDFs report errors and release the parent download button');
     const templates = await browser.newPage();
     await templates.setContent('<button id="pdf" style="position:absolute;left:30px;top:30px">Download Quote</button>');
     await templates.evaluate(() => {
@@ -78,7 +99,7 @@ function extract(name) {
       };
       window.downloadCurrentQuotePdf = (_, template) => { window.downloadChoice = template; };
     });
-    await templates.addScriptTag({ content: `const quotePdfLinkCache = new Map();\n${extract('currentCustomerAppsLink')}\n${extract('quotePdfTemplateLabel')}\n${extract('requestAdminQuoteHref')}\n${extract('prepareQuotePdfLink')}\n${extract('showQuotePdfTemplateMenu')}` });
+    await templates.addScriptTag({ content: `const quotePdfLinkCache = new Map();\n${extract('currentCustomerAppsLink')}\n${extract('quotePdfTemplateLabel')}\n${extract('quotePdfTemplateMatches')}\n${extract('requestAdminQuoteHref')}\n${extract('prepareQuotePdfLink')}\n${extract('showQuotePdfTemplateMenu')}` });
     const urls = await templates.evaluate(async () => [await prepareQuotePdfLink('388'), await prepareQuotePdfLink('388', 'custom'), await prepareQuotePdfLink('388')]);
     assert(urls[0].endsWith('ID=standard'));
     assert(urls[1].endsWith('ID=custom'));

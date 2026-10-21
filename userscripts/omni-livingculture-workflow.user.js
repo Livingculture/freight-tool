@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.159
+// @version      0.1.160
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -3670,6 +3670,12 @@
     return template === 'custom' ? 'Custom Quote' : 'Quote';
   }
 
+  function quotePdfTemplateMatches(element, template = 'quote') {
+    const label = normalizeLabel(element.textContent || element.value || '');
+    return template === 'quote' ? ['quote', 'standard quote'].includes(label)
+      : label === normalizeLabel(quotePdfTemplateLabel(template));
+  }
+
   function showQuotePdfTemplateMenu(button) {
     const menuId = 'lc-quote-pdf-template-menu';
     if (document.getElementById(menuId)) return;
@@ -3745,7 +3751,7 @@
           const parsed = new DOMParser().parseFromString(response.responseText || '', 'text/html');
           const links = Array.from(parsed.querySelectorAll('a[href]'));
           const quoteLink = links.find(link => {
-            return normalizeLabel(link.textContent || '') === normalizeLabel(quotePdfTemplateLabel(template))
+            return quotePdfTemplateMatches(link, template)
               && /\/Cloud\/Docs\/PDF/i.test(link.getAttribute('href') || '');
           }) || (template === 'quote' && links.find((link) => {
             const href = link.getAttribute('href') || '';
@@ -3905,7 +3911,7 @@
       onload(response) {
         const bytes = new Uint8Array(response.response || new ArrayBuffer(0));
         const isPdf = bytes.length > 3000 && String.fromCharCode(...bytes.slice(0, 4)) === '%PDF';
-        if (!isPdf) {
+        if (response.status < 200 || response.status >= 300 || !isPdf) {
           window.alert('Cin7 did not return a valid quote PDF.');
           finished();
           return;
@@ -3928,24 +3934,26 @@
     let handoff = null;
     try { handoff = JSON.parse(localStorage.getItem(QUOTE_PDF_HANDOFF_KEY) || 'null'); } catch (error) {}
     if (!handoff?.quoteNumber || Date.now() - Number(handoff.startedAt || 0) > QUOTE_PDF_TIMEOUT_MS) return;
+    const complete = () => {
+      window.opener?.postMessage('lc-quote-pdf-finished', location.origin);
+      if (window.opener) window.close();
+    };
     let attempts = 0;
     const findQuote = window.setInterval(() => {
       attempts += 1;
       const quoteControl = Array.from(document.querySelectorAll('a, button, input[type="button"], input[type="submit"]'))
         .filter(isVisible)
-        .find((element) => normalizeLabel(element.textContent || element.value || '') === normalizeLabel(quotePdfTemplateLabel(handoff.template)));
+        .find((element) => quotePdfTemplateMatches(element, handoff.template));
       if (!quoteControl && attempts < 40) return;
       window.clearInterval(findQuote);
       localStorage.removeItem(QUOTE_PDF_HANDOFF_KEY);
       if (!quoteControl) {
         window.alert(`Cin7's ${quotePdfTemplateLabel(handoff.template)} link could not be found on the Admin page.`);
+        complete();
         return;
       }
       const href = quoteControl instanceof HTMLAnchorElement ? quoteControl.href : quoteControl.getAttribute('formaction');
-      if (href && /\/Cloud\/Docs\/PDF/i.test(href)) downloadSignedQuotePdf(href, handoff.quoteNumber, () => {
-        window.opener?.postMessage('lc-quote-pdf-finished', location.origin);
-        if (window.opener) window.close();
-      });
+      if (href && /\/Cloud\/Docs\/PDF/i.test(href)) downloadSignedQuotePdf(href, handoff.quoteNumber, complete);
       else quoteControl.click();
     }, 250);
   }
