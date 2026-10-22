@@ -83,6 +83,14 @@ const source = fs.readFileSync('userscripts/caribbean-stock.user.js', 'utf8');
       assert.equal(await page.evaluate(() => window.openedStockWindows), 1, 'Current stock launcher opens exactly one window');
       assert.match(await page.evaluate(() => window.openedStockUrl), /AKfycbwmxFo0-94s8lBr9jDjmMWk6FbxZKTaUDaUi9k3OW3MuSIi4QOmiCuqvm-1IJJlLJ5ZtA/, 'A stale standalone V1 app override is ignored');
 
+      await page.evaluate(() => {
+        const button = document.getElementById('lc-caribbean-stock-button');
+        button.replaceWith(button.cloneNode(true));
+      });
+      await page.waitForFunction(() => typeof document.getElementById('lc-caribbean-stock-button')?.onclick === 'function');
+      await page.locator('#lc-caribbean-stock-button').click();
+      assert.equal(await page.evaluate(() => window.openedStockWindows), 2, 'Core clone redraw restores the click action');
+
       await page.evaluate(({ guideId, toolbarId }) => {
         const old = document.getElementById(toolbarId);
         const replacement = document.createElement('div');

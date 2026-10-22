@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Caribbean Stock
 // @namespace    livingculture-stock
-// @version      0.1.9
+// @version      0.1.10
 // @description  Opens the live Caribbean stock list and Google-authorised hold/paid controls in Cin7 Core and Omni.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -18,7 +18,7 @@
 (function(){
   'use strict';
   if(window.parent!==window||!/^(?:go\.cin7\.com|(?:[^.]+\.)*dearsystems\.com|(?:[^.]+\.)*cin7core\.com)$/.test(location.hostname))return;
-  const ID='lc-caribbean-stock-button',KEY='lcCaribbeanStockWebAppV2',VERSION='0.1.9';
+  const ID='lc-caribbean-stock-button',KEY='lcCaribbeanStockWebAppV2',VERSION='0.1.10';
   const DEFAULT_APP_URL='https://script.google.com/a/macros/livingculture.co.nz/s/AKfycbwmxFo0-94s8lBr9jDjmMWk6FbxZKTaUDaUi9k3OW3MuSIi4QOmiCuqvm-1IJJlLJ5ZtA/exec';
   function appUrl(value){
     const url=new URL(String(value||'').trim());
@@ -83,7 +83,12 @@
     // Core quote-only click handler cannot silently cancel the launch.
     if(button&&button.dataset.lcCaribbeanHandler!==VERSION){const replacement=button.cloneNode(false);button.replaceWith(replacement);button=replacement;}
     if(!button){button=document.createElement('button');button.id=ID;button.type='button';button.textContent='Caribbean Stock';button.title='Open the live Caribbean stock list';}
-    if(button.dataset.lcCaribbeanHandler!==VERSION){button.dataset.lcCaribbeanHandler=VERSION;button.addEventListener('click',open);}
+    // Core sometimes clones toolbar buttons during a redraw. Attributes survive
+    // that clone but event listeners do not, so always restore the direct click
+    // handler whenever mount runs. Using onclick also prevents two installed
+    // copies from opening two windows.
+    button.dataset.lcCaribbeanHandler=VERSION;
+    button.onclick=open;
     const omni=location.hostname==='go.cin7.com',anchor=placementAnchor(),toolbar=omni?document.getElementById('lc-omni-workflow-tools-bar'):null,promo=document.getElementById('lc-promo-summary-inline-button');
     const parent=anchor?.parentElement||toolbar||(promo?.parentElement&&getComputedStyle(promo.parentElement).display.includes('flex')?promo.parentElement:null)||document.body;
     if(anchor){
