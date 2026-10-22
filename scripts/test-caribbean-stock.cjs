@@ -27,6 +27,16 @@ const source = fs.readFileSync('userscripts/caribbean-stock.user.js', 'utf8');
         body: '<!doctype html><html><body><h1>New Quote - Test Customer - NZSO-17012</h1><div id="page"></div></body></html>'
       }));
       await page.goto(fixture.url);
+      await page.evaluate(() => {
+        window.legacyClicks = 0;
+        window.openedStockWindows = 0;
+        window.open = () => { window.openedStockWindows += 1; return { opener:null, focus(){} }; };
+        const legacy = document.createElement('button');
+        legacy.id = 'lc-caribbean-stock-button';
+        legacy.textContent = 'Caribbean Stock';
+        legacy.addEventListener('click', () => { window.legacyClicks += 1; });
+        document.body.appendChild(legacy);
+      });
       await page.addScriptTag({ content: `window.GM_getValue=(_,fallback)=>fallback;window.GM_setValue=()=>{};window.GM_registerMenuCommand=()=>{};${source}` });
 
       await page.locator('#lc-caribbean-stock-button').waitFor();
@@ -67,6 +77,9 @@ const source = fs.readFileSync('userscripts/caribbean-stock.user.js', 'utf8');
       assert.deepEqual(gap, { horizontal: 8, vertical: 0 }, fixture.guideId === 'lc-omni-china-warehouse-button'
         ? 'Omni button sits directly to the right of Foshan Warehouse'
         : 'Core button sits directly to the right of Quote Review');
+      await page.locator('#lc-caribbean-stock-button').click();
+      assert.equal(await page.evaluate(() => window.legacyClicks), 0, 'Current component replaces stale standalone click handlers');
+      assert.equal(await page.evaluate(() => window.openedStockWindows), 1, 'Current stock launcher opens exactly one window');
 
       await page.evaluate(({ guideId, toolbarId }) => {
         const old = document.getElementById(toolbarId);

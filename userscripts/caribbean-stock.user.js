@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Caribbean Stock
 // @namespace    livingculture-stock
-// @version      0.1.7
+// @version      0.1.8
 // @description  Opens the live Caribbean stock list and Google-authorised hold/paid controls in Cin7 Core and Omni.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -18,7 +18,7 @@
 (function(){
   'use strict';
   if(window.parent!==window||!/^(?:go\.cin7\.com|(?:[^.]+\.)*dearsystems\.com|(?:[^.]+\.)*cin7core\.com)$/.test(location.hostname))return;
-  const ID='lc-caribbean-stock-button',KEY='lcCaribbeanStockWebAppV1';
+  const ID='lc-caribbean-stock-button',KEY='lcCaribbeanStockWebAppV1',VERSION='0.1.8';
   const DEFAULT_APP_URL='https://script.google.com/a/macros/livingculture.co.nz/s/AKfycbwmxFo0-94s8lBr9jDjmMWk6FbxZKTaUDaUi9k3OW3MuSIi4QOmiCuqvm-1IJJlLJ5ZtA/exec';
   function appUrl(value){
     const url=new URL(String(value||'').trim());
@@ -56,7 +56,9 @@
     if(omni?!/^\/Cloud\/TransactionEntry\/TransactionEntry\.aspx$/i.test(location.pathname):!/^\/Sale\/?$/i.test(location.pathname))return false;
     const type=context().documentType;
     if(omni)return type==='quote'||!type&&/^(?:Edit|New)\s+Quote\b/im.test(document.body?.innerText||'');
-    return type!=='sales order';
+    // A Cin7 Core sale keeps the same /Sale page while it moves through Quote,
+    // Order and Invoice. Caribbean stock must remain usable at every stage.
+    return true;
   }
   function open(){
     const configured=GM_getValue(KEY,'')||DEFAULT_APP_URL;
@@ -77,7 +79,11 @@
     if(!document.body)return;
     let button=document.getElementById(ID);
     if(!quoteScreen()){button?.remove();return;}
-    if(!button){button=document.createElement('button');button.id=ID;button.type='button';button.textContent='Caribbean Stock';button.title='Open the live Caribbean stock list';button.addEventListener('click',open);}
+    // Replace a button left behind by an older standalone copy so its obsolete
+    // Core quote-only click handler cannot silently cancel the launch.
+    if(button&&button.dataset.lcCaribbeanHandler!==VERSION){const replacement=button.cloneNode(false);button.replaceWith(replacement);button=replacement;}
+    if(!button){button=document.createElement('button');button.id=ID;button.type='button';button.textContent='Caribbean Stock';button.title='Open the live Caribbean stock list';}
+    if(button.dataset.lcCaribbeanHandler!==VERSION){button.dataset.lcCaribbeanHandler=VERSION;button.addEventListener('click',open);}
     const omni=location.hostname==='go.cin7.com',anchor=placementAnchor(),toolbar=omni?document.getElementById('lc-omni-workflow-tools-bar'):null,promo=document.getElementById('lc-promo-summary-inline-button');
     const parent=anchor?.parentElement||toolbar||(promo?.parentElement&&getComputedStyle(promo.parentElement).display.includes('flex')?promo.parentElement:null)||document.body;
     if(anchor){
