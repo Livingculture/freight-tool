@@ -5,6 +5,9 @@ const loader = fs.readFileSync('userscripts/livingculture-all-in-one.user.js', '
 const stock = fs.readFileSync('userscripts/caribbean-stock.user.js', 'utf8');
 const app = 'https://script.google.com/a/macros/livingculture.co.nz/s/AKfycbwmxFo0-94s8lBr9jDjmMWk6FbxZKTaUDaUi9k3OW3MuSIi4QOmiCuqvm-1IJJlLJ5ZtA/exec';
 assert.match(loader, /@resource\s+caribbeanStock https:\/\/raw\.githubusercontent\.com\/Livingculture\/freight-tool\/[a-f0-9]{40}\/userscripts\/caribbean-stock\.user\.js/);
+assert.match(loader, /@version\s+0\.1\.178/);
+assert.match(loader, /const isCin7CoreSale = isCin7Core && \/\^\\\/Sale/);
+assert.match(loader, /enabled: isOmniQuote \|\| isCin7CoreSale/);
 
 (async () => {
   const browser = await chromium.launch();

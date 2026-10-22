@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture All-in-One
 // @namespace    livingculture
-// @version      0.1.177
+// @version      0.1.178
 // @description  Approved Living Culture Omni, Cin7 Core, Gmail, HubSpot and website tools in one Tampermonkey install.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -53,7 +53,7 @@
 // @resource     websiteShortcuts https://raw.githubusercontent.com/Livingculture/freight-tool/86774fbd10544cbc5d6b301c74599fa30ec48df5/userscripts/omni-website-shortcuts.user.js
 // @resource     productAvailability https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-product-availability.user.js?v=0.1.7
 // @resource     chinaWarehouse https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-china-warehouse-popup-clean-mode.user.js?v=0.1.1
-// @resource     caribbeanStock https://raw.githubusercontent.com/Livingculture/freight-tool/d0d2f0ff3831f261601c6a03392b4388b4609ef6/userscripts/caribbean-stock.user.js
+// @resource     caribbeanStock https://raw.githubusercontent.com/Livingculture/freight-tool/4267a9ec7838d267e51afbc55da4e7d0006a5770/userscripts/caribbean-stock.user.js
 // @resource     quoteDefaults https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-defaults.user.js?v=0.1.10
 // @resource     hideOrderSettings https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-hide-order-settings.user.js?v=0.1.2
 // @resource     emailHelperCompose https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-email-helper-compose.user.js?v=0.1.45
@@ -94,6 +94,7 @@
   const isGmail = host === 'mail.google.com';
   const isHubSpot = host === 'app.hubspot.com' || host.endsWith('.hubspot.com');
   const isCin7Core = host === 'inventory.dearsystems.com' || host.endsWith('.dearsystems.com') || host.endsWith('.cin7core.com') || host.endsWith('.cin7.com');
+  const isCin7CoreSale = isCin7Core && /^\/Sale\/?$/i.test(path);
 
   const components = [
     { resource: 'copySku', file: 'livingculture-copy-sku.user.js', runAt: 'idle', enabled: isLivingCultureProduct },
@@ -105,7 +106,7 @@
     { resource: 'websiteShortcuts', file: 'omni-website-shortcuts.user.js', runAt: 'idle', enabled: isOmniQuote || isLivingCulture },
     { resource: 'productAvailability', file: 'omni-product-availability.user.js', runAt: 'idle', enabled: isOmniQuote },
     { resource: 'chinaWarehouse', file: 'omni-china-warehouse-popup-clean-mode.user.js', runAt: 'idle', enabled: isOmniQuote || isDearPortal },
-    { resource: 'caribbeanStock', file: 'caribbean-stock.user.js', runAt: 'idle', enabled: isOmniQuote || (!isOmni && isCin7Core) },
+    { resource: 'caribbeanStock', file: 'caribbean-stock.user.js', runAt: 'idle', enabled: isOmniQuote || isCin7CoreSale },
     { resource: 'quoteDefaults', file: 'omni-quote-defaults.user.js', runAt: 'idle', enabled: isOmniQuote },
     { resource: 'hideOrderSettings', file: 'omni-hide-order-settings.user.js', runAt: 'start', enabled: isOmniQuote },
     { resource: 'emailHelperCompose', file: 'omni-email-helper-compose.user.js', runAt: 'start', enabled: isOmniQuote || isOmniContactLog || isEmailHelper },
@@ -135,7 +136,7 @@
     if (earlyOmniTools.has(component.resource)) component.runAt = 'body';
   });
 
-  const status = { version: '0.1.177', loaded: [], skipped: [], errors: [] };
+  const status = { version: '0.1.178', loaded: [], skipped: [], errors: [] };
   window.__lcAllInOneStatus = status;
 
   // BEGIN GENERATED GMAIL COMPONENTS
