@@ -30,14 +30,15 @@ const source = fs.readFileSync('userscripts/caribbean-stock.user.js', 'utf8');
       await page.evaluate(() => {
         window.legacyClicks = 0;
         window.openedStockWindows = 0;
-        window.open = () => { window.openedStockWindows += 1; return { opener:null, focus(){} }; };
+        window.openedStockUrl = '';
+        window.open = url => { window.openedStockWindows += 1; window.openedStockUrl = url; return { opener:null, focus(){} }; };
         const legacy = document.createElement('button');
         legacy.id = 'lc-caribbean-stock-button';
         legacy.textContent = 'Caribbean Stock';
         legacy.addEventListener('click', () => { window.legacyClicks += 1; });
         document.body.appendChild(legacy);
       });
-      await page.addScriptTag({ content: `window.GM_getValue=(_,fallback)=>fallback;window.GM_setValue=()=>{};window.GM_registerMenuCommand=()=>{};${source}` });
+      await page.addScriptTag({ content: `window.GM_getValue=(key,fallback)=>key==='lcCaribbeanStockWebAppV1'?'https://script.google.com/macros/s/obsolete-app/exec':fallback;window.GM_setValue=()=>{};window.GM_registerMenuCommand=()=>{};${source}` });
 
       await page.locator('#lc-caribbean-stock-button').waitFor();
       assert.equal(await page.locator('#lc-caribbean-stock-button').evaluate(button => getComputedStyle(button).position), 'fixed', 'Temporary fallback is fixed only before the guide loads');
@@ -80,6 +81,7 @@ const source = fs.readFileSync('userscripts/caribbean-stock.user.js', 'utf8');
       await page.locator('#lc-caribbean-stock-button').click();
       assert.equal(await page.evaluate(() => window.legacyClicks), 0, 'Current component replaces stale standalone click handlers');
       assert.equal(await page.evaluate(() => window.openedStockWindows), 1, 'Current stock launcher opens exactly one window');
+      assert.match(await page.evaluate(() => window.openedStockUrl), /AKfycbwmxFo0-94s8lBr9jDjmMWk6FbxZKTaUDaUi9k3OW3MuSIi4QOmiCuqvm-1IJJlLJ5ZtA/, 'A stale standalone V1 app override is ignored');
 
       await page.evaluate(({ guideId, toolbarId }) => {
         const old = document.getElementById(toolbarId);
