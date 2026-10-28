@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.162
+// @version      0.1.163
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -1596,7 +1596,7 @@
 
   function findOmniSectionHeading(text) {
     const wanted = normalizeLabel(text);
-    const candidates = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"],legend,div,span'))
+    const candidates = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"],legend,div,span,strong,b,td,th'))
       .filter(isVisible)
       .map(node => ({
         node,
@@ -1700,7 +1700,7 @@
   function copyDeliveryAddressToBilling() {
     const address = deliveryBillingFields();
     if (!address) return false;
-    address.fields.forEach(({ source,target }) => { if (source && target) setOmniControlValue(target, source.value || ''); });
+    address.fields.forEach(({ source,target }) => { if (source && target && source !== target && !target.disabled && !target.readOnly) setOmniControlValue(target, source.value || ''); });
     return true;
   }
 
@@ -1714,21 +1714,24 @@
       label = document.createElement('label');
       label.id = COPY_DELIVERY_BILLING_ID;
       label.title = 'Copy the delivery address to Billing Address and keep it matched while ticked.';
-      label.style.cssText = 'display:inline-flex;align-items:center;gap:7px;margin-left:12px;color:#173f6e;font:600 14px Arial,sans-serif;white-space:nowrap;cursor:pointer;';
+      label.style.cssText = 'display:inline-flex;align-items:center;gap:7px;max-width:100%;color:#173f6e;font:600 12px Arial,sans-serif;white-space:normal;cursor:pointer;';
       label.innerHTML = '<input type="checkbox" style="width:18px;height:18px;margin:0;cursor:pointer"> Same as delivery address';
       label.querySelector('input').addEventListener('change', event => { if (event.currentTarget.checked) copyDeliveryAddressToBilling(); });
     }
-    delivery.style.display = 'flex';
-    delivery.style.alignItems = 'center';
-    delivery.style.flexWrap = 'wrap';
-    if (label.parentElement !== delivery) delivery.appendChild(label);
+    billing.style.display = 'flex';
+    billing.style.alignItems = 'center';
+    billing.style.flexWrap = 'wrap';
+    billing.style.gap = '6px 12px';
+    if (label.parentElement !== billing) billing.appendChild(label);
     const address=deliveryBillingFields();
     (address?.fields || []).forEach(({ source }) => {
       if (!source || source.dataset.lcBillingCopyHook === '1') return;
       source.dataset.lcBillingCopyHook = '1';
-      source.addEventListener('input', () => {
+      const sync = () => {
         if (document.querySelector(`#${COPY_DELIVERY_BILLING_ID} input`)?.checked) copyDeliveryAddressToBilling();
-      });
+      };
+      source.addEventListener('input', sync);
+      source.addEventListener('change', sync);
     });
   }
 
