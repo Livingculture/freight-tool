@@ -20,7 +20,7 @@ const staff = JSON.parse(reps);
       window.sent = [];
       window.successEvents = 0;
       window.nativeSaves = 0;
-      window.savedPaymentHtml = '';
+      window.savedPaymentHtml = document.documentElement.outerHTML;
       document.getElementById('native-save').onclick = () => {
         window.nativeSaves++;
         window.savedPaymentHtml = document.documentElement.outerHTML;
@@ -44,13 +44,13 @@ const staff = JSON.parse(reps);
     assert.equal(await page.evaluate(() => window.successEvents), 0);
     await page.screenshot({ path: '/tmp/lc-omni-wecom-payment.png' });
     await page.locator('#lc-wecom-payment-confirm-overlay').getByRole('button', { name: 'Save & Send to WeCom', exact: true }).click();
-    assert.equal(await page.evaluate(() => window.nativeSaves), 1, 'Explicit confirmation invokes native Save once');
-    assert.equal(await page.evaluate(() => window.sent.length), 0, 'Never send before verifying saved payment');
     await page.waitForFunction(() => window.sent.length === 1);
-    assert.equal(await page.evaluate(() => window.sent.length), 1, 'Send only after explicit confirmation');
+    assert.equal(await page.evaluate(() => window.nativeSaves), 0, 'An unchanged payment loaded from Omni does not need another save');
+    assert.equal(await page.evaluate(() => window.sent.length), 1, 'Saved payment sends after explicit confirmation');
     assert.equal(await page.evaluate(() => window.successEvents), 1, 'Notify invoice date helper only after success');
     await page.evaluate(() => {
       document.querySelector('table input').value = '6,449.99';
+      document.querySelector('table input').setAttribute('value', '6,449.99');
       document.querySelectorAll('p')[0].textContent = 'Total Paid: 6,449.99';
       document.querySelectorAll('p')[1].textContent = 'Total Owing: 6,449.99';
     });
@@ -58,10 +58,21 @@ const staff = JSON.parse(reps);
     await page.locator('#lc-send-as-wecom-menu').getByRole('button', { name: 'PEN-Steve', exact: true }).click();
     assert((await preview.inputValue()).includes('50% deposit'));
     assert.equal(await page.evaluate(() => window.sent.length), 1);
+    await page.locator('#lc-wecom-payment-confirm-overlay').getByRole('button', {name:'Save & Send to WeCom',exact:true}).click();
+    assert.equal(await page.evaluate(() => window.nativeSaves),1,'A changed payment invokes native Save');
+    await page.waitForFunction(() => window.sent.length === 2);
+    assert.equal(await page.evaluate(() => window.sent.length),2,'A changed payment sends only after persisted-payment verification');
+    await page.evaluate(() => {
+      document.querySelector('table input').value = '6,000.00';
+      document.querySelectorAll('p')[0].textContent = 'Total Paid: 6,000.00';
+      document.querySelectorAll('p')[1].textContent = 'Total Owing: 6,899.99';
+    });
+    await button.click();
+    await page.locator('#lc-send-as-wecom-menu').getByRole('button', { name: 'PEN-Steve', exact: true }).click();
     await page.evaluate(() => { document.getElementById('native-save').onclick = () => { window.nativeSaves++; }; });
     await page.locator('#lc-wecom-payment-confirm-overlay').getByRole('button', {name:'Save & Send to WeCom',exact:true}).click();
     await page.waitForFunction(() => document.getElementById('lc-wecom-payment-status').textContent.includes('not saved'));
-    assert.equal(await page.evaluate(() => window.sent.length),1,'Blocked native save must not send an unsaved payment');
+    assert.equal(await page.evaluate(() => window.sent.length),2,'Blocked native save must not send an unsaved payment');
     assert.equal(await page.evaluate(() => sessionStorage.getItem('lc-omni-payment-save-send')),null,'Failed verification cannot loop across reloads');
     assert.equal(await page.evaluate(() => window.nativeSaves),2,'No automatic save retry');
     await page.evaluate(() => sessionStorage.setItem('lc-omni-payment-save-send',JSON.stringify({
@@ -92,6 +103,6 @@ const staff = JSON.parse(reps);
     await core.locator('#lc-send-as-wecom-payment-btn').click();
     await core.locator('#lc-send-as-wecom-menu').getByRole('button', { name: 'PEN-Steve', exact: true }).click();
     assert.equal(await core.locator('#lc-wecom-payment-confirm-overlay textarea').inputValue(), 'SO-123 EFTPOS payment $100.00 paid in full — Steve, PEN');
-    console.log('PASS: Omni native save before send, persisted-payment verification, blocked save prevents send/retries, rep list, full/deposit previews and unchanged Core confirmation. Omni and WeCom requests mocked.');
+    console.log('PASS: Saved Omni payments send without false verification, changed payments save and verify, blocked saves prevent send/retries, rep list, previews and Core confirmation. Omni and WeCom requests mocked.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

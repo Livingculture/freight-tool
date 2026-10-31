@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 WeCom Payment Message Sender
 // @namespace    livingculture
-// @version      4.13
+// @version      4.14
 // @description  Sends a WeCom payment message from Cin7 invoice/payment screen only.
 // @match        *://cin7.com/*
 // @match        *://*.cin7.com/*
@@ -30,6 +30,7 @@
   const CONFIRM_OVERLAY_ID = 'lc-wecom-payment-confirm-overlay';
   const PENDING_PAYMENT_KEY = 'lc-omni-payment-save-send';
   let paymentSaveInFlight = false;
+  let omniLoadedPaymentBaseline = null;
 
   const WECOM_WEBHOOK_URL = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=f875dc80-5d4e-4bb4-8a8d-cd66193dc7e5';
 
@@ -540,18 +541,46 @@
     return JSON.stringify(findOmniPaymentRows(root).map(row => [row.method, row.amount]).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))));
   }
 
+  function omniPaymentSnapshot(root = document) {
+    const rows = findOmniPaymentRows(root);
+    if (!rows.length) return null;
+    return {
+      order: findOrderNumber(),
+      rows: paymentRowsKey(root),
+      totalPaid: Math.round(rows.reduce((sum, row) => sum + row.amount, 0) * 100) / 100
+    };
+  }
+
+  function captureLoadedOmniPaymentBaseline() {
+    if (!isOmniPaymentPage() || omniLoadedPaymentBaseline) return;
+    omniLoadedPaymentBaseline = omniPaymentSnapshot();
+  }
+
+  function paymentSnapshotMatches(left, right) {
+    return Boolean(left && right && left.order === right.order && left.rows === right.rows
+      && nearlyEqual(left.totalPaid, right.totalPaid, 0.01));
+  }
+
   function saveOmniPaymentBeforeSending(message) {
     if (paymentSaveInFlight) return;
     const save = Array.from(document.querySelectorAll('button, input[type="submit"], input[type="button"], a'))
       .filter(isVisible).filter(control => !control.disabled && /^(?:save|save as draft)$/i.test(clean(control.value || control.textContent)))
       .sort((a, b) => /^save$/i.test(clean(a.value || a.textContent)) ? -1 : /^save$/i.test(clean(b.value || b.textContent)) ? 1 : 0)[0];
     const rows = findOmniPaymentRows();
-    if (!save || !rows.length) {
+    if (!rows.length) {
       setStatus('Payment message not sent. Enter the payment and make sure Save is available.', true);
       return;
     }
     const pending = { message, order:findOrderNumber(), url:location.href, rows:paymentRowsKey(),
       totalPaid:Math.round(rows.reduce((sum, row) => sum + row.amount, 0) * 100) / 100, createdAt:Date.now() };
+    if (paymentSnapshotMatches(omniLoadedPaymentBaseline, pending)) {
+      sendMessageToWeCom(message);
+      return;
+    }
+    if (!save) {
+      setStatus('Payment message not sent. Save is not available for these changed payment details.', true);
+      return;
+    }
     try { sessionStorage.setItem(PENDING_PAYMENT_KEY, JSON.stringify(pending)); }
     catch { setStatus('Payment message not sent. Could not retain the message during saving.', true); return; }
     paymentSaveInFlight = true;
@@ -576,6 +605,12 @@
     paymentSaveInFlight = true;
     try {
       if (Date.now() - pending.createdAt > 300000) throw Error('The saved-payment message expired. Please send again.');
+      if (paymentSnapshotMatches(omniLoadedPaymentBaseline, pending)
+        && paymentSnapshotMatches(omniPaymentSnapshot(), pending)) {
+        sessionStorage.removeItem(PENDING_PAYMENT_KEY);
+        sendMessageToWeCom(pending.message);
+        return;
+      }
       const response = await fetch(pending.url, { credentials:'same-origin', cache:'no-store', signal:AbortSignal.timeout(15000) });
       if (!response.ok) throw Error('Could not verify the saved Omni payment.');
       const saved = new DOMParser().parseFromString(await response.text(), 'text/html');
@@ -1050,6 +1085,8 @@
       removeButton();
       return;
     }
+
+    captureLoadedOmniPaymentBaseline();
 
     if (
       document.getElementById(SEND_AS_BUTTON_ID) ||
