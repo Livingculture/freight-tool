@@ -19,10 +19,11 @@ const progress = { orderNumber: 'NZSO-17003', nextAction: 'Arrange installation'
     await page.route('https://go.cin7.com/**', route => route.fulfill({ body: '<html><body></body></html>', contentType: 'text/html' }));
     await page.goto('https://go.cin7.com/test');
     await page.setContent('<style>body{margin:20px;background:#eee;font:14px Arial}li{font-size:50px;color:red}button{background:red}main{max-width:1300px;margin:auto}h1{font-size:22px}</style><main><h1>Edit Sales Order - Customer - NZSO-17003</h1><form><h2>Delivery address</h2><input value="Unsaved edit"><button id="save" type="button">Save As Draft</button></form></main>');
-    await page.addScriptTag({ content: `let omniJobProgressCache=null;let heading={orderId:'NZSO-17003',documentType:'sales-order'};const omniHeadingDraft=()=>heading;const extractOrderId=text=>text.match(/NZSO-\\d+/)?.[0]||'';const clean=value=>String(value||'').trim();const normalizeLabel=value=>clean(value).toLowerCase();const OMNI_TOOLS_BAR_ID='lc-omni-tools';const isVisible=node=>node.getBoundingClientRect().width>0;const isOmniPage=()=>true;let opened=0,saved=0,requests=[],openedUrls=[];const WORKFLOW_PLANNER_URL='https://living-culture-workflow.vercel.app/';const hubSpotGateOrderId=()=>heading.orderId;window.open=url=>{opened++;openedUrls.push(url);return {opener:window,focus(){}};};document.getElementById('save').onclick=()=>saved++;let collectionDispatchInFlight=false,omniQuoteConversionLoaded=false;const omniFullyDispatchedInputs=()=>[];const API_KEY='';const OMNI_ORDER_SYNC_API_URL='https://workflow.test/api/omni/orders';const GM_xmlhttpRequest=options=>requests.push(options);const applyOmniWorkflowResponse=payload=>renderOmniJobProgress(payload.jobProgress);${functions.join('\n')}` });
+    await page.addScriptTag({ content: `let omniJobProgressCache=null;let heading={orderId:'NZSO-17003',documentType:'sales-order'};const omniHeadingDraft=()=>heading;const omniWorkflowSnapshot=()=>({orderNumber:heading.orderId,documentType:heading.documentType,customerName:'Customer'});const extractOrderId=text=>text.match(/NZSO-\\d+/)?.[0]||'';const clean=value=>String(value||'').trim();const normalizeLabel=value=>clean(value).toLowerCase();const OMNI_TOOLS_BAR_ID='lc-omni-tools';const isVisible=node=>node.getBoundingClientRect().width>0;const isOmniPage=()=>true;let opened=0,saved=0,requests=[],openedUrls=[];const WORKFLOW_PLANNER_URL='https://living-culture-workflow.vercel.app/';const hubSpotGateOrderId=()=>heading.orderId;window.open=url=>{opened++;openedUrls.push(url);return {opener:window,focus(){}};};document.getElementById('save').onclick=()=>saved++;let collectionDispatchInFlight=false,omniQuoteConversionLoaded=false;const omniFullyDispatchedInputs=()=>[];const API_KEY='';const OMNI_ORDER_SYNC_API_URL='https://workflow.test/api/omni/orders';const GM_xmlhttpRequest=options=>requests.push(options);const applyOmniWorkflowResponse=payload=>renderOmniJobProgress(payload.jobProgress);${functions.join('\n')}` });
     await page.evaluate(value => renderOmniJobProgress(value), progress);
     await page.addScriptTag({content:'let currentStage="Fully Packed - WMS";const omniWorkflowStage=()=>currentStage;'});
     assert.equal(await page.locator('#lc-omni-job-progress .step').count(), 11);
+    assert.equal(await page.locator('#lc-omni-job-progress .head strong').textContent(),'Job progress');
     for(const status of ['Required','Uploaded','Awaiting approval','Approved']){
       const drawing={label:'Drawing',status,state:status==='Approved'?'done':'active'};
       await page.evaluate(value=>renderOmniJobProgress(value),{...progress,steps:[...progress.steps.slice(0,3),drawing,...progress.steps.slice(3)]});
@@ -113,6 +114,8 @@ const progress = { orderNumber: 'NZSO-17003', nextAction: 'Arrange installation'
     assert.equal(await page.locator('#lc-omni-job-progress .step').count(), 0, 'Missing job clears stale values');
     await page.evaluate(() => { heading.documentType='quote';document.querySelector('h1').textContent='Edit Quote - Customer - NZSO-17004';ensureOmniJobProgress(); });
     assert.equal(await page.locator('#lc-omni-job-progress').count(), 1, 'Quotes also show their pre-sale progress');
+    assert.equal(await page.locator('#lc-omni-job-progress .head strong').textContent(),'Quote progress','Quotes are not labelled as jobs');
+    assert.equal(await page.locator('#lc-omni-job-progress .steps').getAttribute('aria-label'),'Quote progress');
     const quoteProgress={...progress,orderNumber:'NZSO-17004',nextAction:'Awaiting acceptance',steps:[...progress.steps.slice(0,3),{label:'Acceptance',status:'Awaiting acceptance',state:'active'},progress.steps[3],...progress.steps.slice(4).map(step=>({...step,status:'After conversion',state:'skip'}))]};
     await page.evaluate(value=>renderOmniJobProgress(value),quoteProgress);
     assert.equal(await page.locator('#lc-omni-job-progress .step').count(),12);
@@ -126,6 +129,7 @@ const progress = { orderNumber: 'NZSO-17003', nextAction: 'Arrange installation'
     const requestCount=await page.evaluate(()=>requests.length);
     await page.evaluate(()=>checkOmniShowroomCollection());
     assert.equal(await page.evaluate(()=>requests.length),requestCount+1,'Quotes can fetch the progress strip');
+    assert.equal(await page.evaluate(()=>JSON.parse(requests.at(-1).data).documentType),'quote','Quote polls include a read-only inline snapshot');
     assert.equal(await page.evaluate(() => saved), 0, 'No automatic saves or approval');
     await page.evaluate(() => { heading.documentType='sales-order';heading.orderId='NZSO-17003'; });
     for (const tag of ['h4', 'h5', 'div', 'span']) {
