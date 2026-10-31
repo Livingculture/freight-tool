@@ -78,6 +78,13 @@
     'approve back to list',
     'approve'
   ]);
+  const EXISTING_QUOTE_SAVE_LABELS = new Set([
+    'save',
+    'save & email',
+    'save back to list',
+    'save & back to list',
+    'save to admin'
+  ]);
   const API_KEY = '';
   const STATUSES = ['To be confirmed', 'Site Visit Confirmed', 'Completed', 'Hold'];
   const POPUP_STATUSES = ['To be confirmed', 'Site Visit Confirmed'];
@@ -262,7 +269,8 @@
     if (heading.documentType !== 'quote' && !findButtonByLabel('Save As Draft')) return [];
     const key = order ? `lc-omni-hubspot-prerequisites:${order}` : '';
     const clicks = readHubSpotPrerequisiteSteps(key);
-    return [!clicks.savedDraft && 'Save as Draft', !clicks.quoteMemo && 'Quote Memo Info'].filter(Boolean);
+    const saveLabel = findButtonByLabel('Save As Draft') ? 'Save as Draft' : 'Save';
+    return [!clicks.savedDraft && saveLabel, !clicks.quoteMemo && 'Quote Memo Info'].filter(Boolean);
   }
 
   function readHubSpotPrerequisiteSteps(key) {
@@ -310,7 +318,12 @@
       if (!control || control.disabled) return;
       const label = normalizeLabel(control.value || control.textContent || '');
       const step = control.id === 'lc-omni-quote-memo-button' || label === 'quote memo info' ? 'quoteMemo'
-        : !control.id?.startsWith('lc-') && label === 'save as draft' ? 'savedDraft' : '';
+        : !control.id?.startsWith('lc-') && (
+          label === 'save as draft'
+          || (omniHeadingDraft().documentType === 'quote'
+            && !findButtonByLabel('Save As Draft')
+            && EXISTING_QUOTE_SAVE_LABELS.has(label))
+        ) ? 'savedDraft' : '';
       const order = extractOrderId(hubSpotGateOrderId());
       if (!step || !order) return;
       const key = `lc-omni-hubspot-prerequisites:${order}`;

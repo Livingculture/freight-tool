@@ -9,6 +9,7 @@ assert(gate&&submit);
 const setup=`
 const HUBSPOT_BUTTON_ID='hubspot';const hubSpotPrerequisiteClicks=new Map();let hubSpotPrerequisiteHooksInstalled=false;
 const HUBSPOT_GATE_STORAGE_PREFIX='lc-omni-hubspot-deal-complete:',QUOTE_PDF_UNLOCK_PREFIX='lc-omni-quote-pdf-unlocked:';const completedHubSpotSteps=new Set();
+const EXISTING_QUOTE_SAVE_LABELS=new Set(['save','save & email','save back to list','save & back to list','save to admin']);
 window.order='NZSO-17002';window.docType='quote';window.isOmni=true;window.drafts=0;window.messages=[];
 window.isOmniPage=()=>isOmni;window.omniHeadingDraft=()=>({documentType:docType,orderId:order});window.hubSpotGateOrderId=()=>order;
 window.extractOrderId=value=>String(value||'').match(/NZSO-\\d+/i)?.[0].toUpperCase()||'';
@@ -55,12 +56,23 @@ installHubSpotPrerequisiteHooks();installHubSpotPrerequisiteHooks();applyHubSpot
   await page.waitForFunction(()=>!document.getElementById('hubspot').disabled);
   await page.evaluate(()=>{order='NZSO-17002';applyHubSpotPrerequisiteGate();});
   await reopened.close();
+  await page.evaluate(()=>{
+    order='NZSO-17009';docType='quote';
+    localStorage.removeItem('lc-omni-hubspot-prerequisites:'+order);
+    document.getElementById('save').remove();
+    applyHubSpotPrerequisiteGate();
+  });
+  assert(await hubspot.isDisabled(),'Transferred quote starts locked');
+  assert.match(await hubspot.getAttribute('title'),/Save and Quote Memo Info/,'Transferred quote asks for Save rather than unavailable Save as Draft');
+  await page.getByRole('button',{name:'Save',exact:true}).click();assert(await hubspot.isDisabled(),'Transferred quote still requires Quote Memo Info');
+  await page.locator('#lc-omni-quote-memo-button').click();assert(await hubspot.isEnabled(),'Transferred quote unlocks after Save and Quote Memo Info');
+  await page.evaluate(()=>{const b=document.createElement('button');b.textContent='Save As Draft';b.id='save';document.body.appendChild(b);});
   await page.evaluate(()=>{order='NZSO-17003';applyHubSpotPrerequisiteGate();});assert(await hubspot.isDisabled(),'Another quote cannot inherit these steps');
   await page.locator('#save').click();assert(await hubspot.isDisabled());
   await page.locator('#lc-omni-quote-memo-button').click();assert(await hubspot.isEnabled(),'Either click order works');
   await page.evaluate(()=>{document.getElementById('hubspot').disabled=true;applyHubSpotPrerequisiteGate();});assert(await hubspot.isDisabled(),'Button refresh cannot unlock an in-flight send');
   await page.evaluate(()=>{order='';applyHubSpotPrerequisiteGate();});assert(await hubspot.isDisabled(),'Unknown quote cannot inherit saved steps');
-  await page.evaluate(()=>{docType='sales-order';document.getElementById('save').remove();applyHubSpotPrerequisiteGate();});assert(await hubspot.isDisabled(),'Missing number cannot bypass the gate when Save As Draft is absent');
+  await page.evaluate(()=>{docType='sales-order';document.getElementById('save')?.remove();applyHubSpotPrerequisiteGate();});assert(await hubspot.isDisabled(),'Missing number cannot bypass the gate when Save As Draft is absent');
   const draftsBefore=await page.evaluate(()=>drafts);
   await page.evaluate(()=>submitHubSpotDeal(document.getElementById('hubspot')));
   assert.equal(await page.evaluate(()=>drafts),draftsBefore,'No payload or lead-source work without an NZSO number');
@@ -74,6 +86,6 @@ installHubSpotPrerequisiteHooks();installHubSpotPrerequisiteHooks();applyHubSpot
   await page.evaluate(()=>{const b=document.createElement('button');b.textContent='Save As Draft';b.id='save';document.body.appendChild(b);});
   await page.locator('#save').click();await page.locator('#lc-omni-quote-memo-button').click();assert(await hubspot.isEnabled(),'Current-page steps work when storage is blocked');
   await page.evaluate(()=>{isOmni=false;applyHubSpotPrerequisiteGate();});assert(await hubspot.isEnabled(),'Core is unaffected');
-  console.log('PASS: Both draft/memo clicks required, either order, per-quote reload persistence, no ordinary Save bypass, guarded submission, unknown/different quote isolation, in-flight protection and approved-sales/Core compatibility. No HubSpot requests sent.');
+  console.log('PASS: New quotes require Save As Draft plus memo; transferred quotes accept Save plus memo; per-quote persistence, isolation, guarded submission, approved-sales and Core compatibility preserved. No HubSpot requests sent.');
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
