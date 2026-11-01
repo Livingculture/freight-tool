@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Product Availability
 // @namespace    livingculture-omni
-// @version      0.1.12
+// @version      0.1.13
 // @description  Checks Omni products-page stock for all SKUs on the current quote.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-product-availability.user.js
@@ -28,9 +28,10 @@
   const number = text => /^-?\d+(?:\.\d+)?$/.test(clean(text).replace(/,/g, '')) ? Number(clean(text).replace(/,/g, '')) : null;
 
   function omniStockServiceLine(sku, name) {
+    const collection = text => /^(?:click\s*(?:&|and)?\s*collect|customer\s+collection|pick[ -]?up(?:\s+(?:fee|charge|service))?)(?:\s*[-:]\s*.+|\s*\([^)]*\))?$/i.test(clean(text));
     const service = text => /^(?:(?:standard|express|economy|local|rural|urban|nationwide|international|free|flat rate|frontdoor|front door|white glove) )?(?:shipping|delivery|freight)(?: (?:charges?|fees?|costs?|services?|surcharges?))?(?: \d+)?$/i
       .test(clean(text).replace(/\([^)]*\)/g, '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim());
-    return /^AS/i.test(sku) || service(sku) || service(name);
+    return /^AS/i.test(sku) || service(sku) || service(name) || collection(sku) || collection(name);
   }
 
   function omniStockRequirementRows(table, headings, read, visible) {
@@ -175,7 +176,7 @@
     syncStatus.id = 'workflow-sync';
     syncStatus.setAttribute('role', 'status');
     syncStatus.textContent = 'Workflow: waiting for stock sync';
-    syncStatus.title = 'Stock panel 0.1.12';
+    syncStatus.title = 'Stock panel 0.1.13';
     shadow.querySelector('.info').appendChild(syncStatus);
     table.insertAdjacentElement('afterend', root);
     lastFinishedAt = 0;

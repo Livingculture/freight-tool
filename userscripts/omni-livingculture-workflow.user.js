@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.172
+// @version      0.1.173
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -2088,9 +2088,10 @@
   }
 
   function omniStockServiceLine(sku, name) {
+    const collection = text => /^(?:click\s*(?:&|and)?\s*collect|customer\s+collection|pick[ -]?up(?:\s+(?:fee|charge|service))?)(?:\s*[-:]\s*.+|\s*\([^)]*\))?$/i.test(clean(text));
     const service = text => /^(?:(?:standard|express|economy|local|rural|urban|nationwide|international|free|flat rate|frontdoor|front door|white glove) )?(?:shipping|delivery|freight)(?: (?:charges?|fees?|costs?|services?|surcharges?))?(?: \d+)?$/i
       .test(clean(text).replace(/\([^)]*\)/g, '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim());
-    return /^AS/i.test(sku) || service(sku) || service(name);
+    return /^AS/i.test(sku) || service(sku) || service(name) || collection(sku) || collection(name);
   }
 
   function omniStockRequirementRows(table, headings, read, visible) {
@@ -2134,8 +2135,8 @@
       status.setAttribute('role', 'status');
       info.appendChild(status);
     }
-    status.textContent = `Workflow 0.1.172: ${message}`;
-    status.title = 'Workflow stock reader 0.1.172';
+    status.textContent = `Workflow 0.1.173: ${message}`;
+    status.title = 'Workflow stock reader 0.1.173';
     root.dataset.workflowSyncStatus = message;
   }
 

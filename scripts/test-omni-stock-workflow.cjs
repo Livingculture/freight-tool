@@ -41,12 +41,15 @@ const functions=extracted.join('\n');
     const serviceCases=[
       ['STANDARD SHIPPING (FRONTDOOR DELIVERY)','',true],['Delivery','',true],['FREIGHT','',true],
       ['SV001','Delivery Fee',true],['SV002','Express Shipping',true],['DELIVERY_001','',true],
+      ['CLICK&COLLECT-PILKINGTON','',true],['Click and Collect - Auckland','',true],['SV003','Click & Collect',true],
+      ['PICKUP - WAREHOUSE','',true],['SV004','Customer Collection',true],
+      ['CS99990','Pickup Truck Storage Box',false],['CS99991','Collection Dining Chair',false],
       ['CS23160','Solo Teak Dining Chair - delivery available',false],['CS20001','Shipping Container Storage Box',false],
       ['PO20308-2','Retractable Shade Blind',false],['CS20794','Pergola',false]
     ];
     for(const [sku,name,expected] of serviceCases)assert.equal(await page.evaluate(([sku,name])=>omniStockServiceLine(sku,name),[sku,name]),expected,sku);
     await page.evaluate(()=>document.getElementById('lines').insertAdjacentHTML('beforeend',
-      '<tr><td>STANDARD SHIPPING (FRONTDOOR DELIVERY)</td><td></td><td>1</td></tr><tr><td>SV001</td><td>Delivery Fee</td><td>1</td></tr><tr><td>FREIGHT</td><td></td><td>1</td></tr>'));
+      '<tr><td>STANDARD SHIPPING (FRONTDOOR DELIVERY)</td><td></td><td>1</td></tr><tr><td>SV001</td><td>Delivery Fee</td><td>1</td></tr><tr><td>FREIGHT</td><td></td><td>1</td></tr><tr><td>CLICK&amp;COLLECT-PILKINGTON</td><td></td><td>1</td></tr>'));
     assert.equal(await page.evaluate(()=>omniProductStockObservation()?.ready),true,'Service lines are excluded by the Workflow validator too');
     await page.locator('#lc-omni-quote-stock').locator('#refresh').click();
     await page.waitForFunction(()=>JSON.parse(document.getElementById('lc-omni-quote-stock').dataset.workflowStock).complete===true);
