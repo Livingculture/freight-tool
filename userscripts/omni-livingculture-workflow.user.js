@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.173
+// @version      0.1.174
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -2135,8 +2135,8 @@
       status.setAttribute('role', 'status');
       info.appendChild(status);
     }
-    status.textContent = `Workflow 0.1.173: ${message}`;
-    status.title = 'Workflow stock reader 0.1.173';
+    status.textContent = `Workflow 0.1.174: ${message}`;
+    status.title = 'Workflow stock reader 0.1.174';
     root.dataset.workflowSyncStatus = message;
   }
 
@@ -2197,6 +2197,28 @@
     } catch { return reject('stock result could not be read'); }
   }
 
+  function omniReviewLineItems() {
+    const label = text => clean(text).toLowerCase().replace(/[^a-z]/g, '');
+    const read = cell => clean(cell?.querySelector('input:not([type="hidden"]),textarea,select')?.value) || clean(cell?.textContent);
+    const number = text => {
+      const value = clean(text).replace(/(?:NZD|NZ\$|\$|,|%)/gi, '').trim();
+      return /^-?\d+(?:\.\d+)?$/.test(value) ? Number(value) : null;
+    };
+    for (const row of document.querySelectorAll('table tr')) {
+      const headers = Array.from(row.children, cell => label(cell.textContent));
+      const code = headers.indexOf('code'), qty = headers.indexOf('qtyordered'), price = headers.indexOf('unitprice');
+      const total = headers.indexOf('amountnzd'), discount = headers.indexOf('totaldiscount'), bom = headers.indexOf('bomload'), product = headers.indexOf('product');
+      if (code < 0 || qty < 0 || price < 0 || total < 0 || !isVisible(row)) continue;
+      return Array.from(row.closest('table').querySelectorAll('tr')).filter(line => line !== row && line.closest('table') === row.closest('table') && isVisible(line))
+        .filter(line => bom < 0 || read(line.children[bom]).toLowerCase() !== 'use')
+        .map(line => ({ sku:read(line.children[code]), product:product < 0 ? '' : read(line.children[product]),
+          qty:number(read(line.children[qty])), price:number(read(line.children[price])), total:number(read(line.children[total])),
+          discountAmount:discount < 0 ? null : number(read(line.children[discount])) }))
+        .filter(line => line.sku && !/^search\b/i.test(line.sku) && line.qty !== null && line.qty !== 0);
+    }
+    return null;
+  }
+
   function omniWorkflowSnapshot() {
     if (!isOmniPage()) return null;
     const heading = omniHeadingDraft();
@@ -2244,6 +2266,7 @@
       stockSource: stock ? 'omni-products' : '',
       stockPartial: stock?.partial === true,
       stockCheckedAt: stock?.checkedAt || '',
+      lineItems: omniReviewLineItems(),
       sourceUrl: window.location.href
     };
   }

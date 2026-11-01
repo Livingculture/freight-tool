@@ -5,7 +5,7 @@ const {chromium}=require('playwright');
 const ts=require(path.resolve(__dirname,'../../workflow-speed-fix/node_modules/typescript'));
 const source=fs.readFileSync('userscripts/omni-livingculture-workflow.user.js','utf8');
 const parsed=ts.createSourceFile('workflow.js',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
-const names=['omniStockServiceLine','omniStockRequirementRows','omniWorkflowStockStatus','omniProductStockObservation','omniWorkflowSnapshot','tableHeaderMap','indexForHeader','cellText','normalizeLabel',
+const names=['omniReviewLineItems','omniStockServiceLine','omniStockRequirementRows','omniWorkflowStockStatus','omniProductStockObservation','omniWorkflowSnapshot','tableHeaderMap','indexForHeader','cellText','normalizeLabel',
   'syncOmniWorkflowRecord','finishOmniWorkflowSync','scheduleOmniWorkflowSync','installOmniWorkflowChangeHooks'];
 const extracted=[];
 function visit(node){if(ts.isFunctionDeclaration(node)&&names.includes(node.name?.text))extracted.push(node.getText(parsed));ts.forEachChild(node,visit)}
@@ -95,7 +95,10 @@ const functions=extracted.join('\n');
       const request=requests[0],payload=JSON.parse(request.data);
       request.onload({status:200,responseText:JSON.stringify({jobProgress:{steps:[{label:'Stock',status:payload.stockReady===true?'In Stock':'Not recorded'}]}})});
     });
-    await page.waitForFunction(()=>JSON.parse(requests.at(-1).data).stockReady===true);
+    await page.waitForFunction(()=>{
+      const payload=JSON.parse(requests.at(-1).data),report=JSON.parse(document.getElementById('lc-omni-quote-stock').dataset.workflowStock);
+      return payload.stockReady===true&&payload.stockCheckedAt===report.checkedAt;
+    });
     const sent=await page.evaluate(()=>JSON.parse(requests.at(-1).data));
     assert.equal(sent.stockSource,'omni-products');assert.equal(sent.includeProgress,true);
     assert.equal(sent.orderNumber,'NZSO-18025');
