@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.165
+// @version      0.1.166
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -2087,6 +2087,34 @@
     scheduleOmniWorkflowSync(0,true);
   }
 
+  function omniProductStockObservation() {
+    const root = document.getElementById('lc-omni-quote-stock');
+    if (!root?.dataset.workflowStock) return null;
+    try {
+      const report = JSON.parse(root.dataset.workflowStock);
+      const age = Date.now() - Date.parse(report.checkedAt);
+      if (report.page !== location.pathname + location.search || !Number.isFinite(age) || age < -60000 || age > 120000 || !Array.isArray(report.lines) || !report.lines.length) return null;
+      const table = root.previousElementSibling;
+      if (table?.tagName !== 'TABLE') return null;
+      const headers = tableHeaderMap(table), code = indexForHeader(headers, ['code']), quantity = indexForHeader(headers, ['qty ordered']);
+      if (code < 0 || quantity < 0) return null;
+      const required = new Map();
+      for (const row of table.querySelectorAll('tr')) {
+        if (!isVisible(row)) continue;
+        const cells = Array.from(row.children), sku = cellText(cells, code).toUpperCase();
+        const qty = Number(cellText(cells, quantity).replace(/,/g, ''));
+        if (!sku || /^AS/i.test(sku) || !Number.isFinite(qty) || qty <= 0) continue;
+        required.set(sku, (required.get(sku) || 0) + qty);
+      }
+      if (required.size !== report.lines.length || report.lines.some(line => !required.has(line.sku) || required.get(line.sku) !== line.quantity
+        || !(line.available === null || typeof line.available === 'number' && Number.isFinite(line.available)))) return null;
+      if (new Set(report.lines.map(line => line.sku)).size !== required.size) return null;
+      const shortage = report.lines.some(line => line.available !== null && line.available < line.quantity);
+      const known = report.complete === true && report.lines.every(line => line.available !== null);
+      return { ready:shortage ? false : known ? true : null, checkedAt:report.checkedAt };
+    } catch { return null; }
+  }
+
   function omniWorkflowSnapshot() {
     if (!isOmniPage()) return null;
     const heading = omniHeadingDraft();
@@ -2100,6 +2128,7 @@
     const branch = bodyText.match(/\bBranch\s*:\s*([A-Z]{2,5})\b/i)?.[1]?.toUpperCase() || deriveBranchFromRep(draft.placedBy);
     const payment = omniPaymentSummary();
     const stockValue = labelled('Stock Status', 'Stock Ready', 'In Stock');
+    const stock = omniProductStockObservation();
     const internalComments = readMultilineNearLabel('Internal Comments');
     const deliveryInstructions = readMultilineNearLabel('Delivery Instructions');
 
@@ -2129,7 +2158,9 @@
       paidAmount: payment.paidAmount,
       balanceDue: payment.balanceDue,
       paymentStatus: payment.paymentStatus,
-      stockReady: stockValue ? /\b(?:ready|available|in stock|yes|true)\b/i.test(stockValue) : null,
+      stockReady: stock ? stock.ready : stockValue ? /\b(?:ready|available|in stock|yes|true)\b/i.test(stockValue) : null,
+      stockSource: stock ? 'omni-products' : '',
+      stockCheckedAt: stock?.checkedAt || '',
       sourceUrl: window.location.href
     };
   }
@@ -2225,6 +2256,7 @@
   }
 
   function installOmniWorkflowChangeHooks() {
+    document.addEventListener('lc-omni-stock-updated', () => scheduleOmniWorkflowSync(100, true));
     document.addEventListener('change', (event) => {
       if (!(event.target instanceof HTMLSelectElement)) return;
       if (event.target === omniWorkflowStageControl() && omniWorkflowStageKey(omniWorkflowStage()) === 'dispatched') {
