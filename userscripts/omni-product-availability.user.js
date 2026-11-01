@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Product Availability
 // @namespace    livingculture-omni
-// @version      0.1.8
+// @version      0.1.9
 // @description  Checks Omni products-page stock for all SKUs on the current quote.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-product-availability.user.js
@@ -142,6 +142,12 @@
     const panel = shadow.querySelector('.panel');
     panel.setAttribute('role', 'region'); panel.removeAttribute('aria-modal');
     shadow.querySelector('.close').remove();
+    const syncStatus = document.createElement('span');
+    syncStatus.id = 'workflow-sync';
+    syncStatus.setAttribute('role', 'status');
+    syncStatus.textContent = 'Workflow: waiting for stock sync';
+    syncStatus.title = 'Stock panel 0.1.9';
+    shadow.querySelector('.info').appendChild(syncStatus);
     table.insertAdjacentElement('afterend', root);
     lastFinishedAt = 0;
     const checked = new Map();

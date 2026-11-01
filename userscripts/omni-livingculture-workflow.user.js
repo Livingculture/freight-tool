@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.167
+// @version      0.1.168
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -2087,15 +2087,46 @@
     scheduleOmniWorkflowSync(0,true);
   }
 
+  function omniWorkflowStockStatus(message, payload) {
+    const root = document.getElementById('lc-omni-quote-stock');
+    if (!root?.shadowRoot) return;
+    if (payload) {
+      if (omniHeadingDraft().orderId !== payload.orderNumber) return;
+      try {
+        if (JSON.parse(root.dataset.workflowStock || '{}').checkedAt !== payload.stockCheckedAt) return;
+      } catch { return; }
+    }
+    let status = root.shadowRoot.getElementById('workflow-sync');
+    if (!status) {
+      const info = root.shadowRoot.querySelector('.info');
+      if (!info) return;
+      status = document.createElement('span');
+      status.id = 'workflow-sync';
+      status.setAttribute('role', 'status');
+      info.appendChild(status);
+    }
+    status.textContent = `Workflow 0.1.168: ${message}`;
+    status.title = 'Workflow stock reader 0.1.168';
+    root.dataset.workflowSyncStatus = message;
+  }
+
   function omniProductStockObservation() {
     const root = document.getElementById('lc-omni-quote-stock');
-    if (!root?.dataset.workflowStock) return null;
+    if (!root) return null;
+    const reject = reason => {
+      root.dataset.workflowStockError = reason;
+      omniWorkflowStockStatus(reason);
+      return null;
+    };
+    if (!root.dataset.workflowStock) return reject('stock panel needs updating');
     try {
       const report = JSON.parse(root.dataset.workflowStock);
       const age = Date.now() - Date.parse(report.checkedAt);
-      if (report.page !== location.pathname + location.search || !Number.isFinite(age) || age < -60000 || age > 120000 || !Array.isArray(report.lines) || !report.lines.length) return null;
+      if (report.page !== location.pathname + location.search) return reject('stock belongs to a different page');
+      if (!Number.isFinite(age) || age < -60000 || age > 120000) return reject('stock check expired; refresh stock');
+      if (!Array.isArray(report.lines) || !report.lines.length) return reject('stock check contains no products');
       const table = root.previousElementSibling;
-      if (table?.tagName !== 'TABLE') return null;
+      if (table?.tagName !== 'TABLE') return reject('order table is not beside stock panel');
       // Match the stock panel's headings: Omni adds number badges and <br>
       // elements, whose textContent does not contain word separators.
       const header = value => clean(value).toLowerCase().replace(/[^a-z]/g, '');
@@ -2103,10 +2134,10 @@
         const labels = Array.from(row.children, cell => header(cell.textContent));
         return isVisible(row) && labels.includes('code') && labels.includes('qtyordered');
       });
-      if (!headerRow) return null;
+      if (!headerRow) return reject('order quantity headings not recognised');
       const headers = Array.from(headerRow.children, cell => header(cell.textContent));
       const code = headers.indexOf('code'), quantity = headers.indexOf('qtyordered');
-      if (code < 0 || quantity < 0) return null;
+      if (code < 0 || quantity < 0) return reject('order columns not recognised');
       const value = cell => {
         const field = cell?.querySelector('input:not([type="hidden"]),textarea,select');
         return clean(field?.value) || clean(cell?.textContent);
@@ -2120,12 +2151,13 @@
         required.set(sku, (required.get(sku) || 0) + qty);
       }
       if (required.size !== report.lines.length || report.lines.some(line => !required.has(line.sku) || required.get(line.sku) !== line.quantity
-        || !(line.available === null || typeof line.available === 'number' && Number.isFinite(line.available)))) return null;
-      if (new Set(report.lines.map(line => line.sku)).size !== required.size) return null;
+        || !(line.available === null || typeof line.available === 'number' && Number.isFinite(line.available)))) return reject('stock products or quantities do not match order');
+      if (new Set(report.lines.map(line => line.sku)).size !== required.size) return reject('duplicate stock products');
+      delete root.dataset.workflowStockError;
       const shortage = report.lines.some(line => line.available !== null && line.available < line.quantity);
       const known = report.complete === true && report.lines.every(line => line.available !== null);
       return { ready:shortage ? false : known ? true : null, checkedAt:report.checkedAt };
-    } catch { return null; }
+    } catch { return reject('stock result could not be read'); }
   }
 
   function omniWorkflowSnapshot() {
@@ -2227,9 +2259,10 @@
     if (!options.force && digest === lastOmniOrderSyncDigest) return;
 
     omniOrderSyncInFlight = true;
+    if (payload.stockSource === 'omni-products') omniWorkflowStockStatus('sending stock result...', payload);
     const headers = { 'Content-Type': 'application/json' };
     if (API_KEY) headers.Authorization = `Bearer ${API_KEY}`;
-    GM_xmlhttpRequest({
+    try { GM_xmlhttpRequest({
       method: 'POST',
       url: OMNI_ORDER_SYNC_API_URL,
       headers,
@@ -2241,23 +2274,41 @@
           lastOmniOrderSyncDigest = digest;
           void linkExistingCustomerAlbumToQuote({ ...payload, orderId:payload.orderNumber });
           try {
-            if (omniHeadingDraft().orderId === payload.orderNumber && omniWorkflowStage() === payload.stage) {
-              applyOmniWorkflowResponse(JSON.parse(response.responseText));
+            const result = JSON.parse(response.responseText);
+            if (payload.stockSource === 'omni-products') {
+              const stock = result.jobProgress?.steps?.find(step => step.label === 'Stock');
+              const expected = payload.stockReady === true ? 'In Stock' : payload.stockReady === false ? 'Awaiting Stock' : 'Not recorded';
+              omniWorkflowStockStatus(stock?.status === expected
+                ? `confirmed ${stock.status} at ${new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })}`
+                : 'server has not confirmed stock', payload);
             }
-          } catch (error) { console.warn('[LC Workflow] Workflow status could not be read.', error); }
+            if (omniHeadingDraft().orderId === payload.orderNumber && omniWorkflowStage() === payload.stage) {
+              applyOmniWorkflowResponse(result);
+            }
+          } catch (error) {
+            if (payload.stockSource === 'omni-products') omniWorkflowStockStatus('server response could not be read', payload);
+            console.warn('[LC Workflow] Workflow status could not be read.', error);
+          }
           return;
         }
+        if (payload.stockSource === 'omni-products') omniWorkflowStockStatus(`sync failed (HTTP ${response.status})`, payload);
         console.warn(`[LC Workflow] Omni order sync failed (${response.status}).`);
       },
       onerror: () => {
         finishOmniWorkflowSync();
+        if (payload.stockSource === 'omni-products') omniWorkflowStockStatus('connection failed', payload);
         console.warn('[LC Workflow] Could not connect to the Omni order sync service.');
       },
       ontimeout: () => {
         finishOmniWorkflowSync();
+        if (payload.stockSource === 'omni-products') omniWorkflowStockStatus('sync timed out', payload);
         console.warn('[LC Workflow] Omni order sync timed out.');
       }
-    });
+    }); } catch (error) {
+      finishOmniWorkflowSync();
+      if (payload.stockSource === 'omni-products') omniWorkflowStockStatus('request blocked before sending', payload);
+      console.warn('[LC Workflow] Omni order sync request could not start.', error);
+    }
   }
 
   function finishOmniWorkflowSync() {
