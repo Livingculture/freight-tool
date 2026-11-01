@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.170
+// @version      0.1.171
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -2128,8 +2128,8 @@
       status.setAttribute('role', 'status');
       info.appendChild(status);
     }
-    status.textContent = `Workflow 0.1.170: ${message}`;
-    status.title = 'Workflow stock reader 0.1.170';
+    status.textContent = `Workflow 0.1.171: ${message}`;
+    status.title = 'Workflow stock reader 0.1.171';
     root.dataset.workflowSyncStatus = message;
   }
 
@@ -2185,7 +2185,8 @@
       delete root.dataset.workflowStockError;
       const shortage = report.lines.some(line => line.available !== null && line.available < line.quantity);
       const known = report.complete === true && report.lines.every(line => line.available !== null);
-      return { ready:shortage ? false : known ? true : null, checkedAt:report.checkedAt };
+      const partial = known && shortage && report.lines.some(line => line.available > 0);
+      return { ready:shortage ? false : known ? true : null, partial, checkedAt:report.checkedAt };
     } catch { return reject('stock result could not be read'); }
   }
 
@@ -2234,6 +2235,7 @@
       paymentStatus: payment.paymentStatus,
       stockReady: stock ? stock.ready : stockValue ? /\b(?:ready|available|in stock|yes|true)\b/i.test(stockValue) : null,
       stockSource: stock ? 'omni-products' : '',
+      stockPartial: stock?.partial === true,
       stockCheckedAt: stock?.checkedAt || '',
       sourceUrl: window.location.href
     };
@@ -2306,7 +2308,7 @@
             const result = JSON.parse(response.responseText);
             if (payload.stockSource === 'omni-products') {
               const stock = result.jobProgress?.steps?.find(step => step.label === 'Stock');
-              const expected = payload.stockReady === true ? 'In Stock' : payload.stockReady === false ? 'Awaiting Stock' : 'Not recorded';
+              const expected = payload.stockReady === true ? 'In Stock' : payload.stockPartial ? 'Part Stock' : payload.stockReady === false ? 'Awaiting Stock' : 'Not recorded';
               omniWorkflowStockStatus(stock?.status === expected
                 ? `confirmed ${stock.status} at ${new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })}`
                 : 'server has not confirmed stock', payload);

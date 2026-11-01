@@ -38,6 +38,20 @@ const functions=extracted.join('\n');
     const payload=await page.evaluate(()=>omniWorkflowSnapshot());
     assert.equal(payload.stockReady,true);assert.equal(payload.stockSource,'omni-products');assert.equal(payload.orderNumber,'NZSO-18025');
     assert.equal(payload.stage,'Ready To Pack - WMS');assert.equal(payload.paid,true);
+    const stockStates=await page.evaluate(()=>{
+      const root=document.getElementById('lc-omni-quote-stock'),original=root.dataset.workflowStock;
+      const report=JSON.parse(original);
+      report.lines.forEach(line=>line.available=0);root.dataset.workflowStock=JSON.stringify(report);
+      const empty=omniProductStockObservation();
+      report.lines[0].available=1;root.dataset.workflowStock=JSON.stringify(report);
+      const partial=omniProductStockObservation();
+      report.lines[1].available=null;root.dataset.workflowStock=JSON.stringify(report);
+      const unknown=omniProductStockObservation();root.dataset.workflowStock=original;
+      return {empty,partial,unknown};
+    });
+    assert.equal(stockStates.empty.ready,false);assert.equal(stockStates.empty.partial,false,'No stock stays red');
+    assert.equal(stockStates.partial.ready,false);assert.equal(stockStates.partial.partial,true,'Some quantity on hand is partial even if no complete line is covered');
+    assert.equal(stockStates.unknown.partial,false,'Unknown product readings are not confirmed partial stock');
     await page.evaluate(()=>{window.savedDateParse=Date.parse;Date.parse=()=>null;});
     assert.equal(await page.evaluate(()=>omniProductStockObservation()?.ready),true,'A page-overridden date parser must not reject a fresh stock check');
     const timing=await page.evaluate(()=>{
@@ -125,7 +139,7 @@ const functions=extracted.join('\n');
         const body=JSON.parse(request.data||'{}');
         if(body.stockSource==='omni-products')sentStock.push(body);
         setTimeout(()=>request.onload?.({status:200,responseText:JSON.stringify({ok:true,
-          jobProgress:{orderNumber:'NZSO-18041',steps:[{label:'Stock',state:body.stockReady===true?'done':'pending',status:body.stockReady===true?'In Stock':body.stockReady===false?'Awaiting Stock':'Not recorded'}]}})}),0);
+          jobProgress:{orderNumber:'NZSO-18041',steps:[{label:'Stock',state:body.stockReady===true?'done':'pending',status:body.stockReady===true?'In Stock':body.stockPartial?'Part Stock':body.stockReady===false?'Awaiting Stock':'Not recorded'}]}})}),0);
       };
     });
     await full.addScriptTag({content:source});
@@ -143,8 +157,9 @@ const functions=extracted.join('\n');
     await full.waitForFunction(()=>JSON.parse(document.getElementById('lc-omni-quote-stock').dataset.workflowStock).lines.find(line=>line.sku==='CS23361')?.quantity===5);
     componentStock=3;
     await full.locator('#lc-omni-quote-stock').locator('#refresh').click();
-    await full.waitForFunction(()=>document.getElementById('lc-omni-quote-stock')?.dataset.workflowSyncStatus?.startsWith('confirmed Awaiting Stock'));
+    await full.waitForFunction(()=>document.getElementById('lc-omni-quote-stock')?.dataset.workflowSyncStatus?.startsWith('confirmed Part Stock'));
     assert.equal(await full.evaluate(()=>sentStock.at(-1).stockReady),false,'A component shortage still blocks stock readiness');
+    assert.equal(await full.evaluate(()=>sentStock.at(-1).stockPartial),true,'Some component stock is partial, not fully in stock');
     // An incomplete expansion must not silently exempt the parent.
     await full.evaluate(()=>document.getElementById('frame').remove());
     await full.waitForFunction(()=>JSON.parse(document.getElementById('lc-omni-quote-stock').dataset.workflowStock).lines.some(line=>line.sku.startsWith('CS23361-2(')));
