@@ -5,7 +5,7 @@ const {chromium}=require('playwright');
 const ts=require(path.resolve(__dirname,'../../workflow-speed-fix/node_modules/typescript'));
 const source=fs.readFileSync('userscripts/omni-livingculture-workflow.user.js','utf8');
 const parsed=ts.createSourceFile('workflow.js',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
-const names=['omniWorkflowStockStatus','omniProductStockObservation','omniWorkflowSnapshot','tableHeaderMap','indexForHeader','cellText','normalizeLabel',
+const names=['omniStockRequirementRows','omniWorkflowStockStatus','omniProductStockObservation','omniWorkflowSnapshot','tableHeaderMap','indexForHeader','cellText','normalizeLabel',
   'syncOmniWorkflowRecord','finishOmniWorkflowSync','scheduleOmniWorkflowSync','installOmniWorkflowChangeHooks'];
 const extracted=[];
 function visit(node){if(ts.isFunctionDeclaration(node)&&names.includes(node.name?.text))extracted.push(node.getText(parsed));ts.forEachChild(node,visit)}
@@ -110,10 +110,11 @@ const functions=extracted.join('\n');
     assert(source.includes("document.addEventListener('lc-omni-stock-updated'"));
     const full=await browser.newPage({viewport:{width:1400,height:900}});
     const errors=[];full.on('pageerror',error=>errors.push(error.message));
+    let componentStock=8;
     await full.route('**/*',route=>route.fulfill({contentType:'text/html',body:route.request().url().includes('ProductsList.aspx')?
-      '<table><tr><th>Code</th><th>Stock Avail</th><th>SOH</th></tr><tr><td>CS23564</td><td>5</td><td>6</td></tr></table>':
-      '<h1>Edit Sales Order - Lisa Bradley - NZSO-18025</h1><table><tr><th><span>1</span>Code</th><th>Product</th><th><span>1</span>Qty<br>Ordered</th></tr><tr><td>CS23564</td><td>Dipper Dining Table</td><td>1</td></tr></table>'}));
-    await full.goto('https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx?OrderId=18025');
+      `<table><tr><th>Code</th><th>Stock Avail</th><th>SOH</th></tr><tr><td>CS23361-2(CS23359CS23361)</td><td>0</td><td>1</td></tr><tr><td>CS23361</td><td>${componentStock}</td><td>8</td></tr><tr><td>CS23359</td><td>27</td><td>27</td></tr><tr><td>CS19200</td><td>58</td><td>77</td></tr></table>`:
+      '<h1>Edit Sales Order - Evan Ou Yang - NZSO-18041</h1><table id="assembly"><tr><th>Format</th><th>BOM<br>Load</th><th><span>1</span>Code</th><th>Product</th><th><span>1</span>Qty<br>Ordered</th></tr><tr id="make"><td>Parent</td><td>Make</td><td>CS23361-2(CS23359CS23361)</td><td>Alabaster umbrella</td><td>1</td></tr><tr id="fabric"><td></td><td>Use</td><td>CS23361</td><td>Umbrella fabric</td><td>1</td></tr><tr id="frame"><td></td><td>Use</td><td>CS23359</td><td>Umbrella frame</td><td>1</td></tr><tr><td></td><td></td><td>CS19200</td><td>Granite umbrella base</td><td>1</td></tr></table>'}));
+    await full.goto('https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx?OrderId=18041');
     await full.evaluate(()=>{
       Date.parse=()=>null;
       window.unsafeWindow=window;window.GM_getResourceText=()=> '[]';
@@ -124,16 +125,36 @@ const functions=extracted.join('\n');
         const body=JSON.parse(request.data||'{}');
         if(body.stockSource==='omni-products')sentStock.push(body);
         setTimeout(()=>request.onload?.({status:200,responseText:JSON.stringify({ok:true,
-          jobProgress:{orderNumber:'NZSO-18025',steps:[{label:'Stock',state:body.stockReady===true?'done':'pending',status:body.stockReady===true?'In Stock':'Not recorded'}]}})}),0);
+          jobProgress:{orderNumber:'NZSO-18041',steps:[{label:'Stock',state:body.stockReady===true?'done':'pending',status:body.stockReady===true?'In Stock':body.stockReady===false?'Awaiting Stock':'Not recorded'}]}})}),0);
       };
     });
     await full.addScriptTag({content:source});
     await full.addScriptTag({content:fs.readFileSync('userscripts/omni-product-availability.user.js','utf8')});
     await full.waitForFunction(()=>document.getElementById('lc-omni-quote-stock')?.dataset.workflowSyncStatus?.startsWith('confirmed In Stock'));
     assert.equal(await full.evaluate(()=>sentStock.at(-1).stockReady),true);
+    const assemblyLines=()=>full.evaluate(()=>JSON.parse(document.getElementById('lc-omni-quote-stock').dataset.workflowStock).lines);
+    assert.deepEqual((await assemblyLines()).map(line=>[line.sku,line.quantity]),[['CS23361',1],['CS23359',1],['CS19200',1]],'Expanded Make parent is not an additional stock requirement');
+    // Use rows contain total quantities, not per-parent BOM ratios.
+    await full.evaluate(()=>{document.querySelector('#make td:last-child').textContent='2';document.querySelector('#fabric td:last-child').textContent='4';document.querySelector('#frame td:last-child').textContent='2';});
+    await full.waitForFunction(()=>JSON.parse(document.getElementById('lc-omni-quote-stock').dataset.workflowStock).lines.find(line=>line.sku==='CS23361')?.quantity===4);
+    assert.deepEqual((await assemblyLines()).map(line=>line.quantity),[4,2,1]);
+    // A separately sold copy of a component must consume stock too.
+    await full.evaluate(()=>document.getElementById('assembly').insertAdjacentHTML('beforeend','<tr><td></td><td></td><td>CS23361</td><td>Extra fabric</td><td>1</td></tr>'));
+    await full.waitForFunction(()=>JSON.parse(document.getElementById('lc-omni-quote-stock').dataset.workflowStock).lines.find(line=>line.sku==='CS23361')?.quantity===5);
+    componentStock=3;
+    await full.locator('#lc-omni-quote-stock').locator('#refresh').click();
+    await full.waitForFunction(()=>document.getElementById('lc-omni-quote-stock')?.dataset.workflowSyncStatus?.startsWith('confirmed Awaiting Stock'));
+    assert.equal(await full.evaluate(()=>sentStock.at(-1).stockReady),false,'A component shortage still blocks stock readiness');
+    // An incomplete expansion must not silently exempt the parent.
+    await full.evaluate(()=>document.getElementById('frame').remove());
+    await full.waitForFunction(()=>JSON.parse(document.getElementById('lc-omni-quote-stock').dataset.workflowStock).lines.some(line=>line.sku.startsWith('CS23361-2(')));
+    assert((await assemblyLines()).some(line=>line.sku==='CS23361-2(CS23359CS23361)'));
+    await full.evaluate(()=>document.getElementById('fabric').remove());
+    await full.waitForFunction(()=>JSON.parse(document.getElementById('lc-omni-quote-stock').dataset.workflowStock).lines.length===3);
+    assert((await assemblyLines()).some(line=>line.sku==='CS23361-2(CS23359CS23361)'),'Collapsed/unexpanded Make parent remains a stock requirement');
     assert.deepEqual(errors,[],'Full scripts must boot without uncaught errors');
     await full.screenshot({path:'/tmp/omni-stock-full-sync.png',fullPage:true});
     await full.close();
-    console.log('PASS: Overridden date parser, legacy timestamps, genuine expiry, full stock event -> POST -> acknowledgement, sync failures, quantity edits and cross-order isolation. Fixture only.');
+    console.log('PASS: Make/Use components, incomplete BOMs, total Use quantities, shared components, component shortages, date parser overrides and full sync acknowledgement. Fixture only.');
   }finally{await browser.close()}
 })().catch(error=>{console.error(error);process.exitCode=1});

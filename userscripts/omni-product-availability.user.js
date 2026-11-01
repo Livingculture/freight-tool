@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Product Availability
 // @namespace    livingculture-omni
-// @version      0.1.10
+// @version      0.1.11
 // @description  Checks Omni products-page stock for all SKUs on the current quote.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-product-availability.user.js
@@ -27,6 +27,29 @@
   }
   const number = text => /^-?\d+(?:\.\d+)?$/.test(clean(text).replace(/,/g, '')) ? Number(clean(text).replace(/,/g, '')) : null;
 
+  function omniStockRequirementRows(table, headings, read, visible) {
+    const rows = Array.from(table.querySelectorAll('tr')).filter(row => row.closest('table') === table && visible(row));
+    const bom = headings.indexOf('bomload'), code = headings.indexOf('code'), quantity = headings.indexOf('qtyordered');
+    if (bom < 0) return rows;
+    return rows.filter((row, index) => {
+      if (read(row.children[bom]).toLowerCase() !== 'make') return true;
+      const components = [];
+      for (let next = index + 1; next < rows.length && read(rows[next].children[bom]).toLowerCase() === 'use'; next++) components.push(rows[next]);
+      if (!components.length || components.some(component => {
+        const qty = Number(read(component.children[quantity]).replace(/,/g, ''));
+        return !read(component.children[code]) || !Number.isFinite(qty) || qty <= 0;
+      })) return true;
+      const bracket = read(row.children[code]).toUpperCase().match(/\(([^()]*)\)/)?.[1];
+      if (bracket) {
+        const codes = components.map(component => read(component.children[code]).toUpperCase()).sort((a, b) => b.length - a.length);
+        const unmatched = codes.reduce((text, sku) => text.split(sku).join(''), bracket);
+        if (unmatched.replace(/[\s,;+|/]/g, '')) return true;
+      }
+      // Expanded Use quantities already contain the ordered component totals.
+      return false;
+    });
+  }
+
   function quoteItems() {
     const items = new Map();
     for (const row of document.querySelectorAll('table tr')) {
@@ -34,7 +57,7 @@
       const code = headings.indexOf('code'), quantity = headings.indexOf('qtyordered');
       if (code < 0 || quantity < 0 || !visible(row)) continue;
       const name = headings.indexOf('product');
-      for (const line of row.closest('table').querySelectorAll('tr')) {
+      for (const line of omniStockRequirementRows(row.closest('table'), headings, value, visible)) {
         if (line === row || !visible(line)) continue;
         const sku = value(line.children[code]).toUpperCase();
         if (/^AS/i.test(sku)) continue;
@@ -146,7 +169,7 @@
     syncStatus.id = 'workflow-sync';
     syncStatus.setAttribute('role', 'status');
     syncStatus.textContent = 'Workflow: waiting for stock sync';
-    syncStatus.title = 'Stock panel 0.1.10';
+    syncStatus.title = 'Stock panel 0.1.11';
     shadow.querySelector('.info').appendChild(syncStatus);
     table.insertAdjacentElement('afterend', root);
     lastFinishedAt = 0;

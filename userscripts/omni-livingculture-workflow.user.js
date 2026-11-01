@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.169
+// @version      0.1.170
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -2087,6 +2087,29 @@
     scheduleOmniWorkflowSync(0,true);
   }
 
+  function omniStockRequirementRows(table, headings, read, visible) {
+    const rows = Array.from(table.querySelectorAll('tr')).filter(row => row.closest('table') === table && visible(row));
+    const bom = headings.indexOf('bomload'), code = headings.indexOf('code'), quantity = headings.indexOf('qtyordered');
+    if (bom < 0) return rows;
+    return rows.filter((row, index) => {
+      if (read(row.children[bom]).toLowerCase() !== 'make') return true;
+      const components = [];
+      for (let next = index + 1; next < rows.length && read(rows[next].children[bom]).toLowerCase() === 'use'; next++) components.push(rows[next]);
+      if (!components.length || components.some(component => {
+        const qty = Number(read(component.children[quantity]).replace(/,/g, ''));
+        return !read(component.children[code]) || !Number.isFinite(qty) || qty <= 0;
+      })) return true;
+      const bracket = read(row.children[code]).toUpperCase().match(/\(([^()]*)\)/)?.[1];
+      if (bracket) {
+        const codes = components.map(component => read(component.children[code]).toUpperCase()).sort((a, b) => b.length - a.length);
+        const unmatched = codes.reduce((text, sku) => text.split(sku).join(''), bracket);
+        if (unmatched.replace(/[\s,;+|/]/g, '')) return true;
+      }
+      // Expanded Use quantities already contain the ordered component totals.
+      return false;
+    });
+  }
+
   function omniWorkflowStockStatus(message, payload) {
     const root = document.getElementById('lc-omni-quote-stock');
     if (!root?.shadowRoot) return;
@@ -2105,8 +2128,8 @@
       status.setAttribute('role', 'status');
       info.appendChild(status);
     }
-    status.textContent = `Workflow 0.1.169: ${message}`;
-    status.title = 'Workflow stock reader 0.1.169';
+    status.textContent = `Workflow 0.1.170: ${message}`;
+    status.title = 'Workflow stock reader 0.1.170';
     root.dataset.workflowSyncStatus = message;
   }
 
@@ -2149,7 +2172,7 @@
         return clean(field?.value) || clean(cell?.textContent);
       };
       const required = new Map();
-      for (const row of table.querySelectorAll('tr')) {
+      for (const row of omniStockRequirementRows(table, headers, value, isVisible)) {
         if (row === headerRow || !isVisible(row)) continue;
         const cells = Array.from(row.children), sku = value(cells[code]).toUpperCase();
         const qty = Number(value(cells[quantity]).replace(/,/g, ''));
