@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { chromium } = require('playwright');
 const source = fs.readFileSync('userscripts/omni-livingculture-workflow.user.js', 'utf8');
-const functions = ['quoteWorkflowRequestAction', 'omniReviewLineItems', 'omniStockServiceLine', 'omniStockRequirementRows', 'omniWorkflowStockStatus', 'omniProductStockObservation', 'omniWorkflowSnapshot', 'omniWorkflowStageControl', 'omniWorkflowStage', 'omniWorkflowFreightDescription', 'syncOmniWorkflowRecord', 'finishOmniWorkflowSync', 'installOmniWorkflowChangeHooks', 'scheduleOmniWorkflowSync'].map(name => {
+const functions = ['omniDateInputs', 'omniWorkflowDate', 'quoteWorkflowRequestAction', 'omniReviewLineItems', 'omniStockServiceLine', 'omniStockRequirementRows', 'omniWorkflowStockStatus', 'omniProductStockObservation', 'omniWorkflowSnapshot', 'omniWorkflowStageControl', 'omniWorkflowStage', 'omniWorkflowFreightDescription', 'syncOmniWorkflowRecord', 'finishOmniWorkflowSync', 'installOmniWorkflowChangeHooks', 'scheduleOmniWorkflowSync'].map(name => {
   const start = source.indexOf(`  function ${name}(`);
   const next = source.slice(start + 1).search(/\n  (?:async )?function /);
   return source.slice(start, start + next + 1);
@@ -33,7 +33,9 @@ const functions = ['quoteWorkflowRequestAction', 'omniReviewLineItems', 'omniSto
       window.requests=[];const GM_xmlhttpRequest=options=>window.requests.push(options);
       ${functions}
     ` });
+    await page.evaluate(() => document.body.insertAdjacentHTML('beforeend', '<div><label><b>3</b>Invoice Date</label><div><input value="1-11-2026"><input value="11:10 am"></div></div>'));
     let snapshot = await page.evaluate(() => omniWorkflowSnapshot());
+    assert.equal(snapshot.invoiceDate, '1-11-2026', 'Numbered invoice date reaches the actual sync payload');
     assert.equal(snapshot.stage, 'New', 'Capture the selected label, not numeric option ID');
     assert.equal(snapshot.freightDescription, 'Collect from Showroom');
     assert.equal(snapshot.documentType,'sales-order');

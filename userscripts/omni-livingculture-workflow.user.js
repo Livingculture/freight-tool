@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.174
+// @version      0.1.175
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -2034,10 +2034,10 @@
     return { total, paidAmount, balanceDue, paid, paymentStatus: paid ? 'PAID' : paidAmount > 0 ? 'PART PAID' : 'UNPAID' };
   }
 
-  function omniFullyDispatchedInputs() {
+  function omniDateInputs(labelText) {
     const label = Array.from(document.querySelectorAll('label, legend, span, div, td'))
       .filter(isVisible)
-      .find(node => normalizeLabel(node.textContent || '').replace(/^2\s*/, '') === 'fully dispatched');
+      .find(node => normalizeLabel(node.textContent || '').replace(/^\d+\s*/, '') === normalizeLabel(labelText));
     if (!label) return [];
     const linked = label.getAttribute('for') && document.getElementById(label.getAttribute('for'));
     let controls = linked ? [linked] : [];
@@ -2061,6 +2061,15 @@
       const first = a.getBoundingClientRect(), second = b.getBoundingClientRect();
       return timeDifference || first.top - second.top || first.left - second.left;
     });
+  }
+
+  function omniFullyDispatchedInputs() {
+    return omniDateInputs('Fully Dispatched');
+  }
+
+  function omniWorkflowDate(labelText) {
+    const value = clean(omniDateInputs(labelText)[0]?.value);
+    return /^(?:\d{4}-\d{2}-\d{2}|\d{1,2}[\/-]\d{1,2}[\/-]\d{4})(?:\s|$)/.test(value) ? value : '';
   }
 
   function omniFullyDispatchedState() {
@@ -2135,8 +2144,8 @@
       status.setAttribute('role', 'status');
       info.appendChild(status);
     }
-    status.textContent = `Workflow 0.1.174: ${message}`;
-    status.title = 'Workflow stock reader 0.1.174';
+    status.textContent = `Workflow 0.1.175: ${message}`;
+    status.title = 'Workflow stock reader 0.1.175';
     root.dataset.workflowSyncStatus = message;
   }
 
@@ -2255,8 +2264,8 @@
       freightDescription: omniWorkflowFreightDescription(),
       stage: omniWorkflowStage(),
       total: payment.total ?? readMoneyNearLabels(['Invoiced Total', 'Acceptance Total', 'Order Total', 'Grand Total', 'Total']),
-      createdDate: labelled('Created Date'),
-      invoiceDate: labelled('Invoice Date'),
+      createdDate: omniWorkflowDate('Created Date'),
+      invoiceDate: omniWorkflowDate('Invoice Date'),
       fullyDispatched: omniFullyDispatchedState(),
       paid: payment.paid,
       paidAmount: payment.paidAmount,
