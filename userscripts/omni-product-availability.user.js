@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Product Availability
 // @namespace    livingculture-omni
-// @version      0.1.11
+// @version      0.1.12
 // @description  Checks Omni products-page stock for all SKUs on the current quote.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-product-availability.user.js
@@ -26,6 +26,12 @@
     return clean(field?.value) || clean(cell?.textContent);
   }
   const number = text => /^-?\d+(?:\.\d+)?$/.test(clean(text).replace(/,/g, '')) ? Number(clean(text).replace(/,/g, '')) : null;
+
+  function omniStockServiceLine(sku, name) {
+    const service = text => /^(?:(?:standard|express|economy|local|rural|urban|nationwide|international|free|flat rate|frontdoor|front door|white glove) )?(?:shipping|delivery|freight)(?: (?:charges?|fees?|costs?|services?|surcharges?))?(?: \d+)?$/i
+      .test(clean(text).replace(/\([^)]*\)/g, '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim());
+    return /^AS/i.test(sku) || service(sku) || service(name);
+  }
 
   function omniStockRequirementRows(table, headings, read, visible) {
     const rows = Array.from(table.querySelectorAll('tr')).filter(row => row.closest('table') === table && visible(row));
@@ -60,7 +66,7 @@
       for (const line of omniStockRequirementRows(row.closest('table'), headings, value, visible)) {
         if (line === row || !visible(line)) continue;
         const sku = value(line.children[code]).toUpperCase();
-        if (/^AS/i.test(sku)) continue;
+        if (omniStockServiceLine(sku, name >= 0 ? value(line.children[name]) : '')) continue;
         const qty = number(value(line.children[quantity]));
         if (!sku || /^search|^code$/i.test(sku) || qty === null || qty <= 0) continue;
         const existing = items.get(sku);
@@ -169,7 +175,7 @@
     syncStatus.id = 'workflow-sync';
     syncStatus.setAttribute('role', 'status');
     syncStatus.textContent = 'Workflow: waiting for stock sync';
-    syncStatus.title = 'Stock panel 0.1.11';
+    syncStatus.title = 'Stock panel 0.1.12';
     shadow.querySelector('.info').appendChild(syncStatus);
     table.insertAdjacentElement('afterend', root);
     lastFinishedAt = 0;

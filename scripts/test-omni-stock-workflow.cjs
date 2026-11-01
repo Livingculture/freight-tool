@@ -5,7 +5,7 @@ const {chromium}=require('playwright');
 const ts=require(path.resolve(__dirname,'../../workflow-speed-fix/node_modules/typescript'));
 const source=fs.readFileSync('userscripts/omni-livingculture-workflow.user.js','utf8');
 const parsed=ts.createSourceFile('workflow.js',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
-const names=['omniStockRequirementRows','omniWorkflowStockStatus','omniProductStockObservation','omniWorkflowSnapshot','tableHeaderMap','indexForHeader','cellText','normalizeLabel',
+const names=['omniStockServiceLine','omniStockRequirementRows','omniWorkflowStockStatus','omniProductStockObservation','omniWorkflowSnapshot','tableHeaderMap','indexForHeader','cellText','normalizeLabel',
   'syncOmniWorkflowRecord','finishOmniWorkflowSync','scheduleOmniWorkflowSync','installOmniWorkflowChangeHooks'];
 const extracted=[];
 function visit(node){if(ts.isFunctionDeclaration(node)&&names.includes(node.name?.text))extracted.push(node.getText(parsed));ts.forEachChild(node,visit)}
@@ -38,6 +38,19 @@ const functions=extracted.join('\n');
     const payload=await page.evaluate(()=>omniWorkflowSnapshot());
     assert.equal(payload.stockReady,true);assert.equal(payload.stockSource,'omni-products');assert.equal(payload.orderNumber,'NZSO-18025');
     assert.equal(payload.stage,'Ready To Pack - WMS');assert.equal(payload.paid,true);
+    const serviceCases=[
+      ['STANDARD SHIPPING (FRONTDOOR DELIVERY)','',true],['Delivery','',true],['FREIGHT','',true],
+      ['SV001','Delivery Fee',true],['SV002','Express Shipping',true],['DELIVERY_001','',true],
+      ['CS23160','Solo Teak Dining Chair - delivery available',false],['CS20001','Shipping Container Storage Box',false],
+      ['PO20308-2','Retractable Shade Blind',false],['CS20794','Pergola',false]
+    ];
+    for(const [sku,name,expected] of serviceCases)assert.equal(await page.evaluate(([sku,name])=>omniStockServiceLine(sku,name),[sku,name]),expected,sku);
+    await page.evaluate(()=>document.getElementById('lines').insertAdjacentHTML('beforeend',
+      '<tr><td>STANDARD SHIPPING (FRONTDOOR DELIVERY)</td><td></td><td>1</td></tr><tr><td>SV001</td><td>Delivery Fee</td><td>1</td></tr><tr><td>FREIGHT</td><td></td><td>1</td></tr>'));
+    assert.equal(await page.evaluate(()=>omniProductStockObservation()?.ready),true,'Service lines are excluded by the Workflow validator too');
+    await page.locator('#lc-omni-quote-stock').locator('#refresh').click();
+    await page.waitForFunction(()=>JSON.parse(document.getElementById('lc-omni-quote-stock').dataset.workflowStock).complete===true);
+    assert.equal(await page.evaluate(()=>JSON.parse(document.getElementById('lc-omni-quote-stock').dataset.workflowStock).lines.length),2,'Service charges must not trigger stock lookups');
     const stockStates=await page.evaluate(()=>{
       const root=document.getElementById('lc-omni-quote-stock'),original=root.dataset.workflowStock;
       const report=JSON.parse(original);
@@ -170,6 +183,6 @@ const functions=extracted.join('\n');
     assert.deepEqual(errors,[],'Full scripts must boot without uncaught errors');
     await full.screenshot({path:'/tmp/omni-stock-full-sync.png',fullPage:true});
     await full.close();
-    console.log('PASS: Make/Use components, incomplete BOMs, total Use quantities, shared components, component shortages, date parser overrides and full sync acknowledgement. Fixture only.');
+    console.log('PASS: Shipping/delivery/freight excluded, real products retained, Make/Use components, partial stock, date parser overrides and full sync acknowledgement. Fixture only.');
   }finally{await browser.close()}
 })().catch(error=>{console.error(error);process.exitCode=1});

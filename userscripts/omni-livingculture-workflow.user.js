@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.171
+// @version      0.1.172
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -2087,6 +2087,12 @@
     scheduleOmniWorkflowSync(0,true);
   }
 
+  function omniStockServiceLine(sku, name) {
+    const service = text => /^(?:(?:standard|express|economy|local|rural|urban|nationwide|international|free|flat rate|frontdoor|front door|white glove) )?(?:shipping|delivery|freight)(?: (?:charges?|fees?|costs?|services?|surcharges?))?(?: \d+)?$/i
+      .test(clean(text).replace(/\([^)]*\)/g, '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim());
+    return /^AS/i.test(sku) || service(sku) || service(name);
+  }
+
   function omniStockRequirementRows(table, headings, read, visible) {
     const rows = Array.from(table.querySelectorAll('tr')).filter(row => row.closest('table') === table && visible(row));
     const bom = headings.indexOf('bomload'), code = headings.indexOf('code'), quantity = headings.indexOf('qtyordered');
@@ -2128,8 +2134,8 @@
       status.setAttribute('role', 'status');
       info.appendChild(status);
     }
-    status.textContent = `Workflow 0.1.171: ${message}`;
-    status.title = 'Workflow stock reader 0.1.171';
+    status.textContent = `Workflow 0.1.172: ${message}`;
+    status.title = 'Workflow stock reader 0.1.172';
     root.dataset.workflowSyncStatus = message;
   }
 
@@ -2165,7 +2171,7 @@
       });
       if (!headerRow) return reject('order quantity headings not recognised');
       const headers = Array.from(headerRow.children, cell => header(cell.textContent));
-      const code = headers.indexOf('code'), quantity = headers.indexOf('qtyordered');
+      const code = headers.indexOf('code'), quantity = headers.indexOf('qtyordered'), name = headers.indexOf('product');
       if (code < 0 || quantity < 0) return reject('order columns not recognised');
       const value = cell => {
         const field = cell?.querySelector('input:not([type="hidden"]),textarea,select');
@@ -2176,7 +2182,7 @@
         if (row === headerRow || !isVisible(row)) continue;
         const cells = Array.from(row.children), sku = value(cells[code]).toUpperCase();
         const qty = Number(value(cells[quantity]).replace(/,/g, ''));
-        if (!sku || /^AS/i.test(sku) || !Number.isFinite(qty) || qty <= 0) continue;
+        if (!sku || omniStockServiceLine(sku, name >= 0 ? value(cells[name]) : '') || !Number.isFinite(qty) || qty <= 0) continue;
         required.set(sku, (required.get(sku) || 0) + qty);
       }
       if (required.size !== report.lines.length || report.lines.some(line => !required.has(line.sku) || required.get(line.sku) !== line.quantity
