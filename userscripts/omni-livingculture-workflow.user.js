@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.163
+// @version      0.1.164
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -66,6 +66,7 @@
   const HUBSPOT_GATE_CLASS = 'lc-omni-hubspot-gated-action';
   const HUBSPOT_GATE_STORAGE_PREFIX = 'lc-omni-hubspot-deal-complete:';
   const QUOTE_PDF_UNLOCK_PREFIX = 'lc-omni-quote-pdf-unlocked:';
+  const HUBSPOT_PENDING_DRAFT_KEY = 'lc-omni-hubspot-pending-draft-v1';
   const completedHubSpotSteps = new Set();
   const hubSpotPrerequisiteClicks = new Map();
   let hubSpotPrerequisiteHooksInstalled = false;
@@ -269,8 +270,49 @@
     if (heading.documentType !== 'quote' && !findButtonByLabel('Save As Draft')) return [];
     const key = order ? `lc-omni-hubspot-prerequisites:${order}` : '';
     const clicks = readHubSpotPrerequisiteSteps(key);
+    claimPendingHubSpotDraft(key, clicks, heading);
+    if (!clicks.quoteMemo && hasPersistedQuoteMemo()) {
+      clicks.quoteMemo = true;
+      persistHubSpotPrerequisiteSteps(key, clicks);
+    }
     const saveLabel = findButtonByLabel('Save As Draft') ? 'Save as Draft' : 'Save';
     return [!clicks.savedDraft && saveLabel, !clicks.quoteMemo && 'Quote Memo Info'].filter(Boolean);
+  }
+
+  function persistHubSpotPrerequisiteSteps(key, steps) {
+    if (!key) return;
+    hubSpotPrerequisiteClicks.set(key, steps);
+    const value = JSON.stringify(steps);
+    try { sessionStorage.setItem(key, value); } catch (error) { /* Memory and local storage remain available. */ }
+    try { localStorage.setItem(key, value); } catch (error) { /* Memory and session storage remain available. */ }
+  }
+
+  function rememberPendingHubSpotDraft() {
+    const heading = omniHeadingDraft();
+    try {
+      sessionStorage.setItem(HUBSPOT_PENDING_DRAFT_KEY, JSON.stringify({
+        at:Date.now(),
+        customer:clean(heading.customerName).toLowerCase(),
+      }));
+    } catch (error) { /* A current numbered quote can still record the click directly. */ }
+  }
+
+  function claimPendingHubSpotDraft(key, steps, heading) {
+    if (!key || steps.savedDraft || heading.documentType !== 'quote') return;
+    let pending = null;
+    try { pending = JSON.parse(sessionStorage.getItem(HUBSPOT_PENDING_DRAFT_KEY) || 'null'); } catch (error) { return; }
+    const currentCustomer = clean(heading.customerName).toLowerCase();
+    const sameCustomer = !pending?.customer || !currentCustomer || pending.customer === currentCustomer;
+    if (!pending || Date.now() - Number(pending.at || 0) > 300000 || !sameCustomer) return;
+    try { sessionStorage.removeItem(HUBSPOT_PENDING_DRAFT_KEY); } catch (error) { /* The completed step is still recorded below. */ }
+    steps.savedDraft = true;
+    persistHubSpotPrerequisiteSteps(key, steps);
+  }
+
+  function hasPersistedQuoteMemo() {
+    const labelled = document.querySelector('[aria-label="Delivery Instructions"], [data-lc-delivery-label] textarea, [data-lc-delivery-label] input:not([type="hidden"]), [data-lc-delivery-label] [contenteditable="true"]');
+    const value = labelled?.isContentEditable ? labelled.textContent : labelled?.value || labelled?.getAttribute?.('value');
+    return Boolean(clean(value || readMultilineNearLabel('Delivery Instructions')));
   }
 
   function readHubSpotPrerequisiteSteps(key) {
@@ -325,14 +367,20 @@
             && EXISTING_QUOTE_SAVE_LABELS.has(label))
         ) ? 'savedDraft' : '';
       const order = extractOrderId(hubSpotGateOrderId());
-      if (!step || !order) return;
+      if (!step) return;
+      if (!order) {
+        if (step === 'savedDraft') rememberPendingHubSpotDraft();
+        return;
+      }
       const key = `lc-omni-hubspot-prerequisites:${order}`;
       const clicks = readHubSpotPrerequisiteSteps(key);
       clicks[step] = true;
-      hubSpotPrerequisiteClicks.set(key, clicks);
-      try { sessionStorage.setItem(key, JSON.stringify(clicks)); } catch (error) { /* Current-page clicks still unlock the control. */ }
-      try { localStorage.setItem(key, JSON.stringify(clicks)); } catch (error) { /* Session and memory storage remain available. */ }
+      persistHubSpotPrerequisiteSteps(key, clicks);
       applyHubSpotPrerequisiteGate();
+    }, true);
+    document.addEventListener('input', event => {
+      if (!(event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLInputElement || event.target?.isContentEditable)) return;
+      window.setTimeout(applyHubSpotPrerequisiteGate, 0);
     }, true);
     window.addEventListener('storage', event => {
       const order = extractOrderId(hubSpotGateOrderId());

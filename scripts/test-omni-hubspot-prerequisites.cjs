@@ -8,12 +8,14 @@ const completion=source.slice(source.indexOf('  function hubSpotGateStorageKey('
 assert(gate&&submit);
 const setup=`
 const HUBSPOT_BUTTON_ID='hubspot';const hubSpotPrerequisiteClicks=new Map();let hubSpotPrerequisiteHooksInstalled=false;
-const HUBSPOT_GATE_STORAGE_PREFIX='lc-omni-hubspot-deal-complete:',QUOTE_PDF_UNLOCK_PREFIX='lc-omni-quote-pdf-unlocked:';const completedHubSpotSteps=new Set();
+const HUBSPOT_GATE_STORAGE_PREFIX='lc-omni-hubspot-deal-complete:',QUOTE_PDF_UNLOCK_PREFIX='lc-omni-quote-pdf-unlocked:',HUBSPOT_PENDING_DRAFT_KEY='lc-omni-hubspot-pending-draft-v1';const completedHubSpotSteps=new Set();
 const EXISTING_QUOTE_SAVE_LABELS=new Set(['save','save & email','save back to list','save & back to list','save to admin']);
 window.order='NZSO-17002';window.docType='quote';window.isOmni=true;window.drafts=0;window.messages=[];
 window.isOmniPage=()=>isOmni;window.omniHeadingDraft=()=>({documentType:docType,orderId:order});window.hubSpotGateOrderId=()=>order;
 window.extractOrderId=value=>String(value||'').match(/NZSO-\\d+/i)?.[0].toUpperCase()||'';
+window.clean=value=>String(value||'').replace(/\\s+/g,' ').trim();
 window.normalizeLabel=value=>String(value||'').trim().toLowerCase();
+window.deliveryInstructions='';window.readMultilineNearLabel=label=>label==='Delivery Instructions'?deliveryInstructions:'';
 window.findButtonByLabel=label=>[...document.querySelectorAll('button')].find(button=>button.textContent.toLowerCase()===label.toLowerCase());
 window.hubSpotMessage=async(title,lines)=>messages.push(lines);
 window.hubspotDraft=()=>{drafts++;return{customerName:'Test',orderId:order};};window.chooseHubSpotLeadSource=async()=>null;
@@ -51,6 +53,10 @@ installHubSpotPrerequisiteHooks();installHubSpotPrerequisiteHooks();applyHubSpot
   await reopened.evaluate(()=>{order='NZSO-17007';sessionStorage.setItem('lc-omni-hubspot-prerequisites:'+order,JSON.stringify({savedDraft:true,quoteMemo:true}));applyHubSpotPrerequisiteGate();});
   assert(await reopened.locator('#hubspot').isEnabled(),'Older session-only steps migrate to persistent storage');
   assert.equal(await reopened.evaluate(()=>JSON.parse(localStorage.getItem('lc-omni-hubspot-prerequisites:'+order)).quoteMemo),true);
+  await reopened.evaluate(()=>{order='NZSO-17010';deliveryInstructions='Previously saved quote wording';localStorage.setItem('lc-omni-hubspot-prerequisites:'+order,JSON.stringify({savedDraft:true}));applyHubSpotPrerequisiteGate();});
+  assert(await reopened.locator('#hubspot').isEnabled(),'A memo already saved in Delivery Instructions is recognised without re-entering it');
+  assert.equal(await reopened.evaluate(()=>JSON.parse(localStorage.getItem('lc-omni-hubspot-prerequisites:'+order)).quoteMemo),true,'Detected memo completion is persisted');
+  await reopened.evaluate(()=>{deliveryInstructions='';order='NZSO-17002';applyHubSpotPrerequisiteGate();});
   await page.evaluate(()=>{order='NZSO-17008';applyHubSpotPrerequisiteGate();});assert(await hubspot.isDisabled());
   await reopened.evaluate(()=>localStorage.setItem('lc-omni-hubspot-prerequisites:NZSO-17008',JSON.stringify({savedDraft:true,quoteMemo:true})));
   await page.waitForFunction(()=>!document.getElementById('hubspot').disabled);
@@ -86,6 +92,16 @@ installHubSpotPrerequisiteHooks();installHubSpotPrerequisiteHooks();applyHubSpot
   await page.evaluate(()=>{const b=document.createElement('button');b.textContent='Save As Draft';b.id='save';document.body.appendChild(b);});
   await page.locator('#save').click();await page.locator('#lc-omni-quote-memo-button').click();assert(await hubspot.isEnabled(),'Current-page steps work when storage is blocked');
   await page.evaluate(()=>{isOmni=false;applyHubSpotPrerequisiteGate();});assert(await hubspot.isEnabled(),'Core is unaffected');
+  const newQuote=await page.context().newPage();
+  await newQuote.route('https://go.cin7.com/**',route=>route.fulfill({contentType:'text/html',body:'<button id="hubspot">HubSpot Deal</button><button id="save">Save As Draft</button><button id="lc-omni-quote-memo-button">Quote Memo Info</button>'}));
+  await newQuote.goto('https://go.cin7.com/quote');await newQuote.addScriptTag({content:setup});
+  await newQuote.evaluate(()=>{order='';deliveryInstructions='Memo entered before first save';applyHubSpotPrerequisiteGate();});
+  await newQuote.locator('#save').click();
+  assert(await newQuote.evaluate(()=>Boolean(sessionStorage.getItem(HUBSPOT_PENDING_DRAFT_KEY))),'Orderless Save As Draft is retained through native reload');
+  await newQuote.evaluate(()=>{order='NZSO-17011';applyHubSpotPrerequisiteGate();});
+  assert(await newQuote.locator('#hubspot').isEnabled(),'Quote Memo before Save As Draft unlocks after Omni assigns the NZSO number');
+  assert.deepEqual(await newQuote.evaluate(()=>JSON.parse(localStorage.getItem('lc-omni-hubspot-prerequisites:NZSO-17011'))),{savedDraft:true,quoteMemo:true});
+  await newQuote.close();
   console.log('PASS: New quotes require Save As Draft plus memo; transferred quotes accept Save plus memo; per-quote persistence, isolation, guarded submission, approved-sales and Core compatibility preserved. No HubSpot requests sent.');
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
