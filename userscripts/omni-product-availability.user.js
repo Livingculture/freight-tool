@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Product Availability
 // @namespace    livingculture-omni
-// @version      0.1.9
+// @version      0.1.10
 // @description  Checks Omni products-page stock for all SKUs on the current quote.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-product-availability.user.js
@@ -146,7 +146,7 @@
     syncStatus.id = 'workflow-sync';
     syncStatus.setAttribute('role', 'status');
     syncStatus.textContent = 'Workflow: waiting for stock sync';
-    syncStatus.title = 'Stock panel 0.1.9';
+    syncStatus.title = 'Stock panel 0.1.10';
     shadow.querySelector('.info').appendChild(syncStatus);
     table.insertAdjacentElement('afterend', root);
     lastFinishedAt = 0;
@@ -156,7 +156,7 @@
       const lines = items.map(item => ({ sku:item.sku, quantity:item.quantity, available:checked.get(item.sku)?.available ?? null }));
       const shortage = lines.some(line => line.available !== null && line.available < line.quantity);
       const known = complete && lines.every(line => line.available !== null);
-      root.dataset.workflowStock = JSON.stringify({ page:location.pathname + location.search, checkedAt:new Date().toISOString(), ready:shortage ? false : known ? true : null, complete, lines });
+      root.dataset.workflowStock = JSON.stringify({ page:location.pathname + location.search, checkedAt:new Date().toISOString(), checkedAtTick:performance.now(), ready:shortage ? false : known ? true : null, complete, lines });
       document.dispatchEvent(new Event('lc-omni-stock-updated'));
     };
     const frame = document.createElement('iframe'); frame.title = 'Omni stock lookup'; frame.tabIndex = -1; frame.setAttribute('aria-hidden', 'true'); shadow.appendChild(frame);

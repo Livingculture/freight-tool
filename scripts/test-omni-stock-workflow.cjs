@@ -38,6 +38,26 @@ const functions=extracted.join('\n');
     const payload=await page.evaluate(()=>omniWorkflowSnapshot());
     assert.equal(payload.stockReady,true);assert.equal(payload.stockSource,'omni-products');assert.equal(payload.orderNumber,'NZSO-18025');
     assert.equal(payload.stage,'Ready To Pack - WMS');assert.equal(payload.paid,true);
+    await page.evaluate(()=>{window.savedDateParse=Date.parse;Date.parse=()=>null;});
+    assert.equal(await page.evaluate(()=>omniProductStockObservation()?.ready),true,'A page-overridden date parser must not reject a fresh stock check');
+    const timing=await page.evaluate(()=>{
+      const root=document.getElementById('lc-omni-quote-stock'),original=root.dataset.workflowStock;
+      const report=JSON.parse(original);
+      delete report.checkedAtTick;root.dataset.workflowStock=JSON.stringify(report);
+      const legacy=omniProductStockObservation()?.ready;
+      report.checkedAt=new Date(Date.now()-121000).toISOString();report.checkedAtTick=performance.now()-121000;
+      root.dataset.workflowStock=JSON.stringify(report);
+      const expired=omniProductStockObservation(),expiryMessage=root.dataset.workflowSyncStatus;
+      report.checkedAt='invalid';report.checkedAtTick=performance.now();root.dataset.workflowStock=JSON.stringify(report);
+      const invalid=omniProductStockObservation();
+      root.dataset.workflowStock=original;
+      return {legacy,expired,expiryMessage,invalid};
+    });
+    assert.equal(timing.legacy,true,'Older stock panels remain compatible without Date.parse');
+    assert.equal(timing.expired,null,'Genuinely stale stock must still be rejected');
+    assert.match(timing.expiryMessage,/expired \(121s\)/);
+    assert.equal(timing.invalid,null,'A monotonic timer must not permit an invalid server timestamp');
+    await page.evaluate(()=>{Date.parse=window.savedDateParse;});
     await page.waitForFunction(()=>requests.length>0);
     // Complete any pending-check request; the actual event hooks must then send
     // the latest completed result, even when the earlier request was in flight.
@@ -95,6 +115,7 @@ const functions=extracted.join('\n');
       '<h1>Edit Sales Order - Lisa Bradley - NZSO-18025</h1><table><tr><th><span>1</span>Code</th><th>Product</th><th><span>1</span>Qty<br>Ordered</th></tr><tr><td>CS23564</td><td>Dipper Dining Table</td><td>1</td></tr></table>'}));
     await full.goto('https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx?OrderId=18025');
     await full.evaluate(()=>{
+      Date.parse=()=>null;
       window.unsafeWindow=window;window.GM_getResourceText=()=> '[]';
       window.GM_getValue=(_,fallback)=>fallback;window.GM_setValue=()=>{};
       window.GM_registerMenuCommand=()=>{};window.GM_openInTab=()=>{};
@@ -113,6 +134,6 @@ const functions=extracted.join('\n');
     assert.deepEqual(errors,[],'Full scripts must boot without uncaught errors');
     await full.screenshot({path:'/tmp/omni-stock-full-sync.png',fullPage:true});
     await full.close();
-    console.log('PASS: Real stock event -> queued POST -> acknowledgement, visible HTTP/network/timeout/rejection status, numbered headers, quantity edits, shortages and cross-order isolation. Fixture only.');
+    console.log('PASS: Overridden date parser, legacy timestamps, genuine expiry, full stock event -> POST -> acknowledgement, sync failures, quantity edits and cross-order isolation. Fixture only.');
   }finally{await browser.close()}
 })().catch(error=>{console.error(error);process.exitCode=1});

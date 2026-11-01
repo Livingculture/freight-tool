@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.168
+// @version      0.1.169
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -2105,8 +2105,8 @@
       status.setAttribute('role', 'status');
       info.appendChild(status);
     }
-    status.textContent = `Workflow 0.1.168: ${message}`;
-    status.title = 'Workflow stock reader 0.1.168';
+    status.textContent = `Workflow 0.1.169: ${message}`;
+    status.title = 'Workflow stock reader 0.1.169';
     root.dataset.workflowSyncStatus = message;
   }
 
@@ -2121,9 +2121,15 @@
     if (!root.dataset.workflowStock) return reject('stock panel needs updating');
     try {
       const report = JSON.parse(root.dataset.workflowStock);
-      const age = Date.now() - Date.parse(report.checkedAt);
+      // Page date libraries can replace Date.parse. Use the same document's
+      // monotonic clock, with constructor-based parsing for older stock panels.
+      const checkedAt = typeof report.checkedAt === 'string' ? new Date(report.checkedAt).getTime() : NaN;
+      const age = typeof report.checkedAtTick === 'number' && Number.isFinite(report.checkedAtTick)
+        ? performance.now() - report.checkedAtTick : Date.now() - checkedAt;
       if (report.page !== location.pathname + location.search) return reject('stock belongs to a different page');
-      if (!Number.isFinite(age) || age < -60000 || age > 120000) return reject('stock check expired; refresh stock');
+      if (!Number.isFinite(checkedAt) || !Number.isFinite(age)) return reject('stock timestamp could not be read');
+      if (age < -60000) return reject('stock timestamp is in the future; refresh stock');
+      if (age > 120000) return reject(`stock check expired (${Math.round(age / 1000)}s); refresh stock`);
       if (!Array.isArray(report.lines) || !report.lines.length) return reject('stock check contains no products');
       const table = root.previousElementSibling;
       if (table?.tagName !== 'TABLE') return reject('order table is not beside stock panel');
