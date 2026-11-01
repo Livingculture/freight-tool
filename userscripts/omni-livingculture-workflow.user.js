@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.164
+// @version      0.1.165
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -33,6 +33,7 @@
   const CLONE_QUOTE_INTENT_KEY = 'lc-omni-clone-quote-intent';
   const CLONE_QUOTE_SAVE_KEY = 'lc-omni-clone-quote-save';
   const CONVERT_ORDER_INTENT_KEY = 'lc-omni-convert-sales-order-intent';
+  const CONVERT_ORDER_SAVE_KEY = 'lc-omni-convert-sales-order-save';
   const CUSTOMER_PHOTOS_BUTTON_ID = 'lc-omni-customer-photos-button';
   const VIEW_CUSTOMER_ALBUM_BUTTON_ID = 'lc-omni-view-customer-album-button';
   const VIEW_CUSTOMER_ALBUMS_BUTTON_ID = 'lc-omni-view-customer-albums-button';
@@ -2240,10 +2241,12 @@
   }
 
   let omniQuoteConversionLoaded = false;
+  let convertedSalesOrderSaveTimer = null;
   const collectionDispatchAttempts = new Set();
 
   function finishOmniConversionNavigation() {
     if (!isOmniPage() || omniHeadingDraft().documentType !== 'sales-order') return;
+    continueSaveConvertedSalesOrder();
     const url = new URL(window.location.href);
     if (url.searchParams.get('ConvertQuoteToSalesOrder')?.toLowerCase() !== 'yes') return;
     omniQuoteConversionLoaded = true;
@@ -3377,6 +3380,58 @@
       .find(element => element.id !== CONVERT_ORDER_BUTTON_ID && normalizeLabel(element.value || element.textContent || '') === 'convert to sales order');
   }
 
+  function rememberConvertedSalesOrderSave(orderId, quoteNumber) {
+    if (!orderId || !quoteNumber) return false;
+    try {
+      sessionStorage.setItem(CONVERT_ORDER_SAVE_KEY, JSON.stringify({ orderId, quoteNumber, at: Date.now() }));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function nativeConvertedSalesOrderSaveControl() {
+    const control = visibleOmniControl('Save');
+    return control && !control.disabled && !String(control.id || '').startsWith('lc-') ? control : null;
+  }
+
+  function continueSaveConvertedSalesOrder() {
+    if (convertedSalesOrderSaveTimer) return;
+    let intent;
+    try { intent = JSON.parse(sessionStorage.getItem(CONVERT_ORDER_SAVE_KEY) || 'null'); } catch { return; }
+    if (!intent) return;
+    const invalid = !intent.at || Date.now() - intent.at > 120000 || intent.at > Date.now()
+      || intent.orderId !== currentQuotePdfOrderId() || intent.quoteNumber !== hubSpotGateOrderId();
+    if (invalid) {
+      try { sessionStorage.removeItem(CONVERT_ORDER_SAVE_KEY); } catch {}
+      return;
+    }
+    let attempts = 0;
+    const trySave = () => {
+      attempts += 1;
+      if (omniHeadingDraft().documentType !== 'sales-order') {
+        if (attempts < 80) return;
+        window.clearInterval(convertedSalesOrderSaveTimer);
+        convertedSalesOrderSaveTimer = null;
+        return;
+      }
+      const save = nativeConvertedSalesOrderSaveControl();
+      if (!save) {
+        if (attempts < 80) return;
+        window.clearInterval(convertedSalesOrderSaveTimer);
+        convertedSalesOrderSaveTimer = null;
+        return;
+      }
+      window.clearInterval(convertedSalesOrderSaveTimer);
+      convertedSalesOrderSaveTimer = null;
+      // Consume before clicking because Omni's Save may synchronously reload the page.
+      try { sessionStorage.removeItem(CONVERT_ORDER_SAVE_KEY); } catch {}
+      save.click();
+    };
+    convertedSalesOrderSaveTimer = window.setInterval(trySave, 125);
+    trySave();
+  }
+
   function confirmConvertToSalesOrder(button, event) {
     if (document.getElementById('lc-convert-order-confirm')) return Promise.resolve(false);
     return new Promise(resolve => {
@@ -3442,6 +3497,7 @@
     if (quoteNumber !== hubSpotGateOrderId() || !isHubSpotStepComplete(quoteNumber) || omniHeadingDraft().documentType !== 'quote') return;
     const nativeAction = nativeConvertToSalesOrderControl();
     if (nativeAction && !nativeAction.disabled) {
+      rememberConvertedSalesOrderSave(currentQuotePdfOrderId(), quoteNumber);
       nativeAction.click();
       return;
     }
@@ -3479,6 +3535,7 @@
       }
       if (action && !action.disabled) {
         window.clearInterval(timer);
+        rememberConvertedSalesOrderSave(intent.orderId, intent.quoteNumber);
         action.click();
       } else if (attempts >= 40) {
         window.clearInterval(timer);
