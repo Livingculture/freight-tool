@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.166
+// @version      0.1.167
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -2096,13 +2096,26 @@
       if (report.page !== location.pathname + location.search || !Number.isFinite(age) || age < -60000 || age > 120000 || !Array.isArray(report.lines) || !report.lines.length) return null;
       const table = root.previousElementSibling;
       if (table?.tagName !== 'TABLE') return null;
-      const headers = tableHeaderMap(table), code = indexForHeader(headers, ['code']), quantity = indexForHeader(headers, ['qty ordered']);
+      // Match the stock panel's headings: Omni adds number badges and <br>
+      // elements, whose textContent does not contain word separators.
+      const header = value => clean(value).toLowerCase().replace(/[^a-z]/g, '');
+      const headerRow = Array.from(table.querySelectorAll('tr')).find(row => {
+        const labels = Array.from(row.children, cell => header(cell.textContent));
+        return isVisible(row) && labels.includes('code') && labels.includes('qtyordered');
+      });
+      if (!headerRow) return null;
+      const headers = Array.from(headerRow.children, cell => header(cell.textContent));
+      const code = headers.indexOf('code'), quantity = headers.indexOf('qtyordered');
       if (code < 0 || quantity < 0) return null;
+      const value = cell => {
+        const field = cell?.querySelector('input:not([type="hidden"]),textarea,select');
+        return clean(field?.value) || clean(cell?.textContent);
+      };
       const required = new Map();
       for (const row of table.querySelectorAll('tr')) {
-        if (!isVisible(row)) continue;
-        const cells = Array.from(row.children), sku = cellText(cells, code).toUpperCase();
-        const qty = Number(cellText(cells, quantity).replace(/,/g, ''));
+        if (row === headerRow || !isVisible(row)) continue;
+        const cells = Array.from(row.children), sku = value(cells[code]).toUpperCase();
+        const qty = Number(value(cells[quantity]).replace(/,/g, ''));
         if (!sku || /^AS/i.test(sku) || !Number.isFinite(qty) || qty <= 0) continue;
         required.set(sku, (required.get(sku) || 0) + qty);
       }
