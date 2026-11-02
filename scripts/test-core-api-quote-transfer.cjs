@@ -61,12 +61,17 @@ document.querySelectorAll('.financial input').forEach(input=>input.addEventListe
  try{
   await page.goto(entry);await el('open').click();await el('reference').fill('10000');await el('lookup').click();
   await page.waitForFunction(()=>document.querySelector('#lc-core-import').shadowRoot.querySelector('#status').textContent.includes('Preview loaded'));
-  assert.equal(await page.locator('#products .code').first().inputValue(),'');await el('confirm').check();await el('fill').click();await completed();await verify();
+  assert.equal(await page.locator('#products .code').first().inputValue(),'');await el('includeDetails').check();await el('confirm').check();await el('fill').click();await completed();await verify();
   fixture.surcharge={description:'Special service',amount:23};fixture.discount={description:'Source quote discount',amount:200};fixture.total+=23-200;fixture.tax=Number((fixture.total*15/115).toFixed(2));
   fixture.additionalCharges.push({description:'Special service',quantity:1,unitPrice:23,discountPercent:0,amount:23},{description:'Source quote discount',quantity:1,unitPrice:-200,discountPercent:0,amount:-200});
   headingLayout='table';accountLookup=true;
   await page.goto('https://inventory.dearsystems.com/Sale');const corePage=page;const tab=context.waitForEvent('page');page.once('dialog',dialog=>dialog.accept('NZSO-10000'));await page.getByRole('button',{name:'Copy Core Quote to Omni'}).click();page=await tab;
-  await page.waitForURL(/go\.cin7\.com\/Cloud\/TransactionEntry\/TransactionEntry\.aspx/,{timeout:30000});await completed();await verify();
+  await page.waitForURL(/go\.cin7\.com\/Cloud\/TransactionEntry\/TransactionEntry\.aspx/,{timeout:30000});
+  await page.waitForFunction(()=>document.querySelector('#lc-core-import')?.shadowRoot.querySelector('#status').textContent.startsWith('Product lines filled'),null,{timeout:30000});
+  assert.equal(await page.locator('#selected').inputValue(),'');assert.equal(await page.locator('#contactFirstName').inputValue(),'');
+  assert.equal(await page.locator('#contactEmailAddress').inputValue(),'');assert.equal(await page.locator('#comments').inputValue(),'');assert.equal(await page.locator('#memo').inputValue(),'');
+  assert.equal(await page.locator('#freightAmount').inputValue(),'0.00');assert.equal(await page.locator('#surchargeAmount').inputValue(),'0.00');assert.equal(await page.locator('#discountAmount').inputValue(),'0.00');
+  assert.equal(await page.locator('#products .code').evaluateAll(nodes=>nodes.filter(input=>input.value).length),6);assert.deepEqual(await page.evaluate(()=>[saves,approvals]),[0,0]);
   assert.equal(corePage.url(),'https://inventory.dearsystems.com/Sale','The Core quote tab stays open and unchanged');
   assert.equal(lookups,2);assert.equal(gm['lc-core-api-quote-transfer-v1'],undefined,'Handoff is consumed and customer data removed');
   await page.screenshot({path:'/tmp/core-api-quote-filled.png',fullPage:true});
@@ -85,6 +90,7 @@ document.querySelectorAll('.financial input').forEach(input=>input.addEventListe
   delete gm['lc-core-api-quote-transfer-v1'];pauseLookup=false;
   await page.goto(entry);await el('open').click();await el('reference').fill('10000');await el('lookup').click();
   await page.waitForFunction(()=>document.querySelector('#lc-core-import').shadowRoot.querySelector('#status').textContent.includes('Preview loaded'));
+  await el('includeDetails').check();
   await page.evaluate(()=>{const duplicate=document.createElement('h5');duplicate.id='duplicate-heading';duplicate.textContent='Contact';document.body.prepend(duplicate)});
   await el('confirm').check();await el('fill').click();
   await page.waitForFunction(()=>document.querySelector('#lc-core-import').shadowRoot.querySelector('#status').textContent.startsWith('Stopped:'));
@@ -96,6 +102,18 @@ document.querySelectorAll('.financial input').forEach(input=>input.addEventListe
   assert.equal(await page.locator('#products .code').first().inputValue(),'');
   await page.evaluate(()=>{document.querySelector('#selected').value='Test Account';document.querySelector('#contactEmailAddress').value='test@example.invalid'});
   await el('fill').click();await completed();await verify();
-  console.log('PASS: Core number button -> authenticated-popup contract -> private cross-origin handoff -> native New Quote -> customer matching, phone/mobile, both addresses, memo, rep, six product lines, freight, GST/total, no file, no save/approve. Mock Core/Workflow/Omni services.');
+  await page.goto(entry);await el('open').click();await el('reference').fill('10000');await el('lookup').click();
+  await page.waitForFunction(()=>document.querySelector('#lc-core-import').shadowRoot.querySelector('#status').textContent.includes('Preview loaded'));
+  await page.evaluate(()=>{document.querySelector('.columns').remove();document.querySelector('#selected').value='Existing Omni customer';document.querySelector('#comments').value='Manual notes';document.querySelector('#memo').value='Manual memo';document.querySelector('#freightAmount').value='123.00';document.querySelector('#surchargeAmount').value='15.00';document.querySelector('#discountAmount').value='5.00'});
+  assert.equal(await el('includeDetails').isChecked(),false);assert.equal(await el('fill').textContent(),'Copy Line Items');
+  await el('confirm').check();await el('fill').click();
+  await page.waitForFunction(()=>{const status=document.querySelector('#lc-core-import').shadowRoot.querySelector('#status').textContent;return status.startsWith('Product lines filled')||status.startsWith('Stopped:')},null,{timeout:30000});
+  assert.match(await el('status').textContent(),/^Product lines filled/);
+  assert.equal(await page.locator('#products .code').evaluateAll(nodes=>nodes.filter(input=>input.value).length),6);
+  assert.equal(await page.locator('#selected').inputValue(),'Existing Omni customer');assert.equal(await page.locator('#comments').inputValue(),'Manual notes');assert.equal(await page.locator('#memo').inputValue(),'Manual memo');
+  assert.equal(await page.locator('#freightAmount').inputValue(),'123.00');assert.equal(await page.locator('#surchargeAmount').inputValue(),'15.00');assert.equal(await page.locator('#discountAmount').inputValue(),'5.00');assert.deepEqual(await page.evaluate(()=>[saves,approvals]),[0,0]);
+  await el('verify').click();assert.match(await el('status').textContent(),/quantities, prices and discounts match/);
+  await page.screenshot({path:'/tmp/core-api-line-items-only.png',fullPage:true});
+  console.log('PASS: default line-items-only transfer without customer fields; customer, notes and charges preserved; six exact lines verified; optional full-quote mode; authenticated-popup and private handoff guards; no save/approve. Mock Core/Workflow/Omni services.');
  }finally{await browser.close()}
 })().catch(error=>{console.error(error);process.exitCode=1});

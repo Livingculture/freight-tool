@@ -1,6 +1,6 @@
 # Core To Omni Quote Transfer
 
-This separate Tampermonkey script is not part of All-in-One. Version 0.2.2 uses
+This separate Tampermonkey script is not part of All-in-One. Version 0.2.3 uses
 the existing server-side Core API connection, not a PDF or screenshot-based file.
 
 ## Staff Flow
@@ -10,12 +10,17 @@ the existing server-side Core API connection, not a PDF or screenshot-based file
 3. A Workflow tab performs the lookup. Sign in there if requested. Only office
    roles can read Core quotes through the authenticated transfer route.
 4. That tab opens Omni and follows its native **New Quote** link. The original
-   Core tab stays open and unchanged. Quote fields are filled automatically.
+   Core tab stays open and unchanged. Product lines are filled automatically.
+   Customer matching is skipped; customer details and charges are left alone.
 5. Review before saving. The transfer never saves, approves, pays, packs,
    dispatches or emails the new Omni quote.
 
 For direct lookup on a new Omni quote, open the transfer panel, enter the Core
-number and click **Load from Core**, then **Fill Quote** after reviewing warnings.
+number and click **Load from Core**, then **Copy Line Items** after reviewing warnings.
+This copies SKUs, quantities, prices and line discounts only. Enter the customer,
+freight and other charges manually, and reconcile the final quote before saving.
+The optional **Include customer details and charges** checkbox enables the full
+quote attempt, including customer matching. It is off by default.
 No local file is required. Search for existing Omni copies before transferring a
 Core quote again; saved quotes are not automatically checked for duplicates.
 
@@ -28,7 +33,7 @@ Core quote again; saved quotes are not automatically checked for duplicates.
 - Customer/contact, phone/mobile, delivery/billing addresses, memo, products,
   quantities, prices, discounts and charges come from Core. Missing values are
   not invented. Customer data must never be committed alongside the script.
-- Customer selection must resolve to a matching Omni customer. Ambiguous or
+- In optional full-quote mode, customer selection must resolve to a matching Omni customer. Ambiguous or
   missing customers stop the transfer; no customer IDs/records are fabricated.
   Searches accept the Core contact or account name, with email confirmation
   when supplied. If lookup fails before quote fields are written, staff can

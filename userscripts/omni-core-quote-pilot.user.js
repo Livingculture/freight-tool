@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Living Culture Core Quote Import Pilot
 // @namespace    livingculture-omni
-// @version      0.2.2
-// @description  Look up a Core quote number through Workflow and transfer customer, addresses, products and charges to a new Omni quote. Never saves or approves.
+// @version      0.2.3
+// @description  Copy Core quote line items to a new Omni quote. Customer details and charges are optional. Never saves or approves.
 // @match        https://go.cin7.com/*
 // @match        https://inventory.dearsystems.com/*
 // @match        https://*.dearsystems.com/*
@@ -479,7 +479,7 @@
       }
       await wait(100);
     }
-    throw new Error('Could not confirm the Core customer in Omni by email/name. Close this panel, select or create the correct customer in Omni, then reopen this panel and click Fill Quote. No product lines have been added.');
+    throw new Error('Could not confirm the Core customer in Omni by email/name. Uncheck Include customer details and charges to copy line items only, or select the correct customer in Omni before retrying the full quote. No product lines have been added.');
   }
 
   async function fillQuoteDetails() {
@@ -570,6 +570,9 @@
     :host{font-family:Arial,sans-serif;color:#233c42}*{box-sizing:border-box}dialog{width:min(850px,calc(100% - 24px));max-height:90vh;padding:20px;border:1px solid #a9bec3;border-radius:6px;color:inherit}dialog::backdrop{background:#0006}header{display:flex;align-items:center;justify-content:space-between;gap:12px}h2{font-size:20px;margin:0}button{font:inherit;cursor:pointer;border:1px solid #a9bec3;border-radius:4px;background:#fff;padding:8px 12px}button:disabled{opacity:.5;cursor:default}.close{font-size:20px;width:36px;height:36px;padding:0}input[type=file]{max-width:100%;margin:16px 0}table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:9px 6px;border-bottom:1px solid #dce5e7}.scroll{overflow:auto}th{white-space:nowrap}td{min-width:65px}td:first-child{white-space:nowrap}.warning{color:#8b4000;background:#fff4e5;padding:10px;border-left:3px solid #cf7c00;white-space:pre-wrap;line-height:1.5}label{display:flex;gap:8px;margin:14px 0;font-size:14px;line-height:1.4}input[type=checkbox]{flex:none;width:18px;height:18px;margin:0}footer{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}#fill{background:#087f8c;color:white}#status{white-space:pre-wrap;line-height:1.5;font-size:14px}#details{line-height:1.6;white-space:pre-wrap;font-size:14px}#open{margin:8px 0;font-size:13px}#warning:empty{display:none}
     </style><button id="open" type="button">Core Quote Import Pilot</button><dialog aria-label="Core quote import"><header><h2>Core Quote Import Pilot</h2><button class="close" type="button" aria-label="Close">&#215;</button></header><input type="file" id="file" accept=".json,application/json" aria-label="Core quote file"><div id="details"></div><div class="scroll"><table><thead><tr><th>SKU</th><th>Product</th><th>Qty</th><th>Unit price</th><th>Disc.</th><th>Amount</th></tr></thead><tbody></tbody></table></div><p id="warning" class="warning"></p><label><input type="checkbox" id="confirm">Customer selected and NZD / GST-inclusive pricing checked in Omni. Source warnings reviewed.</label><footer><button id="fill" type="button" disabled>Fill Product Lines</button><button id="verify" type="button" disabled>Check Product Lines</button></footer><p id="status" role="status">No quote file loaded.</p></dialog>`;
   const get = id => shadow.getElementById(id);
+  const detailsOption=document.createElement('label');
+  detailsOption.innerHTML='<input type="checkbox" id="includeDetails">Include customer details and charges';
+  get('confirm').parentElement.before(detailsOption);
   const dialog = shadow.querySelector('dialog');
   const status = message => { get('status').textContent = message; };
   get('file').hidden = true;
@@ -589,13 +592,17 @@
     get('file').disabled = started || busy;
     get('verify').disabled = !quote || busy;
     get('lookup').disabled = busy || started;
+    get('includeDetails').disabled = busy || started;
+    get('fill').textContent = quote?.schema==='lc-core-quote-api-v1' && get('includeDetails').checked ? 'Fill Full Quote' : 'Copy Line Items';
   };
   get('open').addEventListener('click', () => dialog.showModal());
   shadow.querySelector('.close').addEventListener('click', () => dialog.close());
   get('confirm').addEventListener('change', controls);
+  get('includeDetails').addEventListener('change', controls);
   function loadQuote(data) {
     quote = null;
     get('confirm').checked = false;
+    get('includeDetails').checked = false;
     get('details').textContent = '';
     get('warning').textContent = '';
     shadow.querySelector('tbody').replaceChildren();
@@ -604,7 +611,7 @@
       quote = validate(data);
       get('details').textContent = `${quote.sourceReference} | ${clean(quote.customer?.name)} | ${quote.currency}\nEmail: ${clean(quote.customer?.email)}\nFreight: ${money(quote.freight.amount)} | Target total incl. GST: ${money(quote.total)}`;
       const api = quote.schema==='lc-core-quote-api-v1';
-      get('fill').textContent=api?'Fill Quote':'Fill Product Lines';
+      detailsOption.hidden=!api;
       get('warning').textContent = [...quote.warnings, ...(api?[]:['Legacy local-file test: customer details and freight are manual.'])].join('\n');
       if(api) get('details').textContent+=`\nPhone: ${quote.customer.phone || quote.customer.mobile || 'Not provided by Core'}\nDelivery: ${[quote.shippingAddress.line1,quote.shippingAddress.line2,quote.shippingAddress.city,quote.shippingAddress.postcode].filter(Boolean).join(', ')}`;
       get('confirm').parentElement.lastChild.textContent=api?' NZD / GST-inclusive pricing and source warnings reviewed.':' Customer selected and NZD / GST-inclusive pricing checked in Omni. Source warnings reviewed.';
@@ -639,6 +646,7 @@
   });
   get('fill').addEventListener('click', async () => {
     if (!quote || started || busy || !get('confirm').checked) return;
+    const fullQuote=quote.schema==='lc-core-quote-api-v1' && get('includeDetails').checked;
     try {
       const info = assertNewQuote();
       if (info.rows.some(row => !blank(valueOf(cellFor(row, info, 'code'))) || !blank(valueOf(cellFor(row, info, 'product'))))) throw new Error('Product grid is not empty. Import blocked to prevent duplicates or overwriting lines.');
@@ -647,7 +655,7 @@
       controls();
       // A modal dialog makes the native grid inert; close it before editing.
       dialog.close();
-      if(quote.schema==='lc-core-quote-api-v1') {
+      if(fullQuote) {
         status('Selecting the Core customer.');
         await selectCustomer(quote.customer);
       }
@@ -655,7 +663,7 @@
       const empty=assertNewQuote();
       if(empty.rows.some(row=>!blank(valueOf(cellFor(row,empty,'code')))||!blank(valueOf(cellFor(row,empty,'product')))))throw new Error('Product grid changed during customer selection. Import blocked.');
       started = true;
-      if(quote.schema==='lc-core-quote-api-v1') {
+      if(fullQuote) {
         status('Copying contact/address details.');
         await fillQuoteDetails();
       }
@@ -665,10 +673,10 @@
         for (const [name, value] of [['qtyordered', line.quantity], ['unitprice', line.unitPrice], ['disc', line.discountPercent]]) await numericField(line, name, value);
       }
       verifyLines();
-      if(quote.schema==='lc-core-quote-api-v1'){
+      if(fullQuote){
         await fillQuoteMemo(quote.memo);await fillCharges(); await verifyQuoteTotal();
         status(`Core quote ${quote.sourceReference} copied into the unsaved Omni quote. Customer, contacts, addresses, product lines, charges and total ${money(quote.total)} checked. Review before saving; no payment or fulfilment status was transferred.`);
-      } else status(`Product lines filled, not saved. Enter freight ${money(quote.freight.amount)} and check the final Omni total is ${money(quote.total)}. Preserve Core reference ${quote.sourceReference} in Internal Comments; let Omni assign its own quote number. The separate source discount has NOT been applied.`);
+      } else status(`Product lines filled, not saved. SKUs, quantities, unit prices and line discounts checked against ${quote.sourceReference}. Customer, addresses, notes, freight and other charges were not changed. Enter freight ${money(quote.freight.amount)} and check the final Omni total is ${money(quote.total)}. Preserve Core reference ${quote.sourceReference} in Internal Comments; let Omni assign its own quote number. The separate source discount has NOT been applied.`);
     } catch (error) { status('Stopped: ' + error.message + (started ? '\nSome lines may already be filled. Inspect them manually; this pilot will not rerun on this page.' : '')); }
     finally { busy = false; controls(); if (!dialog.open) dialog.showModal(); }
   });
