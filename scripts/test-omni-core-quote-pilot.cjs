@@ -51,6 +51,17 @@ document.querySelectorAll('#products tr input:not(.code)').forEach(input=>input.
   async function open(options = {}) {
     await page.goto(pageUrl + (options.query || ''));
     await page.setContent(html(options.heading || 'New Quote', options.extra || ''));
+    if (options.toolbar) await page.locator('h1').evaluate(node => {
+      const toolbar = document.createElement('span');
+      toolbar.id = 'lc-staff-tools';
+      toolbar.innerHTML = '<button type="button">Staff Guide</button><button type="button">Help Tips: Off</button><button type="button">Warranty</button>';
+      node.append(toolbar);
+    });
+    if (options.titleTag) await page.locator('h1').evaluate((node, tag) => {
+      const title = document.createElement(tag);
+      title.innerHTML = node.innerHTML;
+      node.replaceWith(title);
+    }, options.titleTag);
     await page.addScriptTag({ content: source });
     await el('open').click();
   }
@@ -63,7 +74,7 @@ document.querySelectorAll('#products tr input:not(.code)').forEach(input=>input.
     await page.waitForFunction(() => document.querySelector('#lc-core-import').shadowRoot.querySelector('#status').textContent.startsWith('Stopped:'), { timeout: 15000 });
   }
   try {
-    await open(); await load();
+    await open({ toolbar: true }); await load();
     assert.match(await status(), /Preview loaded/);
     assert.equal(await page.locator('#products .code').first().inputValue(), '');
     assert.equal(await el('fill').isDisabled(), true);
@@ -90,7 +101,14 @@ document.querySelectorAll('#products tr input:not(.code)').forEach(input=>input.
     await page.waitForFunction(() => document.querySelector('#lc-core-import').shadowRoot.querySelector('#status').textContent.includes('Quote changed'));
     assert.deepEqual(await page.evaluate(() => [saves,approvals,sends,enters]), [0,0,0,0]);
 
-    for (const options of [{heading:'Edit Quote - Existing - NZSO-10000'}, {heading:'New Sales Order'}, {query:'?idOrder=12345'}, {query:'?ConvertQuoteToSalesOrder=Yes'}]) {
+    // Omni can render the page title as a bold/span element rather than a heading.
+    for (const titleTag of ['b', 'strong', 'span', 'div', 'h4']) {
+      await open({ titleTag, toolbar: true }); await load(); await fill();
+      await page.waitForFunction(() => document.querySelector('#lc-core-import').shadowRoot.querySelector('#status').textContent.startsWith('Product lines filled'), null, { timeout: 15000 });
+      assert.deepEqual(await page.evaluate(() => [saves,approvals,sends,enters]), [0,0,0,0]);
+    }
+
+    for (const options of [{heading:'Edit Quote - Existing - NZSO-10000', toolbar:true}, {heading:'New Sales Order'}, {query:'?idOrder=12345'}, {query:'?ConvertQuoteToSalesOrder=Yes'}, {heading:'Existing transaction',extra:'<nav><span>New Quote</span></nav>'}, {heading:'Existing transaction',extra:'<div id="lc-other-tool">New Quote</div>'}, {heading:'Edit Quote - Existing - NZSO-10000', titleTag:'b', toolbar:true, extra:'<span>New Quote</span>'}]) {
       await open(options); await load(); await fill(); await stopped();
       assert.equal(await page.locator('#products .code').first().inputValue(), '');
     }

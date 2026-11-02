@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Core Quote Import Pilot
 // @namespace    livingculture-omni
-// @version      0.1.0
+// @version      0.1.1
 // @description  Preview a local Core quote file and fill product lines on a new, unsaved Omni quote. Never saves or approves.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @run-at       document-idle
@@ -71,8 +71,26 @@
   }
   function blank(value) { return !value || /^search\.{0,3}$/i.test(value); }
 
+  function quoteHeadings() {
+    const controls = 'a,button,input,select,textarea,nav,dialog,[role="button"],[role="menu"],[role="option"],[id^="lc-"]';
+    const nodes = [...document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"],b,strong,span,div')];
+    return nodes.filter(node => {
+      const text = clean(node.textContent);
+      const semantic = node.matches('h1,h2,h3,h4,h5,h6,[role="heading"]');
+      return /^(?:New|Edit)\s+(?:Quote|Sales Order)/i.test(text) && (semantic || (node.children.length <= 4 && text.length < 600)) && visible(node) && !node.closest(controls);
+    }).map(node => {
+      // All-in-One mounts its staff tools inside Omni's title on some pages.
+      // Their labels are not part of the native transaction heading.
+      const copy = node.cloneNode(true);
+      copy.querySelectorAll(controls + ',[hidden],[aria-hidden="true"]').forEach(child => child.remove());
+      const text = clean(copy.textContent);
+      const semantic = node.matches('h1,h2,h3,h4,h5,h6,[role="heading"]');
+      return semantic || node.children.length <= 4 ? text : '';
+    }).filter(text => /^(?:(?:New|Edit)\s+(?:Quote|Sales Order))(?:\s*-|$)/i.test(text));
+  }
+
   function assertNewQuote() {
-    const headings = [...document.querySelectorAll('h1,h2,h3,[role="heading"]')].filter(visible).map(node => clean(node.textContent));
+    const headings = quoteHeadings();
     if (!headings.some(text => /^New Quote(?:\s*-|$)/i.test(text)) || headings.some(text => /^Edit\s+(?:Quote|Sales Order)|^New Sales Order/i.test(text))) {
       throw new Error('Open a new, unsaved Omni quote. Saved quotes and sales orders are not supported by this pilot.');
     }
@@ -179,7 +197,7 @@
 
   const host = document.createElement('div');
   host.id = 'lc-core-import';
-  const pageHeading = [...document.querySelectorAll('h1,h2,h3')].find(node => visible(node) && /^(?:New|Edit) (?:Quote|Sales Order)/i.test(clean(node.textContent)));
+  const pageHeading = [...document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"],b,strong')].find(node => visible(node) && /^(?:New|Edit) (?:Quote|Sales Order)/i.test(clean(node.textContent)));
   if (pageHeading) pageHeading.after(host);
   else document.body.appendChild(host);
   const shadow = host.attachShadow({ mode: 'open' });
