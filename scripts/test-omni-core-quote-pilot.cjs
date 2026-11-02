@@ -87,6 +87,38 @@ document.querySelectorAll('#products tr input:not(.code)').forEach(input=>input.
   async function stopped() {
     await page.waitForFunction(() => document.querySelector('#lc-core-import').shadowRoot.querySelector('#status').textContent.startsWith('Stopped:'), { timeout: 15000 });
   }
+  async function floatingGrid(codeToo = false, misplaced = false, short = false) {
+    await page.evaluate(({ codeToo, misplaced, short }) => {
+      for (const row of document.querySelectorAll('#products tbody tr')) {
+        if(short)row.style.height='90px';
+        for (const index of (codeToo ? [0,2,3,4] : [2,3,4])) {
+          const cell = row.cells[index];
+          const old = cell.querySelector('input');
+          cell.textContent = old.value;
+          cell.addEventListener('click', () => {
+            let input = document.querySelector('#native-floating-editor');
+            if (input?.ownerCell === cell) { input.focus(); return; }
+            input?.remove();
+            input = document.createElement('input');
+            input.id = 'native-floating-editor';
+            input.ownerCell = cell;
+            input.value = cell.textContent;
+            const r = cell.getBoundingClientRect();
+            input.style.cssText = 'position:fixed;z-index:99999;box-sizing:border-box;left:'+r.left+'px;top:'+(r.top+(misplaced?r.height+20:0))+'px;width:'+r.width+'px;height:'+(short?20:r.height)+'px';
+            document.body.appendChild(input);
+            input.focus();
+            input.addEventListener('keydown', event => {
+              const commit = index === 0 ? event.keyCode === 13 : event.keyCode === 9;
+              if (!commit) return;
+              cell.textContent = input.value;
+              if (index === 0) row.cells[1].textContent = 'Native Product';
+              input.remove();
+            });
+          });
+        }
+      }
+    }, { codeToo, misplaced, short });
+  }
   try {
     await open({ toolbar: true }); await load();
     assert.match(await status(), /Preview loaded/);
@@ -139,6 +171,22 @@ document.querySelectorAll('#products tr input:not(.code)').forEach(input=>input.
       await el('verify').click(); assert.match(await status(), /match the source/);
     }
 
+    // Actual Omni grid cells can render as plain text and use an input attached
+    // to body. Numeric edits only commit on legacy Tab, not on blur.
+    for (const [codeToo,short] of [[false,false], [true,false], [false,true]]) {
+      await open({toolbar:true}); await load(); await floatingGrid(codeToo,false,short);
+      await fill();
+      await page.waitForFunction(() => document.querySelector('#lc-core-import').shadowRoot.querySelector('#status').textContent.startsWith('Product lines filled'), null, {timeout:30000});
+      await el('verify').click(); assert.match(await status(), /match the source/);
+      assert.equal(await page.locator('#products tbody tr').first().locator('td').nth(4).textContent(), '15');
+      assert.equal(await page.locator('#native-floating-editor').count(), 0, 'Every overlay must commit back into the real cell');
+      assert.deepEqual(await page.evaluate(()=>[saves,approvals,sends]),[0,0,0]);
+    }
+    await open(); await load(); await floatingGrid(false, true);
+    await fill(); await stopped();
+    assert.match(await status(), /CS10000-9 unitprice: Omni did not expose an editor/);
+    assert.equal(await page.locator('#products tbody tr').first().locator('td').nth(3).textContent(), '0', 'An adjacent-row floating input must not be edited');
+
     for (const options of [{heading:'Edit Quote - Existing - NZSO-10000', toolbar:true}, {heading:'New Sales Order'}, {query:'?idOrder=12345'}, {query:'?ConvertQuoteToSalesOrder=Yes'}, {heading:'Existing transaction',extra:'<nav><span>New Quote</span></nav>'}, {heading:'Existing transaction',extra:'<div id="lc-other-tool">New Quote</div>'}, {heading:'Edit Quote - Existing - NZSO-10000', titleTag:'b', toolbar:true, extra:'<span>New Quote</span>'}]) {
       await open(options); await load(); await fill(); await stopped();
       assert.equal(await page.locator('#products .code').first().inputValue(), '');
@@ -186,6 +234,6 @@ document.querySelectorAll('#products tr input:not(.code)').forEach(input=>input.
     assert.equal(await page.locator('#lc-core-import').count(), 1);
     assert.equal(requests.some(url=>/api|ExternalApi|supabase/i.test(url)), false);
     assert.deepEqual(await page.evaluate(() => [saves,approvals,sends,enters]), [0,0,0,0]);
-    console.log('PASS: preview, totals, exact SKU selection, legacy Code commit, replacement editors, unlabelled results, blocked form submit, missing/variant SKUs, quantities/prices/discounts, heading guards, partial stops, XSS, no save/approve/send/API calls, desktop/mobile.');
+    console.log('PASS: preview, totals, exact SKUs, legacy Code commit, floating Code/numeric editors, Tab commit, adjacent-row rejection, replacement editors, blocked submit, missing/variant SKUs, heading guards, partial stops, XSS, no save/approve/send/API calls, desktop/mobile.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode=1; });

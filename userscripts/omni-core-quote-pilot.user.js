@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Core Quote Import Pilot
 // @namespace    livingculture-omni
-// @version      0.1.2
+// @version      0.1.3
 // @description  Preview a local Core quote file and fill product lines on a new, unsaved Omni quote. Never saves or approves.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @run-at       document-idle
@@ -21,6 +21,7 @@
   let started = false;
   let busy = false;
   let sessionUrl = '';
+  let floatingEditor = null;
 
   function validate(data) {
     if (data?.schema !== 'lc-core-quote-pilot-v1' || !/^NZSO-\d+$/.test(data.sourceReference || '') || data.currency !== 'NZD' || data.pricesIncludeGst !== true) {
@@ -111,36 +112,80 @@
     input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: String(value).slice(-1) }));
   }
 
-  function commitCode(input, cell, sku) {
-    assertNewQuote();
-    if (!input?.isConnected || !cell?.isConnected || !cell.contains(input) || !visible(input) || input.disabled || input.readOnly || clean(input.value).toUpperCase() !== sku) return false;
+  function overCell(input, cell) {
+    if (!input?.isConnected || !cell?.isConnected || !visible(input) || !visible(cell)) return false;
+    if (input.closest('td,th') && input.closest('td,th') !== cell) return false;
+    const r = input.getBoundingClientRect(), c = cell.getBoundingClientRect();
+    const x = c.left + c.width / 2;
+    const overlap = Math.min(r.bottom, c.bottom) - Math.max(r.top, c.top);
+    return x >= r.left - 6 && x <= r.right + 6 && overlap >= Math.min(r.height, c.height) / 2;
+  }
+
+  function belongsToCell(input, cell) {
+    return Boolean(input?.isConnected && cell?.isConnected && (cell.contains(input) ||
+      (floatingEditor?.input === input && floatingEditor.cell === cell && overCell(input, cell))));
+  }
+
+  function liveCellInput(cell) {
+    const fields = [...cell.querySelectorAll('input:not([type="hidden"])')].filter(visible);
+    if (fields.length === 1) return fields[0];
+    if (!fields.length && belongsToCell(floatingEditor?.input, cell)) return floatingEditor.input;
+    const active = document.activeElement;
+    if (!fields.length && floatingEditor?.cell === cell && active instanceof HTMLInputElement && overCell(active, cell) && !active.disabled && !active.readOnly) {
+      floatingEditor = { input: active, cell };
+      return active;
+    }
+    return null;
+  }
+
+  function editorKey(input, name, code) {
     input.focus();
-    // Omni's legacy Code editor reads keyCode/which/charCode to load a product.
-    // Send Enter only to this exact Code input, never to the form or document.
     for (const type of ['keydown', 'keypress', 'keyup']) {
-      const charCode = type === 'keypress' ? 13 : 0;
-      const event = new KeyboardEvent(type, { bubbles: true, cancelable: true, key: 'Enter', code: 'Enter', keyCode: 13, which: 13, charCode });
-      for (const [name, value] of Object.entries({ keyCode: 13, which: 13, charCode })) {
-        if (event[name] !== value) Object.defineProperty(event, name, { value });
+      const charCode = type === 'keypress' && name === 'Enter' ? 13 : 0;
+      const event = new KeyboardEvent(type, { bubbles: true, cancelable: true, key: name, code: name, keyCode: code, which: code, charCode });
+      for (const [property, value] of Object.entries({ keyCode: code, which: code, charCode })) {
+        if (event[property] !== value) Object.defineProperty(event, property, { value });
       }
       input.dispatchEvent(event);
       if (!input.isConnected) break;
     }
+  }
+
+  function commitCode(input, cell, sku) {
+    assertNewQuote();
+    if (!belongsToCell(input, cell) || !visible(input) || input.disabled || input.readOnly || clean(input.value).toUpperCase() !== sku) return false;
+    // Omni's legacy Code editor reads keyCode/which/charCode to load a product.
+    // Send Enter only to this exact Code input, never to the form or document.
+    editorKey(input, 'Enter', 13);
     return true;
   }
 
   async function editor(cell) {
     if (!cell || !visible(cell)) throw new Error('The required grid cell is missing.');
     cell.scrollIntoView({ block: 'center' });
-    // Open the native editor inside the cell, not a guessed page-wide input.
+    const before = new Set([...document.querySelectorAll('input')].filter(visible));
+    // Omni may attach the editor to the page rather than inside the grid cell.
+    // Only accept an activated/new input directly overlapping this cell.
     const rect = cell.getBoundingClientRect();
-    for (const type of ['mousedown', 'mouseup', 'click', 'dblclick']) cell.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 }));
+    const x = rect.left + rect.width / 2, y = rect.top + rect.height / 2;
+    const hit = document.elementFromPoint(x, y);
+    const target = hit && cell.contains(hit) ? hit : cell;
+    for (const type of ['pointerdown', 'mousedown', 'mouseup', 'click', 'dblclick']) target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y }));
     for (let attempt = 0; attempt < 15; attempt++) {
       const fields = [...cell.querySelectorAll('input:not([type="hidden"])')].filter(visible);
       if (fields.length === 1) return fields[0];
+      if (fields.length > 1) throw new Error('Multiple editors appeared in the selected grid cell.');
+      const overlays = [...document.querySelectorAll('input:not([type="hidden"])')].filter(input =>
+        !input.disabled && !input.readOnly && !cell.contains(input) && overCell(input, cell) &&
+        (document.activeElement === input || !before.has(input)));
+      if (overlays.length > 1) throw new Error('Multiple floating editors overlap the selected grid cell.');
+      if (overlays.length === 1) {
+        floatingEditor = { input: overlays[0], cell };
+        return overlays[0];
+      }
       await wait(60);
     }
-    throw new Error('Omni did not expose an editor inside the selected cell. Import stopped.');
+    throw new Error('Omni did not expose an editor in or over the selected cell. Import stopped.');
   }
 
   function matchedRow(sku) {
@@ -168,9 +213,9 @@
       const match = matchedRow(line.sku);
       if (match) return match;
       // Omni can replace the Code input after the first input event.
-      const live = [...codeCell.querySelectorAll('input:not([type="hidden"])')].filter(visible);
-      if (live.length === 1 && live[0] !== input) input = live[0];
-      if (input.isConnected && codeCell.contains(input)) {
+      const live = liveCellInput(codeCell);
+      if (live && live !== input) input = live;
+      if (belongsToCell(input, codeCell)) {
         if (clean(input.value).toUpperCase() !== line.sku) {
           if (valueAttempts < 3 && attempt - lastValueAttempt >= 4) {
             setValue(input, line.sku);
@@ -216,10 +261,14 @@
     let match = matchedRow(line.sku);
     if (!match) throw new Error('Product row disappeared: ' + line.sku);
     if (numberOf(cellFor(match.row, match.info, name)) === expected) return;
-    const input = await editor(cellFor(match.row, match.info, name));
+    let input;
+    try { input = await editor(cellFor(match.row, match.info, name)); }
+    catch (error) { throw new Error(line.sku + ' ' + name + ': ' + error.message); }
     assertNewQuote();
     setValue(input, expected);
-    input.blur();
+    if (!belongsToCell(input, cellFor(match.row, match.info, name))) throw new Error('The selected numeric editor moved away from its product cell.');
+    editorKey(input, 'Tab', 9);
+    if (input.isConnected) input.blur();
     for (let attempt = 0; attempt < 25; attempt++) {
       await wait(80);
       match = matchedRow(line.sku);

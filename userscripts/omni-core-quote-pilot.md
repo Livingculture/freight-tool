@@ -42,6 +42,10 @@ Core; this is not an API export.
   during lookup. Enter is restricted to the exact SKU's Code input. Form submit
   events are blocked while importing. Unresolved SKUs stop the import rather than
   being accepted as plain text or substituted with another product.
+- Grid inputs may be inside their cell or floating over it. A floating editor is
+  accepted only when newly visible or focused and geometrically over the selected
+  cell, not an adjacent row. Numeric edits use native Tab commit before their
+  committed cell values are checked. Errors identify the SKU and numeric column.
 - Customer matching, final GST calculation, freight and total verification are
   not automated. Check Product Lines only checks SKU count, quantities, unit
   prices and discounts, not the native quote grand total.
