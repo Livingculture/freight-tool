@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.45
+// @version      0.1.46
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -518,17 +518,23 @@
   }
 
   function productNamesFromQuote() {
+    const header = value => clean(value).toLowerCase().replace(/[^a-z]/g, "");
     const productHeader = Array.from(document.querySelectorAll("th, td"))
       .filter(visible)
-      .find((cell) => /^product$/i.test(clean(cell.textContent)));
+      .find((cell) => header(cell.textContent) === "product");
     const row = productHeader?.closest("tr");
     const table = row?.closest("table");
     if (!row || !table) return [];
     const index = Array.from(row.children).indexOf(productHeader);
-    return Array.from(table.querySelectorAll("tr")).slice(1)
+    const bomIndex = Array.from(row.children).findIndex(cell => header(cell.textContent) === "bomload");
+    const read = cell => clean(cell?.querySelector("input:not([type='hidden']), textarea, select")?.value || cell?.textContent);
+    const rows = Array.from(table.querySelectorAll("tr")).filter(item => item.closest("table") === table);
+    // Customer emails describe sold products, not the components consumed by a Make line.
+    return rows.slice(rows.indexOf(row) + 1)
+      .filter(item => visible(item) && (bomIndex < 0 || read(item.children[bomIndex]).toLowerCase() !== "use"))
       .map((item) => {
         const cell = item.children[index];
-        return clean(cell?.querySelector("input, textarea")?.value || cell?.textContent);
+        return read(cell);
       })
       .filter((value) => value && !/^search/i.test(value))
       .filter((value, index, values) => values.indexOf(value) === index);
