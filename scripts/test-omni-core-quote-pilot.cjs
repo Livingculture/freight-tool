@@ -53,6 +53,14 @@ document.querySelectorAll('#products tr input:not(.code)').forEach(input=>input.
 
 (async () => {
   const browser = await chromium.launch({ headless: true });
+  const probe=await browser.newPage();
+  const eventCheck=await probe.evaluate(()=>{
+    let error='';try{new PointerEvent('pointerdown',{view:new Proxy(window,{})})}catch(caught){error=caught.message}
+    const event=new PointerEvent('pointerdown',{button:0,buttons:1});
+    return {error,buttons:event.buttons,view:event.view};
+  });
+  assert.match(eventCheck.error,/Failed to convert value to 'Window'/);assert.equal(eventCheck.buttons,1);assert.equal(eventCheck.view,null);
+  await probe.close();
   const context = await browser.newContext();
   let requests = [];
   await context.route('**/*', route => {
@@ -76,6 +84,18 @@ document.querySelectorAll('#products tr input:not(.code)').forEach(input=>input.
       title.innerHTML = node.innerHTML;
       node.replaceWith(title);
     }, options.titleTag);
+    await page.evaluate(()=>{
+      // Model Tampermonkey's cross-realm WindowProxy rejection at the DOM boundary.
+      for(const name of ['MouseEvent','PointerEvent']){
+        const Native=window[name];if(!Native)continue;
+        window[name]=class extends Native {
+          constructor(type,options={}){
+            if(options.view!==undefined)throw new TypeError("Failed to convert value to 'Window'.");
+            super(type,options);
+          }
+        };
+      }
+    });
     await page.addScriptTag({ content: source });
     await el('open').click();
   }

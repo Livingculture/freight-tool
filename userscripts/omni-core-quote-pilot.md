@@ -1,6 +1,6 @@
 # Core To Omni Quote Transfer
 
-This separate Tampermonkey script is not part of All-in-One. Version 0.2.4 uses
+This separate Tampermonkey script is not part of All-in-One. Version 0.2.5 uses
 the existing server-side Core API connection, not a PDF or screenshot-based file.
 
 ## Staff Flow
@@ -57,6 +57,7 @@ Core quote again; saved quotes are not automatically checked for duplicates.
   use native Tab commit. Adjacent-row editors and form submits are rejected.
   Activation includes native left-button and double-click event details;
   floating editors may be housed in a separate overlay table.
+  Native event constructors do not receive Tampermonkey's wrapped window.
 - Section matching supports legacy table headings and wrapped form columns,
   without treating an entire contact form as a second heading.
 

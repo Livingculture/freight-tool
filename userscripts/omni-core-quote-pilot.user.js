@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Core Quote Import Pilot
 // @namespace    livingculture-omni
-// @version      0.2.4
+// @version      0.2.5
 // @description  Copy Core quote line items to a new Omni quote. Customer details and charges are optional. Never saves or approves.
 // @match        https://go.cin7.com/*
 // @match        https://inventory.dearsystems.com/*
@@ -260,7 +260,8 @@
     const target = hit && cell.contains(hit) ? hit : cell;
     for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click', 'dblclick']) {
       const down=type==='pointerdown'||type==='mousedown';
-      const options={bubbles:true,cancelable:true,view:window,clientX:x,clientY:y,button:0,buttons:down?1:0,detail:type==='dblclick'?2:type.startsWith('pointer')?0:1};
+      // Do not pass the userscript's wrapped window to native event constructors.
+      const options={bubbles:true,cancelable:true,clientX:x,clientY:y,button:0,buttons:down?1:0,detail:type==='dblclick'?2:type.startsWith('pointer')?0:1};
       const event=type.startsWith('pointer') && typeof PointerEvent==='function'
         ? new PointerEvent(type,{...options,pointerId:1,pointerType:'mouse',isPrimary:true})
         : new MouseEvent(type,options);
