@@ -87,37 +87,45 @@ document.querySelectorAll('#products tr input:not(.code)').forEach(input=>input.
   async function stopped() {
     await page.waitForFunction(() => document.querySelector('#lc-core-import').shadowRoot.querySelector('#status').textContent.startsWith('Stopped:'), { timeout: 15000 });
   }
-  async function floatingGrid(codeToo = false, misplaced = false, short = false) {
-    await page.evaluate(({ codeToo, misplaced, short }) => {
+  async function floatingGrid(codeToo = false, misplaced = false, short = false, legacyMouse = false, tableEditor = false) {
+    await page.evaluate(({ codeToo, misplaced, short, legacyMouse, tableEditor }) => {
       for (const row of document.querySelectorAll('#products tbody tr')) {
         if(short)row.style.height='90px';
         for (const index of (codeToo ? [0,2,3,4] : [2,3,4])) {
           const cell = row.cells[index];
           const old = cell.querySelector('input');
           cell.textContent = old.value;
-          cell.addEventListener('click', () => {
+          let pressed=false;
+          cell.addEventListener('mousedown', event=>{pressed=event.button===0&&event.buttons===1&&event.which===1&&event.detail===1});
+          cell.addEventListener('dblclick', event=>{if(legacyMouse&&pressed&&event.detail===2&&event.which===1)openEditor()});
+          cell.addEventListener('click', () => {if(!legacyMouse)openEditor()});
+          function openEditor() {
             let input = document.querySelector('#native-floating-editor');
             if (input?.ownerCell === cell) { input.focus(); return; }
-            input?.remove();
+            input?.closest('[data-native-editor]')?.remove();input?.remove();
             input = document.createElement('input');
             input.id = 'native-floating-editor';
             input.ownerCell = cell;
             input.value = cell.textContent;
             const r = cell.getBoundingClientRect();
             input.style.cssText = 'position:fixed;z-index:99999;box-sizing:border-box;left:'+r.left+'px;top:'+(r.top+(misplaced?r.height+20:0))+'px;width:'+r.width+'px;height:'+(short?20:r.height)+'px';
-            document.body.appendChild(input);
+            if(tableEditor){
+              const table=document.createElement('table');table.dataset.nativeEditor='true';
+              table.style.cssText='position:fixed;z-index:99999;left:'+r.left+'px;top:'+r.top+'px;width:'+r.width+'px';
+              table.insertRow().insertCell().append(input);document.body.append(table);
+            }else document.body.appendChild(input);
             input.focus();
             input.addEventListener('keydown', event => {
               const commit = index === 0 ? event.keyCode === 13 : event.keyCode === 9;
               if (!commit) return;
               cell.textContent = input.value;
               if (index === 0) row.cells[1].textContent = 'Native Product';
-              input.remove();
+              input.closest('[data-native-editor]')?.remove();input.remove();
             });
-          });
+          }
         }
       }
-    }, { codeToo, misplaced, short });
+    }, { codeToo, misplaced, short, legacyMouse, tableEditor });
   }
   try {
     await open({ toolbar: true }); await load();
@@ -173,8 +181,8 @@ document.querySelectorAll('#products tr input:not(.code)').forEach(input=>input.
 
     // Actual Omni grid cells can render as plain text and use an input attached
     // to body. Numeric edits only commit on legacy Tab, not on blur.
-    for (const [codeToo,short] of [[false,false], [true,false], [false,true]]) {
-      await open({toolbar:true}); await load(); await floatingGrid(codeToo,false,short);
+    for (const [codeToo,short,legacyMouse,tableEditor] of [[false,false,false,false], [true,false,false,false], [false,true,false,false], [false,false,true,false], [false,false,false,true], [false,false,true,true]]) {
+      await open({toolbar:true}); await load(); await floatingGrid(codeToo,false,short,legacyMouse,tableEditor);
       await fill();
       await page.waitForFunction(() => document.querySelector('#lc-core-import').shadowRoot.querySelector('#status').textContent.startsWith('Product lines filled'), null, {timeout:30000});
       await el('verify').click(); assert.match(await status(), /match the source/);

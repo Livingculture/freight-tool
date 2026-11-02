@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Core Quote Import Pilot
 // @namespace    livingculture-omni
-// @version      0.2.3
+// @version      0.2.4
 // @description  Copy Core quote line items to a new Omni quote. Customer details and charges are optional. Never saves or approves.
 // @match        https://go.cin7.com/*
 // @match        https://inventory.dearsystems.com/*
@@ -202,7 +202,7 @@
 
   function overCell(input, cell) {
     if (!input?.isConnected || !cell?.isConnected || !visible(input) || !visible(cell)) return false;
-    if (input.closest('td,th') && input.closest('td,th') !== cell) return false;
+    if (input.closest('td,th') && input.closest('table') === cell.closest('table') && input.closest('td,th') !== cell) return false;
     const r = input.getBoundingClientRect(), c = cell.getBoundingClientRect();
     const x = c.left + c.width / 2;
     const overlap = Math.min(r.bottom, c.bottom) - Math.max(r.top, c.top);
@@ -258,7 +258,15 @@
     const x = rect.left + rect.width / 2, y = rect.top + rect.height / 2;
     const hit = document.elementFromPoint(x, y);
     const target = hit && cell.contains(hit) ? hit : cell;
-    for (const type of ['pointerdown', 'mousedown', 'mouseup', 'click', 'dblclick']) target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+    for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click', 'dblclick']) {
+      const down=type==='pointerdown'||type==='mousedown';
+      const options={bubbles:true,cancelable:true,view:window,clientX:x,clientY:y,button:0,buttons:down?1:0,detail:type==='dblclick'?2:type.startsWith('pointer')?0:1};
+      const event=type.startsWith('pointer') && typeof PointerEvent==='function'
+        ? new PointerEvent(type,{...options,pointerId:1,pointerType:'mouse',isPrimary:true})
+        : new MouseEvent(type,options);
+      if(!type.startsWith('pointer') && event.which!==1)Object.defineProperty(event,'which',{value:1});
+      target.dispatchEvent(event);
+    }
     for (let attempt = 0; attempt < 15; attempt++) {
       const fields = [...cell.querySelectorAll('input:not([type="hidden"])')].filter(visible);
       if (fields.length === 1) return fields[0];
