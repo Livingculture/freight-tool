@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.175
+// @version      0.1.176
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -71,6 +71,9 @@
   const completedHubSpotSteps = new Set();
   const hubSpotPrerequisiteClicks = new Map();
   let hubSpotPrerequisiteHooksInstalled = false;
+  let omniStaffGateIdentity = { email:'', expiresAt:0 };
+  let omniStaffGateCheck = null;
+  let omniStaffGateRequest = 0;
   const QUOTE_PDF_HANDOFF_KEY = 'lc-omni-quote-pdf-handoff-v3';
   const QUOTE_PDF_TIMEOUT_MS = 45000;
   const quotePdfLinkCache = new Map();
@@ -207,6 +210,83 @@
     return omniHeadingDraft().orderId || extractOrderId(document.title || '') || extractOrderId(document.body?.innerText || '');
   }
 
+  function omniProfileEmail(profile) {
+    if (!Array.from(profile.querySelectorAll('h1,h2,h3,h4,h5,h6,legend,div,span,strong'))
+      .some(node => clean(node.textContent).toLowerCase() === 'user details')) return '';
+    const emails = new Set();
+    const isEmailLabel = value => /^(?:email|email address)$/i.test(clean(value).replace(/:$/, '').trim());
+    const labels = Array.from(profile.querySelectorAll('label,td,th,dt,span,strong,b,div,p'))
+      .filter(node => isEmailLabel(node.textContent) || isEmailLabel(Array.from(node.childNodes).filter(child => child.nodeType === 3).map(child => child.textContent).join(' ')));
+    for (const label of labels) {
+      const linked = label.getAttribute('for') && profile.getElementById(label.getAttribute('for'));
+      const cell = label.closest('td,th,dt');
+      for (const node of [linked, label, label.nextElementSibling, cell?.nextElementSibling, label.parentElement]) {
+        if (!node) continue;
+        const value = clean(node.value || node.textContent);
+        if (value.length > 160) continue;
+        const matches = value.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || [];
+        for (const email of matches) emails.add(email.toLowerCase());
+      }
+    }
+    return emails.size === 1 ? Array.from(emails)[0] : '';
+  }
+
+  function isOmniWorkflowGateExempt() {
+    return isOmniPage() && omniStaffGateIdentity.email === 'bronwyn@livingculture.co.nz'
+      && Date.now() < omniStaffGateIdentity.expiresAt;
+  }
+
+  async function refreshOmniWorkflowGateIdentity() {
+    if (!isOmniPage()) return;
+    const request = ++omniStaffGateRequest;
+    omniStaffGateCheck?.abort();
+    const controller = new AbortController();
+    omniStaffGateCheck = controller;
+    omniStaffGateIdentity = { email:'', expiresAt:0 };
+    scheduleButtonPass();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    try {
+      // This fixed, read-only URL is Omni's signed-in User Details page, not a quote contact.
+      const url = new URL('/Cloud/Customers/UserDetails.aspx', location.origin);
+      const response = await fetch(url.href, { credentials:'same-origin', cache:'no-store', signal:controller.signal });
+      const finalUrl = new URL(response.url);
+      if (!response.ok || finalUrl.origin !== url.origin || finalUrl.pathname.toLowerCase() !== url.pathname.toLowerCase() || finalUrl.search) return;
+      const profile = new DOMParser().parseFromString(await response.text(), 'text/html');
+      const email = omniProfileEmail(profile);
+      if (request === omniStaffGateRequest) omniStaffGateIdentity = { email, expiresAt:Date.now() + 65000 };
+    } catch { /* Unknown identity keeps the normal workflow checks in place. */ }
+    finally {
+      clearTimeout(timeout);
+      if (request === omniStaffGateRequest) {
+        omniStaffGateCheck = null;
+        scheduleButtonPass();
+      }
+    }
+  }
+
+  function installOmniWorkflowGateIdentity() {
+    if (!isOmniPage() || window.parent !== window) return;
+    void refreshOmniWorkflowGateIdentity();
+    setInterval(() => { if (document.visibilityState === 'visible') void refreshOmniWorkflowGateIdentity(); }, 60000);
+    document.addEventListener('visibilitychange', () => {
+      ++omniStaffGateRequest;
+      omniStaffGateCheck?.abort();
+      omniStaffGateIdentity = { email:'', expiresAt:0 };
+      scheduleButtonPass();
+      if (document.visibilityState === 'visible') void refreshOmniWorkflowGateIdentity();
+    });
+    window.addEventListener('pageshow', event => { if (event.persisted) void refreshOmniWorkflowGateIdentity(); });
+    document.addEventListener('click', event => {
+      const link = event.target.closest?.('a');
+      if (link && /^(?:log out|change account)$/i.test(clean(link.textContent))) {
+        ++omniStaffGateRequest;
+        omniStaffGateCheck?.abort();
+        omniStaffGateIdentity = { email:'', expiresAt:0 };
+        scheduleButtonPass();
+      }
+    }, true);
+  }
+
   function hubSpotGateStorageKey(orderId) {
     const normalizedOrderId = extractOrderId(orderId);
     return normalizedOrderId ? `${HUBSPOT_GATE_STORAGE_PREFIX}${normalizedOrderId}` : '';
@@ -229,6 +309,7 @@
   }
 
   function isQuotePdfUnlocked(orderId) {
+    if (isOmniWorkflowGateExempt()) return true;
     const key = quotePdfUnlockKey(orderId);
     if (!key) return false;
     if (isHubSpotStepComplete(orderId)) {
@@ -264,6 +345,7 @@
 
   function hubSpotPrerequisites() {
     if (!isOmniPage()) return [];
+    if (isOmniWorkflowGateExempt()) return [];
     const heading = omniHeadingDraft();
     const order = extractOrderId(heading.orderId);
     if (!/^NZSO-\d+$/.test(order)) return ['Save as Draft to obtain an NZSO number'];
@@ -395,7 +477,7 @@
     if (!isOmniPage()) return;
     ensureHubSpotGateStyles();
     const currentOrderId = hubSpotGateOrderId();
-    const unlocked = Boolean(
+    const unlocked = isOmniWorkflowGateExempt() || Boolean(
       currentOrderId &&
       (extractOrderId(completedOrderId) === currentOrderId || isHubSpotStepComplete(currentOrderId))
     );
@@ -2144,8 +2226,8 @@
       status.setAttribute('role', 'status');
       info.appendChild(status);
     }
-    status.textContent = `Workflow 0.1.175: ${message}`;
-    status.title = 'Workflow stock reader 0.1.175';
+    status.textContent = `Workflow 0.1.176: ${message}`;
+    status.title = 'Workflow stock reader 0.1.176';
     root.dataset.workflowSyncStatus = message;
   }
 
@@ -3657,10 +3739,10 @@
   }
 
   async function convertQuoteToSalesOrder(button, event) {
-    if (!isHubSpotStepComplete(hubSpotGateOrderId()) || omniHeadingDraft().documentType !== 'quote') return;
+    if ((!isOmniWorkflowGateExempt() && !isHubSpotStepComplete(hubSpotGateOrderId())) || omniHeadingDraft().documentType !== 'quote') return;
     const quoteNumber = hubSpotGateOrderId();
     if (!await confirmConvertToSalesOrder(button || document.getElementById(CONVERT_ORDER_BUTTON_ID), event)) return;
-    if (quoteNumber !== hubSpotGateOrderId() || !isHubSpotStepComplete(quoteNumber) || omniHeadingDraft().documentType !== 'quote') return;
+    if (quoteNumber !== hubSpotGateOrderId() || (!isOmniWorkflowGateExempt() && !isHubSpotStepComplete(quoteNumber)) || omniHeadingDraft().documentType !== 'quote') return;
     const nativeAction = nativeConvertToSalesOrderControl();
     if (nativeAction && !nativeAction.disabled) {
       rememberConvertedSalesOrderSave(currentQuotePdfOrderId(), quoteNumber);
@@ -5211,7 +5293,7 @@
   }
 
   function addConvertToSalesOrderButton() {
-    if (!isOmniPage() || omniHeadingDraft().documentType !== 'quote' || !isHubSpotStepComplete(hubSpotGateOrderId())) {
+    if (!isOmniPage() || omniHeadingDraft().documentType !== 'quote' || (!isOmniWorkflowGateExempt() && !isHubSpotStepComplete(hubSpotGateOrderId()))) {
       document.getElementById(CONVERT_ORDER_BUTTON_ID)?.remove();
       return;
     }
@@ -5576,6 +5658,7 @@
     if (continueQuotePdfFromEditFrame()) return;
     continueSaveClonedQuote();
     installOmniInvoiceDateHooks();
+    installOmniWorkflowGateIdentity();
     installHubSpotPrerequisiteHooks();
     if (isOmniPage() && window.parent === window) {
       installOmniWorkflowChangeHooks();

@@ -147,6 +147,7 @@ const workerHelpers = `${extract('quotePdfWorkerHandoff')}\n${extract('completeQ
     await persistence.addScriptTag({ content: `const QUOTE_PDF_UNLOCK_PREFIX='test-quote-pdf-unlocked:';
       window.complete=true;const extractOrderId=value=>String(value||'').match(/NZSO-\\d+/i)?.[0].toUpperCase()||'';
       const isHubSpotStepComplete=()=>window.complete;
+      const isOmniWorkflowGateExempt=()=>false;
       ${extract('quotePdfUnlockKey')}
       ${extract('isQuotePdfUnlocked')}` });
     assert.equal(await persistence.evaluate(() => isQuotePdfUnlocked('NZSO-123')), true);

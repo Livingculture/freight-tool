@@ -18,6 +18,7 @@ function extract(name) {
     await page.evaluate(() => {
       window.complete = false; window.documentType = 'quote'; window.converted = 0; window.saved = 0; window.adminOpened = 0; window.confirmed = true;
       window.isOmniPage = () => true;
+      window.exempt = false; window.isOmniWorkflowGateExempt = () => window.exempt;
       window.hubSpotGateOrderId = () => 'NZSO-15512';
       window.omniHeadingDraft = () => ({ documentType: window.documentType });
       window.isHubSpotStepComplete = () => window.complete;
@@ -41,6 +42,10 @@ function extract(name) {
     await page.evaluate(() => { addConvertToSalesOrderButton(); convertQuoteToSalesOrder(); });
     assert.equal(await page.locator('#lc-convert-sales-order-button').count(), 0);
     assert.equal(await page.evaluate(() => window.adminOpened), 0, 'Do not bypass HubSpot gate');
+    await page.evaluate(() => {window.exempt=true;addConvertToSalesOrderButton();});
+    assert.equal(await page.locator('#lc-convert-sales-order-button').count(),1,'Verified exemption exposes conversion without claiming HubSpot completion');
+    await page.evaluate(() => {window.exempt=false;addConvertToSalesOrderButton();});
+    assert.equal(await page.locator('#lc-convert-sales-order-button').count(),0,'Account change restores the gate');
     await page.evaluate(() => {
       window.copied = 0;
       addCloneQuoteButton();

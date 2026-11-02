@@ -11,7 +11,7 @@ const HUBSPOT_BUTTON_ID='hubspot';const hubSpotPrerequisiteClicks=new Map();let 
 const HUBSPOT_GATE_STORAGE_PREFIX='lc-omni-hubspot-deal-complete:',QUOTE_PDF_UNLOCK_PREFIX='lc-omni-quote-pdf-unlocked:',HUBSPOT_PENDING_DRAFT_KEY='lc-omni-hubspot-pending-draft-v1';const completedHubSpotSteps=new Set();
 const EXISTING_QUOTE_SAVE_LABELS=new Set(['save','save & email','save back to list','save & back to list','save to admin']);
 window.order='NZSO-17002';window.docType='quote';window.isOmni=true;window.drafts=0;window.messages=[];
-window.isOmniPage=()=>isOmni;window.omniHeadingDraft=()=>({documentType:docType,orderId:order});window.hubSpotGateOrderId=()=>order;
+window.isOmniPage=()=>isOmni;window.isOmniWorkflowGateExempt=()=>false;window.omniHeadingDraft=()=>({documentType:docType,orderId:order});window.hubSpotGateOrderId=()=>order;
 window.extractOrderId=value=>String(value||'').match(/NZSO-\\d+/i)?.[0].toUpperCase()||'';
 window.clean=value=>String(value||'').replace(/\\s+/g,' ').trim();
 window.normalizeLabel=value=>String(value||'').trim().toLowerCase();
