@@ -11,10 +11,12 @@ const fixture={schema:'lc-core-quote-api-v1',sourceReference:'NZSO-10000',source
  lines:[['CS10000-9',1,8299.99,15,7054.99],['AS10000',1,1600,0,1600],['AS10001',2,400,0,800],['CS10001',2,1099.99,0,2199.98],['AS10002',2,250,0,500],['AS10003',1,1200,0,1200]].map(([sku,quantity,unitPrice,discountPercent,amount])=>({sku,description:'Test '+sku,quantity,unitPrice,discountPercent,amount})),
  additionalCharges:[{description:'Shipping',quantity:1,unitPrice:169,discountPercent:0,amount:169}],freight:{description:'Shipping',amount:169},surcharge:{description:'',amount:0},discount:{description:'',amount:0}};
 const entry='https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx';
+let headingLayout='wrapped';
 function fields(section){
  const contact=section==='Contact';const prefix=contact?'contact':section==='Delivery Address'?'delivery':'billing';
  const names=['First Name','Last Name','Company',...(contact?['Phone','Mobile','Email Address']:['Address 1','Address 2','City','State/Region','Postal Code','Country'])];
- return '<section><h3>'+section+'</h3>'+names.map(name=>{const id=prefix+name.replace(/[^a-z0-9]/gi,'');const label=contact||['First Name','Last Name','Company'].includes(name)?name:(prefix==='delivery'?'Delivery ':'Billing ')+name;return '<div class="field"><label for="'+id+'">'+label+'</label><input id="'+id+'" '+(name==='Email Address'?'type="email"':'')+'></div>'}).join('')+'</section>';
+ const heading=headingLayout==='table'?'<table><tbody><tr><td>'+section+'</td></tr></tbody></table>':'<h5><span>'+section+'</span></h5>';
+ return '<section><div>'+heading+names.map(name=>{const id=prefix+name.replace(/[^a-z0-9]/gi,'');const label=contact||['First Name','Last Name','Company'].includes(name)?name:(prefix==='delivery'?'Delivery ':'Billing ')+name;return '<div class="field"><label for="'+id+'">'+label+'</label><input id="'+id+'" '+(name==='Email Address'?'type="email"':'')+'></div>'}).join('')+'</div></section>';
 }
 function omni(){return `<!doctype html><html><head><style>body{font:14px Arial;margin:16px}.columns{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}.field{display:grid;grid-template-columns:130px 1fr;align-items:center;gap:8px;margin:6px 0}.field input{width:100%;box-sizing:border-box}input,select{height:28px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #ccc;padding:6px}td input{width:90px}.financial{display:flex;align-items:center;gap:8px;margin:8px 0}.financial span,.financial button{width:120px}.financial input{width:130px}.option{position:absolute;background:white;border:1px solid gray;z-index:999999;padding:8px}</style></head><body>
 <h1>New Quote<span id="lc-staff-tools"><button type="button">Staff Guide</button></span></h1><form><div class="columns">${fields('Contact')}${fields('Delivery Address')}${fields('Billing Address')}</div>
@@ -61,6 +63,7 @@ document.querySelectorAll('.financial input').forEach(input=>input.addEventListe
   assert.equal(await page.locator('#products .code').first().inputValue(),'');await el('confirm').check();await el('fill').click();await completed();await verify();
   fixture.surcharge={description:'Special service',amount:23};fixture.discount={description:'Source quote discount',amount:200};fixture.total+=23-200;fixture.tax=Number((fixture.total*15/115).toFixed(2));
   fixture.additionalCharges.push({description:'Special service',quantity:1,unitPrice:23,discountPercent:0,amount:23},{description:'Source quote discount',quantity:1,unitPrice:-200,discountPercent:0,amount:-200});
+  headingLayout='table';
   await page.goto('https://inventory.dearsystems.com/Sale');const corePage=page;const tab=context.waitForEvent('page');page.once('dialog',dialog=>dialog.accept('NZSO-10000'));await page.getByRole('button',{name:'Copy Core Quote to Omni'}).click();page=await tab;
   await page.waitForURL(/go\.cin7\.com\/Cloud\/TransactionEntry\/TransactionEntry\.aspx/,{timeout:30000});await completed();await verify();
   assert.equal(corePage.url(),'https://inventory.dearsystems.com/Sale','The Core quote tab stays open and unchanged');
@@ -78,6 +81,14 @@ document.querySelectorAll('.financial input').forEach(input=>input.addEventListe
   assert.equal(lookups,3);
   gm['lc-core-api-quote-transfer-v1']={nonce:'11111111-1111-1111-1111-111111111111',expires:Date.now()+600000,quote:fixture};
   const other=await context.newPage();await other.goto(entry);assert.equal(await other.locator('#lc-core-import').locator('#status').textContent(),'Enter a Core quote number.','An unrelated Omni tab must not consume another tab\'s quote');await other.close();
+  delete gm['lc-core-api-quote-transfer-v1'];pauseLookup=false;
+  await page.goto(entry);await el('open').click();await el('reference').fill('10000');await el('lookup').click();
+  await page.waitForFunction(()=>document.querySelector('#lc-core-import').shadowRoot.querySelector('#status').textContent.includes('Preview loaded'));
+  await page.evaluate(()=>{const duplicate=document.createElement('h5');duplicate.textContent='Contact';document.body.prepend(duplicate)});
+  await el('confirm').check();await el('fill').click();
+  await page.waitForFunction(()=>document.querySelector('#lc-core-import').shadowRoot.querySelector('#status').textContent.startsWith('Stopped:'));
+  assert.match(await el('status').textContent(),/Cannot uniquely locate the Omni Contact section/);
+  assert.equal(await page.locator('#selected').inputValue(),'');assert.equal(await page.locator('#products .code').first().inputValue(),'');
   console.log('PASS: Core number button -> authenticated-popup contract -> private cross-origin handoff -> native New Quote -> customer matching, phone/mobile, both addresses, memo, rep, six product lines, freight, GST/total, no file, no save/approve. Mock Core/Workflow/Omni services.');
  }finally{await browser.close()}
 })().catch(error=>{console.error(error);process.exitCode=1});

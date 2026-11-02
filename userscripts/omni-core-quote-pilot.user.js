@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Core Quote Import Pilot
 // @namespace    livingculture-omni
-// @version      0.2.0
+// @version      0.2.1
 // @description  Look up a Core quote number through Workflow and transfer customer, addresses, products and charges to a new Omni quote. Never saves or approves.
 // @match        https://go.cin7.com/*
 // @match        https://inventory.dearsystems.com/*
@@ -392,7 +392,12 @@
     let left = -Infinity, right = Infinity, top = -Infinity;
     if (section) {
       const sectionKey = node => {const copy=node.cloneNode(true);copy.querySelectorAll('button,a,label,input,[id^="lc-"]').forEach(child=>child.remove());return key(copy.textContent);};
-      const anchors = [...document.querySelectorAll('h1,h2,h3,h4,strong,b,div,span')].filter(node => node.textContent.length<150 && visible(node) && ['contact','deliveryaddress','billingaddress'].includes(sectionKey(node)) && ![...node.children].some(child=>sectionKey(child)===sectionKey(node)));
+      // A form column can collapse to just its heading after controls are removed.
+      // Only heading-sized nodes without data fields can anchor a section.
+      const candidates = [...document.querySelectorAll('h1,h2,h3,h4,h5,h6,strong,b,div,span,td,th,legend,p')].filter(node =>
+        visible(node) && !node.closest('#lc-core-import') && !node.querySelector('input:not([type="checkbox"]):not([type="hidden"]),textarea,select') &&
+        node.textContent.length<150 && ['contact','deliveryaddress','billingaddress'].includes(sectionKey(node)));
+      const anchors = candidates.filter(node => !candidates.some(other=>other!==node && node.contains(other)));
       const heading = anchors.filter(node=>sectionKey(node)===key(section));
       if (heading.length !== 1) throw new Error('Cannot uniquely locate the Omni ' + section + ' section.');
       const r = heading[0].getBoundingClientRect(); left=r.left-12; top=r.bottom-4;
