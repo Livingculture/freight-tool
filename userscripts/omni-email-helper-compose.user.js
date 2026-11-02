@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.46
+// @version      0.1.47
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -89,6 +89,7 @@
   function applyEmbeddedHelperTheme() {
     const params = new URLSearchParams(location.search);
     if (params.get("theme") !== "omni" || params.get("embedded") !== "1") return;
+    installReviewStoreSelector();
     let omniRecipientEmail = params.get("recipient") || "";
     const style = document.createElement("style");
     style.textContent = `
@@ -463,6 +464,85 @@
 
   function clean(value) {
     return String(value || "").replace(/\s+/g, " ").trim();
+  }
+
+  function installReviewStoreSelector() {
+    const stores = [
+      { id:"wairau", label:"North Shore / Wairau", token:"CeNsNDL_2O3dEBM", place:"ChIJ2wj0ZX45DW0R42w0Mv_Y7d0" },
+      { id:"penrose", label:"Penrose", token:"Cbt0916wRtjmEBM", place:"ChIJqftY2JRJDW0Ru3T3XrBG2OY" },
+      { id:"hamilton", label:"Hamilton", token:"CdrvKXEiLhd-EBM", place:"ChIJASuiMCgZbW0R2u8pcSIuF34" },
+      { id:"tauranga", label:"Tauranga", token:"CfU2pxc8CpPbEBM", place:"ChIJIQsLHb7bbW0R9TanFzwKk9s" },
+      { id:"christchurch", label:"Christchurch", token:"CX7Uu_940ID8EBM", place:"ChIJe3H9gkKLMW0RftS7_3jQgPw" },
+      { id:"whangarei", label:"Whangarei", token:"CVJ2wVqQrM_TEBM", place:"ChIJuytBw31_C20RUnbBWpCsz9M" },
+      { id:"napier", label:"Napier", token:"CfOE4ZpQEwj2EBM", place:"ChIJxTipStOzaW0R84ThmlATCPY" },
+    ].map(store => ({ ...store, url:`https://g.page/r/${store.token}/review` }));
+    const placeholder = "[Select a store for the Google review link]";
+    const links = stores.flatMap(store => [store.url + "/", store.url, `https://search.google.com/local/writereview?placeid=${store.place}`]);
+    const start = () => {
+      if (document.getElementById("lc-review-store")) return;
+      const templates = document.getElementById("template-buttons");
+      const body = document.getElementById("body-output");
+      if (!templates || !body) return;
+      const label = document.createElement("label");
+      label.htmlFor = "lc-review-store";
+      label.textContent = "Google review store";
+      label.hidden = true;
+      label.style.display = "none";
+      label.style.marginTop = "12px";
+      const select = document.createElement("select");
+      select.id = "lc-review-store";
+      select.add(new Option("Choose store", ""));
+      for (const store of stores) select.add(new Option(store.label, store.id));
+      label.appendChild(select);
+      templates.after(label);
+      const update = () => {
+        const active = clean(templates.querySelector("button.active")?.textContent);
+        const review = /^(?:review request|request review|purchase thank-you)$/i.test(active)
+          || body.value.includes(placeholder) || links.some(link => body.value.includes(link));
+        label.hidden = !review;
+        label.style.display = review ? "grid" : "none";
+        select.required = review;
+        if (!review) return false;
+        const next = stores.find(store => store.id === select.value)?.url || placeholder;
+        let text = body.value;
+        // Replace only known review links; preserve customer wording and other links.
+        for (const link of links) text = text.split(link).join(placeholder);
+        body.value = text.split(placeholder).join(next);
+        return true;
+      };
+      select.addEventListener("change", () => { select.setCustomValidity(""); update(); });
+      document.addEventListener("input", () => queueMicrotask(update));
+      document.addEventListener("change", () => queueMicrotask(update));
+      window.addEventListener("click", event => {
+        const button = event.target.closest?.("button");
+        if (!button || !["copy-body", "copy-cin7", "open-gmail", "save-template"].includes(button.id)) return;
+        if (!update()) return;
+        if (!select.value) {
+          event.preventDefault(); event.stopImmediatePropagation();
+          select.setCustomValidity("Choose the store for this Google review request.");
+          select.reportValidity();
+          return;
+        }
+        if (button.id !== "copy-body") return;
+        event.preventDefault(); event.stopImmediatePropagation();
+        // The helper's original HTML template hard-codes Penrose, so copy the visible draft instead.
+        const text = body.value, url = stores.find(store => store.id === select.value).url;
+        const html = escapeHtml(text).replace(/\n/g, "<br>")
+          .split(escapeHtml(url)).join(`<a href="${url}">${url}</a>`);
+        const copy = navigator.clipboard?.write && typeof ClipboardItem !== "undefined"
+          ? navigator.clipboard.write([new ClipboardItem({ "text/plain":new Blob([text], { type:"text/plain" }), "text/html":new Blob([html], { type:"text/html" }) })])
+          : navigator.clipboard?.writeText ? navigator.clipboard.writeText(text) : Promise.reject(new Error("Clipboard unavailable"));
+        copy.then(() => {
+          const original = button.textContent; button.textContent = "Copied";
+          setTimeout(() => { button.textContent = original; }, 1200);
+        }).catch(() => window.alert("The email could not be copied. Select and copy the draft text, or use Copy to Cin7."));
+      }, true);
+      window.addEventListener("click", () => queueMicrotask(update));
+      new MutationObserver(update).observe(templates, { childList:true, subtree:true, attributes:true, attributeFilter:["class"] });
+      update();
+    };
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once:true });
+    else start();
   }
 
   function escapeHtml(value) {
