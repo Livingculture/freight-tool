@@ -109,7 +109,7 @@
     { resource: 'caribbeanStock', file: 'caribbean-stock.user.js', runAt: 'idle', enabled: isOmniQuote || isCin7CoreSale },
     { resource: 'quoteDefaults', file: 'omni-quote-defaults.user.js', runAt: 'idle', enabled: isOmniQuote },
     { resource: 'hideOrderSettings', file: 'omni-hide-order-settings.user.js', runAt: 'start', enabled: isOmniQuote },
-    { resource: 'emailHelperCompose', file: 'omni-email-helper-compose.user.js', runAt: 'start', enabled: isOmniQuote || isOmniContactLog || isEmailHelper },
+    { resource: 'emailHelperCompose', file: 'omni-email-helper-compose.user.js', runAt: 'start', enabled: isOmniQuote || isOmniContactLog || isEmailHelper || isGmail },
     { resource: 'pdfAttachments', file: 'omni-pdf-attachments.user.js', runAt: 'idle', enabled: isOmniQuote || isOmniContactLog || isEmailHelper },
     { resource: 'gmailDrawings', file: 'gmail-drawings.user.js', runAt: 'idle', enabled: isGmail },
     { resource: 'gmailCareGuides', file: 'gmail-care-guides.user.js', runAt: 'idle', enabled: isGmail },
@@ -142,6 +142,1154 @@
   // BEGIN GENERATED GMAIL COMPONENTS
   // Static functions avoid runtime string evaluation under Gmail's page security policy.
   const gmailComponents = {
+    emailHelperCompose: function () {
+      (function () {
+        "use strict";
+
+        const EMAIL_HELPER_URL = "https://living-culture-email-helper.vercel.app";
+        const BUTTON_ID = "lc-omni-email-helper-compose-button";
+        const STYLE_ID = "lc-omni-email-helper-compose-styles";
+        const PANEL_ID = "lc-omni-email-helper-panel";
+        const LAYOUT_ID = "lc-omni-email-helper-layout";
+        const TOOLBAR_ID = "lc-omni-email-helper-toolbar";
+        const CONTEXT_KEY = "lcOmniEmailHelperQuoteContext";
+        const SIGNATURE_IMAGE_KEY = "lcOmniEmailHelperSignatureImageV1";
+        const SIGNATURE_MODE_KEY = "lcOmniEmailHelperSignatureModeV1";
+        const SIGNATURE_WIDTH_KEY = "lcOmniEmailHelperSignatureWidthV1";
+        let composePlaceholder = null;
+        let contactsPlaceholder = null;
+        let composePanel = null;
+        let contactsPanel = null;
+        let injectQueued = false;
+        const isOmniEmailPage = location.hostname === "go.cin7.com"
+          && /\/Cloud\/CRM\/ContactLog\.aspx$/i.test(location.pathname);
+
+        // This runs at document-start, before Omni paints its native composer. Keep the
+        // page transparent until the helper layout has taken ownership of the composer.
+        // Opacity is used instead of visibility so Omni's controls can still be measured.
+        if (isOmniEmailPage) {
+          const earlyStyle = document.createElement("style");
+          earlyStyle.id = "lc-omni-email-helper-early-style";
+          earlyStyle.textContent = `
+            html.lc-omni-email-helper-starting {
+              background: #fff !important;
+            }
+            html.lc-omni-email-helper-starting body {
+              opacity: 0 !important;
+              pointer-events: none !important;
+            }
+          `;
+          document.documentElement.classList.add("lc-omni-email-helper-starting");
+          document.documentElement.appendChild(earlyStyle);
+          setTimeout(() => document.documentElement.classList.remove("lc-omni-email-helper-starting"), 15000);
+        }
+
+        function revealEmailHelperPage() {
+          document.documentElement.classList.remove("lc-omni-email-helper-starting");
+        }
+
+        if (location.hostname === "go.cin7.com") {
+          ["preconnect", "dns-prefetch"].forEach((relation) => {
+            const link = document.createElement("link");
+            link.rel = relation;
+            link.href = EMAIL_HELPER_URL;
+            link.crossOrigin = "anonymous";
+            (document.head || document.documentElement).appendChild(link);
+          });
+
+          if (isOmniEmailPage) {
+            const warmHelper = () => {
+              if (!document.body) return false;
+              const panel = ensurePanel();
+              const frame = panel.querySelector("iframe");
+              if (!frame.getAttribute("src")) frame.src = `${EMAIL_HELPER_URL}?theme=omni&embedded=1`;
+              return true;
+            };
+            if (!warmHelper()) {
+              const earlyObserver = new MutationObserver(() => {
+                if (!warmHelper()) return;
+                earlyObserver.disconnect();
+              });
+              earlyObserver.observe(document.documentElement, { childList: true, subtree: true });
+            }
+          }
+        }
+
+        function applyEmbeddedHelperTheme() {
+          const params = new URLSearchParams(location.search);
+          if (params.get("theme") !== "omni" || params.get("embedded") !== "1") return;
+          installReviewStoreSelector();
+          let omniRecipientEmail = params.get("recipient") || "";
+          const style = document.createElement("style");
+          style.textContent = `
+            :root {
+              --green: #0b3978 !important;
+              --green-dark: #072d62 !important;
+              --ink: #172b49 !important;
+              --muted: #526987 !important;
+              --line: #c2d2e6 !important;
+              --paper: #fff !important;
+              --amber: #0b3978 !important;
+              --blue: #0b3978 !important;
+              --background: #eef4fb !important;
+            }
+            body {
+              background: #fff !important;
+            }
+            main {
+              width: calc(100% - 24px) !important;
+              padding: 12px 0 20px !important;
+            }
+            header {
+              display: none !important;
+            }
+            header h1 {
+              display: none !important;
+            }
+            header .actions {
+              width: 100% !important;
+              justify-content: flex-end !important;
+            }
+            button.secondary,
+            .templates button {
+              border-color: #c2d2e6 !important;
+              background: #e6eef8 !important;
+              color: #0b3978 !important;
+            }
+            button.ghost {
+              border-color: #8da9cc !important;
+              background: #fff !important;
+              color: #0b3978 !important;
+            }
+            label {
+              color: #294467 !important;
+            }
+            input, select, textarea {
+              border-color: #a9bfdc !important;
+            }
+            .signature-box {
+              display: none !important;
+            }
+            #lc-signature-image-tools {
+              margin-top: 9px;
+              padding-top: 9px;
+              border-top: 1px solid #c2d2e6;
+            }
+            #lc-signature-image-tools .lc-signature-image-label {
+              display: block;
+              margin-bottom: 6px;
+              font-weight: 700;
+              color: #294467;
+            }
+            #lc-signature-mode-choice {
+              display: flex;
+              gap: 14px;
+              margin-bottom: 9px;
+            }
+            #lc-signature-mode-choice label {
+              display: inline-flex;
+              align-items: center;
+              gap: 5px;
+              font-weight: 700;
+            }
+            #lc-signature-image-tools:not(.is-image-mode) .lc-signature-image-fields { display: none; }
+            #lc-signature-image-tools input[type="file"] {
+              display: block;
+              width: 100%;
+              padding: 6px;
+              background: #fff;
+            }
+            .lc-signature-size-row {
+              display: grid;
+              grid-template-columns: minmax(0, 1fr) 76px;
+              gap: 8px;
+              align-items: center;
+              margin-top: 8px;
+            }
+            .lc-signature-size-row input[type="range"] { width: 100%; }
+            .lc-signature-size-row input[type="number"] { width: 76px; }
+            #lc-signature-image-preview {
+              display: none;
+              max-width: 100%;
+              height: auto;
+              margin-top: 8px;
+              object-fit: contain;
+              object-position: left center;
+            }
+            #lc-signature-image-tools.has-image #lc-signature-image-preview { display: block; }
+            #lc-signature-image-remove {
+              display: none;
+              margin-top: 7px;
+            }
+            #lc-signature-image-tools.has-image #lc-signature-image-remove { display: inline-flex; }
+            .panel {
+              box-shadow: 0 12px 32px rgba(15, 46, 106, .09) !important;
+            }
+          `;
+          document.head.appendChild(style);
+
+          const storedSignatureImage = () => {
+            try { return localStorage.getItem(SIGNATURE_IMAGE_KEY) || ""; }
+            catch (_) { return ""; }
+          };
+
+          const signatureMode = () => {
+            try { return localStorage.getItem(SIGNATURE_MODE_KEY) === "image" ? "image" : "text"; }
+            catch (_) { return "text"; }
+          };
+
+          const signatureWidth = () => {
+            try {
+              const value = Number(localStorage.getItem(SIGNATURE_WIDTH_KEY) || 420);
+              return Math.min(1000, Math.max(80, Number.isFinite(value) ? value : 420));
+            } catch (_) {
+              return 420;
+            }
+          };
+
+          const setNativeTextSignature = (enabled) => {
+            const checkbox = document.querySelector("#signature") || Array.from(document.querySelectorAll("input[type='checkbox']")).find((input) => {
+              const label = input.id && document.querySelector(`label[for="${CSS.escape(input.id)}"]`);
+              return /^signature$/i.test(clean(label?.textContent || input.parentElement?.textContent));
+            });
+            if (!checkbox || checkbox.checked === enabled) return;
+            checkbox.checked = enabled;
+            checkbox.dispatchEvent(new Event("input", { bubbles: true }));
+            checkbox.dispatchEvent(new Event("change", { bubbles: true }));
+          };
+
+          const injectSignatureImageUpload = () => {
+            if (document.getElementById("lc-signature-image-tools")) return;
+            const signatureBox = document.querySelector(".signature-box");
+            if (!signatureBox) return;
+            const tools = document.createElement("div");
+            tools.id = "lc-signature-image-tools";
+            tools.innerHTML = `
+              <div id="lc-signature-mode-choice">
+                <label><input type="radio" name="lc-signature-mode" value="text"> Text signature</label>
+                <label><input type="radio" name="lc-signature-mode" value="image"> Image signature</label>
+              </div>
+              <div class="lc-signature-image-fields">
+                <label class="lc-signature-image-label" for="lc-signature-image-input">Signature image</label>
+                <input id="lc-signature-image-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
+                <label class="lc-signature-image-label" for="lc-signature-image-size">Signature width</label>
+                <div class="lc-signature-size-row">
+                  <input id="lc-signature-image-size" type="range" min="80" max="1000" step="10">
+                  <input id="lc-signature-image-size-number" type="number" min="80" max="1000" step="10" aria-label="Signature width in pixels">
+                </div>
+                <img id="lc-signature-image-preview" alt="Signature image preview">
+                <button id="lc-signature-image-remove" type="button" class="ghost">Remove image</button>
+              </div>`;
+            signatureBox.appendChild(tools);
+            const input = tools.querySelector("#lc-signature-image-input");
+            const preview = tools.querySelector("#lc-signature-image-preview");
+            const sizeSlider = tools.querySelector("#lc-signature-image-size");
+            const sizeNumber = tools.querySelector("#lc-signature-image-size-number");
+            const applyWidth = (value) => {
+              const width = Math.min(1000, Math.max(80, Number(value) || 420));
+              sizeSlider.value = String(width);
+              sizeNumber.value = String(width);
+              preview.style.width = `${width}px`;
+              preview.style.maxWidth = "100%";
+              try { localStorage.setItem(SIGNATURE_WIDTH_KEY, String(width)); } catch (_) {}
+            };
+            const show = (source) => {
+              preview.src = source || "";
+              tools.classList.toggle("has-image", Boolean(source));
+            };
+            const applyMode = (mode) => {
+              const nextMode = mode === "image" ? "image" : "text";
+              tools.classList.toggle("is-image-mode", nextMode === "image");
+              tools.querySelector(`input[name="lc-signature-mode"][value="${nextMode}"]`).checked = true;
+              try { localStorage.setItem(SIGNATURE_MODE_KEY, nextMode); } catch (_) {}
+              setNativeTextSignature(nextMode === "text");
+            };
+            show(storedSignatureImage());
+            applyWidth(signatureWidth());
+            applyMode(signatureMode());
+            sizeSlider.addEventListener("input", () => applyWidth(sizeSlider.value));
+            sizeNumber.addEventListener("input", () => applyWidth(sizeNumber.value));
+            tools.querySelectorAll('input[name="lc-signature-mode"]').forEach((radio) => {
+              radio.addEventListener("change", () => {
+                if (radio.checked) applyMode(radio.value);
+              });
+            });
+            input.addEventListener("change", () => {
+              const file = input.files?.[0];
+              if (!file) return;
+              if (file.size > 10 * 1024 * 1024) {
+                alert("Please choose a signature image smaller than 10 MB.");
+                input.value = "";
+                return;
+              }
+              const reader = new FileReader();
+              reader.onload = () => {
+                const source = String(reader.result || "");
+                try { localStorage.setItem(SIGNATURE_IMAGE_KEY, source); } catch (_) {}
+                show(source);
+              };
+              reader.readAsDataURL(file);
+            });
+            tools.querySelector("#lc-signature-image-remove").addEventListener("click", () => {
+              try { localStorage.removeItem(SIGNATURE_IMAGE_KEY); } catch (_) {}
+              input.value = "";
+              show("");
+            });
+          };
+
+          const hideImageUrlOverride = () => {
+            const label = Array.from(document.querySelectorAll("label"))
+              .find((element) => /^image url override$/i.test(clean(element.textContent)));
+            if (!label) return;
+            const linkedField = (label.htmlFor && document.getElementById(label.htmlFor))
+              || label.querySelector("input, textarea")
+              || label.nextElementSibling?.matches?.("input, textarea") && label.nextElementSibling;
+            label.style.display = "none";
+            if (linkedField) linkedField.style.display = "none";
+          };
+
+          const hideLookupButton = () => {
+            Array.from(document.querySelectorAll("button, input[type='button'], input[type='submit']"))
+              .filter((control) => /^lookup$/i.test(clean(control.textContent || control.value)))
+              .forEach((control) => { control.style.display = "none"; });
+          };
+
+          const maintainSignatureTools = () => {
+            setNativeTextSignature(false);
+            const signatureCheckbox = document.querySelector("#signature") || Array.from(document.querySelectorAll("input[type='checkbox']")).find((input) => {
+              const label = input.id && document.querySelector(`label[for="${CSS.escape(input.id)}"]`);
+              return /^signature$/i.test(clean(label?.textContent || input.parentElement?.textContent));
+            });
+            const signatureLabel = signatureCheckbox?.id && document.querySelector(`label[for="${CSS.escape(signatureCheckbox.id)}"]`);
+            const signatureRow = signatureCheckbox?.closest("label, .field, .form-row, .control, div");
+            if (signatureLabel) signatureLabel.style.display = "none";
+            if (signatureRow) signatureRow.style.display = "none";
+            hideImageUrlOverride();
+            hideLookupButton();
+          };
+          maintainSignatureTools();
+          new MutationObserver(maintainSignatureTools).observe(document.body, { childList: true, subtree: true });
+
+          const addCin7NumberToSubject = () => {
+            const subject = document.querySelector("#subject-output");
+            const order = clean(document.querySelector("#order")?.value).toUpperCase();
+            if (!subject || !order) return;
+            const escapedOrder = order.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            const base = clean(subject.value)
+              .replace(new RegExp(`^${escapedOrder}\\s*[-–—|:]?\\s*`, "i"), "")
+              .replace(new RegExp(`\\s*[-–—|:]?\\s*${escapedOrder}\\s*$`, "i"), "")
+              .trim();
+            const next = base ? `${order} - ${base}` : order;
+            if (subject.value === next) return;
+            subject.value = next;
+            subject.dispatchEvent(new Event("input", { bubbles: true }));
+            subject.dispatchEvent(new Event("change", { bubbles: true }));
+          };
+
+          const queueSubjectUpdate = () => [0, 80, 250, 700].forEach((delay) => {
+            setTimeout(addCin7NumberToSubject, delay);
+          });
+          document.addEventListener("input", (event) => {
+            if (event.target?.matches?.("#order, #product")) queueSubjectUpdate();
+          });
+          document.addEventListener("change", (event) => {
+            if (event.target?.matches?.("#order, #product")) queueSubjectUpdate();
+          });
+          document.addEventListener("click", (event) => {
+            if (event.target?.closest?.("button")) queueSubjectUpdate();
+          });
+
+          document.addEventListener("click", (event) => {
+            const button = event.target.closest?.("#copy-cin7");
+            if (!button) return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            addCin7NumberToSubject();
+            const subject = document.querySelector("#subject-output")?.value || "";
+            const { text, html } = emailDraftContent();
+            window.parent.postMessage({
+              type: "LC_EMAIL_HELPER_DRAFT",
+              subject,
+              text,
+              html,
+              order: document.querySelector("#order")?.value || ""
+            }, "https://go.cin7.com");
+            const label = button.textContent;
+            button.textContent = "Sent to Omni";
+            setTimeout(() => { button.textContent = label; }, 1200);
+          }, true);
+
+          document.addEventListener("click", (event) => {
+            const button = event.target.closest?.("#open-gmail")
+              || Array.from(document.querySelectorAll("button, a")).find((control) => /^open gmail$/i.test(clean(control.textContent)) && control.contains(event.target));
+            if (!button || !omniRecipientEmail) return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            const subject = document.querySelector("#subject-output")?.value || "";
+            const body = emailDraftContent().text;
+            const gmailAccount = clean(document.querySelector("#gmail-account")?.value || "").toLowerCase();
+            const gmailUrl = new URL("https://mail.google.com/mail/");
+            if (gmailAccount) gmailUrl.searchParams.set("authuser", gmailAccount);
+            gmailUrl.searchParams.set("view", "cm");
+            gmailUrl.searchParams.set("fs", "1");
+            gmailUrl.searchParams.set("to", omniRecipientEmail);
+            if (subject) gmailUrl.searchParams.set("su", subject);
+            if (body) gmailUrl.searchParams.set("body", body);
+            window.open(gmailUrl.toString(), "_blank", "noopener");
+          }, true);
+
+          window.addEventListener("message", (event) => {
+            if (event.origin !== "https://go.cin7.com" || event.data?.type !== "LC_OMNI_EMAIL_CONTEXT") return;
+            const context = event.data.context || {};
+            omniRecipientEmail = context.recipientEmail || omniRecipientEmail;
+            const values = {
+              order: context.quoteNumber,
+              "first-name": context.firstName,
+              product: context.product
+            };
+            Object.entries(values).forEach(([id, value]) => {
+              const field = document.getElementById(id);
+              if (!field || !value) return;
+              field.value = value;
+              field.dispatchEvent(new Event("input", { bubbles: true }));
+              field.dispatchEvent(new Event("change", { bubbles: true }));
+            });
+            queueSubjectUpdate();
+          });
+
+          window.addEventListener("message", (event) => {
+            if (event.origin !== "https://go.cin7.com" || event.data?.type !== "LC_OMNI_EMAIL_ACTION") return;
+            const selector = {
+              copy: "#copy-body",
+              cin7: "#copy-cin7",
+              gmail: "#open-gmail"
+            }[event.data.action];
+            document.querySelector(selector)?.click();
+          });
+
+          const applyUrlContext = () => {
+            const values = {
+              order: params.get("quote") || "",
+              "first-name": params.get("first") || "",
+              product: params.get("product") || ""
+            };
+            Object.entries(values).forEach(([id, value]) => {
+              const field = document.getElementById(id);
+              if (!field || !value || field.value === value) return;
+              field.value = value;
+              field.dispatchEvent(new Event("input", { bubbles: true }));
+              field.dispatchEvent(new Event("change", { bubbles: true }));
+            });
+            queueSubjectUpdate();
+          };
+          [0, 400, 1100, 2400].forEach((delay) => setTimeout(applyUrlContext, delay));
+        }
+
+        if (location.hostname === "mail.google.com") {
+          installGmailReviewLinks();
+          return;
+        }
+
+        if (location.hostname === "living-culture-email-helper.vercel.app") {
+          applyEmbeddedHelperTheme();
+          return;
+        }
+
+        function clean(value) {
+          return String(value || "").replace(/\s+/g, " ").trim();
+        }
+
+        function emailDraftContent() {
+          const body = document.querySelector("#body-output, #body");
+          const value = body?.value || "";
+          const label = body?.dataset.reviewLabel, url = body?.dataset.reviewUrl;
+          const html = escapeHtml(value).replace(/\n/g, "<br>");
+          if (!label || !url) return { text:value, html };
+          return {
+            text:value.split(label).join(`${label}: ${url}`),
+            html:html.split(escapeHtml(label)).join(`<a href="${escapeHtml(url)}">${escapeHtml(label)}</a>`),
+          };
+        }
+
+        function googleReviewStores() {
+          return [
+            { id:"wairau", label:"North Shore / Wairau", token:"CeNsNDL_2O3dEBM", place:"ChIJ2wj0ZX45DW0R42w0Mv_Y7d0" },
+            { id:"penrose", label:"Penrose", token:"Cbt0916wRtjmEBM", place:"ChIJqftY2JRJDW0Ru3T3XrBG2OY" },
+            { id:"hamilton", label:"Hamilton", token:"CdrvKXEiLhd-EBM", place:"ChIJASuiMCgZbW0R2u8pcSIuF34" },
+            { id:"tauranga", label:"Tauranga", token:"CfU2pxc8CpPbEBM", place:"ChIJIQsLHb7bbW0R9TanFzwKk9s" },
+            { id:"christchurch", label:"Christchurch", token:"CX7Uu_940ID8EBM", place:"ChIJe3H9gkKLMW0RftS7_3jQgPw" },
+            { id:"whangarei", label:"Whangarei", token:"CVJ2wVqQrM_TEBM", place:"ChIJuytBw31_C20RUnbBWpCsz9M" },
+            { id:"napier", label:"Napier", token:"CfOE4ZpQEwj2EBM", place:"ChIJxTipStOzaW0R84ThmlATCPY" },
+          ].map(store => ({ ...store, url:`https://g.page/r/${store.token}/review`, reviewLabel:`${store.label} Google Review` }));
+        }
+
+        function installGmailReviewLinks() {
+          if (document.documentElement.dataset.lcGmailReviewLinks) return;
+          document.documentElement.dataset.lcGmailReviewLinks = "1";
+          const stores = googleReviewStores();
+          const match = text => stores.find(store => clean(text) === `${store.reviewLabel}: ${store.url}`);
+          const excluded = node => node.parentElement?.closest('.gmail_quote,.gmail_signature,blockquote,[contenteditable="false"]');
+          const anchor = store => {
+            const link = document.createElement("a");
+            link.href = store.url;
+            link.textContent = store.reviewLabel;
+            return link;
+          };
+          const format = () => {
+            for (const body of document.querySelectorAll('div[contenteditable="true"][role="textbox"],div[contenteditable="true"][aria-label="Message Body"],div[contenteditable="true"][g_editable="true"]')) {
+              if (!visible(body) || excluded(body)) continue;
+              let changed = false;
+              // Replace only an exact review line, never the complete compose body or its signature.
+              for (const block of [body, ...body.querySelectorAll("div,p")]) {
+                if (excluded(block) || block.closest('.gmail_quote,.gmail_signature,blockquote,[contenteditable="false"]') || block.querySelector("div,p,blockquote")) continue;
+                const store = match(block.textContent);
+                if (!store) continue;
+                block.replaceChildren(anchor(store));
+                changed = true;
+              }
+              const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+              const nodes = [];
+              while (walker.nextNode()) nodes.push(walker.currentNode);
+              for (const node of nodes) {
+                if (!node.isConnected || excluded(node) || node.parentElement.closest("a")) continue;
+                const lines = node.textContent.split(/(\r?\n)/);
+                if (!lines.some(line => match(line))) continue;
+                const fragment = document.createDocumentFragment();
+                for (const line of lines) {
+                  const store = match(line);
+                  if (store) {
+                    fragment.append(document.createTextNode(line.match(/^\s*/)[0]), anchor(store), document.createTextNode(line.match(/\s*$/)[0]));
+                  } else fragment.appendChild(document.createTextNode(line));
+                }
+                node.replaceWith(fragment);
+                changed = true;
+              }
+              // Gmail can auto-link the URL while leaving the label in the preceding text node.
+              for (const link of body.querySelectorAll("a[href]")) {
+                if (excluded(link)) continue;
+                const store = stores.find(store => link.getAttribute("href") === store.url && clean(link.textContent) === store.url);
+                const before = link.previousSibling, after = link.nextSibling;
+                if (!store || before?.nodeType !== Node.TEXT_NODE || (after && after.nodeName !== "BR" && !/^\r?\n/.test(after.textContent))) continue;
+                const start = before.textContent.lastIndexOf("\n") + 1;
+                if (clean(before.textContent.slice(start)) !== `${store.reviewLabel}:`) continue;
+                const range = document.createRange();
+                range.setStart(before, start); range.setEndAfter(link);
+                range.deleteContents(); range.insertNode(anchor(store));
+                changed = true;
+              }
+              if (changed) body.dispatchEvent(new InputEvent("input", { bubbles:true, inputType:"insertReplacementText" }));
+            }
+          };
+          let timer = 0;
+          const schedule = () => {
+            if (timer) return;
+            timer = setTimeout(() => { timer = 0; format(); }, 150);
+          };
+          new MutationObserver(schedule).observe(document.documentElement, { childList:true, subtree:true, characterData:true });
+          document.addEventListener("input", schedule, true);
+          schedule();
+        }
+
+        function installReviewStoreSelector() {
+          const stores = googleReviewStores();
+          const placeholder = "[Select a store for the Google review link]";
+          const links = stores.flatMap(store => [store.url + "/", store.url, `https://search.google.com/local/writereview?placeid=${store.place}`]);
+          const start = () => {
+            if (document.getElementById("lc-review-store")) return;
+            const templates = document.getElementById("template-buttons");
+            const body = document.getElementById("body-output");
+            if (!templates || !body) return;
+            const label = document.createElement("label");
+            label.htmlFor = "lc-review-store";
+            label.textContent = "Google review store";
+            label.hidden = true;
+            label.style.display = "none";
+            label.style.marginTop = "12px";
+            const select = document.createElement("select");
+            select.id = "lc-review-store";
+            select.add(new Option("Choose store", ""));
+            for (const store of stores) select.add(new Option(store.label, store.id));
+            label.appendChild(select);
+            templates.after(label);
+            const update = () => {
+              const active = clean(templates.querySelector("button.active")?.textContent);
+              const review = /^(?:review request|request review|purchase thank-you)$/i.test(active)
+                || body.value.includes(placeholder) || links.some(link => body.value.includes(link))
+                || stores.some(store => body.value.includes(store.reviewLabel));
+              label.hidden = !review;
+              label.style.display = review ? "grid" : "none";
+              select.required = review;
+              delete body.dataset.reviewLabel;
+              delete body.dataset.reviewUrl;
+              if (!review) return false;
+              const selected = stores.find(store => store.id === select.value);
+              const next = selected?.reviewLabel || placeholder;
+              let text = body.value;
+              // Replace only known review links; preserve customer wording and other links.
+              for (const link of links) text = text.split(link).join(placeholder);
+              for (const store of stores) text = text.split(store.reviewLabel).join(placeholder);
+              body.value = text.split(placeholder).join(next);
+              if (selected) {
+                body.dataset.reviewLabel = selected.reviewLabel;
+                body.dataset.reviewUrl = selected.url;
+              }
+              return true;
+            };
+            select.addEventListener("change", () => { select.setCustomValidity(""); update(); });
+            document.addEventListener("input", () => queueMicrotask(update));
+            document.addEventListener("change", () => queueMicrotask(update));
+            window.addEventListener("click", event => {
+              const button = event.target.closest?.("button");
+              if (!button || !["copy-body", "copy-cin7", "open-gmail", "save-template"].includes(button.id)) return;
+              if (!update()) return;
+              if (!select.value) {
+                event.preventDefault(); event.stopImmediatePropagation();
+                select.setCustomValidity("Choose the store for this Google review request.");
+                select.reportValidity();
+                return;
+              }
+              if (button.id !== "copy-body") return;
+              event.preventDefault(); event.stopImmediatePropagation();
+              // The helper's original HTML template hard-codes Penrose, so copy the visible draft instead.
+              const { text, html } = emailDraftContent();
+              const copy = navigator.clipboard?.write && typeof ClipboardItem !== "undefined"
+                ? navigator.clipboard.write([new ClipboardItem({ "text/plain":new Blob([text], { type:"text/plain" }), "text/html":new Blob([html], { type:"text/html" }) })])
+                : navigator.clipboard?.writeText ? navigator.clipboard.writeText(text) : Promise.reject(new Error("Clipboard unavailable"));
+              copy.then(() => {
+                const original = button.textContent; button.textContent = "Copied";
+                setTimeout(() => { button.textContent = original; }, 1200);
+              }).catch(() => window.alert("The email could not be copied. Select and copy the draft text, or use Copy to Cin7."));
+            }, true);
+            window.addEventListener("click", () => queueMicrotask(update));
+            new MutationObserver(update).observe(templates, { childList:true, subtree:true, attributes:true, attributeFilter:["class"] });
+            update();
+          };
+          if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once:true });
+          else start();
+        }
+
+        function escapeHtml(value) {
+          return String(value || "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+        }
+
+        function visible(element) {
+          if (!element) return false;
+          const style = getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+        }
+
+        function fieldNearLabel(labelText) {
+          const wanted = clean(labelText).toLowerCase();
+          const labels = Array.from(document.querySelectorAll("label, td, th, div, span"))
+            .filter(visible)
+            .filter((element) => clean(element.textContent).replace(/:$/, "").toLowerCase() === wanted);
+          const fields = Array.from(document.querySelectorAll("input:not([type='hidden']), textarea, select")).filter(visible);
+          let emptyFallback = null;
+          for (const label of labels) {
+            const linked = label.htmlFor && document.getElementById(label.htmlFor);
+            if (linked) {
+              if (clean(linked.value)) return linked;
+              emptyFallback ||= linked;
+              continue;
+            }
+            const rect = label.getBoundingClientRect();
+            const candidates = fields
+              .map((field) => ({ field, rect: field.getBoundingClientRect() }))
+              .filter((item) => item.rect.top >= rect.top - 8 && item.rect.top <= rect.bottom + 32 && item.rect.left >= rect.right - 15)
+              .sort((a, b) => a.rect.left - b.rect.left);
+            const populated = candidates.find(({ field }) => clean(field.value))?.field;
+            if (populated) return populated;
+            emptyFallback ||= candidates[0]?.field || null;
+          }
+          return emptyFallback;
+        }
+
+        function customerFirstNameFromQuote() {
+          const direct = clean(fieldNearLabel("First Name")?.value);
+          if (direct) return direct.split(/\s+/)[0];
+
+          const selected = clean(fieldNearLabel("Selected Customer")?.value)
+            .replace(/^[-–—\s]+/, "")
+            .replace(/\s+[-–—]\s+/g, " ");
+          return selected.split(/\s+/).find(Boolean) || "";
+        }
+
+        function productNamesFromQuote() {
+          const header = value => clean(value).toLowerCase().replace(/[^a-z]/g, "");
+          const productHeader = Array.from(document.querySelectorAll("th, td"))
+            .filter(visible)
+            .find((cell) => header(cell.textContent) === "product");
+          const row = productHeader?.closest("tr");
+          const table = row?.closest("table");
+          if (!row || !table) return [];
+          const index = Array.from(row.children).indexOf(productHeader);
+          const bomIndex = Array.from(row.children).findIndex(cell => header(cell.textContent) === "bomload");
+          const read = cell => clean(cell?.querySelector("input:not([type='hidden']), textarea, select")?.value || cell?.textContent);
+          const rows = Array.from(table.querySelectorAll("tr")).filter(item => item.closest("table") === table);
+          // Customer emails describe sold products, not the components consumed by a Make line.
+          return rows.slice(rows.indexOf(row) + 1)
+            .filter(item => visible(item) && (bomIndex < 0 || read(item.children[bomIndex]).toLowerCase() !== "use"))
+            .map((item) => {
+              const cell = item.children[index];
+              return read(cell);
+            })
+            .filter((value) => value && !/^search/i.test(value))
+            .filter((value, index, values) => values.indexOf(value) === index);
+        }
+
+        function captureQuoteContext() {
+          const pageText = clean(document.body?.innerText);
+          const quoteNumber = pageText.match(/\b(?:SFOR|NZSO)[- ]?\d+(?:-\d+)?\b/i)?.[0]?.replace(/\s+/g, "") || "";
+          const firstName = customerFirstNameFromQuote();
+          const products = productNamesFromQuote();
+          if (!firstName && !quoteNumber && !products.length) return;
+          localStorage.setItem(CONTEXT_KEY, JSON.stringify({
+            firstName,
+            quoteNumber,
+            product: products.join(", "),
+            savedAt: Date.now()
+          }));
+        }
+
+        function bootQuoteCapture() {
+          let timer = 0;
+          const schedule = () => {
+            clearTimeout(timer);
+            timer = setTimeout(captureQuoteContext, 180);
+          };
+          captureQuoteContext();
+          new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true, characterData: true });
+          document.addEventListener("input", schedule, true);
+          document.addEventListener("change", schedule, true);
+        }
+
+        function injectStyles() {
+          if (document.getElementById(STYLE_ID)) return;
+          const style = document.createElement("style");
+          style.id = STYLE_ID;
+          style.textContent = `
+            #${PANEL_ID} {
+              position: relative !important;
+              z-index: 1 !important;
+              display: flex !important;
+              flex-direction: column !important;
+              width: 100% !important;
+              min-width: 0 !important;
+              height: calc(100vh - 105px) !important;
+              min-height: 720px !important;
+              border: 0 !important;
+              border-radius: 0 !important;
+              overflow: hidden !important;
+              background: #fff !important;
+              box-shadow: none !important;
+            }
+            #${PANEL_ID}[hidden] {
+              display: none !important;
+            }
+            #${PANEL_ID} iframe {
+              flex: 1 1 auto !important;
+              display: block !important;
+              width: 100% !important;
+              min-height: 0 !important;
+              border: 0 !important;
+              background: #fff !important;
+            }
+            #${LAYOUT_ID} {
+              display: grid !important;
+              grid-template-columns: minmax(570px, .9fr) 330px minmax(940px, 1.5fr) !important;
+              align-items: start !important;
+              gap: 24px !important;
+              width: calc(100vw - 76px) !important;
+              max-width: 2200px !important;
+              margin: 12px auto 24px !important;
+            }
+            #${LAYOUT_ID} > .lc-omni-compose-column,
+            #${LAYOUT_ID} > .lc-omni-contacts-column {
+              width: 100% !important;
+              max-width: none !important;
+              margin: 0 !important;
+            }
+            #${LAYOUT_ID} > .lc-omni-contacts-column {
+              min-width: 330px !important;
+              overflow: visible !important;
+            }
+            #${TOOLBAR_ID} {
+              display: inline-flex !important;
+              float: right !important;
+              align-items: center !important;
+              gap: 9px !important;
+              margin: 0 42px 0 auto !important;
+              vertical-align: middle !important;
+            }
+            #${TOOLBAR_ID} button {
+              min-height: 38px !important;
+              border: 1px solid #8da9cc !important;
+              border-radius: 6px !important;
+              background: #fff !important;
+              color: #0b3978 !important;
+              padding: 0 15px !important;
+              font: 700 14px Arial, sans-serif !important;
+              cursor: pointer !important;
+            }
+            #${TOOLBAR_ID} button:first-child {
+              border-color: #0b3978 !important;
+              background: #0b3978 !important;
+              color: #fff !important;
+            }
+            @media (max-width: 1750px) {
+              #${LAYOUT_ID} {
+                grid-template-columns: 570px 330px minmax(940px, 1fr) !important;
+                overflow-x: auto !important;
+              }
+            }
+          `;
+          document.head.appendChild(style);
+        }
+
+        function pageControls() {
+          return Array.from(document.querySelectorAll("button, input[type='button'], input[type='submit'], a"))
+            .filter(visible);
+        }
+
+        function findBackControl() {
+          return pageControls().find((element) => /^back$/i.test(clean(element.textContent || element.value)));
+        }
+
+        function ensureOmniToolbar() {
+          if (document.getElementById(TOOLBAR_ID)) return;
+          const back = findBackControl();
+          if (!back) return;
+          const toolbar = document.createElement("div");
+          toolbar.id = TOOLBAR_ID;
+          toolbar.innerHTML = `
+            <button type="button" data-action="copy">Copy Email</button>
+            <button type="button" data-action="cin7">Copy to Cin7</button>
+            <button type="button" data-action="gmail">Open Gmail</button>`;
+          back.insertAdjacentElement("afterend", toolbar);
+          toolbar.addEventListener("click", (event) => {
+            const button = event.target.closest("button[data-action]");
+            if (!button) return;
+            const frame = document.querySelector(`#${PANEL_ID} iframe`);
+            frame?.contentWindow?.postMessage({
+              type: "LC_OMNI_EMAIL_ACTION",
+              action: button.dataset.action
+            }, EMAIL_HELPER_URL);
+          });
+        }
+
+        function findSubjectField() {
+          const inputs = Array.from(document.querySelectorAll("input:not([type='hidden']), textarea")).filter(visible);
+          const direct = inputs.find((field) => /subject/i.test(`${field.id} ${field.name} ${field.placeholder || ""}`));
+          if (direct) return direct;
+
+          const label = Array.from(document.querySelectorAll("label, td, th, div, span"))
+            .filter(visible)
+            .find((element) => /^subject:?$/i.test(clean(element.textContent)));
+          if (!label) return null;
+          const labelRect = label.getBoundingClientRect();
+          return inputs
+            .map((field) => ({ field, rect: field.getBoundingClientRect() }))
+            .filter(({ rect }) => rect.top >= labelRect.top - 8 && rect.top <= labelRect.bottom + 30 && rect.left >= labelRect.right - 20)
+            .sort((a, b) => a.rect.left - b.rect.left)[0]?.field || null;
+        }
+
+        function extractOrderNumber() {
+          const subject = clean(findSubjectField()?.value);
+          const pageText = clean(document.body?.innerText);
+          for (const text of [subject, pageText]) {
+            const match = text.match(/\b[A-Z]{2,8}[- ]?\d+(?:-\d+)?\b/i);
+            if (match) return match[0].replace(/\s+/g, "").toUpperCase();
+          }
+          return new URL(location.href).searchParams.get("idOrder") || "";
+        }
+
+        function helperUrl() {
+          const url = new URL(EMAIL_HELPER_URL);
+          const order = extractOrderNumber();
+          if (order) url.searchParams.set("order", order);
+          const context = emailPageContext();
+          if (context.quoteNumber) url.searchParams.set("quote", context.quoteNumber);
+          if (context.firstName) url.searchParams.set("first", context.firstName);
+          if (context.product) url.searchParams.set("product", context.product);
+          if (context.recipientEmail) url.searchParams.set("recipient", context.recipientEmail);
+          url.searchParams.set("theme", "omni");
+          url.searchParams.set("embedded", "1");
+          return url.toString();
+        }
+
+        function emailPageContext() {
+          let saved = {};
+          try {
+            saved = JSON.parse(localStorage.getItem(CONTEXT_KEY) || "{}");
+          } catch {
+            saved = {};
+          }
+          const directTo = Array.from(document.querySelectorAll("input:not([type='hidden']), textarea"))
+            .find((field) => /(^|[_$-])to([_$-]|$)/i.test(`${field.id} ${field.name}`) && clean(field.value));
+          const addressField = directTo || Array.from(document.querySelectorAll("input:not([type='hidden']), textarea"))
+            .find((field) => /<[^>]+@[^>]+>/.test(clean(field.value)));
+          const to = clean(addressField?.value || fieldNearLabel("To")?.value);
+          const recipientEmail = to.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || "";
+          const subject = clean(findSubjectField()?.value);
+          const displayName = clean(to.replace(/<[^>]+>/g, "").replace(/[,;]+$/, ""));
+          const contactListName = (() => {
+            const heading = Array.from(document.querySelectorAll("div, span, td, th, strong"))
+              .filter(visible)
+              .find((element) => /^contact list$/i.test(clean(element.textContent)));
+            if (!heading) return "";
+            const panel = ancestorCandidates(heading)
+              .filter(({ rect }) => rect.width >= 180 && rect.width <= 650 && rect.height >= 70)
+              .sort((a, b) => a.rect.width * a.rect.height - b.rect.width * b.rect.height)[0]?.node;
+            return String(panel?.innerText || "")
+              .split(/\n+/)
+              .map(clean)
+              .find((line) => line && !/^contact list$/i.test(line) && !/@/.test(line) && !/^(to|cc|bcc)$/i.test(line)) || "";
+          })();
+          const greetingName = editorCandidates()
+            .map(({ element }) => clean(element.innerText || element.textContent))
+            .map((text) => text.match(/\bHi\s+([^,\n]{1,50}),/i)?.[1] || "")
+            .find(Boolean) || "";
+          const subjectQuote = subject.match(/\b(?:SFOR|NZSO)[- ]?\d+(?:-\d+)?\b/i)?.[0]?.replace(/\s+/g, "") || "";
+          const sameQuote = !saved.quoteNumber || !subjectQuote
+            || saved.quoteNumber.replace(/\D/g, "") === subjectQuote.replace(/\D/g, "");
+          return {
+            firstName: (sameQuote && saved.firstName)
+              || displayName.split(/\s+/)[0]
+              || greetingName.split(/\s+/)[0]
+              || contactListName.split(/\s+/)[0]
+              || "",
+            quoteNumber: subjectQuote || saved.quoteNumber || "",
+            product: sameQuote ? saved.product || "" : "",
+            recipientEmail
+          };
+        }
+
+        function sendContextToHelper(frame) {
+          frame?.contentWindow?.postMessage({
+            type: "LC_OMNI_EMAIL_CONTEXT",
+            context: emailPageContext()
+          }, EMAIL_HELPER_URL);
+        }
+
+        function ensurePanel() {
+          let panel = document.getElementById(PANEL_ID);
+          if (panel) return panel;
+
+          panel = document.createElement("section");
+          panel.id = PANEL_ID;
+          panel.hidden = true;
+          panel.setAttribute("aria-label", "Living Culture Email Helper");
+          panel.innerHTML = '<iframe title="Living Culture Email Helper" allow="clipboard-write"></iframe>';
+          document.body.appendChild(panel);
+          return panel;
+        }
+
+        function ancestorCandidates(element) {
+          const candidates = [];
+          for (let node = element; node && node !== document.body; node = node.parentElement) {
+            const rect = node.getBoundingClientRect();
+            if (visible(node) && rect.width > 160 && rect.height > 60) candidates.push({ node, rect });
+          }
+          return candidates;
+        }
+
+        function findComposePanel() {
+          const subject = findSubjectField();
+          if (!subject) return null;
+          return ancestorCandidates(subject)
+            .filter(({ node, rect }) => rect.width >= 420 && rect.width <= 1100 && rect.height >= 380)
+            .filter(({ node }) => /\bfrom\b/i.test(node.innerText || "") && /\battachment\b/i.test(node.innerText || ""))
+            .sort((a, b) => a.rect.width * a.rect.height - b.rect.width * b.rect.height)[0]?.node || null;
+        }
+
+        function findContactsPanel() {
+          const heading = Array.from(document.querySelectorAll("div, span, td, th, strong"))
+            .filter(visible)
+            .find((element) => /^contact list$/i.test(clean(element.textContent)));
+          if (!heading) return null;
+          return ancestorCandidates(heading)
+            .filter(({ rect }) => rect.width >= 180 && rect.width <= 650 && rect.height >= 70)
+            .filter(({ node }) => Array.from(node.querySelectorAll("button, input, a")).some((control) => /^(to|cc|bcc)$/i.test(clean(control.textContent || control.value))))
+            .sort((a, b) => a.rect.width * a.rect.height - b.rect.width * b.rect.height)[0]?.node || null;
+        }
+
+        function buildThreeColumnLayout(panel) {
+          if (document.getElementById(LAYOUT_ID)) {
+            revealEmailHelperPage();
+            return true;
+          }
+          composePanel = findComposePanel();
+          contactsPanel = findContactsPanel();
+          if (!composePanel || !contactsPanel || composePanel.contains(contactsPanel) || contactsPanel.contains(composePanel)) return false;
+
+          composePlaceholder = document.createComment("LC Omni compose panel position");
+          contactsPlaceholder = document.createComment("LC Omni contacts panel position");
+          composePanel.before(composePlaceholder);
+          contactsPanel.before(contactsPlaceholder);
+
+          const layout = document.createElement("section");
+          layout.id = LAYOUT_ID;
+          composePlaceholder.parentNode.insertBefore(layout, composePlaceholder.nextSibling);
+          composePanel.classList.add("lc-omni-compose-column");
+          contactsPanel.classList.add("lc-omni-contacts-column");
+          layout.append(composePanel, contactsPanel, panel);
+          revealEmailHelperPage();
+          return true;
+        }
+
+        function closeEmailHelper() {
+          const panel = document.getElementById(PANEL_ID);
+          if (composePlaceholder?.parentNode && composePanel) {
+            composePlaceholder.parentNode.insertBefore(composePanel, composePlaceholder);
+            composePanel.classList.remove("lc-omni-compose-column");
+            composePlaceholder.remove();
+          }
+          if (contactsPlaceholder?.parentNode && contactsPanel) {
+            contactsPlaceholder.parentNode.insertBefore(contactsPanel, contactsPlaceholder);
+            contactsPanel.classList.remove("lc-omni-contacts-column");
+            contactsPlaceholder.remove();
+          }
+          document.getElementById(LAYOUT_ID)?.remove();
+          document.body.appendChild(panel);
+          panel.hidden = true;
+          composePlaceholder = null;
+          contactsPlaceholder = null;
+          composePanel = null;
+          contactsPanel = null;
+        }
+
+        function openEmailHelper() {
+          const panel = ensurePanel();
+          const frame = panel.querySelector("iframe");
+          const url = helperUrl();
+          if (!frame.getAttribute("src")) frame.src = url;
+          frame.addEventListener("load", () => sendContextToHelper(frame), { once: true });
+          panel.hidden = false;
+          buildThreeColumnLayout(panel);
+          [500, 1400, 2800].forEach((delay) => setTimeout(() => sendContextToHelper(frame), delay));
+        }
+
+        function injectButton() {
+          injectStyles();
+          document.getElementById(BUTTON_ID)?.remove();
+          ensureOmniToolbar();
+          openEmailHelper();
+        }
+
+        function editorCandidates() {
+          const candidates = Array.from(document.querySelectorAll(
+            ".note-editable, .fr-element, .tox-edit-area [contenteditable='true'], [contenteditable='true']"
+          )).filter(visible);
+
+          for (const frame of Array.from(document.querySelectorAll("iframe")).filter(visible)) {
+            try {
+              const body = frame.contentDocument?.body;
+              if (body) candidates.push(body);
+            } catch {
+              // Ignore cross-origin frames; Omni's editor frame is normally same-origin.
+            }
+          }
+
+          return candidates
+            .map((element) => ({ element, rect: element.getBoundingClientRect() }))
+            .filter(({ rect }) => rect.width > 300 && rect.height > 80)
+            .sort((a, b) => (b.rect.width * b.rect.height) - (a.rect.width * a.rect.height));
+        }
+
+        function setEditorHtml(html) {
+          const editor = editorCandidates()[0]?.element;
+          if (!editor) return false;
+
+          const content = `${html}<p><br></p>`;
+          editor.focus();
+          editor.innerHTML = content;
+
+          const editorWindow = editor.ownerDocument?.defaultView || window;
+          const InputEventCtor = editorWindow.InputEvent || InputEvent;
+          const EventCtor = editorWindow.Event || Event;
+          editor.dispatchEvent(new InputEventCtor("input", { bubbles: true, inputType: "insertHTML", data: html }));
+          editor.dispatchEvent(new EventCtor("change", { bubbles: true }));
+          editor.dispatchEvent(new EventCtor("blur", { bubbles: true }));
+
+          try {
+            if (window.tinymce?.activeEditor) {
+              window.tinymce.activeEditor.setContent(content);
+              window.tinymce.activeEditor.fire("input");
+              window.tinymce.activeEditor.fire("change");
+            }
+            if (window.CKEDITOR?.instances) {
+              Object.values(window.CKEDITOR.instances).find((instance) => instance?.setData)?.setData(content);
+            }
+          } catch {
+            // Direct editor insertion remains the primary path.
+          }
+          return true;
+        }
+
+        function setOmniSubject(value) {
+          const subject = findSubjectField();
+          const next = clean(value);
+          if (!subject || !next) return false;
+          const prototype = subject instanceof HTMLTextAreaElement
+            ? HTMLTextAreaElement.prototype
+            : HTMLInputElement.prototype;
+          const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+          if (setter) setter.call(subject, next);
+          else subject.value = next;
+          subject.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: next }));
+          subject.dispatchEvent(new Event("change", { bubbles: true }));
+          subject.dispatchEvent(new Event("blur", { bubbles: true }));
+          return true;
+        }
+
+        window.addEventListener("message", (event) => {
+          if (event.origin !== EMAIL_HELPER_URL) return;
+          const payload = event.data || {};
+          if (payload.type !== "LC_EMAIL_HELPER_DRAFT") return;
+
+          const html = String(payload.html || "").trim()
+            || escapeHtml(payload.text || "").replace(/\n/g, "<br>");
+          setOmniSubject(payload.subject);
+          if (!setEditorHtml(html)) {
+            alert("The Omni email editor could not be found. Keep this email page open and try Copy to Cin7 again.");
+            return;
+          }
+
+          event.source?.postMessage({ type: "LC_EMAIL_HELPER_DRAFT_INSERTED" }, EMAIL_HELPER_URL);
+          window.focus();
+        });
+
+        function scheduleInject() {
+          if (injectQueued) return;
+          injectQueued = true;
+          setTimeout(() => {
+            injectQueued = false;
+            injectButton();
+          }, 100);
+        }
+
+        function boot() {
+          injectButton();
+          const observer = new MutationObserver(scheduleInject);
+          observer.observe(document.body, { childList: true, subtree: true });
+        }
+
+        if (/\/Cloud\/TransactionEntry\/TransactionEntry\.aspx$/i.test(location.pathname)) {
+          if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bootQuoteCapture, { once: true });
+          else bootQuoteCapture();
+          return;
+        }
+
+        if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot, { once: true });
+        else boot();
+      })();
+    },
     gmailDrawings: function () {
       (function () {
         "use strict";
@@ -1846,7 +2994,7 @@
       return;
     }
     try {
-      if (gmailComponents[component.resource]) {
+      if (gmailComponents[component.resource] && (component.resource !== 'emailHelperCompose' || isGmail)) {
         gmailComponents[component.resource]();
         status.loaded.push(component.file);
         return;

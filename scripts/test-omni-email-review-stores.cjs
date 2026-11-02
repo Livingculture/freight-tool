@@ -62,7 +62,17 @@ const names={wairau:'North Shore / Wairau',penrose:'Penrose',hamilton:'Hamilton'
     assert((await page.evaluate(()=>copied['text/html'])).includes(`href="${napier}">Napier Google Review</a>`));
     assert(!(await page.evaluate(()=>copied['text/html'])).includes(stores.penrose));
     await action('gmail');
-    assert(new URL(await page.evaluate(()=>opened.at(-1))).searchParams.get('body').includes(napier));
+    const gmailUrl=await page.evaluate(()=>opened.at(-1));
+    assert(new URL(gmailUrl).searchParams.get('body').includes(napier));
+    const gmail=await browser.newPage();
+    await gmail.route('https://mail.google.com/**',route=>route.fulfill({contentType:'text/html',body:'<div role="textbox" contenteditable="true" aria-label="Message Body"></div>'}));
+    await gmail.goto(gmailUrl);
+    await gmail.addScriptTag({content:source});
+    await gmail.evaluate(()=>{document.querySelector('[contenteditable]').textContent=new URL(location.href).searchParams.get('body');});
+    await gmail.getByRole('link',{name:'Napier Google Review',exact:true}).waitFor();
+    assert.equal(await gmail.getByRole('link',{name:'Napier Google Review',exact:true}).getAttribute('href'),napier);
+    assert(!(await gmail.getByRole('textbox').textContent()).includes(napier),'Open Gmail displays only the named hyperlink');
+    await gmail.close();
     const edited=(await body.inputValue())+'\n\nThank you for visiting our showroom.';
     await body.fill(edited);await select.selectOption('tauranga');
     assert((await body.inputValue()).endsWith('Thank you for visiting our showroom.'),'Store changes preserve manual wording');

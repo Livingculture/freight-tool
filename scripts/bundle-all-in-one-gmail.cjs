@@ -4,6 +4,7 @@ const path = require('node:path');
 const directory = path.join(__dirname, '../userscripts');
 const target = path.join(directory, 'livingculture-all-in-one.user.js');
 const sources = {
+  emailHelperCompose: 'omni-email-helper-compose.user.js',
   gmailDrawings: 'gmail-drawings.user.js',
   gmailCareGuides: 'gmail-care-guides.user.js',
   gmailHubspotAttachments: 'gmail-hubspot-attachments.user.js',

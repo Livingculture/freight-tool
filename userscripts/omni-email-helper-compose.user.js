@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.48
+// @version      0.1.49
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @match        https://living-culture-email-helper.vercel.app/*
+// @match        https://mail.google.com/*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-email-helper-compose.user.js
 // @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-email-helper-compose.user.js
 // @supportURL   https://github.com/Livingculture/freight-tool
@@ -456,6 +457,11 @@
     [0, 400, 1100, 2400].forEach((delay) => setTimeout(applyUrlContext, delay));
   }
 
+  if (location.hostname === "mail.google.com") {
+    installGmailReviewLinks();
+    return;
+  }
+
   if (location.hostname === "living-culture-email-helper.vercel.app") {
     applyEmbeddedHelperTheme();
     return;
@@ -477,8 +483,8 @@
     };
   }
 
-  function installReviewStoreSelector() {
-    const stores = [
+  function googleReviewStores() {
+    return [
       { id:"wairau", label:"North Shore / Wairau", token:"CeNsNDL_2O3dEBM", place:"ChIJ2wj0ZX45DW0R42w0Mv_Y7d0" },
       { id:"penrose", label:"Penrose", token:"Cbt0916wRtjmEBM", place:"ChIJqftY2JRJDW0Ru3T3XrBG2OY" },
       { id:"hamilton", label:"Hamilton", token:"CdrvKXEiLhd-EBM", place:"ChIJASuiMCgZbW0R2u8pcSIuF34" },
@@ -487,6 +493,77 @@
       { id:"whangarei", label:"Whangarei", token:"CVJ2wVqQrM_TEBM", place:"ChIJuytBw31_C20RUnbBWpCsz9M" },
       { id:"napier", label:"Napier", token:"CfOE4ZpQEwj2EBM", place:"ChIJxTipStOzaW0R84ThmlATCPY" },
     ].map(store => ({ ...store, url:`https://g.page/r/${store.token}/review`, reviewLabel:`${store.label} Google Review` }));
+  }
+
+  function installGmailReviewLinks() {
+    if (document.documentElement.dataset.lcGmailReviewLinks) return;
+    document.documentElement.dataset.lcGmailReviewLinks = "1";
+    const stores = googleReviewStores();
+    const match = text => stores.find(store => clean(text) === `${store.reviewLabel}: ${store.url}`);
+    const excluded = node => node.parentElement?.closest('.gmail_quote,.gmail_signature,blockquote,[contenteditable="false"]');
+    const anchor = store => {
+      const link = document.createElement("a");
+      link.href = store.url;
+      link.textContent = store.reviewLabel;
+      return link;
+    };
+    const format = () => {
+      for (const body of document.querySelectorAll('div[contenteditable="true"][role="textbox"],div[contenteditable="true"][aria-label="Message Body"],div[contenteditable="true"][g_editable="true"]')) {
+        if (!visible(body) || excluded(body)) continue;
+        let changed = false;
+        // Replace only an exact review line, never the complete compose body or its signature.
+        for (const block of [body, ...body.querySelectorAll("div,p")]) {
+          if (excluded(block) || block.closest('.gmail_quote,.gmail_signature,blockquote,[contenteditable="false"]') || block.querySelector("div,p,blockquote")) continue;
+          const store = match(block.textContent);
+          if (!store) continue;
+          block.replaceChildren(anchor(store));
+          changed = true;
+        }
+        const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+        const nodes = [];
+        while (walker.nextNode()) nodes.push(walker.currentNode);
+        for (const node of nodes) {
+          if (!node.isConnected || excluded(node) || node.parentElement.closest("a")) continue;
+          const lines = node.textContent.split(/(\r?\n)/);
+          if (!lines.some(line => match(line))) continue;
+          const fragment = document.createDocumentFragment();
+          for (const line of lines) {
+            const store = match(line);
+            if (store) {
+              fragment.append(document.createTextNode(line.match(/^\s*/)[0]), anchor(store), document.createTextNode(line.match(/\s*$/)[0]));
+            } else fragment.appendChild(document.createTextNode(line));
+          }
+          node.replaceWith(fragment);
+          changed = true;
+        }
+        // Gmail can auto-link the URL while leaving the label in the preceding text node.
+        for (const link of body.querySelectorAll("a[href]")) {
+          if (excluded(link)) continue;
+          const store = stores.find(store => link.getAttribute("href") === store.url && clean(link.textContent) === store.url);
+          const before = link.previousSibling, after = link.nextSibling;
+          if (!store || before?.nodeType !== Node.TEXT_NODE || (after && after.nodeName !== "BR" && !/^\r?\n/.test(after.textContent))) continue;
+          const start = before.textContent.lastIndexOf("\n") + 1;
+          if (clean(before.textContent.slice(start)) !== `${store.reviewLabel}:`) continue;
+          const range = document.createRange();
+          range.setStart(before, start); range.setEndAfter(link);
+          range.deleteContents(); range.insertNode(anchor(store));
+          changed = true;
+        }
+        if (changed) body.dispatchEvent(new InputEvent("input", { bubbles:true, inputType:"insertReplacementText" }));
+      }
+    };
+    let timer = 0;
+    const schedule = () => {
+      if (timer) return;
+      timer = setTimeout(() => { timer = 0; format(); }, 150);
+    };
+    new MutationObserver(schedule).observe(document.documentElement, { childList:true, subtree:true, characterData:true });
+    document.addEventListener("input", schedule, true);
+    schedule();
+  }
+
+  function installReviewStoreSelector() {
+    const stores = googleReviewStores();
     const placeholder = "[Select a store for the Google review link]";
     const links = stores.flatMap(store => [store.url + "/", store.url, `https://search.google.com/local/writereview?placeid=${store.place}`]);
     const start = () => {

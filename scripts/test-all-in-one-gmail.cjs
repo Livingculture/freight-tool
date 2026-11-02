@@ -42,7 +42,7 @@ const loader = fs.readFileSync(path.join(directory, 'livingculture-all-in-one.us
     });
     await page.goto('https://mail.google.com/mail/u/0/');
     assert.deepEqual(await page.evaluate(() => window.__lcAllInOneStatus.errors), []);
-    assert.equal(await page.evaluate(() => window.__lcAllInOneStatus.loaded.length), 4);
+    assert.equal(await page.evaluate(() => window.__lcAllInOneStatus.loaded.length), 5);
     await page.locator('#lc-gmail-drawings-button').waitFor({ state: 'visible' });
     await page.locator('#lc-gmail-care-guides-button').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#lc-gmail-add-quote-hint').count(), 0);
@@ -54,7 +54,11 @@ const loader = fs.readFileSync(path.join(directory, 'livingculture-all-in-one.us
       compose.style.cssText = 'position:fixed;right:20px;bottom:20px;width:600px;height:650px;background:white';
       compose.innerHTML = '<div aria-label="Message Body" contenteditable="true" style="height:500px">Draft</div><div><button command="+Att" aria-label="Attach files">Paperclip</button></div>';
       document.body.appendChild(compose);
+      compose.querySelector('[contenteditable]').textContent='Draft\n\nTauranga Google Review: https://g.page/r/CfU2pxc8CpPbEBM/review';
     });
+    const reviewLink=page.getByRole('link',{name:'Tauranga Google Review',exact:true});
+    await reviewLink.waitFor();
+    assert.equal(await reviewLink.getAttribute('href'),'https://g.page/r/CfU2pxc8CpPbEBM/review','Named review hyperlinks work under Gmail CSP without runtime evaluation');
     await page.locator('#lc-gmail-drawings-button').waitFor({ state: 'visible' });
     await page.locator('#lc-gmail-care-guides-button').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#lc-gmail-add-quote-hint').innerText(), 'Add Quote →');
