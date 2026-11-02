@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Email Helper Compose
 // @namespace    livingculture-omni
-// @version      0.1.47
+// @version      0.1.48
 // @description  Opens the Living Culture email helper and inserts its draft into the Cin7 Omni email composer.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/CRM/ContactLog.aspx*
@@ -377,8 +377,7 @@
       event.stopImmediatePropagation();
       addCin7NumberToSubject();
       const subject = document.querySelector("#subject-output")?.value || "";
-      const text = document.querySelector("#body-output, #body")?.value || "";
-      const html = escapeHtml(text).replace(/\n/g, "<br>");
+      const { text, html } = emailDraftContent();
       window.parent.postMessage({
         type: "LC_EMAIL_HELPER_DRAFT",
         subject,
@@ -398,7 +397,7 @@
       event.preventDefault();
       event.stopImmediatePropagation();
       const subject = document.querySelector("#subject-output")?.value || "";
-      const body = document.querySelector("#body-output, #body")?.value || "";
+      const body = emailDraftContent().text;
       const gmailAccount = clean(document.querySelector("#gmail-account")?.value || "").toLowerCase();
       const gmailUrl = new URL("https://mail.google.com/mail/");
       if (gmailAccount) gmailUrl.searchParams.set("authuser", gmailAccount);
@@ -466,6 +465,18 @@
     return String(value || "").replace(/\s+/g, " ").trim();
   }
 
+  function emailDraftContent() {
+    const body = document.querySelector("#body-output, #body");
+    const value = body?.value || "";
+    const label = body?.dataset.reviewLabel, url = body?.dataset.reviewUrl;
+    const html = escapeHtml(value).replace(/\n/g, "<br>");
+    if (!label || !url) return { text:value, html };
+    return {
+      text:value.split(label).join(`${label}: ${url}`),
+      html:html.split(escapeHtml(label)).join(`<a href="${escapeHtml(url)}">${escapeHtml(label)}</a>`),
+    };
+  }
+
   function installReviewStoreSelector() {
     const stores = [
       { id:"wairau", label:"North Shore / Wairau", token:"CeNsNDL_2O3dEBM", place:"ChIJ2wj0ZX45DW0R42w0Mv_Y7d0" },
@@ -475,7 +486,7 @@
       { id:"christchurch", label:"Christchurch", token:"CX7Uu_940ID8EBM", place:"ChIJe3H9gkKLMW0RftS7_3jQgPw" },
       { id:"whangarei", label:"Whangarei", token:"CVJ2wVqQrM_TEBM", place:"ChIJuytBw31_C20RUnbBWpCsz9M" },
       { id:"napier", label:"Napier", token:"CfOE4ZpQEwj2EBM", place:"ChIJxTipStOzaW0R84ThmlATCPY" },
-    ].map(store => ({ ...store, url:`https://g.page/r/${store.token}/review` }));
+    ].map(store => ({ ...store, url:`https://g.page/r/${store.token}/review`, reviewLabel:`${store.label} Google Review` }));
     const placeholder = "[Select a store for the Google review link]";
     const links = stores.flatMap(store => [store.url + "/", store.url, `https://search.google.com/local/writereview?placeid=${store.place}`]);
     const start = () => {
@@ -498,16 +509,25 @@
       const update = () => {
         const active = clean(templates.querySelector("button.active")?.textContent);
         const review = /^(?:review request|request review|purchase thank-you)$/i.test(active)
-          || body.value.includes(placeholder) || links.some(link => body.value.includes(link));
+          || body.value.includes(placeholder) || links.some(link => body.value.includes(link))
+          || stores.some(store => body.value.includes(store.reviewLabel));
         label.hidden = !review;
         label.style.display = review ? "grid" : "none";
         select.required = review;
+        delete body.dataset.reviewLabel;
+        delete body.dataset.reviewUrl;
         if (!review) return false;
-        const next = stores.find(store => store.id === select.value)?.url || placeholder;
+        const selected = stores.find(store => store.id === select.value);
+        const next = selected?.reviewLabel || placeholder;
         let text = body.value;
         // Replace only known review links; preserve customer wording and other links.
         for (const link of links) text = text.split(link).join(placeholder);
+        for (const store of stores) text = text.split(store.reviewLabel).join(placeholder);
         body.value = text.split(placeholder).join(next);
+        if (selected) {
+          body.dataset.reviewLabel = selected.reviewLabel;
+          body.dataset.reviewUrl = selected.url;
+        }
         return true;
       };
       select.addEventListener("change", () => { select.setCustomValidity(""); update(); });
@@ -526,9 +546,7 @@
         if (button.id !== "copy-body") return;
         event.preventDefault(); event.stopImmediatePropagation();
         // The helper's original HTML template hard-codes Penrose, so copy the visible draft instead.
-        const text = body.value, url = stores.find(store => store.id === select.value).url;
-        const html = escapeHtml(text).replace(/\n/g, "<br>")
-          .split(escapeHtml(url)).join(`<a href="${url}">${url}</a>`);
+        const { text, html } = emailDraftContent();
         const copy = navigator.clipboard?.write && typeof ClipboardItem !== "undefined"
           ? navigator.clipboard.write([new ClipboardItem({ "text/plain":new Blob([text], { type:"text/plain" }), "text/html":new Blob([html], { type:"text/html" }) })])
           : navigator.clipboard?.writeText ? navigator.clipboard.writeText(text) : Promise.reject(new Error("Clipboard unavailable"));
