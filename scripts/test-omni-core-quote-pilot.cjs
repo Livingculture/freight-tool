@@ -81,7 +81,7 @@ document.querySelectorAll('#products tr input:not(.code)').forEach(input=>input.
   }
   async function load(data = fixture) {
     await el('file').setInputFiles({ name: 'quote.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(data)) });
-    await page.waitForFunction(() => !document.querySelector('#lc-core-import').shadowRoot.querySelector('#status').textContent.includes('No quote file'));
+    await page.waitForFunction(() => !['Enter a Core quote number.','Loading local test file...'].includes(document.querySelector('#lc-core-import').shadowRoot.querySelector('#status').textContent));
   }
   async function fill() { await el('confirm').check(); await el('fill').click(); }
   async function stopped() {

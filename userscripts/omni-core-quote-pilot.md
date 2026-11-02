@@ -1,57 +1,63 @@
-# Core Quote Import Pilot
+# Core To Omni Quote Transfer
 
-This is a separate, opt-in userscript. It is not included in All-in-One. It reads a
-user-selected local JSON file and fills product lines through Omni's native grid.
-It has no API credentials, network requests or persistent quote storage. Customer
-data must never be committed alongside this script.
+This separate Tampermonkey script is not part of All-in-One. Version 0.2.0 uses
+the existing server-side Core API connection, not a PDF or screenshot-based file.
 
-## Installation And Test
+## Staff Flow
 
-1. In Tampermonkey, use Utilities > Import from file to install
-   `omni-core-quote-pilot.user.js`.
-2. Search existing Omni quotes for the source reference to avoid duplicating an
-   earlier copy. This pilot cannot search the account or check other tabs.
-3. Open a new, unsaved Omni quote. Select the correct customer and confirm NZD and
-   GST-inclusive pricing before importing. The script does not select a customer.
-4. Click Core Quote Import Pilot near the quote heading, then choose the local
-   quote JSON file. Review the source details and warnings.
-5. Confirm the checks, then click Fill Product Lines. The pilot attempts exact SKU
-   selection and sets quantity, unit price and percentage discount. It stops if
-   the grid, product or editor cannot be uniquely identified.
-6. Complete the address, freight, salesperson, quote date and internal source
-   reference manually. Let Omni allocate its own quote number. Compare the native
-   quote total and generated quote PDF with Core before any save or approval.
+1. Install/update `omni-core-quote-pilot.user.js`. Keep All-in-One enabled.
+2. In Core, click **Copy Core Quote to Omni** and enter the Core quote number.
+3. A Workflow tab performs the lookup. Sign in there if requested. Only office
+   roles can read Core quotes through the authenticated transfer route.
+4. That tab opens Omni and follows its native **New Quote** link. The original
+   Core tab stays open and unchanged. Quote fields are filled automatically.
+5. Review before saving. The transfer never saves, approves, pays, packs,
+   dispatches or emails the new Omni quote.
 
-For the screenshot-based NZSO-16714 test, the local file is
-`/Users/steveforeman/Desktop/NZSO-16714-omni-pilot.json`. The target is NZD
-13,523.97 including GST, with NZD 169.00 freight. The separate NZD 200.00 discount
-shown in the source summary is unresolved and is deliberately not applied again.
-The customer delivery street address is missing. Verify the transcription against
-Core; this is not an API export.
+For direct lookup on a new Omni quote, open the transfer panel, enter the Core
+number and click **Load from Core**, then **Fill Quote** after reviewing warnings.
+No local file is required. Search for existing Omni copies before transferring a
+Core quote again; saved quotes are not automatically checked for duplicates.
 
-## Limits
+## Data And Safety
 
-- Only headings explicitly identifying New Quote and URLs without existing
-  transaction IDs are supported. Other pages are refused rather than guessed.
-- The product grid must be empty at the start. There is no automatic overwrite,
-  rollback, retry or cross-tab duplicate protection.
-- After a partial failure, inspect all entered lines manually. Reloading clears
-  the in-memory attempt flag; it is not a way to resume an import safely.
-- Make/Use expansions and substituted or ambiguous SKUs require manual review.
-- Code selection supports native legacy Enter-key handlers and editors replaced
-  during lookup. Enter is restricted to the exact SKU's Code input. Form submit
-  events are blocked while importing. Unresolved SKUs stop the import rather than
-  being accepted as plain text or substituted with another product.
-- Grid inputs may be inside their cell or floating over it. A floating editor is
-  accepted only when newly visible or focused and geometrically over the selected
-  cell, not an adjacent row. Numeric edits use native Tab commit before their
-  committed cell values are checked. Errors identify the SKU and numeric column.
-- Customer matching, final GST calculation, freight and total verification are
-  not automated. Check Product Lines only checks SKU count, quantities, unit
-  prices and discounts, not the native quote grand total.
-- The importer never clicks Save, Approve, Send or conversion controls. Native
-  Omni behavior and other enabled scripts are outside its control.
-- Verification uses a mock Omni grid in Playwright. Actual signed-in Omni behavior
-  has not yet been tested. Disable this pilot after the test.
+- Server credentials stay on the server. Core API calls use the existing
+  `CIN7_CORE_ACCOUNT_ID` and `CIN7_CORE_APPLICATION_KEY`, and are GET only.
+- Exact reference matching is required. Quote lines come from `sale.Quote`;
+  order/invoice lines are not substituted for a missing quote.
+- Customer/contact, phone/mobile, delivery/billing addresses, memo, products,
+  quantities, prices, discounts and charges come from Core. Missing values are
+  not invented. Customer data must never be committed alongside the script.
+- Customer selection must resolve to a matching Omni customer. Ambiguous or
+  missing customers stop the transfer; no customer IDs/records are fabricated.
+- Original reference/date, salesperson, terms, customer reference, notes and
+  charge details are retained in Internal Comments. Matching native salesperson
+  and payment-terms options are selected where available. Omni keeps its own new
+  quote number and creation date.
+- Shipping uses Freight; other positive additional charges use Surcharge;
+  negative additional charges use Discount. Source charge details remain in notes.
+- Current financial support is NZD with consistent 15% GST. Exclusive Core unit
+  prices are converted to inclusive prices. Totals must reconcile; no unexplained
+  discount or rounding adjustment is guessed.
+- Only a new, empty quote is editable. Existing transactions, repeated SKUs or
+  unconfirmed mappings stop the transfer. Make/Use expansions need manual review
+  if the resulting grid differs. Partial imports are not retried/rolled back.
+- Server responses target an allowed Cin7 origin. The browser verifies the
+  popup identity, origin and request nonce. Private Tampermonkey handoffs expire
+  in ten minutes, are destination-tab scoped and are deleted when consumed.
+- Grid editors can be in-cell or floating over the selected cell. Numeric fields
+  use native Tab commit. Adjacent-row editors and form submits are rejected.
 
-Run focused checks with `node scripts/test-omni-core-quote-pilot.cjs`.
+## Verification
+
+`node scripts/test-core-api-quote-transfer.cjs` tests both browser entry paths
+with mocked Core/Workflow/Omni services: number lookup, private handoff, customer,
+phone/mobile, addresses, memo, representative, six lines, freight and GST/total.
+
+`node scripts/test-omni-core-quote-pilot.cjs` retains legacy/floating-grid, commit,
+adjacent-row and partial-failure regressions. Workflow's
+`tests/core-quote-transfer.cjs` covers API mapping, exact lookup, tax/discount
+reconciliation and authenticated route gates with mocked services.
+
+Actual account data still needs a signed-in live test. The old JSON format is
+retained only as a hidden regression input, not the number-based staff workflow.

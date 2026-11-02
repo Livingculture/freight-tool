@@ -1,16 +1,22 @@
 // ==UserScript==
 // @name         Living Culture Core Quote Import Pilot
 // @namespace    livingculture-omni
-// @version      0.1.3
-// @description  Preview a local Core quote file and fill product lines on a new, unsaved Omni quote. Never saves or approves.
-// @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
+// @version      0.2.0
+// @description  Look up a Core quote number through Workflow and transfer customer, addresses, products and charges to a new Omni quote. Never saves or approves.
+// @match        https://go.cin7.com/*
+// @match        https://inventory.dearsystems.com/*
+// @match        https://*.dearsystems.com/*
+// @match        https://*.cin7core.com/*
+// @match        https://*.cin7.com/*
 // @run-at       document-idle
-// @grant        none
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_deleteValue
 // ==/UserScript==
 
 (function () {
   'use strict';
-  if (location.hostname !== 'go.cin7.com' || window.top !== window.self || document.getElementById('lc-core-import')) return;
+  if (window.top !== window.self || document.getElementById('lc-core-import')) return;
   const clean = value => String(value ?? '').replace(/\s+/g, ' ').trim();
   const key = value => clean(value).replace(/[^a-z]/gi, '').toLowerCase();
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -22,12 +28,91 @@
   let busy = false;
   let sessionUrl = '';
   let floatingEditor = null;
+  const workflowOrigin = 'https://living-culture-workflow.vercel.app';
+  const pendingKey = 'lc-core-api-quote-transfer-v1';
+  const tabKey = 'lc-core-api-quote-transfer-tab-v1';
+  let lookupInFlight = false;
+  const isOmni = location.hostname === 'go.cin7.com';
+  const isCore = !isOmni && /\.(?:dearsystems|cin7core|cin7)\.com$/.test(location.hostname);
+  if (!isOmni && !isCore) return;
+
+  function requestCoreQuote(reference, receive, report) {
+    if (lookupInFlight) { report('A Core lookup is already in progress.'); return; }
+    const match = clean(reference).toUpperCase().replace(/\s/g,'').match(/^(?:NZSO-?)?(\d{3,12})$/);
+    if (!match) { report('Enter a Core quote number such as NZSO-16714.'); return; }
+    const order = 'NZSO-' + match[1], nonce = crypto.randomUUID();
+    const url = new URL('/core-quote-transfer', workflowOrigin);
+    url.search = new URLSearchParams({ order, target:location.origin, nonce }).toString();
+    const popup = window.open(url.href, 'lc-core-quote-' + nonce);
+    if (!popup) { report('Allow this Cin7 page to open the Workflow lookup window.'); return; }
+    lookupInFlight = true;
+    report('Looking up ' + order + ' in Core. Sign in to Workflow in the lookup window if requested.');
+    const timer = setTimeout(() => { lookupInFlight=false; window.removeEventListener('message', onMessage); report('Core lookup timed out. Close the lookup window and try again.'); }, 300000);
+    function onMessage(event) {
+      if (event.origin !== workflowOrigin || event.source !== popup || event.data?.nonce !== nonce || !['lc-core-quote-loaded','lc-core-quote-error'].includes(event.data?.type)) return;
+      clearTimeout(timer); lookupInFlight=false; window.removeEventListener('message', onMessage);
+      if (event.data.type === 'lc-core-quote-error') { report(String(event.data.error || 'Core quote lookup failed.')); return; }
+      try {
+        const result = validate(event.data.quote);
+        if (result.schema !== 'lc-core-quote-api-v1' || result.sourceReference !== order) throw new Error('The Core response did not match the requested quote.');
+        const keepOpen = receive(result, nonce, popup) === false;
+        if(!keepOpen)popup.close();
+      } catch (error) { report(error.message); }
+    }
+    window.addEventListener('message', onMessage);
+  }
+
+  if (isCore) {
+    const bar = document.createElement('div'); bar.id = 'lc-core-import';
+    bar.style.cssText = 'padding:8px 14px;background:white;border-bottom:1px solid #cbdcde;font:14px Arial;color:#233c42;display:flex;align-items:center;gap:12px;flex-wrap:wrap';
+    const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Copy Core Quote to Omni';
+    button.style.cssText = 'padding:8px 12px;border:0;border-radius:4px;background:#087f8c;color:white;font:inherit;cursor:pointer';
+    const message = document.createElement('span'); bar.append(button,message); document.body.prepend(bar);
+    button.addEventListener('click', () => {
+      const reference = window.prompt('Core quote number (NZSO-XXXXX)');
+      if (!reference) return;
+      requestCoreQuote(reference, (data,nonce,popup) => {
+        if (typeof GM_setValue !== 'function') throw new Error('Install this transfer script in Tampermonkey on both Core and Omni.');
+        GM_setValue(pendingKey,{ nonce, expires:Date.now()+600000, quote:data });
+        message.textContent='Core quote '+data.sourceReference+' loaded. Opening the new Omni quote in the transfer tab.';
+        popup.location.href='https://go.cin7.com/#lc-core-quote-transfer=' + nonce;
+        popup.focus();
+        return false;
+      }, text => { message.textContent = text; });
+    });
+    return;
+  }
+
+  // Only the tab opened from Core may consume its short-lived quote handoff.
+  const hashNonce = new URLSearchParams(location.hash.slice(1)).get('lc-core-quote-transfer');
+  if (hashNonce && /^[a-f0-9-]{36}$/i.test(hashNonce)) {
+    sessionStorage.setItem(tabKey,hashNonce);
+    history.replaceState(null,'',location.pathname+location.search);
+  }
+  let handoff = null;
+  try {
+    const marker = sessionStorage.getItem(tabKey);
+    const stored = typeof GM_getValue === 'function' ? GM_getValue(pendingKey,null) : null;
+    if (marker && stored?.nonce === marker && stored.expires > Date.now() && stored.expires <= Date.now()+600000) handoff = stored;
+    else if (marker) sessionStorage.removeItem(tabKey);
+  } catch { /* Missing/expired handoffs never trigger a quote edit. */ }
+  if (!/\/Cloud\/TransactionEntry\/TransactionEntry\.aspx$/i.test(location.pathname)) {
+    if (handoff) {
+      let attempts = 0;
+      const timer = setInterval(() => {
+        const links = [...document.querySelectorAll('a')].filter(link => visible(link) && /^new\s+quote$/i.test(clean(link.textContent)));
+        if (links.length === 1) { clearInterval(timer); links[0].click(); }
+        else if (++attempts >= 60) { clearInterval(timer); window.alert('Core quote loaded. Open New Quote in this same Omni tab to continue the transfer.'); }
+      },250);
+    }
+    return;
+  }
 
   function validate(data) {
-    if (data?.schema !== 'lc-core-quote-pilot-v1' || !/^NZSO-\d+$/.test(data.sourceReference || '') || data.currency !== 'NZD' || data.pricesIncludeGst !== true) {
+    if (!['lc-core-quote-pilot-v1','lc-core-quote-api-v1'].includes(data?.schema) || !/^NZSO-\d+$/.test(data.sourceReference || '') || data.currency !== 'NZD' || data.pricesIncludeGst !== true) {
       throw new Error('Expected an NZD Core quote file with GST-inclusive prices.');
     }
-    if (!Array.isArray(data.lines) || !data.lines.length || data.lines.length > 30) throw new Error('Expected 1-30 quote lines.');
+    if (!Array.isArray(data.lines) || !data.lines.length || data.lines.length > 100) throw new Error('Expected 1-100 quote lines.');
     const skus = new Set();
     for (const line of data.lines) {
       if (!/^[A-Z0-9][A-Z0-9()-]{1,79}$/.test(line.sku || '') || skus.has(line.sku)) throw new Error('Invalid or repeated SKU.');
@@ -39,7 +124,10 @@
       if (cents(line.quantity * line.unitPrice * (1 - line.discountPercent / 100)) !== cents(line.amount)) throw new Error('Line total does not reconcile: ' + line.sku);
     }
     if (!Number.isFinite(data.freight?.amount) || data.freight.amount < 0 || !Number.isFinite(data.total)) throw new Error('Missing freight or total.');
-    if (data.lines.reduce((sum, line) => sum + cents(line.amount), 0) + cents(data.freight.amount) !== cents(data.total)) throw new Error('Quote total does not reconcile.');
+    const surcharge = data.schema === 'lc-core-quote-api-v1' ? data.surcharge?.amount : 0;
+    const discount = data.schema === 'lc-core-quote-api-v1' ? data.discount?.amount : 0;
+    if (![surcharge,discount].every(value=>Number.isFinite(value)&&value>=0)) throw new Error('Invalid Core charges or discount.');
+    if (data.lines.reduce((sum, line) => sum + cents(line.amount), 0) + cents(data.freight.amount) + cents(surcharge) - cents(discount) !== cents(data.total)) throw new Error('Quote total does not reconcile.');
     if (!Array.isArray(data.warnings) || data.warnings.some(item => typeof item !== 'string')) throw new Error('Missing source warnings.');
     return data;
   }
@@ -104,7 +192,7 @@
   }
 
   function setValue(input, value) {
-    if (!input || !visible(input) || input.disabled || input.readOnly || !['text', 'number', 'search', 'tel'].includes(input.type)) throw new Error('The Omni editor is not writable.');
+    if (!input || !visible(input) || input.disabled || input.readOnly || !['text', 'number', 'search', 'tel', 'email'].includes(input.type)) throw new Error('The Omni editor is not writable.');
     input.focus();
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, String(value));
     input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -196,9 +284,15 @@
   }
 
   async function addProduct(line) {
-    const info = assertNewQuote();
+    let info = assertNewQuote();
     if (info.rows.some(row => valueOf(cellFor(row, info, 'code')).toUpperCase() === line.sku)) throw new Error('SKU already exists: ' + line.sku);
-    const row = info.rows.find(item => blank(valueOf(cellFor(item, info, 'code'))) && blank(valueOf(cellFor(item, info, 'product'))));
+    const empty=()=>info.rows.find(item => blank(valueOf(cellFor(item, info, 'code'))) && blank(valueOf(cellFor(item, info, 'product'))));
+    let row=empty();
+    for(let attempt=0;!row&&attempt<30;attempt++){await wait(100);info=assertNewQuote();row=empty();}
+    if(!row){
+      const add=[...document.querySelectorAll('button,a,input[type="button"]')].filter(node=>visible(node)&&/^add\s+a\s+new\s+line$/i.test(clean(node.value||node.textContent)));
+      if(add.length===1){add[0].click();for(let attempt=0;!row&&attempt<30;attempt++){await wait(100);info=assertNewQuote();row=empty();}}
+    }
     if (!row) throw new Error('No empty product line. Add a new blank line in Omni.');
     const codeCell = cellFor(row, info, 'code');
     let input = await editor(codeCell);
@@ -290,6 +384,177 @@
     }
   }
 
+  function nativeField(labelName, section = '', required = true) {
+    const fieldKey = value => clean(value).replace(/^\d+\s*/,'').toLowerCase().replace(/[^a-z0-9]/g,'');
+    const wanted=fieldKey(labelName);
+    const labels = [...document.querySelectorAll('label,td,th,div,span,strong,b,button')].filter(node => visible(node) && fieldKey(node.textContent) === wanted &&
+      (node.htmlFor || ![...node.children].some(child=>fieldKey(child.textContent)===wanted)));
+    let left = -Infinity, right = Infinity, top = -Infinity;
+    if (section) {
+      const sectionKey = node => {const copy=node.cloneNode(true);copy.querySelectorAll('button,a,label,input,[id^="lc-"]').forEach(child=>child.remove());return key(copy.textContent);};
+      const anchors = [...document.querySelectorAll('h1,h2,h3,h4,strong,b,div,span')].filter(node => node.textContent.length<150 && visible(node) && ['contact','deliveryaddress','billingaddress'].includes(sectionKey(node)) && ![...node.children].some(child=>sectionKey(child)===sectionKey(node)));
+      const heading = anchors.filter(node=>sectionKey(node)===key(section));
+      if (heading.length !== 1) throw new Error('Cannot uniquely locate the Omni ' + section + ' section.');
+      const r = heading[0].getBoundingClientRect(); left=r.left-12; top=r.bottom-4;
+      right=Math.min(...anchors.map(node=>node.getBoundingClientRect()).filter(other=>other.left>r.left+30 && Math.abs(other.top-r.top)<40).map(other=>other.left-10),Infinity);
+    }
+    const matches = new Set();
+    const fields = [...document.querySelectorAll('input:not([type="hidden"]),textarea,select')].filter(visible);
+    for (const label of labels) {
+      const r = label.getBoundingClientRect();
+      if (r.left < left || r.left >= right || r.top < top) continue;
+      const forId=label.htmlFor || label.closest('label')?.htmlFor;
+      const linked = forId ? document.getElementById(forId) : null;
+      if (linked && visible(linked)) { matches.add(linked); continue; }
+      const candidates = fields.filter(field=>{
+        const f=field.getBoundingClientRect();
+        return f.left>=r.right-10 && f.left<=r.right+240 && f.left<right && Math.abs(f.top+f.height/2-r.top-r.height/2)<Math.max(24,r.height);
+      }).sort((a,b)=>a.getBoundingClientRect().left-b.getBoundingClientRect().left);
+      if (candidates.length) matches.add(candidates[0]);
+      else {
+        const below=fields.filter(field=>{const f=field.getBoundingClientRect();return f.left>=r.left-10&&f.left<=r.left+24&&f.left<right&&f.top>=r.bottom-4&&f.top<=r.bottom+44;}).sort((a,b)=>a.getBoundingClientRect().top-b.getBoundingClientRect().top);
+        if(below.length)matches.add(below[0]);
+      }
+    }
+    if (matches.size===1) return [...matches][0];
+    if (required) throw new Error('Cannot uniquely locate Omni field: ' + (section ? section+' / ' : '') + labelName);
+    return null;
+  }
+
+  async function writeNative(field, value, label, numeric = false) {
+    assertNewQuote();
+    if (!field || field.disabled || field.readOnly || !visible(field)) throw new Error('Cannot edit Omni ' + label + '.');
+    const equal = actual => numeric ? Number(String(actual).replace(/[$,\s]/g,'')) === Number(value) : clean(actual)===clean(value);
+    if (equal(field.value)) return;
+    field.scrollIntoView({block:'center'});
+    if (field instanceof HTMLTextAreaElement) {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(field,String(value));
+      field.dispatchEvent(new Event('input',{bubbles:true})); field.dispatchEvent(new Event('change',{bubbles:true}));
+    } else if (field instanceof HTMLSelectElement) {
+      const options=[...field.options].filter(option=>clean(option.text).toLowerCase()===clean(value).toLowerCase());
+      if (options.length!==1) throw new Error('No unique Omni option for ' + label + ': ' + value);
+      field.value=options[0].value; field.dispatchEvent(new Event('change',{bubbles:true}));
+    } else setValue(field,value);
+    field.blur(); await wait(100);
+    const actual = field instanceof HTMLSelectElement ? field.selectedOptions[0]?.text : field.value;
+    if (!field.isConnected || !equal(actual)) throw new Error('Omni did not retain ' + label + '.');
+  }
+
+  async function selectCustomer(customer) {
+    const selected=()=>clean(nativeField('Selected Customer','',false)?.value);
+    const email=()=>clean(nativeField('Email Address','Contact')?.value).toLowerCase();
+    const confirmed=()=>Boolean(selected()) && (customer.email ? email()===customer.email.toLowerCase() : selected().toLowerCase()===customer.name.toLowerCase());
+    if (selected()) { if(confirmed())return; throw new Error('A different Omni customer is already selected. No customer was overwritten.'); }
+    let search=nativeField('First Name','Contact');
+    search.scrollIntoView({block:'center'});
+    setValue(search,customer.email || customer.name);
+    let clicked=false;
+    for(let attempt=0;attempt<140;attempt++) {
+      assertNewQuote();
+      if(confirmed())return;
+      if(!clicked && !selected() && (attempt===25 || attempt===55)) {
+        const next=attempt===25?nativeField('First Name','Contact'):nativeField('Company','Contact');
+        search=next;search.scrollIntoView({block:'center'});
+        setValue(search,attempt===25?customer.firstName:(customer.accountName||customer.name));
+      }
+      if(!clicked && search.isConnected) {
+        const r=search.getBoundingClientRect();
+        const options=[...document.querySelectorAll('[role="option"],.ui-menu-item,li,td,div,span')].filter(node=>{
+          if(!visible(node)||node.closest('#lc-core-import')||node.closest('table')===tableInfo().table)return false;
+          const text=clean(node.textContent),n=node.getBoundingClientRect();
+          if(text.length>500||n.height>140||n.top<r.top-120||n.top>r.bottom+420||n.right<r.left||n.left>r.right+400)return false;
+          const emails=(text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)||[]).map(value=>value.toLowerCase());
+          const name=text.toLowerCase(),wanted=customer.name.toLowerCase();
+          return customer.email && emails.includes(customer.email.toLowerCase()) || !emails.length && (name===wanted||name.startsWith(wanted+' '));
+        });
+        const leaves=options.filter(node=>!options.some(other=>other!==node&&node.contains(other)));
+        if(leaves.length>1)throw new Error('Several Omni customers match this Core contact. Select the correct customer in Omni before importing.');
+        if(leaves.length===1){leaves[0].click();clicked=true;}
+      }
+      await wait(100);
+    }
+    throw new Error('Could not confirm the Core customer in Omni by email/name. Select or create that customer in Omni first; no customer record was invented.');
+  }
+
+  async function fillQuoteDetails() {
+    const customer=quote.customer;
+    await selectCustomer(customer);
+    for(const [label,value] of [['First Name',customer.firstName],['Last Name',customer.lastName],['Company',customer.company],['Email Address',customer.email],['Phone',customer.phone],['Mobile',customer.mobile]]) {
+      if(value)await writeNative(nativeField(label,'Contact'),value,'Contact '+label);
+    }
+    for(const [section,address,prefix] of [['Delivery Address',quote.shippingAddress,'Delivery'],['Billing Address',quote.billingAddress,'Billing']]) {
+      const names=clean(address.contact).split(' ');
+      for(const [label,value] of [['First Name',names[0]],['Last Name',names.slice(1).join(' ')],['Company',address.company]]) {
+        const field=value?nativeField(label,section,false):null;
+        if(field)await writeNative(field,value,section+' '+label);
+      }
+      for(const [suffix,value] of [['Address 1',address.line1],['Address 2',address.line2],['City',address.city],['State/Region',address.state],['Postal Code',address.postcode],['Country',address.country]]) {
+        if(value)await writeNative(nativeField(prefix+' '+suffix),value,prefix+' '+suffix);
+      }
+    }
+    const comments=[`Copied from Cin7 Core ${quote.sourceReference}`,`Core date: ${quote.sourceDate}`,quote.salesperson&&`Core salesperson: ${quote.salesperson}`,quote.customerReference&&`Customer reference: ${quote.customerReference}`,quote.terms&&`Core terms: ${quote.terms}`,quote.carrier&&`Core carrier: ${quote.carrier}`,quote.notes,quote.memo,...quote.lines.map(line=>`${line.sku}: ${line.description}${line.comment?'; '+line.comment:''}`),...quote.additionalCharges.map(item=>`${item.description}: ${item.quantity} x ${item.unitPrice}, discount ${item.discountPercent}%, total ${item.amount}${item.comment?'; '+item.comment:''}`)].filter(Boolean).join('\n');
+    const internal=nativeField('Internal Comments');
+    await writeNative(internal,[clean(internal.value),comments].filter(Boolean).join('\n'),'Internal Comments');
+    await fillQuoteMemo('');
+    const rep=quote.salesperson?nativeField('Sales Rep','',false):null;
+    if(rep){
+      const exact=[...rep.options||[]].filter(option=>clean(option.text).toLowerCase()===quote.salesperson.toLowerCase());
+      if(exact.length===1)await writeNative(rep,quote.salesperson,'Sales Rep');
+    }
+    const terms=quote.terms?nativeField('Payment Terms','',false):null;
+    if(terms && !terms.disabled && !terms.readOnly && (!(terms instanceof HTMLSelectElement) || [...terms.options].some(option=>clean(option.text).toLowerCase()===quote.terms.toLowerCase())))await writeNative(terms,quote.terms,'Payment Terms');
+    const customerReference=quote.customerReference?nativeField('Customer PO No','',false):null;
+    if(customerReference)await writeNative(customerReference,quote.customerReference,'Customer PO No');
+  }
+
+  async function fillQuoteMemo(value) {
+      let memo=document.querySelector('textarea[aria-label="Delivery Instructions"], [data-lc-delivery-label] textarea');
+      if(!memo){
+        const marker=document.querySelector('[data-lc-delivery-label]');
+        if(marker){
+          const r=marker.getBoundingClientRect();
+          const candidates=[...document.querySelectorAll('textarea')].filter(field=>{const f=field.getBoundingClientRect();return visible(field)&&f.top>=r.top-10&&f.top<=r.bottom+70&&f.right>r.left&&f.left<r.right+100;}).sort((a,b)=>Math.abs(a.getBoundingClientRect().top-r.bottom)-Math.abs(b.getBoundingClientRect().top-r.bottom));
+          memo=candidates[0];
+        }
+      }
+      if(!memo){if(quote.memo)throw new Error('Core memo was preserved in Internal Comments, but the native quote memo field could not be identified.');return;}
+      // Keep automatic installation helpers inactive until all Core fee lines exist.
+      await writeNative(memo,value,'Quote memo');
+  }
+
+  async function fillCharges() {
+    for(const [label,item] of [['Freight Costs',quote.freight],['Surcharge',quote.surcharge],['Discount',quote.discount]]) {
+      const labels=[...document.querySelectorAll('label,button,td,span,div,strong')].filter(node=>visible(node)&&key(node.textContent)===key(label));
+      const pairs=[];
+      for(const node of labels){
+        const r=node.getBoundingClientRect();
+        const fields=[...document.querySelectorAll('input:not([type="hidden"])')].filter(field=>{
+          const f=field.getBoundingClientRect(); return visible(field)&&!field.disabled&&!field.readOnly&&f.left>=r.right-10&&Math.abs(f.top+f.height/2-r.top-r.height/2)<20;
+        }).sort((a,b)=>a.getBoundingClientRect().left-b.getBoundingClientRect().left);
+        if(fields.length===2&&!pairs.some(pair=>pair[0]===fields[0]))pairs.push(fields);
+      }
+      if(pairs.length!==1){if(item.amount)throw new Error('Cannot uniquely locate Omni '+label+' amount and description.');continue;}
+      await writeNative(pairs[0][0],item.description||'',label+' description');
+      await writeNative(pairs[0][1],String(item.amount),label+' amount',true);
+    }
+  }
+
+  function nativeAmount(label) {
+    const pattern=label==='Total'?/^Total\s*:?\s*(?:NZD\s*|\$\s*)?(-?[\d,]+\.\d{2})\s*(?:NZD)?$/i:/^Total\s*Tax\s*15\s*%\s*:?\s*(?:\$\s*)?(-?[\d,]+\.\d{2})$/i;
+    const matches=[...document.querySelectorAll('td,span,div,p,strong,b')].filter(visible).map(node=>clean(node.textContent).match(pattern)).filter(Boolean);
+    const values=new Set(matches.map(match=>Number(match[1].replace(/,/g,''))));
+    if(values.size===1)return [...values][0];
+    return null;
+  }
+
+  async function verifyQuoteTotal() {
+    for(let attempt=0;attempt<30;attempt++){
+      if(nativeAmount('Total')===quote.total && nativeAmount('Tax')===quote.tax)return;
+      await wait(100);
+    }
+    throw new Error('Quote fields filled but native Omni total/GST could not be verified against Core. Expected total '+money(quote.total)+' and GST '+money(quote.tax)+'. Do not save until reconciled.');
+  }
+
   const host = document.createElement('div');
   host.id = 'lc-core-import';
   const pageHeading = [...document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"],b,strong')].find(node => visible(node) && /^(?:New|Edit) (?:Quote|Sales Order)/i.test(clean(node.textContent)));
@@ -302,6 +567,12 @@
   const get = id => shadow.getElementById(id);
   const dialog = shadow.querySelector('dialog');
   const status = message => { get('status').textContent = message; };
+  get('file').hidden = true;
+  const lookup = document.createElement('div');
+  lookup.style.cssText='display:flex;gap:8px;flex-wrap:wrap;margin:16px 0';
+  lookup.innerHTML='<input id="reference" aria-label="Core quote number" placeholder="NZSO-16714" style="font:inherit;padding:8px;border:1px solid #a9bec3;border-radius:4px;min-width:0;flex:1"><button id="lookup" type="button">Load from Core</button>';
+  get('file').before(lookup);
+  get('status').textContent='Enter a Core quote number.';
   document.addEventListener('submit', event => {
     if (!busy) return;
     event.preventDefault();
@@ -312,11 +583,12 @@
     get('fill').disabled = !quote || started || busy || !get('confirm').checked;
     get('file').disabled = started || busy;
     get('verify').disabled = !quote || busy;
+    get('lookup').disabled = busy || started;
   };
   get('open').addEventListener('click', () => dialog.showModal());
   shadow.querySelector('.close').addEventListener('click', () => dialog.close());
   get('confirm').addEventListener('change', controls);
-  get('file').addEventListener('change', async () => {
+  function loadQuote(data) {
     quote = null;
     get('confirm').checked = false;
     get('details').textContent = '';
@@ -324,11 +596,13 @@
     shadow.querySelector('tbody').replaceChildren();
     controls();
     try {
-      const file = get('file').files[0];
-      if (!file || file.size > 100000) throw new Error('Select a quote JSON file smaller than 100 KB.');
-      quote = validate(JSON.parse(await file.text()));
+      quote = validate(data);
       get('details').textContent = `${quote.sourceReference} | ${clean(quote.customer?.name)} | ${quote.currency}\nEmail: ${clean(quote.customer?.email)}\nFreight: ${money(quote.freight.amount)} | Target total incl. GST: ${money(quote.total)}`;
-      get('warning').textContent = [...quote.warnings, 'Customer, delivery address, freight, quote date and source reference require manual entry. Product lines only. No save, approval, payment or stock changes are performed by this importer.'].join('\n');
+      const api = quote.schema==='lc-core-quote-api-v1';
+      get('fill').textContent=api?'Fill Quote':'Fill Product Lines';
+      get('warning').textContent = [...quote.warnings, ...(api?[]:['Legacy local-file test: customer details and freight are manual.'])].join('\n');
+      if(api) get('details').textContent+=`\nPhone: ${quote.customer.phone || quote.customer.mobile || 'Not provided by Core'}\nDelivery: ${[quote.shippingAddress.line1,quote.shippingAddress.line2,quote.shippingAddress.city,quote.shippingAddress.postcode].filter(Boolean).join(', ')}`;
+      get('confirm').parentElement.lastChild.textContent=api?' NZD / GST-inclusive pricing and source warnings reviewed.':' Customer selected and NZD / GST-inclusive pricing checked in Omni. Source warnings reviewed.';
       for (const line of quote.lines) {
         const row = document.createElement('tr');
         for (const value of [line.sku, line.description, line.quantity, money(line.unitPrice), line.discountPercent + '%', money(line.amount)]) {
@@ -341,6 +615,18 @@
       status('Preview loaded. No Omni fields changed.');
     } catch (error) { quote = null; status(error.message); }
     controls();
+  }
+  get('file').addEventListener('change', async () => {
+    try {
+      status('Loading local test file...');
+      const file=get('file').files[0];
+      if(!file||file.size>100000)throw new Error('Invalid local test file.');
+      loadQuote(JSON.parse(await file.text()));
+    } catch(error){quote=null;controls();status(error.message);}
+  });
+  get('lookup').addEventListener('click', () => {
+    if(started||busy)return;
+    requestCoreQuote(get('reference').value,(data)=>loadQuote(data),status);
   });
   get('verify').addEventListener('click', () => {
     try { verifyLines(); status('Product quantities, prices and discounts match the source. Freight, GST and the final Omni total still require manual verification.'); }
@@ -357,14 +643,28 @@
       controls();
       // A modal dialog makes the native grid inert; close it before editing.
       dialog.close();
+      if(quote.schema==='lc-core-quote-api-v1') {
+        status('Selecting the Core customer and copying contact/address details.');
+        await fillQuoteDetails();
+      }
       for (const [index, line] of quote.lines.entries()) {
         status(`${index + 1}/${quote.lines.length}: ${line.sku}`);
         await addProduct(line);
         for (const [name, value] of [['qtyordered', line.quantity], ['unitprice', line.unitPrice], ['disc', line.discountPercent]]) await numericField(line, name, value);
       }
       verifyLines();
-      status(`Product lines filled, not saved. Enter freight ${money(quote.freight.amount)} and check the final Omni total is ${money(quote.total)}. Preserve Core reference ${quote.sourceReference} in Internal Comments; let Omni assign its own quote number. The separate source discount has NOT been applied.`);
+      if(quote.schema==='lc-core-quote-api-v1'){
+        await fillQuoteMemo(quote.memo);await fillCharges(); await verifyQuoteTotal();
+        status(`Core quote ${quote.sourceReference} copied into the unsaved Omni quote. Customer, contacts, addresses, product lines, charges and total ${money(quote.total)} checked. Review before saving; no payment or fulfilment status was transferred.`);
+      } else status(`Product lines filled, not saved. Enter freight ${money(quote.freight.amount)} and check the final Omni total is ${money(quote.total)}. Preserve Core reference ${quote.sourceReference} in Internal Comments; let Omni assign its own quote number. The separate source discount has NOT been applied.`);
     } catch (error) { status('Stopped: ' + error.message + (started ? '\nSome lines may already be filled. Inspect them manually; this pilot will not rerun on this page.' : '')); }
     finally { busy = false; controls(); if (!dialog.open) dialog.showModal(); }
   });
+  if(handoff) {
+    const pending=handoff;handoff=null;
+    sessionStorage.removeItem(tabKey);
+    if(typeof GM_deleteValue==='function')GM_deleteValue(pendingKey);
+    loadQuote(pending.quote);
+    if(quote){get('confirm').checked=true;controls();get('fill').click();}
+  }
 })();
