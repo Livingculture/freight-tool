@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Core Quote Import Pilot
 // @namespace    livingculture-omni
-// @version      0.2.1
+// @version      0.2.2
 // @description  Look up a Core quote number through Workflow and transfer customer, addresses, products and charges to a new Omni quote. Never saves or approves.
 // @match        https://go.cin7.com/*
 // @match        https://inventory.dearsystems.com/*
@@ -446,9 +446,10 @@
   }
 
   async function selectCustomer(customer) {
+    const names=[...new Set([customer.name,customer.accountName].map(value=>clean(value).toLowerCase()).filter(Boolean))];
     const selected=()=>clean(nativeField('Selected Customer','',false)?.value);
     const email=()=>clean(nativeField('Email Address','Contact')?.value).toLowerCase();
-    const confirmed=()=>Boolean(selected()) && (customer.email ? email()===customer.email.toLowerCase() : selected().toLowerCase()===customer.name.toLowerCase());
+    const confirmed=()=>Boolean(selected()) && (customer.email ? email()===customer.email.toLowerCase() : names.includes(selected().toLowerCase()));
     if (selected()) { if(confirmed())return; throw new Error('A different Omni customer is already selected. No customer was overwritten.'); }
     let search=nativeField('First Name','Contact');
     search.scrollIntoView({block:'center'});
@@ -469,8 +470,8 @@
           const text=clean(node.textContent),n=node.getBoundingClientRect();
           if(text.length>500||n.height>140||n.top<r.top-120||n.top>r.bottom+420||n.right<r.left||n.left>r.right+400)return false;
           const emails=(text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)||[]).map(value=>value.toLowerCase());
-          const name=text.toLowerCase(),wanted=customer.name.toLowerCase();
-          return customer.email && emails.includes(customer.email.toLowerCase()) || !emails.length && (name===wanted||name.startsWith(wanted+' '));
+          const name=text.toLowerCase();
+          return customer.email && emails.includes(customer.email.toLowerCase()) || !emails.length && names.some(wanted=>name===wanted||name.startsWith(wanted+' '));
         });
         const leaves=options.filter(node=>!options.some(other=>other!==node&&node.contains(other)));
         if(leaves.length>1)throw new Error('Several Omni customers match this Core contact. Select the correct customer in Omni before importing.');
@@ -478,12 +479,11 @@
       }
       await wait(100);
     }
-    throw new Error('Could not confirm the Core customer in Omni by email/name. Select or create that customer in Omni first; no customer record was invented.');
+    throw new Error('Could not confirm the Core customer in Omni by email/name. Close this panel, select or create the correct customer in Omni, then reopen this panel and click Fill Quote. No product lines have been added.');
   }
 
   async function fillQuoteDetails() {
     const customer=quote.customer;
-    await selectCustomer(customer);
     for(const [label,value] of [['First Name',customer.firstName],['Last Name',customer.lastName],['Company',customer.company],['Email Address',customer.email],['Phone',customer.phone],['Mobile',customer.mobile]]) {
       if(value)await writeNative(nativeField(label,'Contact'),value,'Contact '+label);
     }
@@ -643,13 +643,20 @@
       const info = assertNewQuote();
       if (info.rows.some(row => !blank(valueOf(cellFor(row, info, 'code'))) || !blank(valueOf(cellFor(row, info, 'product'))))) throw new Error('Product grid is not empty. Import blocked to prevent duplicates or overwriting lines.');
       sessionUrl = location.href;
-      started = true;
       busy = true;
       controls();
       // A modal dialog makes the native grid inert; close it before editing.
       dialog.close();
       if(quote.schema==='lc-core-quote-api-v1') {
-        status('Selecting the Core customer and copying contact/address details.');
+        status('Selecting the Core customer.');
+        await selectCustomer(quote.customer);
+      }
+      // Customer lookup can be retried; once quote data is written, never rerun.
+      const empty=assertNewQuote();
+      if(empty.rows.some(row=>!blank(valueOf(cellFor(row,empty,'code')))||!blank(valueOf(cellFor(row,empty,'product')))))throw new Error('Product grid changed during customer selection. Import blocked.');
+      started = true;
+      if(quote.schema==='lc-core-quote-api-v1') {
+        status('Copying contact/address details.');
         await fillQuoteDetails();
       }
       for (const [index, line] of quote.lines.entries()) {

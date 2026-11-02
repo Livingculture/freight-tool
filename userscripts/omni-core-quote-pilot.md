@@ -1,6 +1,6 @@
 # Core To Omni Quote Transfer
 
-This separate Tampermonkey script is not part of All-in-One. Version 0.2.1 uses
+This separate Tampermonkey script is not part of All-in-One. Version 0.2.2 uses
 the existing server-side Core API connection, not a PDF or screenshot-based file.
 
 ## Staff Flow
@@ -30,6 +30,9 @@ Core quote again; saved quotes are not automatically checked for duplicates.
   not invented. Customer data must never be committed alongside the script.
 - Customer selection must resolve to a matching Omni customer. Ambiguous or
   missing customers stop the transfer; no customer IDs/records are fabricated.
+  Searches accept the Core contact or account name, with email confirmation
+  when supplied. If lookup fails before quote fields are written, staff can
+  select the customer natively and retry Fill Quote on the same empty quote.
 - Original reference/date, salesperson, terms, customer reference, notes and
   charge details are retained in Internal Comments. Matching native salesperson
   and payment-terms options are selected where available. Omni keeps its own new

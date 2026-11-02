@@ -4,7 +4,7 @@ const assert=require('node:assert/strict');
 const {chromium}=require('playwright');
 const source=fs.readFileSync(path.join(__dirname,'../userscripts/omni-core-quote-pilot.user.js'),'utf8');
 const fixture={schema:'lc-core-quote-api-v1',sourceReference:'NZSO-10000',sourceSaleId:'test-sale',sourceDate:'2026-11-02',currency:'NZD',pricesIncludeGst:true,taxRate:15,tax:1764,total:13523.97,
- customer:{name:'Test Customer',firstName:'Test',lastName:'Customer',company:'',email:'test@example.invalid',phone:'0211234567',mobile:'0221234567'},
+ customer:{name:'Test Customer',accountName:'Test Account',firstName:'Test',lastName:'Customer',company:'',email:'test@example.invalid',phone:'0211234567',mobile:'0221234567'},
  shippingAddress:{line1:'1 Delivery Street',line2:'Delivery Suburb',city:'Test City',state:'Test Region',postcode:'1000',country:'New Zealand',contact:'Test Customer',company:''},
  billingAddress:{line1:'2 Billing Street',line2:'Billing Suburb',city:'Billing City',state:'Billing Region',postcode:'2000',country:'New Zealand',contact:'Test Customer',company:''},
  salesperson:'Test Rep',customerReference:'PO-test',terms:'Cash',carrier:'Test carrier',memo:'Installation required. Original Core quote memo',notes:'Original Core note',warnings:[],
@@ -12,6 +12,7 @@ const fixture={schema:'lc-core-quote-api-v1',sourceReference:'NZSO-10000',source
  additionalCharges:[{description:'Shipping',quantity:1,unitPrice:169,discountPercent:0,amount:169}],freight:{description:'Shipping',amount:169},surcharge:{description:'',amount:0},discount:{description:'',amount:0}};
 const entry='https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx';
 let headingLayout='wrapped';
+let accountLookup=false;
 function fields(section){
  const contact=section==='Contact';const prefix=contact?'contact':section==='Delivery Address'?'delivery':'billing';
  const names=['First Name','Last Name','Company',...(contact?['Phone','Mobile','Email Address']:['Address 1','Address 2','City','State/Region','Postal Code','Country'])];
@@ -27,7 +28,7 @@ ${[['Freight Costs','freight'],['Surcharge','surcharge'],['Discount','discount']
 <p id="tax">Total Tax 15% 0.00</p><p id="total">Total: 0.00 NZD</p><button type="submit">Save</button><button type="button" id="approve">Approve</button></form>
 <script>window.saves=0;window.approvals=0;window.feeRace=false;document.querySelector('form').onsubmit=e=>{e.preventDefault();saves++};document.querySelector('#approve').onclick=()=>approvals++;
 setInterval(()=>{const codes=[...document.querySelectorAll('#products .code')].filter(field=>field.value);if(codes.length&&codes.length<6&&document.querySelector('#memo').value.includes('Installation required'))window.feeRace=true},30);
-const contact=document.getElementById('contactFirstName');contact.addEventListener('input',()=>{if(contact.value!=='test@example.invalid')return;document.querySelector('.option')?.remove();const option=document.createElement('div');option.className='option';option.setAttribute('role','option');option.textContent='Test Customer test@example.invalid';const r=contact.getBoundingClientRect();option.style.left=r.left+'px';option.style.top=(r.bottom+scrollY)+'px';option.onclick=()=>{document.getElementById('selected').value='Test Customer';document.getElementById('contactEmailAddress').value='test@example.invalid';contact.value='Test';document.getElementById('contactLastName').value='Customer';option.remove()};document.body.appendChild(option)});
+const accountLookup=${accountLookup};const contact=document.getElementById(accountLookup?'contactCompany':'contactFirstName');contact.addEventListener('input',()=>{if(contact.value!==(accountLookup?'Test Account':'test@example.invalid'))return;document.querySelector('.option')?.remove();const option=document.createElement('div');option.className='option';option.setAttribute('role','option');option.textContent=accountLookup?'Test Account':'Test Customer test@example.invalid';const r=contact.getBoundingClientRect();option.style.left=r.left+'px';option.style.top=(r.bottom+scrollY)+'px';option.onclick=()=>{document.getElementById('selected').value=accountLookup?'Test Account':'Test Customer';document.getElementById('contactEmailAddress').value='test@example.invalid';document.getElementById('contactFirstName').value='Test';document.getElementById('contactLastName').value='Customer';option.remove()};document.body.appendChild(option)});
 function totals(){let total=0;document.querySelectorAll('#products tbody tr').forEach(row=>{const inputs=row.querySelectorAll('input');if(inputs[0].value)total+=Number(inputs[1].value)*Number(inputs[2].value)*(1-Number(inputs[3].value)/100)});total+=Number(document.getElementById('freightAmount').value)+Number(document.getElementById('surchargeAmount').value)-Number(document.getElementById('discountAmount').value);document.getElementById('total').textContent='Total: '+total.toFixed(2)+' NZD';document.getElementById('tax').textContent='Total Tax 15% '+(total*15/115).toFixed(2)}
 document.querySelectorAll('.code').forEach(input=>input.addEventListener('input',()=>{input.closest('tr').cells[1].textContent='Native product '+input.value}));document.addEventListener('input',totals);document.addEventListener('change',totals);
 document.querySelectorAll('.financial input').forEach(input=>input.addEventListener('change',()=>{if(input.id.endsWith('Amount'))input.value=Number(input.value).toFixed(2)}));</script></body></html>`;}
@@ -51,7 +52,7 @@ document.querySelectorAll('.financial input').forEach(input=>input.addEventListe
  let page=await context.newPage();const el=id=>page.locator('#lc-core-import').locator('#'+id);
  async function completed(){await page.waitForFunction(()=>{const text=document.querySelector('#lc-core-import')?.shadowRoot?.querySelector('#status')?.textContent||'';return text.includes('copied into the unsaved Omni quote')||text.startsWith('Stopped:')},null,{timeout:45000});assert.match(await el('status').textContent(),/copied into the unsaved Omni quote/);}
  async function verify(){
-  assert.equal(await page.locator('#selected').inputValue(),'Test Customer');assert.equal(await page.locator('#contactPhone').inputValue(),'0211234567');assert.equal(await page.locator('#contactMobile').inputValue(),'0221234567');
+  assert.equal(await page.locator('#selected').inputValue(),accountLookup?'Test Account':'Test Customer');assert.equal(await page.locator('#contactPhone').inputValue(),'0211234567');assert.equal(await page.locator('#contactMobile').inputValue(),'0221234567');
   assert.equal(await page.locator('#deliveryAddress1').inputValue(),'1 Delivery Street');assert.equal(await page.locator('#billingAddress1').inputValue(),'2 Billing Street');assert.equal(await page.locator('#deliveryAddress2').inputValue(),'Delivery Suburb');assert.equal(await page.locator('#billingAddress2').inputValue(),'Billing Suburb');
   assert.match(await page.locator('#comments').inputValue(),/NZSO-10000/);assert.equal(await page.locator('#memo').inputValue(),fixture.memo);assert.equal(await page.locator('#rep').inputValue(),'Test Rep');
   assert.equal(await page.locator('#freightAmount').inputValue(),'169.00');assert.equal(await page.locator('#surchargeAmount').inputValue(),fixture.surcharge.amount.toFixed(2));assert.equal(await page.locator('#discountAmount').inputValue(),fixture.discount.amount.toFixed(2));assert.equal(await page.locator('#total').textContent(),'Total: '+fixture.total.toFixed(2)+' NZD');assert.equal(await page.locator('#tax').textContent(),'Total Tax 15% '+fixture.tax.toFixed(2));assert.equal(await page.evaluate(()=>feeRace),false,'Core fee lines must be in place before the installation memo activates other helpers');
@@ -63,7 +64,7 @@ document.querySelectorAll('.financial input').forEach(input=>input.addEventListe
   assert.equal(await page.locator('#products .code').first().inputValue(),'');await el('confirm').check();await el('fill').click();await completed();await verify();
   fixture.surcharge={description:'Special service',amount:23};fixture.discount={description:'Source quote discount',amount:200};fixture.total+=23-200;fixture.tax=Number((fixture.total*15/115).toFixed(2));
   fixture.additionalCharges.push({description:'Special service',quantity:1,unitPrice:23,discountPercent:0,amount:23},{description:'Source quote discount',quantity:1,unitPrice:-200,discountPercent:0,amount:-200});
-  headingLayout='table';
+  headingLayout='table';accountLookup=true;
   await page.goto('https://inventory.dearsystems.com/Sale');const corePage=page;const tab=context.waitForEvent('page');page.once('dialog',dialog=>dialog.accept('NZSO-10000'));await page.getByRole('button',{name:'Copy Core Quote to Omni'}).click();page=await tab;
   await page.waitForURL(/go\.cin7\.com\/Cloud\/TransactionEntry\/TransactionEntry\.aspx/,{timeout:30000});await completed();await verify();
   assert.equal(corePage.url(),'https://inventory.dearsystems.com/Sale','The Core quote tab stays open and unchanged');
@@ -84,11 +85,17 @@ document.querySelectorAll('.financial input').forEach(input=>input.addEventListe
   delete gm['lc-core-api-quote-transfer-v1'];pauseLookup=false;
   await page.goto(entry);await el('open').click();await el('reference').fill('10000');await el('lookup').click();
   await page.waitForFunction(()=>document.querySelector('#lc-core-import').shadowRoot.querySelector('#status').textContent.includes('Preview loaded'));
-  await page.evaluate(()=>{const duplicate=document.createElement('h5');duplicate.textContent='Contact';document.body.prepend(duplicate)});
+  await page.evaluate(()=>{const duplicate=document.createElement('h5');duplicate.id='duplicate-heading';duplicate.textContent='Contact';document.body.prepend(duplicate)});
   await el('confirm').check();await el('fill').click();
   await page.waitForFunction(()=>document.querySelector('#lc-core-import').shadowRoot.querySelector('#status').textContent.startsWith('Stopped:'));
   assert.match(await el('status').textContent(),/Cannot uniquely locate the Omni Contact section/);
   assert.equal(await page.locator('#selected').inputValue(),'');assert.equal(await page.locator('#products .code').first().inputValue(),'');
+  assert.equal(await el('fill').isEnabled(),true,'Customer-stage failures must allow retry before any quote data is written');
+  await page.evaluate(()=>{document.querySelector('#duplicate-heading').remove();document.querySelector('#selected').value='Wrong Account';document.querySelector('#contactEmailAddress').value='wrong@example.invalid'});
+  await el('fill').click();await page.waitForFunction(()=>document.querySelector('#lc-core-import').shadowRoot.querySelector('#status').textContent.includes('different Omni customer'));
+  assert.equal(await page.locator('#products .code').first().inputValue(),'');
+  await page.evaluate(()=>{document.querySelector('#selected').value='Test Account';document.querySelector('#contactEmailAddress').value='test@example.invalid'});
+  await el('fill').click();await completed();await verify();
   console.log('PASS: Core number button -> authenticated-popup contract -> private cross-origin handoff -> native New Quote -> customer matching, phone/mobile, both addresses, memo, rep, six product lines, freight, GST/total, no file, no save/approve. Mock Core/Workflow/Omni services.');
  }finally{await browser.close()}
 })().catch(error=>{console.error(error);process.exitCode=1});
