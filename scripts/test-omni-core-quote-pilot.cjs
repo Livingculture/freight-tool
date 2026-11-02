@@ -26,14 +26,28 @@ document.querySelector('form').addEventListener('submit',e=>{e.preventDefault();
 document.querySelector('#approve').onclick=()=>window.approvals++;
 document.querySelector('#send').onclick=()=>window.sends++;
 document.addEventListener('keydown',e=>{if(e.key==='Enter')window.enters++});
-document.querySelectorAll('.code').forEach(input=>input.addEventListener('input',()=>{
+function watchCode(input){
+input.addEventListener('keypress',event=>{
+  if(event.keyCode!==13||event.which!==13||event.charCode!==13)return;
+  if(window.codeEnterOnly||window.requiresCodeCommit){
+    if(window.submitOnCommit)document.querySelector('form').requestSubmit();
+    input.closest('tr').cells[1].textContent='Native Product';
+  }
+});
+input.addEventListener('input',()=>{
+  if(window.replaceCodeEditor&&!window.replacedEditor){
+    window.replacedEditor=true;
+    const replacement=input.cloneNode(false);replacement.value='';input.replaceWith(replacement);watchCode(replacement);replacement.focus();return;
+  }
   document.querySelectorAll('.ui-menu-item').forEach(e=>e.remove());
-  if(window.noOptions)return;
-  const option=document.createElement('li');option.className='ui-menu-item';option.setAttribute('role','option');
+  if(window.noOptions||window.codeEnterOnly)return;
+  const option=document.createElement(window.legacyOptions?'div':'li');option.className=window.legacyOptions?'legacy-option':'ui-menu-item';
+  if(!window.legacyOptions)option.setAttribute('role','option');
   option.textContent=input.value+(window.wrongVariant?'-OTHER':'')+' Native Product';
   const r=input.getBoundingClientRect();option.style.top=(r.bottom+scrollY)+'px';option.style.left=r.left+'px';
-  option.onclick=()=>{input.closest('tr').cells[1].textContent='Native Product';input.value=option.textContent.split(' ')[0];option.remove()};document.body.appendChild(option);
-}));
+  option.onclick=()=>{if(!window.requiresCodeCommit)input.closest('tr').cells[1].textContent='Native Product';input.value=option.textContent.split(' ')[0];option.remove()};document.body.appendChild(option);
+});}
+document.querySelectorAll('.code').forEach(watchCode);
 document.querySelectorAll('#products tr input:not(.code)').forEach(input=>input.addEventListener('blur',()=>{if(window.rejectPrices&&input.closest('td').cellIndex===3)input.value='0'}));
 </script></body></html>`;
 
@@ -108,6 +122,23 @@ document.querySelectorAll('#products tr input:not(.code)').forEach(input=>input.
       assert.deepEqual(await page.evaluate(() => [saves,approvals,sends,enters]), [0,0,0,0]);
     }
 
+    // Reproduce native selection waiting for legacy Enter fields, Code editor
+    // replacement, unlabelled autocomplete results, and accidental form submits.
+    for (const mode of [
+      {requiresCodeCommit:true},
+      {requiresCodeCommit:true,legacyOptions:true,replaceCodeEditor:true,submitOnCommit:true},
+      {codeEnterOnly:true}
+    ]) {
+      await open({toolbar:true}); await load();
+      await page.evaluate(flags=>Object.assign(window,flags),mode);
+      await fill();
+      await page.waitForFunction(() => document.querySelector('#lc-core-import').shadowRoot.querySelector('#status').textContent.startsWith('Product lines filled'), null, {timeout:30000});
+      assert.deepEqual(await page.evaluate(()=>[saves,approvals,sends]),[0,0,0]);
+      assert.ok(await page.evaluate(()=>enters>0));
+      if(mode.replaceCodeEditor)assert.equal(await page.evaluate(()=>replacedEditor),true);
+      await el('verify').click(); assert.match(await status(), /match the source/);
+    }
+
     for (const options of [{heading:'Edit Quote - Existing - NZSO-10000', toolbar:true}, {heading:'New Sales Order'}, {query:'?idOrder=12345'}, {query:'?ConvertQuoteToSalesOrder=Yes'}, {heading:'Existing transaction',extra:'<nav><span>New Quote</span></nav>'}, {heading:'Existing transaction',extra:'<div id="lc-other-tool">New Quote</div>'}, {heading:'Edit Quote - Existing - NZSO-10000', titleTag:'b', toolbar:true, extra:'<span>New Quote</span>'}]) {
       await open(options); await load(); await fill(); await stopped();
       assert.equal(await page.locator('#products .code').first().inputValue(), '');
@@ -135,7 +166,14 @@ document.querySelectorAll('#products tr input:not(.code)').forEach(input=>input.
     await fill(); await stopped();
     assert.match(await status(), /Could not confirm/);
     assert.equal(await page.locator('#products tbody tr').first().locator('td').nth(1).textContent(), '');
+    assert.equal(await page.evaluate(()=>enters),0,'Do not commit or substitute non-exact results');
     assert.equal(await el('fill').isDisabled(), true, 'Partial imports cannot be rerun');
+    await open(); await load();
+    await page.evaluate(()=>window.noOptions=true);
+    await fill(); await stopped();
+    assert.match(await status(), /Check that this exact Core SKU exists in Omni/);
+    assert.equal(await page.locator('#products tbody tr').first().locator('td').nth(1).textContent(), '');
+    assert.deepEqual(await page.evaluate(()=>[saves,approvals,sends]),[0,0,0]);
     await open(); await load();
     await page.evaluate(()=>window.rejectPrices=true);
     await fill(); await stopped(); assert.match(await status(), /Could not verify unitprice/);
@@ -148,6 +186,6 @@ document.querySelectorAll('#products tr input:not(.code)').forEach(input=>input.
     assert.equal(await page.locator('#lc-core-import').count(), 1);
     assert.equal(requests.some(url=>/api|ExternalApi|supabase/i.test(url)), false);
     assert.deepEqual(await page.evaluate(() => [saves,approvals,sends,enters]), [0,0,0,0]);
-    console.log('PASS: preview, inclusive-price reconciliation, exact SKU selection, quantities/prices/discounts, new-quote-only guard, existing rows, partial stops, rejected edits, XSS, no save/approve/send/API calls, desktop/mobile.');
+    console.log('PASS: preview, totals, exact SKU selection, legacy Code commit, replacement editors, unlabelled results, blocked form submit, missing/variant SKUs, quantities/prices/discounts, heading guards, partial stops, XSS, no save/approve/send/API calls, desktop/mobile.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode=1; });

@@ -38,6 +38,10 @@ Core; this is not an API export.
 - After a partial failure, inspect all entered lines manually. Reloading clears
   the in-memory attempt flag; it is not a way to resume an import safely.
 - Make/Use expansions and substituted or ambiguous SKUs require manual review.
+- Code selection supports native legacy Enter-key handlers and editors replaced
+  during lookup. Enter is restricted to the exact SKU's Code input. Form submit
+  events are blocked while importing. Unresolved SKUs stop the import rather than
+  being accepted as plain text or substituted with another product.
 - Customer matching, final GST calculation, freight and total verification are
   not automated. Check Product Lines only checks SKU count, quantities, unit
   prices and discounts, not the native quote grand total.

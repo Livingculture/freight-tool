@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Core Quote Import Pilot
 // @namespace    livingculture-omni
-// @version      0.1.1
+// @version      0.1.2
 // @description  Preview a local Core quote file and fill product lines on a new, unsaved Omni quote. Never saves or approves.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @run-at       document-idle
@@ -111,10 +111,28 @@
     input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: String(value).slice(-1) }));
   }
 
+  function commitCode(input, cell, sku) {
+    assertNewQuote();
+    if (!input?.isConnected || !cell?.isConnected || !cell.contains(input) || !visible(input) || input.disabled || input.readOnly || clean(input.value).toUpperCase() !== sku) return false;
+    input.focus();
+    // Omni's legacy Code editor reads keyCode/which/charCode to load a product.
+    // Send Enter only to this exact Code input, never to the form or document.
+    for (const type of ['keydown', 'keypress', 'keyup']) {
+      const charCode = type === 'keypress' ? 13 : 0;
+      const event = new KeyboardEvent(type, { bubbles: true, cancelable: true, key: 'Enter', code: 'Enter', keyCode: 13, which: 13, charCode });
+      for (const [name, value] of Object.entries({ keyCode: 13, which: 13, charCode })) {
+        if (event[name] !== value) Object.defineProperty(event, name, { value });
+      }
+      input.dispatchEvent(event);
+      if (!input.isConnected) break;
+    }
+    return true;
+  }
+
   async function editor(cell) {
     if (!cell || !visible(cell)) throw new Error('The required grid cell is missing.');
     cell.scrollIntoView({ block: 'center' });
-    // Use the native cell editor, never submit keys or guessed page coordinates.
+    // Open the native editor inside the cell, not a guessed page-wide input.
     const rect = cell.getBoundingClientRect();
     for (const type of ['mousedown', 'mouseup', 'click', 'dblclick']) cell.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 }));
     for (let attempt = 0; attempt < 15; attempt++) {
@@ -137,33 +155,61 @@
     if (info.rows.some(row => valueOf(cellFor(row, info, 'code')).toUpperCase() === line.sku)) throw new Error('SKU already exists: ' + line.sku);
     const row = info.rows.find(item => blank(valueOf(cellFor(item, info, 'code'))) && blank(valueOf(cellFor(item, info, 'product'))));
     if (!row) throw new Error('No empty product line. Add a new blank line in Omni.');
-    const input = await editor(cellFor(row, info, 'code'));
+    const codeCell = cellFor(row, info, 'code');
+    let input = await editor(codeCell);
     setValue(input, line.sku);
     let clicked = false;
-    for (let attempt = 0; attempt < 90; attempt++) {
+    let commits = 0;
+    let valueAttempts = 1;
+    let lastValueAttempt = 0;
+    let sawOtherResults = false;
+    for (let attempt = 0; attempt < 160; attempt++) {
       assertNewQuote();
       const match = matchedRow(line.sku);
       if (match) return match;
-      if (!clicked && input.isConnected) {
+      // Omni can replace the Code input after the first input event.
+      const live = [...codeCell.querySelectorAll('input:not([type="hidden"])')].filter(visible);
+      if (live.length === 1 && live[0] !== input) input = live[0];
+      if (input.isConnected && codeCell.contains(input)) {
+        if (clean(input.value).toUpperCase() !== line.sku) {
+          if (valueAttempts < 3 && attempt - lastValueAttempt >= 4) {
+            setValue(input, line.sku);
+            valueAttempts++;
+            lastValueAttempt = attempt;
+          }
+          await wait(80);
+          continue;
+        }
         const rect = input.getBoundingClientRect();
-        const options = [...document.querySelectorAll('[role="option"],.ui-menu-item,li')].filter(visible).filter(node => {
-          if (node.closest('table') === info.table) return false;
+        const nearby = [...document.querySelectorAll('[role="option"],.ui-menu-item,li,a,div,span,td')].filter(node => {
+          if (node.closest('table') === info.table || node.closest('#lc-core-import')) return false;
           const text = clean(node.textContent).toUpperCase();
-          const exact = text === line.sku || text.startsWith(line.sku + ' ');
+          if (!/^[A-Z]{2}\d/.test(text) || text.length > 500 || !visible(node)) return false;
           const r = node.getBoundingClientRect();
-          return exact && r.height <= 120 && Math.abs(r.top - rect.bottom) < 420 && r.right > rect.left && r.left < rect.right + 400;
+          return r.height <= 120 && Math.abs(r.top - rect.bottom) < 420 && r.right > rect.left && r.left < rect.right + 400;
+        });
+        const options = nearby.filter(node => {
+          const text = clean(node.textContent).toUpperCase();
+          return text === line.sku || text.startsWith(line.sku + ' ');
         });
         const leaves = options.filter(node => !options.some(other => other !== node && node.contains(other)));
         if (leaves.length > 1) throw new Error('Multiple matching products for ' + line.sku + '. Select the correct product manually.');
-        if (leaves.length === 1) {
-          const target = leaves[0];
-          for (const type of ['mousedown', 'mouseup', 'click']) target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
+        sawOtherResults = nearby.length > 0 && leaves.length === 0;
+        if (!clicked && leaves.length === 1) {
+          const target = leaves[0].closest('[role="option"],.ui-menu-item,li,tr,a') || leaves[0];
+          const r = target.getBoundingClientRect();
+          for (const type of ['pointerdown', 'mousedown', 'mouseup', 'click']) target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }));
           clicked = true;
+          const selected = matchedRow(line.sku);
+          if (selected) return selected;
+        }
+        if (!sawOtherResults && ((!commits && (clicked || attempt >= 30)) || (commits === 1 && attempt >= 90))) {
+          if (commitCode(input, codeCell, line.sku)) commits++;
         }
       }
       await wait(80);
     }
-    throw new Error('Could not confirm an exact product match for ' + line.sku + '. Check the partially entered line; do not rerun the import.');
+    throw new Error('Could not confirm an exact product match for ' + line.sku + (sawOtherResults ? '. Omni returned other product codes; no substitute was selected.' : '. Omni did not load the product after the Code-field lookup. Check that this exact Core SKU exists in Omni.') + ' Check the partially entered line; do not rerun the import.');
   }
 
   async function numericField(line, name, expected) {
@@ -207,6 +253,12 @@
   const get = id => shadow.getElementById(id);
   const dialog = shadow.querySelector('dialog');
   const status = message => { get('status').textContent = message; };
+  document.addEventListener('submit', event => {
+    if (!busy) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    status('A form submission was blocked during the unsaved quote import.');
+  }, true);
   const controls = () => {
     get('fill').disabled = !quote || started || busy || !get('confirm').checked;
     get('file').disabled = started || busy;
