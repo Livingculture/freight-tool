@@ -25,16 +25,16 @@ const options = ['Ship from Auckland', 'Ship from Chch', 'Collect from Warehouse
       document.getElementById('description').addEventListener('change', () => window.nativeChanges++);
       ensureFreightDescriptionDropdown(); ensureFreightDescriptionDropdown();
     });
-    const dropdown = page.getByRole('combobox', { name: 'Freight description' });
+    const dropdown = page.getByRole('textbox', { name: 'Freight description' });
+    const presets = page.getByRole('combobox', { name: 'Freight presets' });
     assert.equal(await dropdown.count(), 1);
     assert.equal(await dropdown.inputValue(), 'Collect', 'Preserve the current legacy description');
     const box = await dropdown.boundingBox();
     assert.equal(box.width, original.width);
     assert.equal(box.height, original.height);
     for (const value of options) {
-      assert.equal(await page.locator('datalist option').filter({ hasText: value }).count(), 1);
-      await dropdown.fill(value);
-      await dropdown.blur();
+      assert.equal(await presets.locator('option').filter({ hasText: value }).count(), 1);
+      await presets.selectOption(value);
       assert.equal(await page.locator('#description').inputValue(), value);
       assert.equal(await page.evaluate(() => new FormData(document.querySelector('form')).get('FreightDescription')), value, 'Native saved field retains chosen value');
       assert.equal(await page.locator('#amount').inputValue(), '579.00', 'Description choice never changes the charge');
@@ -54,7 +54,8 @@ const options = ['Ship from Auckland', 'Ship from Chch', 'Collect from Warehouse
     assert.equal(await page.locator('#amount').inputValue(), '145.25', 'Calculator still writes the amount, not the description control');
     await page.evaluate(() => fillOmniFreightFields('$250.00', 'Ship from Auckland + Christchurch'));
     assert.equal(await dropdown.inputValue(), 'Ship from Auckland + Christchurch', 'Special calculator wording is not truncated');
-    assert.equal(await page.locator('datalist option').count(), 4, 'Custom wording does not duplicate the preset suggestions');
+    assert.equal(await presets.locator('option:not([disabled])').count(), 4, 'All four presets remain available with custom text');
+    assert.equal(await dropdown.getAttribute('list'), null, 'Do not use browser-filtered datalist suggestions');
     await dropdown.fill('Collect from Warehouse');
     await dropdown.blur();
     await page.evaluate(() => fillOmniFreightFields('$0.00', ''));
@@ -77,6 +78,7 @@ const options = ['Ship from Auckland', 'Ship from Chch', 'Collect from Warehouse
     assert.equal(await page.locator('#description').inputValue(), 'Ship from Chch');
     await page.evaluate(() => { document.getElementById('description').readOnly = true; ensureFreightDescriptionDropdown(); });
     assert(await dropdown.isDisabled(), 'Read-only native fields remain read-only');
+    assert(await presets.isDisabled(), 'Read-only native fields also disable the presets');
     await page.evaluate(() => { document.getElementById('description').readOnly = false; document.getElementById('lc-omni-freight-description-select').remove(); ensureFreightDescriptionDropdown(); });
     assert.equal(await dropdown.inputValue(), 'Ship from Chch', 'Recover a removed dropdown without losing the native field');
     await page.setViewportSize({ width: 480, height: 750 });

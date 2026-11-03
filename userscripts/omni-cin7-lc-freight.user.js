@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.31
+// @version      0.1.32
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -1433,6 +1433,11 @@
     if (select.value !== current) select.value = current;
     const disabled = input.disabled || input.readOnly;
     if (select.disabled !== disabled) select.disabled = disabled;
+    const presets = document.getElementById(`${FREIGHT_DESCRIPTION_SELECT_ID}-options`);
+    if (presets) {
+      presets.value = FREIGHT_DESCRIPTION_OPTIONS.includes(current) ? current : '';
+      presets.disabled = disabled;
+    }
   }
 
   function ensureFreightDescriptionDropdown() {
@@ -1449,6 +1454,7 @@
     if (freightDescriptionInput?.isConnected) freightDescriptionInput.style.display = freightDescriptionDisplay;
     select?.remove();
     document.getElementById(`${FREIGHT_DESCRIPTION_SELECT_ID}-options`)?.remove();
+    document.getElementById(`${FREIGHT_DESCRIPTION_SELECT_ID}-wrapper`)?.remove();
     freightDescriptionInput = input;
     freightDescriptionDisplay = input.style.display;
     const computed = window.getComputedStyle(input);
@@ -1462,16 +1468,32 @@
     select.style.maxWidth = '100%';
     select.style.paddingRight = '24px';
     select.placeholder = 'Freight description';
-    const suggestions = document.createElement('datalist');
+    const wrapper = document.createElement('span');
+    wrapper.id = `${FREIGHT_DESCRIPTION_SELECT_ID}-wrapper`;
+    wrapper.style.cssText = 'display:inline-block;position:relative;max-width:100%;flex-shrink:0;';
+    const suggestions = document.createElement('select');
     suggestions.id = `${FREIGHT_DESCRIPTION_SELECT_ID}-options`;
-    select.setAttribute('list', suggestions.id);
+    suggestions.setAttribute('aria-label', 'Freight presets');
+    suggestions.title = 'Choose freight description';
+    suggestions.style.cssText = 'position:absolute;right:1px;top:1px;bottom:1px;width:26px;height:calc(100% - 2px);border:0;border-radius:0;background:#fff;color:#34444c;cursor:pointer;font:0px Arial;padding:0;';
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = 'Choose freight description';
+    placeholder.style.font = '14px Arial';
+    placeholder.disabled = true;
+    suggestions.appendChild(placeholder);
     FREIGHT_DESCRIPTION_OPTIONS.forEach(value => {
       const option = document.createElement('option');
       option.value = value;
       option.textContent = value;
+      option.style.font = '14px Arial';
       suggestions.appendChild(option);
     });
-    syncFreightDescriptionDropdown(input, select);
+    suggestions.addEventListener('change', () => {
+      select.value = suggestions.value;
+      setOmniInputValue(input, suggestions.value);
+      syncFreightDescriptionDropdown(input, select);
+    });
     select.addEventListener('input', () => {
       const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
       if (valueSetter) valueSetter.call(input, select.value);
@@ -1491,8 +1513,9 @@
       input.removeEventListener('input', sync);
       input.removeEventListener('change', sync);
     };
-    input.insertAdjacentElement('afterend', select);
-    select.insertAdjacentElement('afterend', suggestions);
+    input.insertAdjacentElement('afterend', wrapper);
+    wrapper.append(select, suggestions);
+    syncFreightDescriptionDropdown(input, select);
     input.style.display = 'none';
   }
 
