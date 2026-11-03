@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.176
+// @version      0.1.177
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -724,6 +724,8 @@
 
   function extractHubSpotLineItems() {
     if (isOmniPage()) {
+      const commercialItems = extractOmniHubSpotCommercialItems();
+      if (commercialItems !== null) return commercialItems;
       const omniItems = extractOmniTableLineItems();
       if (omniItems.length) {
         return omniItems.map(item => ({
@@ -801,6 +803,55 @@
       unique.push(item);
     }
     return unique.slice(0, 30);
+  }
+
+  function extractOmniHubSpotCommercialItems() {
+    const label = text => clean(text).toLowerCase().replace(/^\d+\s*/, '').replace(/[^a-z0-9]/g, '');
+    const read = cell => {
+      if (!cell) return '';
+      const controls = [...cell.querySelectorAll('input:not([type="hidden"]),textarea,select')].filter(isVisible);
+      const live = controls.map(control => clean(control.value)).find(Boolean);
+      return live || clean(cell.textContent);
+    };
+    const number = text => {
+      const value = clean(text).replace(/(?:NZD|NZ\$|\$|,|%)/gi, '').trim();
+      return /^-?\d+(?:\.\d+)?$/.test(value) ? Number(value) : null;
+    };
+    const grids = [];
+    for (const table of [...document.querySelectorAll('table')].filter(isVisible)) {
+      const rows = [...table.rows].filter(row => row.closest('table') === table && isVisible(row));
+      const header = rows.find(row => {
+        const names = [...row.cells].map(cell => label(cell.textContent));
+        return ['code','product','qtyordered','unitprice'].every(name => names.includes(name));
+      });
+      if (header) grids.push({rows,header,headers:[...header.cells].map(cell => label(cell.textContent))});
+    }
+    if (!grids.length) return null;
+    if (grids.length !== 1) throw new Error('More than one Omni product grid is visible. Close other previews before creating the HubSpot deal.');
+    const {rows,header,headers} = grids[0];
+    const cell = (row,name) => row.cells[headers.indexOf(name)];
+    const items = rows.filter(row => row !== header && label(read(cell(row,'bomload'))) !== 'use').map(row => {
+      const sku = read(cell(row,'code')), name = read(cell(row,'product')), quantity = number(read(cell(row,'qtyordered')));
+      if (!sku || /^search\b/i.test(sku) || !name || quantity === null || quantity <= 0) return null;
+      const unitPrice = number(read(cell(row,'unitprice')));
+      const totalCell = cell(row,'amountnzd') || cell(row,'amount');
+      const total = number(read(totalCell));
+      const discountPercent = number(read(cell(row,'disc')));
+      const discountAmount = number(read(cell(row,'totaldiscount')));
+      let price = null;
+      if (total !== null && total >= 0) {
+        const netUnit = Number((total / quantity).toFixed(2));
+        if (Math.round(netUnit * quantity * 100) !== Math.round(total * 100)) throw new Error(sku + ': the net line total needs manual pricing review before creating a HubSpot deal.');
+        price = netUnit;
+      } else if (!totalCell && unitPrice !== null && unitPrice >= 0 && !(discountPercent > 0) && !(discountAmount > 0)) price = unitPrice;
+      const options = ['option1','option2','option3'].map(option => read(cell(row,option))).filter(Boolean);
+      return {sku,name:options.length ? name + ' - ' + options.join(', ') : name,quantity:String(quantity),
+        price:price === null ? '' : price.toFixed(2),total:total === null ? '' : total.toFixed(2),
+        listPrice:unitPrice === null ? '' : unitPrice.toFixed(2),discountPercent,discountAmount,priceIsNet:true,
+        description:[unitPrice !== null ? 'Omni unit price: NZD ' + unitPrice.toFixed(2) : '',discountPercent !== null ? 'Discount: ' + discountPercent + '%' : '',discountAmount !== null ? 'Line discount: NZD ' + discountAmount.toFixed(2) : '',total !== null ? 'Net line amount: NZD ' + total.toFixed(2) : ''].filter(Boolean).join('; ')};
+    }).filter(Boolean);
+    if (items.length > 50) throw new Error('This quote has more than 50 commercial lines. Review the HubSpot transfer manually; no lines were sent.');
+    return items;
   }
 
   function lineItemsFromProductText(productText) {
@@ -2896,13 +2947,14 @@
                 const sku = clean(item.sku);
                 const price = clean(item.price);
                 const total = clean(item.total);
-                const money = price ? `$${price}` : total ? `total $${total}` : 'price missing';
+                const money = price ? `$${price}${item.priceIsNet ? ' net each' : ''}` : total ? `total $${total}` : 'PRICE MISSING';
+                const pricing = item.priceIsNet && clean(item.listPrice) ? ` (Omni unit $${clean(item.listPrice)}${item.discountPercent > 0 ? ', discount ' + item.discountPercent + '%' : ''}${item.discountAmount > 0 ? ', line discount $' + item.discountAmount.toFixed(2) : ''}; line total $${total})` : '';
                 const checked = isHubSpotProductLineItem(item) ? 'checked' : '';
                 const product = sku ? `${sku}: ${name}` : name;
                 return `
                   <label class="lc-hs-line-review-item">
                     <input type="checkbox" data-line-index="${index}" ${checked}>
-                    <span>${escapeHtml(`${quantity} x ${product}: ${money}`)}</span>
+                    <span>${escapeHtml(`${quantity} x ${product}: ${money}${pricing}`)}</span>
                   </label>
                 `;
               }).join('')}
@@ -2999,7 +3051,9 @@
       await hubSpotMessage('HubSpot Deal', [`Click ${missing.join(' and ')} before using HubSpot Deal.`], { intent:'danger' });
       return;
     }
-    const payload = hubspotDraft();
+    let payload;
+    try { payload = hubspotDraft(); }
+    catch (error) { await hubSpotMessage('HubSpot Pricing', [error.message || 'Could not read the Omni product prices.'], {intent:'danger'}); return; }
     if (isOmniPage() && (!/^NZSO-\d+$/i.test(String(payload.orderId || '').trim()) || extractOrderId(payload.orderId) !== extractOrderId(omniHeadingDraft().orderId))) {
       await hubSpotMessage('HubSpot Deal', ['Save As Draft first, then wait for the NZSO number to appear before sending to HubSpot.'], { intent:'danger' });
       return;
@@ -3026,6 +3080,13 @@
     }
     if (isOmniPage() && (!/^NZSO-\d+$/i.test(String(payload.orderId || '').trim()) || extractOrderId(payload.orderId) !== extractOrderId(omniHeadingDraft().orderId) || hubSpotPrerequisites().length)) return;
     payload.lineItems = Array.isArray(review.lineItems) ? review.lineItems : [];
+    if (isOmniPage()) {
+      const unpriced = payload.lineItems.filter(item => item.priceIsNet ? !clean(item.price) : !clean(item.price) && !clean(item.total));
+      if (unpriced.length) {
+        await hubSpotMessage('HubSpot Pricing', ['No deal was sent. These selected lines have no confirmed price:', ...unpriced.map(item => `${item.sku || ''}: ${item.name || 'Product'}`), 'Wait for Omni to finish loading or correct the prices before trying again.'], {intent:'danger'});
+        return;
+      }
+    }
     payload.copyContactTimeline = Boolean(review.copyContactTimeline);
     markHubSpotStepComplete(payload.orderId);
 
