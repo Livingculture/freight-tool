@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.32
+// @version      0.1.33
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -1433,6 +1433,10 @@
     if (select.value !== current) select.value = current;
     const disabled = input.disabled || input.readOnly;
     if (select.disabled !== disabled) select.disabled = disabled;
+    const missing = !disabled && (!clean(current) || /^freight description$/i.test(clean(current)));
+    select.classList.toggle('lc-freight-description-missing', missing);
+    select.setAttribute('aria-invalid', String(missing));
+    select.title = missing ? 'Choose or enter a freight description' : '';
     const presets = document.getElementById(`${FREIGHT_DESCRIPTION_SELECT_ID}-options`);
     if (presets) {
       presets.value = FREIGHT_DESCRIPTION_OPTIONS.includes(current) ? current : '';
@@ -1441,6 +1445,23 @@
   }
 
   function ensureFreightDescriptionDropdown() {
+    if (!document.getElementById('lc-freight-description-warning-style')) {
+      const style = document.createElement('style');
+      style.id = 'lc-freight-description-warning-style';
+      style.textContent = `
+        @keyframes lc-freight-description-pulse {
+          0%,100% { box-shadow:inset 0 0 0 40px rgba(184,59,53,0); }
+          50% { box-shadow:inset 0 0 0 40px rgba(184,59,53,.16); }
+        }
+        #${FREIGHT_DESCRIPTION_SELECT_ID}.lc-freight-description-missing {
+          background-color:#fff3f2 !important; border-color:#b83b35 !important;
+          animation:lc-freight-description-pulse 2.4s ease-in-out infinite;
+        }
+        @media (prefers-reduced-motion:reduce) {
+          #${FREIGHT_DESCRIPTION_SELECT_ID}.lc-freight-description-missing { animation:none; }
+        }`;
+      (document.head || document.documentElement).appendChild(style);
+    }
     let select = document.getElementById(FREIGHT_DESCRIPTION_SELECT_ID);
     if (freightDescriptionInput?.isConnected && !select) freightDescriptionInput.style.display = freightDescriptionDisplay;
     const inputs = findOmniFreightInputs();
