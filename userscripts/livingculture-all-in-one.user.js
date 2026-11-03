@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture All-in-One
 // @namespace    livingculture
-// @version      0.1.207
+// @version      0.1.208
 // @description  Approved Living Culture Omni, Cin7 Core, Gmail, HubSpot and website tools in one Tampermonkey install.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -46,7 +46,7 @@
 // @connect      qyapi.weixin.qq.com
 // @resource     copySku https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/livingculture-copy-sku.user.js?v=2.0
 // @resource     omniFreight https://raw.githubusercontent.com/Livingculture/freight-tool/86d0ae6aa379d350ac86e11a6071eb6db6b126d0/userscripts/omni-cin7-lc-freight.user.js
-// @resource     addressAutocomplete https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-address-autocomplete.user.js?v=0.1.10
+// @resource     addressAutocomplete https://raw.githubusercontent.com/Livingculture/freight-tool/57c37fb6fa690b0fe63996b995ba94b84c4952ba/userscripts/omni-address-autocomplete.user.js
 // @resource     customComments https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-custom-comments.user.js?v=0.1.15
 // @resource     installFees https://raw.githubusercontent.com/Livingculture/freight-tool/fb2983a3642d9ebedf63d123eec080a59f2bcc69/userscripts/omni-install-fee-helper.user.js
 // @resource     customProducts https://raw.githubusercontent.com/Livingculture/freight-tool/bb74c90d3434a261d3bc526027a694d4b50b4d5c/userscripts/omni-custom-product-helper.user.js?v=0.1.11
@@ -137,7 +137,7 @@
     if (earlyOmniTools.has(component.resource)) component.runAt = 'body';
   });
 
-  const status = { version: '0.1.207', loaded: [], skipped: [], errors: [] };
+  const status = { version: '0.1.208', loaded: [], skipped: [], errors: [] };
   window.__lcAllInOneStatus = status;
 
   // BEGIN GENERATED GMAIL COMPONENTS
