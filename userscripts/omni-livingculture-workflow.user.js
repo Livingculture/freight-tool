@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.177
+// @version      0.1.178
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -3026,9 +3026,15 @@
     overlay.querySelector('label').textContent = leadSourceData.label;
     const select = overlay.querySelector('#lcHsLeadSourceSelect');
     const continueButton = overlay.querySelector('#lcHsLeadSourceContinue');
+    let selectionStarted = false;
+    for (const event of ['pointerdown', 'mousedown', 'keydown', 'change']) {
+      select.addEventListener(event, () => { selectionStarted = true; });
+    }
     select.focus();
     void fetchHubSpotLeadSourceOptions().then((fresh) => {
-      if (!overlay.isConnected || !fresh.options.length) return;
+      // Replacing native options while the picker is open dismisses it in Chrome.
+      if (!overlay.isConnected || !fresh.options.length || selectionStarted) return;
+      if (JSON.stringify(fresh.options) === JSON.stringify(leadSourceData.options)) return;
       const previousValue = select.value;
       leadSourceData = fresh;
       overlay.querySelector('label').textContent = fresh.label;
