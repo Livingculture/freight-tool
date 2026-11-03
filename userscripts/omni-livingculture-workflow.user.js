@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.178
+// @version      0.1.179
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -11,6 +11,7 @@
 // @grant        GM_getResourceText
 // @grant        unsafeWindow
 // @resource     staffReps https://raw.githubusercontent.com/Livingculture/freight-tool/5381f783522d23f0a243b970fa8bd9cf0edd0d74/userscripts/livingculture-reps.json
+// @resource     staffUpdatesWidget https://raw.githubusercontent.com/Livingculture/workflow/43a988192e26749ded766997abd8ec8e94200f98/public/workflow-updates-dropdown.js
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @connect      qvoacxmzsmulhnllfntfl.supabase.co
@@ -5525,6 +5526,41 @@
     close.focus();
   }
 
+  function addStaffUpdatesButton(help) {
+    let button = document.getElementById('lc-omni-updates-button');
+    if (!button) {
+      button = document.createElement('button');
+      button.id = 'lc-omni-updates-button';
+      button.type = 'button';
+      button.textContent = 'Updates';
+      button.style.cssText = help.style.cssText;
+      try {
+        const source = GM_getResourceText('staffUpdatesWidget');
+        const widget = new Function('window', source + '\nreturn window.LCUpdatesDropdown;')(window);
+        widget.mount(button, {
+          base: WORKFLOW_PLANNER_URL.replace(/\/$/, ''), external: true,
+          request: () => new Promise((resolve, reject) => GM_xmlhttpRequest({
+            method: 'GET', url: new URL('/api/workflow-updates?feed=1', WORKFLOW_PLANNER_URL).href,
+            anonymous: false, timeout: 15000,
+            headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' },
+            onload: response => {
+              try {
+                if (response.status !== 200) throw new Error('Sign in to Workflow to view updates.');
+                resolve(JSON.parse(response.responseText));
+              } catch (error) { reject(error); }
+            },
+            onerror: () => reject(new Error('Could not load updates.')),
+            ontimeout: () => reject(new Error('Updates request timed out.'))
+          }))
+        });
+      } catch (error) {
+        console.warn('[Living Culture] Updates widget could not load', error);
+        button.addEventListener('click', () => window.open(new URL('/updates', WORKFLOW_PLANNER_URL).href, '_blank', 'noopener'));
+      }
+    }
+    if (help.nextElementSibling !== button) help.after(button);
+  }
+
   function addStaffHelpButton() {
     if (!isOmniPage()) return;
     const toolsBar = document.getElementById('lc-omni-heading-actions') || document.getElementById(OMNI_TOOLS_BAR_ID);
@@ -5545,6 +5581,7 @@
     help.style.color = '#fff';
     help.style.borderColor = '#2563eb';
     if (help.parentElement !== toolsBar || (toolsBar.id === 'lc-omni-heading-actions' && toolsBar.firstElementChild !== help)) toolsBar.prepend(help);
+    addStaffUpdatesButton(help);
     document.getElementById(STAFF_HELP_BAR_ID)?.remove();
   }
 
