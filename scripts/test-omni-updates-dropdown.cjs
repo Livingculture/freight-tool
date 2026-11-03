@@ -40,12 +40,12 @@ visit(ast);
     assert.deepEqual(await page.evaluate(() => requests), [{ url: 'https://living-culture-workflow.vercel.app/api/workflow-updates?feed=1', method: 'GET', anonymous: false }]);
     await button.click(); await page.getByText('Approved note', { exact: true }).waitFor();
     assert.equal(await button.evaluate(node => node.classList.contains('lc-updates-unread')), false);
-    assert.equal(await page.getByRole('link', { name: 'Edit / approve updates' }).getAttribute('href'), 'https://living-culture-workflow.vercel.app/updates');
+    assert.equal(await page.getByRole('link', { name: 'Edit / approve updates' }).count(), 0, 'Even an administrator sees the same read-only staff feed in Omni');
     assert.equal(await page.getByRole('link', { name: 'All updates' }).getAttribute('target'), '_blank');
     await page.screenshot({ path: '/tmp/omni-updates-dropdown.png' });
     await page.keyboard.press('Escape');
     assert.equal(await button.getAttribute('aria-expanded'), 'false');
     assert.deepEqual(errors, []);
-    console.log('PASS: actual Omni Staff Guide/Updates placement, one-time resource mount, authenticated GM feed request, green unread/read state, scrollable shared panel and admin links. Feed mocked.');
+    console.log('PASS: actual Omni placement, authenticated feed, green unread/read state and staff-only dropdown even for administrators. Feed mocked.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
