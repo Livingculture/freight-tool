@@ -1,5 +1,6 @@
 (function (root) {
   'use strict';
+  const installerUrl = 'https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/livingculture-all-in-one.user.js';
 
   function mount(button, options) {
     if (button.dataset.updatesMounted) return;
@@ -30,8 +31,10 @@
         .lc-updates-list p {margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
         .lc-updates-list small {font-size:12px;color:#607571}
         .lc-updates-message {padding:16px 0}
-        .lc-updates-foot {border-top:1px solid #e0e9e7;font-size:13px}
+        .lc-updates-foot {border-top:1px solid #e0e9e7;font-size:13px;flex-wrap:wrap}
         .lc-updates-foot a {color:#087d91;text-decoration:underline}
+        .lc-updates-install {flex-basis:100%;padding-top:8px;border-top:1px solid #e0e9e7}
+        .lc-updates-note-install {display:block;margin-top:12px;color:#087d91;text-decoration:underline}
       `;
       document.head.appendChild(style);
     }
@@ -41,12 +44,14 @@
     panel.hidden = true;
     panel.setAttribute('role', 'dialog');
     panel.setAttribute('aria-label', 'Omni and Workflow updates');
-    panel.innerHTML = '<div class="lc-updates-head"><h2>Updates</h2><button type="button" aria-label="Close updates">&times;</button></div><div class="lc-updates-list" tabindex="0" aria-label="Published updates"></div><div class="lc-updates-foot"><a>All updates</a><a>Edit / approve updates</a></div>';
+    panel.innerHTML = '<div class="lc-updates-head"><h2>Updates</h2><button type="button" aria-label="Close updates">&times;</button></div><div class="lc-updates-list" tabindex="0" aria-label="Published updates"></div><div class="lc-updates-foot"><a>All updates</a><a data-update-management>Edit / approve updates</a><a class="lc-updates-install">Update Tampermonkey</a></div>';
     const list = panel.querySelector('.lc-updates-list');
     panel.querySelectorAll('a').forEach(link => {
       link.href = base + '/updates';
       if (options.external) { link.target = '_blank'; link.rel = 'noopener'; }
     });
+    const installer = panel.querySelector('.lc-updates-install');
+    installer.href = installerUrl; installer.target = '_blank'; installer.rel = 'noopener noreferrer';
     document.body.appendChild(panel);
     button.setAttribute('aria-haspopup', 'dialog');
     button.setAttribute('aria-controls', panel.id);
@@ -88,7 +93,14 @@
         meta.textContent = (entry.category === 'both' ? 'Omni & Workflow' : entry.category === 'omni' ? 'Omni' : 'Workflow') + ' · ' + new Date(entry.publishedAt).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', timeZone: 'Pacific/Auckland' }) + (entry.version ? ' · ' + entry.version : '');
         const title = document.createElement('h3'); title.textContent = entry.title;
         const body = document.createElement('p'); body.textContent = entry.body;
-        article.append(meta, title, body); list.appendChild(article);
+        article.append(meta, title, body);
+        if (/all-in-one/i.test(entry.version || '')) {
+          const install = document.createElement('a');
+          install.className = 'lc-updates-note-install'; install.textContent = 'Update Tampermonkey';
+          install.href = installerUrl; install.target = '_blank'; install.rel = 'noopener noreferrer';
+          article.appendChild(install);
+        }
+        list.appendChild(article);
       });
     }
     async function refresh() {
@@ -98,7 +110,7 @@
         const result = await request();
         if (!result.userId || !Array.isArray(result.updates)) throw new Error('Sign in to Workflow to view updates.');
         data = result;
-        panel.querySelector('.lc-updates-foot a:last-child').hidden = !result.isAdmin;
+        panel.querySelector('[data-update-management]').hidden = !result.isAdmin;
         render(); alertUnread();
         if (!panel.hidden) markRead();
       } catch {

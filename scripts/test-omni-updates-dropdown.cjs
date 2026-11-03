@@ -42,6 +42,7 @@ visit(ast);
     assert.equal(await button.evaluate(node => node.classList.contains('lc-updates-unread')), false);
     assert.equal(await page.getByRole('link', { name: 'Edit / approve updates' }).count(), 0, 'Even an administrator sees the same read-only staff feed in Omni');
     assert.equal(await page.getByRole('link', { name: 'All updates' }).getAttribute('target'), '_blank');
+    assert.equal(await page.getByRole('link', { name: 'Update Tampermonkey' }).getAttribute('href'), 'https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/livingculture-all-in-one.user.js');
     await page.screenshot({ path: '/tmp/omni-updates-dropdown.png' });
     await page.keyboard.press('Escape');
     assert.equal(await button.getAttribute('aria-expanded'), 'false');
