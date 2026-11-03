@@ -11,7 +11,7 @@
 // @grant        GM_getResourceText
 // @grant        unsafeWindow
 // @resource     staffReps https://raw.githubusercontent.com/Livingculture/freight-tool/5381f783522d23f0a243b970fa8bd9cf0edd0d74/userscripts/livingculture-reps.json
-// @resource     staffUpdatesWidget https://raw.githubusercontent.com/Livingculture/workflow/43a988192e26749ded766997abd8ec8e94200f98/public/workflow-updates-dropdown.js
+// @resource     staffUpdatesWidget https://raw.githubusercontent.com/Livingculture/freight-tool/12e152bead9a3714b10491c58cddc3c513e80965/userscripts/workflow-updates-dropdown.js
 // @connect      living-culture-workflow.vercel.app
 // @connect      living-culture-freight.vercel.app
 // @connect      qvoacxmzsmulhnllfntfl.supabase.co
