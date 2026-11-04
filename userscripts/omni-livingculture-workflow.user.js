@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.185
+// @version      0.1.186
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -45,6 +45,17 @@
   const STAFF_HELP_BUTTON_ID = 'lc-omni-staff-help-button';
   const STAFF_HELP_DIALOG_ID = 'lc-omni-staff-help-dialog';
   const COPY_DELIVERY_BILLING_ID = 'lc-omni-copy-delivery-to-billing';
+  const SHOWROOM_DELIVERY_PANEL_ID = 'lc-omni-showroom-delivery';
+  const SHOWROOM_DELIVERY_STORAGE_PREFIX = 'lc-omni-showroom-delivery-original:';
+  const SHOWROOM_DELIVERY_OPTIONS = [
+    { key:'wairau', label:'Wairau', address:'Wairau Showroom' },
+    { key:'penrose', label:'Penrose', address:'Penrose Showroom' },
+    { key:'hamilton', label:'Hamilton', address:'Hamilton Showroom' },
+    { key:'tauranga', label:'Tauranga', address:'Tauranga Showroom' },
+    { key:'napier', label:'Napier', address:'Napier Showroom' },
+    { key:'christchurch', label:'Christchurch', address:'Christchurch Showroom' },
+    { key:'whangarei', label:'Whangārei', address:'Whangarei Showroom' }
+  ];
   const STAFF_GUIDE_URL = 'https://living-culture-freight.vercel.app/omni-help.html';
   const FLOATING_BAR_ID = 'lc-cin7-floating-actions-v1';
   const OVERLAY_ID = 'lc-site-visit-overlay-v2';
@@ -1946,6 +1957,179 @@
       source.addEventListener('input', sync);
       source.addEventListener('change', sync);
     });
+  }
+
+  function omniShowroomDeliveryStorageKey() {
+    const heading = omniHeadingDraft();
+    const pageId = heading.orderId || new URL(window.location.href).searchParams.get('OrderId') || 'new-quote';
+    const customer = clean(readOmniControlByLabel('Selected Customer') || heading.customerName || '').toLowerCase();
+    return `${SHOWROOM_DELIVERY_STORAGE_PREFIX}${pageId}:${customer}`;
+  }
+
+  function showroomFromDeliveryAddress(value) {
+    const address = clean(value).toLowerCase();
+    return SHOWROOM_DELIVERY_OPTIONS.find(showroom => showroom.address.toLowerCase() === address) || null;
+  }
+
+  function omniFreightDescriptionControl() {
+    const editable = document.getElementById('lc-omni-freight-description-select');
+    if (editable && !editable.disabled && !editable.readOnly) return editable;
+    const label = Array.from(document.querySelectorAll('label, span, div, td'))
+      .filter(isVisible)
+      .filter(node => normalizeLabel(node.textContent || '') === 'freight')
+      .sort((left,right) => left.children.length-right.children.length)[0];
+    if (!label) return null;
+    const labelRect = label.getBoundingClientRect();
+    return Array.from(document.querySelectorAll('input:not([type="hidden"])'))
+      .filter(isVisible)
+      .filter(control => !control.disabled && !control.readOnly)
+      .map(control => ({ control, rect:control.getBoundingClientRect() }))
+      .filter(({ rect }) => rect.left >= labelRect.right-8 && Math.abs(rect.top+rect.height/2-labelRect.top-labelRect.height/2)<=8)
+      .sort((left,right) => left.rect.left-right.rect.left)
+      .map(({ control }) => control)
+      .find(control => !/^[\d,.$\s]+$/.test(control.value || '')) || null;
+  }
+
+  function setOmniShowroomFreightDescription(value) {
+    const visible = omniFreightDescriptionControl();
+    if (!visible) return false;
+    setOmniControlValue(visible, value);
+    visible.dispatchEvent(new Event('blur', { bubbles:true }));
+    return true;
+  }
+
+  function syncOmniShowroomDeliveryPanelSelection() {
+    const panel = document.getElementById(SHOWROOM_DELIVERY_PANEL_ID);
+    const address = deliveryBillingFields();
+    const addressOne = address?.fields?.[3]?.source;
+    if (!panel || !addressOne) return;
+    const selected = showroomFromDeliveryAddress(addressOne.value);
+    panel.querySelectorAll('input[type="radio"]').forEach(input => {
+      input.checked = input.value === selected?.key;
+      input.closest('label')?.classList.toggle('is-selected', input.checked);
+    });
+  }
+
+  function applyOmniShowroomDelivery(showroomKey) {
+    const showroom = SHOWROOM_DELIVERY_OPTIONS.find(option => option.key === showroomKey);
+    const address = deliveryBillingFields();
+    const addressOne = address?.fields?.[3]?.source;
+    if (!showroom || !addressOne || addressOne.disabled || addressOne.readOnly) return false;
+    if (!showroomFromDeliveryAddress(addressOne.value)) {
+      const panel = document.getElementById(SHOWROOM_DELIVERY_PANEL_ID);
+      if (panel) panel.dataset.originalAddress = addressOne.value || '';
+      try { localStorage.setItem(omniShowroomDeliveryStorageKey(), addressOne.value || ''); } catch (error) {}
+    }
+    setOmniControlValue(addressOne, showroom.address);
+    setOmniShowroomFreightDescription(`Collect from ${showroom.address}`);
+    if (document.querySelector(`#${COPY_DELIVERY_BILLING_ID} input`)?.checked) copyDeliveryAddressToBilling();
+    syncOmniShowroomDeliveryPanelSelection();
+    lastOmniOrderSyncDigest = '';
+    scheduleOmniWorkflowSync(500, true);
+    return true;
+  }
+
+  function clearOmniShowroomDelivery() {
+    const address = deliveryBillingFields();
+    const addressOne = address?.fields?.[3]?.source;
+    if (!addressOne || addressOne.disabled || addressOne.readOnly) return false;
+    const selected = showroomFromDeliveryAddress(addressOne.value);
+    const panel = document.getElementById(SHOWROOM_DELIVERY_PANEL_ID);
+    let original = panel?.dataset.originalAddress || '';
+    try {
+      original = localStorage.getItem(omniShowroomDeliveryStorageKey()) || original;
+      localStorage.removeItem(omniShowroomDeliveryStorageKey());
+    } catch (error) {}
+    if (panel) delete panel.dataset.originalAddress;
+    if (selected) setOmniControlValue(addressOne, original);
+    const freight = omniFreightDescriptionControl();
+    if (freight && /^Collect from (?:Wairau|Penrose|Hamilton|Tauranga|Napier|Christchurch|Whangarei) Showroom$/i.test(clean(freight.value))) {
+      setOmniShowroomFreightDescription('');
+    }
+    if (document.querySelector(`#${COPY_DELIVERY_BILLING_ID} input`)?.checked) copyDeliveryAddressToBilling();
+    syncOmniShowroomDeliveryPanelSelection();
+    lastOmniOrderSyncDigest = '';
+    scheduleOmniWorkflowSync(500, true);
+    return true;
+  }
+
+  function positionOmniShowroomDeliveryPanel(panel, delivery, billing, addressOne) {
+    const deliveryRect = delivery.getBoundingClientRect();
+    const billingRect = billing.getBoundingClientRect();
+    const addressRect = addressOne.getBoundingClientRect();
+    const leftEdge = Math.max(deliveryRect.right, addressRect.right)+14;
+    const available = billingRect.left-leftEdge-14;
+    if (available >= 170 && window.innerWidth >= 1050) {
+      panel.style.position = 'absolute';
+      panel.style.left = `${Math.round(window.scrollX+leftEdge)}px`;
+      panel.style.top = `${Math.round(window.scrollY+deliveryRect.top)}px`;
+      panel.style.width = `${Math.min(250,Math.floor(available))}px`;
+      panel.style.margin = '0';
+      if (panel.parentElement !== document.body) document.body.appendChild(panel);
+      return;
+    }
+    panel.style.position = 'relative';
+    panel.style.left = '';
+    panel.style.top = '';
+    panel.style.width = 'min(100%,320px)';
+    panel.style.margin = '12px 0';
+    const deliveryContainer = delivery.parentElement;
+    if (deliveryContainer && panel.parentElement !== deliveryContainer) delivery.insertAdjacentElement('afterend',panel);
+  }
+
+  function ensureOmniShowroomDelivery() {
+    if (!isOmniPage()) return;
+    const address = deliveryBillingFields();
+    const addressOne = address?.fields?.[3]?.source;
+    if (!address?.delivery || !address?.billing || !addressOne) {
+      document.getElementById(SHOWROOM_DELIVERY_PANEL_ID)?.remove();
+      return;
+    }
+    let panel = document.getElementById(SHOWROOM_DELIVERY_PANEL_ID);
+    if (!panel) {
+      panel = document.createElement('section');
+      panel.id = SHOWROOM_DELIVERY_PANEL_ID;
+      panel.setAttribute('aria-label','Deliver to showroom');
+      panel.innerHTML = `
+        <strong>Deliver to showroom</strong>
+        <div class="lc-omni-showroom-options">
+          ${SHOWROOM_DELIVERY_OPTIONS.map(showroom => `<label title="Set Delivery Address 1 to ${escapeHtml(showroom.address)} and fill the freight collection description"><input type="radio" name="lc-omni-showroom-delivery-option" value="${escapeHtml(showroom.key)}"><span>${escapeHtml(showroom.label)}</span></label>`).join('')}
+        </div>
+        <small>Fills Delivery Address 1 and the collection field automatically.</small>
+        <button type="button" title="Restore the previous customer delivery address and clear the automatic showroom collection description">Clear showroom</button>`;
+      panel.querySelectorAll('input[type="radio"]').forEach(input => input.addEventListener('change', event => {
+        if (event.currentTarget.checked) applyOmniShowroomDelivery(event.currentTarget.value);
+      }));
+      panel.querySelector('button').addEventListener('click', clearOmniShowroomDelivery);
+    }
+    if (!document.getElementById('lc-omni-showroom-delivery-style')) {
+      const style = document.createElement('style');
+      style.id = 'lc-omni-showroom-delivery-style';
+      style.textContent = `
+        #${SHOWROOM_DELIVERY_PANEL_ID}{z-index:20;box-sizing:border-box;padding:10px 12px;border:1px solid #d4e1e6;border-radius:8px;background:#f7fbfc;color:#263b43;font:13px/1.3 Arial,sans-serif;box-shadow:0 2px 8px rgba(23,63,110,.08)}
+        #${SHOWROOM_DELIVERY_PANEL_ID}>strong{display:block;margin:0 0 7px;color:#263b43;font-size:15px}
+        #${SHOWROOM_DELIVERY_PANEL_ID} .lc-omni-showroom-options{display:grid;gap:2px}
+        #${SHOWROOM_DELIVERY_PANEL_ID} label{display:flex;align-items:center;gap:7px;min-height:28px;padding:3px 6px;border-radius:5px;cursor:pointer;white-space:nowrap}
+        #${SHOWROOM_DELIVERY_PANEL_ID} label.is-selected{background:#dff5f1;color:#087e73;font-weight:700}
+        #${SHOWROOM_DELIVERY_PANEL_ID} input{appearance:none;width:16px;height:16px;min-width:16px;margin:0;border:1px solid #8799a0;border-radius:3px;background:#fff;cursor:pointer}
+        #${SHOWROOM_DELIVERY_PANEL_ID} input:checked{border-color:#0aa79a;background:#0aa79a;box-shadow:inset 0 0 0 3px #fff}
+        #${SHOWROOM_DELIVERY_PANEL_ID} small{display:block;margin:8px 0 5px;color:#657982;font-size:11px;white-space:normal}
+        #${SHOWROOM_DELIVERY_PANEL_ID} button{padding:0;border:0;background:transparent;color:#075a9c;font:600 12px Arial,sans-serif;text-decoration:underline;cursor:pointer}
+        @media(max-width:1049px){#${SHOWROOM_DELIVERY_PANEL_ID}{box-shadow:none}}
+      `;
+      (document.head || document.documentElement).appendChild(style);
+    }
+    if (addressOne.dataset.lcShowroomDeliveryHook !== '1') {
+      addressOne.dataset.lcShowroomDeliveryHook = '1';
+      addressOne.addEventListener('input',syncOmniShowroomDeliveryPanelSelection);
+      addressOne.addEventListener('change',syncOmniShowroomDeliveryPanelSelection);
+    }
+    positionOmniShowroomDeliveryPanel(panel,address.delivery,address.billing,addressOne);
+    syncOmniShowroomDeliveryPanelSelection();
+    const selected = showroomFromDeliveryAddress(addressOne.value);
+    if (selected && !clean(omniWorkflowFreightDescription())) {
+      setOmniShowroomFreightDescription(`Collect from ${selected.address}`);
+    }
   }
 
   function omniSalesRep() {
@@ -5740,6 +5924,7 @@
     try {
       ensureOmniJobProgress();
       ensureDeliveryBillingCopy();
+      ensureOmniShowroomDelivery();
       finishOmniConversionNavigation();
       observeOmniLayout();
       addCustomerPhotosButton();
