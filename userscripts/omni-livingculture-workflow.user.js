@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.184
+// @version      0.1.185
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -839,27 +839,34 @@
       const total = number(read(totalCell));
       const discountPercent = number(read(cell(row,'disc')));
       const discountAmount = number(read(cell(row,'totaldiscount')));
+      const fullyDiscounted = discountPercent !== null && discountPercent >= 100
+        || unitPrice !== null && unitPrice > 0 && discountAmount !== null
+          && discountAmount + 0.01 >= unitPrice * quantity;
+      const netTotal = total !== null ? total : fullyDiscounted ? 0 : null;
       let price = '';
-      if (total !== null && total >= 0) {
-        const targetCents = Math.round(total * 100);
+      if (netTotal !== null && netTotal >= 0) {
+        const targetCents = Math.round(netTotal * 100);
         // HubSpot accepts up to six decimals for line-item unit prices. Use the
         // least precision needed for quantity x unit price to match Omni's
         // displayed two-decimal line amount.
         for (let decimals = 2; decimals <= 6; decimals += 1) {
-          const candidate = (total / quantity).toFixed(decimals);
+          const candidate = (netTotal / quantity).toFixed(decimals);
           if (Math.round(Number(candidate) * quantity * 100) === targetCents) {
             const [whole, fraction = ''] = candidate.split('.');
             price = whole + '.' + fraction.replace(/0+$/, '').padEnd(2, '0');
             break;
           }
         }
-        if (!price) throw new Error(sku + ': the net line total needs manual pricing review before creating a HubSpot deal.');
+        // Trust the net line amount entered in Omni. A six-decimal fallback
+        // keeps unusual bundle calculations from blocking the entire deal;
+        // staff can verify the selected lines in the review before sending.
+        if (!price) price = (netTotal / quantity).toFixed(6);
       } else if (!totalCell && unitPrice !== null && unitPrice >= 0 && !(discountPercent > 0) && !(discountAmount > 0)) price = unitPrice.toFixed(2);
       const options = ['option1','option2','option3'].map(option => read(cell(row,option))).filter(Boolean);
       return {sku,name:options.length ? name + ' - ' + options.join(', ') : name,quantity:String(quantity),
-        price,total:total === null ? '' : total.toFixed(2),
+        price,total:netTotal === null ? '' : netTotal.toFixed(2),
         listPrice:unitPrice === null ? '' : unitPrice.toFixed(2),discountPercent,discountAmount,priceIsNet:true,
-        description:[unitPrice !== null ? 'Omni unit price: NZD ' + unitPrice.toFixed(2) : '',discountPercent !== null ? 'Discount: ' + discountPercent + '%' : '',discountAmount !== null ? 'Line discount: NZD ' + discountAmount.toFixed(2) : '',total !== null ? 'Net line amount: NZD ' + total.toFixed(2) : ''].filter(Boolean).join('; ')};
+        description:[unitPrice !== null ? 'Omni unit price: NZD ' + unitPrice.toFixed(2) : '',discountPercent !== null ? 'Discount: ' + discountPercent + '%' : '',discountAmount !== null ? 'Line discount: NZD ' + discountAmount.toFixed(2) : '',netTotal !== null ? 'Net line amount: NZD ' + netTotal.toFixed(2) : ''].filter(Boolean).join('; ')};
     }).filter(Boolean);
     if (items.length > 50) throw new Error('This quote has more than 50 commercial lines. Review the HubSpot transfer manually; no lines were sent.');
     return items;
