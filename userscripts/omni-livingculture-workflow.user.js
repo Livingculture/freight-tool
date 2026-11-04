@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.183
+// @version      0.1.184
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -4138,7 +4138,7 @@
   }
 
   function quotePdfTemplateLabel(template) {
-    if (template === 'invoice') return 'Dynamic Invoice';
+    if (template === 'receipt' || template === 'invoice') return 'Receipt';
     return template === 'custom' ? 'Custom Quote' : 'Quote';
   }
 
@@ -4275,7 +4275,7 @@
   }
 
   async function downloadCurrentQuotePdf(button, template = 'quote') {
-    const downloadLabel = template === 'invoice' ? 'Download Invoice' : 'Download Quote';
+    const downloadLabel = template === 'receipt' || template === 'invoice' ? 'Download Receipt' : 'Download Quote';
     const heading = omniHeadingDraft();
     if (heading.documentType !== 'sales-order' && !isQuotePdfUnlocked(hubSpotGateOrderId())) {
       applyHubSpotApprovalGate();
@@ -4284,7 +4284,7 @@
     }
     const quoteNumber = heading.orderId || extractOrderId(document.body?.innerText || '');
     if (!quoteNumber) {
-      window.alert('The NZSO quote number could not be found on this page.');
+      window.alert('The NZSO number could not be found on this page.');
       return;
     }
     if (typeof GM_openInTab !== 'function') {
@@ -4344,7 +4344,7 @@
       if (finished) return;
       try { worker.close(); } catch (error) {}
       cleanup();
-      window.alert('Cin7 took too long to prepare the quote PDF.');
+      window.alert('Cin7 took too long to prepare the PDF.');
     }, QUOTE_PDF_TIMEOUT_MS);
   }
 
@@ -4375,7 +4375,7 @@
     if (window.parent !== window || new URL(location.href).searchParams.get('lcQuotePdfWorker') !== '1') return false;
     const handoff = quotePdfWorkerHandoff();
     if (!handoff?.quoteNumber || Date.now() - Number(handoff.startedAt || 0) > QUOTE_PDF_TIMEOUT_MS) {
-      if (handoff?.requestId) completeQuotePdfWorker(handoff, 'The quote download request expired. Please try again.');
+      if (handoff?.requestId) completeQuotePdfWorker(handoff, 'The document download request expired. Please try again.');
       window.close();
       return true;
     }
@@ -4424,17 +4424,17 @@
         const bytes = new Uint8Array(response.response || new ArrayBuffer(0));
         const isPdf = bytes.length > 3000 && String.fromCharCode(...bytes.slice(0, 4)) === '%PDF';
         if (response.status < 200 || response.status >= 300 || !isPdf) {
-          finished('Cin7 did not return a valid quote PDF.');
+          finished('Cin7 did not return a valid PDF.');
           return;
         }
         saveQuotePdfBuffer(response.response, quoteNumber);
         finished();
       },
       onerror: () => {
-        finished('Could not connect to Cin7\'s quote PDF.');
+        finished('Could not connect to Cin7\'s PDF.');
       },
       ontimeout: () => {
-        finished('Cin7\'s quote PDF timed out.');
+        finished('Cin7\'s PDF timed out.');
       }
     });
   }
@@ -4983,7 +4983,7 @@
         return;
       }
       if (button.id === QUOTE_PDF_BUTTON_ID) {
-        if (omniHeadingDraft().documentType === 'sales-order') void downloadCurrentQuotePdf(button, 'invoice');
+        if (omniHeadingDraft().documentType === 'sales-order') void downloadCurrentQuotePdf(button, 'receipt');
         else showQuotePdfTemplateMenu(button);
       }
       if (button.id === CONVERT_ORDER_BUTTON_ID) void convertQuoteToSalesOrder(button, event);
@@ -5318,7 +5318,7 @@
       wireActionButton(button);
     }
     button.classList.remove(HUBSPOT_GATE_CLASS);
-    if (button.textContent !== 'Downloading…') button.textContent = omniHeadingDraft().documentType === 'sales-order' ? 'Download Invoice' : 'Download Quote';
+    if (button.textContent !== 'Downloading…') button.textContent = omniHeadingDraft().documentType === 'sales-order' ? 'Download Receipt' : 'Download Quote';
     placeOmniActionButton(button, anchor);
   }
 

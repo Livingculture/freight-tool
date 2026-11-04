@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Omni Help Tips
 // @namespace    livingculture
-// @version      0.1.0
+// @version      0.1.1
 // @description  Adds optional, plain-language help tooltips to Living Culture controls in Cin7 Omni.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -42,8 +42,8 @@
     'lc-site-visit-inline-button-v2': ['Site Visit', 'Book or update a site visit for this NZSO. The appointment is recorded in Workflow and the relevant WeCom notification can be sent.'],
     'lc-quote-review-inline-button-v1': ['Quote Review', 'Send this quote for internal review before it progresses. Check the customer, NZSO and optional notes in the confirmation window.'],
     'lc-hubspot-deal-inline-button-v1': ['HubSpot Deal', 'Create, update or open the HubSpot deal linked to this NZSO after the required quote steps are complete.'],
-    'lc-quote-pdf-download-button-v2': ['Download Quote or Invoice', 'Download the current Omni document as a PDF. On a quote this produces the quote; on a sales order it produces the invoice.'],
-    'lc-quote-pdf-download-button-v1': ['Download Quote or Invoice', 'Older download control. Update All-in-One to use the current quote and invoice downloader.'],
+    'lc-quote-pdf-download-button-v2': ['Download Quote or Receipt', 'Download the current Omni document as a PDF. On a quote this produces the quote; on a sales order it uses the Receipt link from the Admin page.'],
+    'lc-quote-pdf-download-button-v1': ['Download Quote or Receipt', 'Older download control. Update All-in-One to use the current quote and receipt downloader.'],
     'lc-clone-quote-button': ['Clone Quote', 'Create a new quote using this quote as the starting point. The original quote is kept unchanged.'],
     'lc-convert-sales-order-button': ['Convert to Sales Order', 'Convert this approved quote to a sales order while keeping the same NZSO number for tracking through Workflow.'],
     'lc-omni-jobs-overview-button': ['Jobs Overview', 'Open the Workflow overview showing all active jobs, progress stages, next actions and items needing attention.'],
