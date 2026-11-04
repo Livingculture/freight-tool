@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.182
+// @version      0.1.183
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -2288,8 +2288,8 @@
       status.setAttribute('role', 'status');
       info.appendChild(status);
     }
-    status.textContent = `Workflow 0.1.176: ${message}`;
-    status.title = 'Workflow stock reader 0.1.176';
+    status.textContent = `Workflow 0.1.183: ${message}`;
+    status.title = 'Workflow stock reader 0.1.183';
     root.dataset.workflowSyncStatus = message;
   }
 
@@ -2313,6 +2313,7 @@
       if (!Number.isFinite(checkedAt) || !Number.isFinite(age)) return reject('stock timestamp could not be read');
       if (age < -60000) return reject('stock timestamp is in the future; refresh stock');
       if (age > 120000) return reject(`stock check expired (${Math.round(age / 1000)}s); refresh stock`);
+      if (report.complete !== true) return reject('checking stock; previous Workflow result kept');
       if (!Array.isArray(report.lines) || !report.lines.length) return reject('stock check contains no products');
       const table = root.previousElementSibling;
       if (table?.tagName !== 'TABLE') return reject('order table is not beside stock panel');

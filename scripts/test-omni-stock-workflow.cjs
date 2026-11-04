@@ -2,7 +2,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const {chromium}=require('playwright');
-const ts=require(path.resolve(__dirname,'../../workflow-speed-fix/node_modules/typescript'));
+const ts=require(path.resolve(__dirname,'../../workflow/node_modules/typescript'));
 const source=fs.readFileSync('userscripts/omni-livingculture-workflow.user.js','utf8');
 const parsed=ts.createSourceFile('workflow.js',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
 const names=['omniDateInputs','omniWorkflowDate','omniReviewLineItems','omniStockServiceLine','omniStockRequirementRows','omniWorkflowStockStatus','omniProductStockObservation','omniWorkflowSnapshot','tableHeaderMap','indexForHeader','cellText','normalizeLabel',
@@ -115,7 +115,9 @@ const functions=extracted.join('\n');
       assert.match(await page.locator('#lc-omni-quote-stock').locator('#workflow-sync').textContent(),
         {http:/HTTP 503/,network:/connection failed/,timeout:/timed out/,invalid:/response could not be read/,unconfirmed:/server has not confirmed/}[failure]);
     }
-    assert.equal(await page.evaluate(()=>observations[0].ready),null,'Checking is unknown, not a false shortage');
+    const publishedObservations=await page.evaluate(()=>observations);
+    assert(publishedObservations.length>0&&publishedObservations.every(observation=>typeof observation?.ready==='boolean'),
+      'Only completed stock checks are published to Workflow; checking must retain the previous result');
     let report=await page.evaluate(()=>JSON.parse(document.getElementById('lc-omni-quote-stock').dataset.workflowStock));
     assert.deepEqual(report.lines.map(l=>[l.sku,l.quantity,l.available]),[['CS19287',4,126],['CS23564',1,5]]);
     await page.evaluate(()=>document.getElementById('lines').insertAdjacentHTML('beforeend','<tr><td>CS19287</td><td>Another chair line</td><td>2</td></tr>'));
@@ -134,6 +136,12 @@ const functions=extracted.join('\n');
     assert.match(await page.locator('#lc-omni-quote-stock').locator('#workflow-sync').textContent(),/different page/);
     available=0;
     await page.locator('#lc-omni-quote-stock').locator('#refresh').click();
+    const retainedDuringRefresh=await page.evaluate(()=>({
+      report:JSON.parse(document.getElementById('lc-omni-quote-stock').dataset.workflowStock||'null'),
+      text:document.getElementById('lc-omni-quote-stock').shadowRoot.querySelector('tbody tr').textContent
+    }));
+    assert.equal(retainedDuringRefresh.report.ready,true,'Refresh keeps the last complete Workflow result until the replacement check completes');
+    assert.match(retainedDuringRefresh.text,/126/,'Refresh keeps previous Available Stock quantities visible while rechecking');
     await page.waitForFunction(()=>omniProductStockObservation()?.ready===false);
     await page.screenshot({path:'/tmp/omni-stock-workflow.png',fullPage:true});
     available=8;
@@ -169,11 +177,11 @@ const functions=extracted.join('\n');
     assert.deepEqual((await assemblyLines()).map(line=>[line.sku,line.quantity]),[['CS23361',1],['CS23359',1],['CS19200',1]],'Expanded Make parent is not an additional stock requirement');
     // Use rows contain total quantities, not per-parent BOM ratios.
     await full.evaluate(()=>{document.querySelector('#make td:last-child').textContent='2';document.querySelector('#fabric td:last-child').textContent='4';document.querySelector('#frame td:last-child').textContent='2';});
-    await full.waitForFunction(()=>JSON.parse(document.getElementById('lc-omni-quote-stock').dataset.workflowStock).lines.find(line=>line.sku==='CS23361')?.quantity===4);
+    await full.waitForFunction(()=>JSON.parse(document.getElementById('lc-omni-quote-stock').dataset.workflowStock||'{"lines":[]}').lines.find(line=>line.sku==='CS23361')?.quantity===4);
     assert.deepEqual((await assemblyLines()).map(line=>line.quantity),[4,2,1]);
     // A separately sold copy of a component must consume stock too.
     await full.evaluate(()=>document.getElementById('assembly').insertAdjacentHTML('beforeend','<tr><td></td><td></td><td>CS23361</td><td>Extra fabric</td><td>1</td></tr>'));
-    await full.waitForFunction(()=>JSON.parse(document.getElementById('lc-omni-quote-stock').dataset.workflowStock).lines.find(line=>line.sku==='CS23361')?.quantity===5);
+    await full.waitForFunction(()=>JSON.parse(document.getElementById('lc-omni-quote-stock').dataset.workflowStock||'{"lines":[]}').lines.find(line=>line.sku==='CS23361')?.quantity===5);
     componentStock=3;
     await full.locator('#lc-omni-quote-stock').locator('#refresh').click();
     await full.waitForFunction(()=>document.getElementById('lc-omni-quote-stock')?.dataset.workflowSyncStatus?.startsWith('confirmed Part Stock'));
@@ -181,10 +189,10 @@ const functions=extracted.join('\n');
     assert.equal(await full.evaluate(()=>sentStock.at(-1).stockPartial),true,'Some component stock is partial, not fully in stock');
     // An incomplete expansion must not silently exempt the parent.
     await full.evaluate(()=>document.getElementById('frame').remove());
-    await full.waitForFunction(()=>JSON.parse(document.getElementById('lc-omni-quote-stock').dataset.workflowStock).lines.some(line=>line.sku.startsWith('CS23361-2(')));
+    await full.waitForFunction(()=>JSON.parse(document.getElementById('lc-omni-quote-stock').dataset.workflowStock||'{"lines":[]}').lines.some(line=>line.sku.startsWith('CS23361-2(')));
     assert((await assemblyLines()).some(line=>line.sku==='CS23361-2(CS23359CS23361)'));
     await full.evaluate(()=>document.getElementById('fabric').remove());
-    await full.waitForFunction(()=>JSON.parse(document.getElementById('lc-omni-quote-stock').dataset.workflowStock).lines.length===3);
+    await full.waitForFunction(()=>JSON.parse(document.getElementById('lc-omni-quote-stock').dataset.workflowStock||'{"lines":[]}').lines.length===3);
     assert((await assemblyLines()).some(line=>line.sku==='CS23361-2(CS23359CS23361)'),'Collapsed/unexpanded Make parent remains a stock requirement');
     assert.deepEqual(errors,[],'Full scripts must boot without uncaught errors');
     await full.screenshot({path:'/tmp/omni-stock-full-sync.png',fullPage:true});

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Product Availability
 // @namespace    livingculture-omni
-// @version      0.1.13
+// @version      0.1.14
 // @description  Checks Omni products-page stock for all SKUs on the current quote.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-product-availability.user.js
@@ -146,6 +146,28 @@
   const stockCache = new Map();
   let lastQuoteKey = '', stopReport = null, autoTimer = null, lastFinishedAt = 0;
 
+  function retainedStockKey() {
+    const orderId = [...new URLSearchParams(location.search)].find(([key]) => key.toLowerCase() === 'orderid')?.[1] || location.search;
+    return `lc-omni-stock-report:${location.pathname}:${orderId}`;
+  }
+
+  function retainedStockReport(items) {
+    try {
+      const report = JSON.parse(localStorage.getItem(retainedStockKey()) || 'null');
+      const checkedAt = new Date(report?.checkedAt).getTime();
+      if (!report || !Number.isFinite(checkedAt) || Date.now() - checkedAt > 7 * 24 * 60 * 60 * 1000 || !Array.isArray(report.lines)) return null;
+      const required = new Map(items.map(item => [item.sku, item.quantity]));
+      if (report.lines.length !== required.size || report.lines.some(line => required.get(line.sku) !== line.quantity || typeof line.available !== 'number')) return null;
+      // performance.now() belongs to the old page and cannot be reused after navigation.
+      delete report.checkedAtTick;
+      return report;
+    } catch { return null; }
+  }
+
+  function rememberStockReport(report) {
+    try { localStorage.setItem(retainedStockKey(), JSON.stringify(report)); } catch {}
+  }
+
   function quoteTable() {
     return [...document.querySelectorAll('table tr')].find(row => {
       const headings = [...row.children].map(cell => header(cell.textContent));
@@ -155,6 +177,7 @@
 
   function showQuoteStock(items, table) {
     stopReport?.();
+    const retained = retainedStockReport(items);
     const root = document.createElement('div'); root.id = REPORT_ID;
     const shadow = root.attachShadow({ mode: 'open' });
     shadow.innerHTML = `<style>
@@ -176,29 +199,54 @@
     syncStatus.id = 'workflow-sync';
     syncStatus.setAttribute('role', 'status');
     syncStatus.textContent = 'Workflow: waiting for stock sync';
-    syncStatus.title = 'Stock panel 0.1.13';
+    syncStatus.title = 'Stock panel 0.1.14';
     shadow.querySelector('.info').appendChild(syncStatus);
     table.insertAdjacentElement('afterend', root);
     lastFinishedAt = 0;
-    const checked = new Map();
-    const publish = complete => {
+    const checked = new Map((retained?.lines || []).map(line => [line.sku, line]));
+    const refreshed = new Set();
+    const publish = () => {
       if (!root.isConnected || cancelled) return;
-      const lines = items.map(item => ({ sku:item.sku, quantity:item.quantity, available:checked.get(item.sku)?.available ?? null }));
+      const lines = items.map(item => {
+        const stock = checked.get(item.sku) || {};
+        return { sku:item.sku, quantity:item.quantity, available:stock.available ?? null, soh:stock.soh ?? null, virtual:stock.virtual ?? null,
+          holding:stock.holding ?? null, incoming:stock.incoming ?? null, supplier:stock.supplier ?? null };
+      });
+      if (refreshed.size !== items.length || lines.some(line => line.available === null)) return false;
       const shortage = lines.some(line => line.available !== null && line.available < line.quantity);
-      const known = complete && lines.every(line => line.available !== null);
-      root.dataset.workflowStock = JSON.stringify({ page:location.pathname + location.search, checkedAt:new Date().toISOString(), checkedAtTick:performance.now(), ready:shortage ? false : known ? true : null, complete, lines });
+      const report = { page:location.pathname + location.search, checkedAt:new Date().toISOString(), checkedAtTick:performance.now(), ready:!shortage, complete:true, lines };
+      root.dataset.workflowStock = JSON.stringify(report);
+      rememberStockReport(report);
       document.dispatchEvent(new Event('lc-omni-stock-updated'));
+      return true;
     };
     const frame = document.createElement('iframe'); frame.title = 'Omni stock lookup'; frame.tabIndex = -1; frame.setAttribute('aria-hidden', 'true'); shadow.appendChild(frame);
     const tbody = shadow.querySelector('tbody'), progress = shadow.getElementById('progress');
+    const renderStock = (row, item, stock) => {
+      while (row.children.length > 3) row.lastElementChild.remove();
+      const shortfall = stock.available === null ? null : Math.max(0, item.quantity - Math.max(0, stock.available));
+      [stock.available, stock.soh, stock.virtual, stock.holding, stock.incoming, stock.supplier, shortfall].forEach((quantity, column) => {
+        const cell = document.createElement('td'); cell.textContent = quantity === null || quantity === undefined ? '-' : quantity;
+        if (column === 6 && quantity > 0) cell.className = 'short';
+        row.appendChild(cell);
+      });
+    };
     const rows = items.map(item => {
       const row = document.createElement('tr');
-      [item.sku, item.name, item.quantity, 'Checking...'].forEach(text => { const cell = document.createElement('td'); cell.textContent = text; row.appendChild(cell); });
-      row.lastChild.colSpan = 7; tbody.appendChild(row); return row;
+      [item.sku, item.name, item.quantity].forEach(text => { const cell = document.createElement('td'); cell.textContent = text; row.appendChild(cell); });
+      const previous = checked.get(item.sku);
+      if (previous) renderStock(row, item, previous);
+      else {
+        const status = document.createElement('td'); status.textContent = 'Checking...'; status.colSpan = 7; row.appendChild(status);
+      }
+      tbody.appendChild(row); return row;
     });
     let cancelled = false;
     stopReport = () => { cancelled = true; root.remove(); };
-    publish(false);
+    if (retained) {
+      root.dataset.workflowStock = JSON.stringify({ ...retained, page:location.pathname + location.search });
+      progress.textContent = `Rechecking - showing result from ${new Date(retained.checkedAt).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })}`;
+    }
     shadow.getElementById('refresh').onclick = () => { stockCache.clear(); lastQuoteKey = ''; syncQuoteStock(); };
     void (async () => {
       let errors = 0;
@@ -212,22 +260,24 @@
           if (cancelled) break;
           if (!stock) break;
           checked.set(sku, stock);
+          refreshed.add(sku);
           if (!fresh) stockCache.set(sku, { stock, time: Date.now() });
-          rows[index].lastChild.remove();
-          const shortfall = stock.available === null ? null : Math.max(0, items[index].quantity - Math.max(0, stock.available));
-          [stock.available, stock.soh, stock.virtual, stock.holding, stock.incoming, stock.supplier, shortfall].forEach((quantity, column) => {
-            const cell = document.createElement('td'); cell.textContent = quantity === null ? '-' : quantity;
-            if (column === 6 && quantity > 0) cell.className = 'short';
-            rows[index].appendChild(cell);
-          });
+          renderStock(rows[index], items[index], stock);
         } catch (error) {
           if (cancelled) break;
-          errors += 1; rows[index].lastChild.textContent = error.message; rows[index].lastChild.className = 'error';
+          errors += 1;
+          if (!checked.has(items[index].sku)) {
+            rows[index].lastChild.textContent = error.message; rows[index].lastChild.className = 'error';
+          }
         }
       }
       if (!cancelled) {
-        frame.remove(); lastFinishedAt = Date.now(); publish(true);
-        progress.textContent = errors ? `Complete - ${errors} could not be checked` : `Checked ${items.length} products at ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+        frame.remove(); lastFinishedAt = Date.now();
+        const saved = publish();
+        progress.textContent = saved
+          ? `Checked ${items.length} products at ${new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })}`
+          : errors && retained ? `Check incomplete - showing previous result (${errors} could not be checked)`
+          : errors ? `Check incomplete - ${errors} could not be checked` : 'Check incomplete - previous Workflow stock result kept';
       }
     })();
   }
