@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Custom Product Helper
 // @namespace    livingculture-omni
-// @version      0.1.11
+// @version      0.1.12
 // @description  Shows Living Culture custom products and adds the selected SKU to the next empty Cin7 Omni product line.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-custom-product-helper.user.js
@@ -9,6 +9,8 @@
 // @supportURL   https://github.com/Livingculture/freight-tool
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
+// @grant        GM_getResourceText
+// @resource     customProductData https://raw.githubusercontent.com/Livingculture/freight-tool/7c01d2ee108fe280fa66b223366f8e7e1ad0f35a/userscripts/cin7-custom-product-helper.user.js
 // @connect      docs.google.com
 // @connect      googleusercontent.com
 // @connect      raw.githubusercontent.com
@@ -20,7 +22,7 @@
   const BACKUP_URL = 'https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-custom-product-helper.user.js';
   const ROOT_ID = 'lc-omni-custom-product-root';
   const BUTTON_ID = 'lc-omni-custom-product-button';
-  const CACHE_KEY = 'lc-omni-custom-product-data-v1';
+  const CACHE_KEY = 'lc-omni-custom-product-data-v2';
   let items = [];
 
   const clean = value => String(value || '').replace(/\s+/g, ' ').trim();
@@ -64,9 +66,17 @@
     return sharedBalticMemo(result.filter(item=>item.name&&item.code));
   }
   function request(url) { return new Promise((resolve,reject)=>GM_xmlhttpRequest({method:'GET',url:`${url}${url.includes('?')?'&':'?'}cache=${Date.now()}`,timeout:20000,onload:r=>r.status>=200&&r.status<300?resolve(r.responseText||''):reject(new Error(`Product source returned ${r.status}`)),onerror:()=>reject(new Error('Could not load custom products')),ontimeout:()=>reject(new Error('Custom product request timed out'))})); }
+  function bundledRawData() {
+    try {
+      return GM_getResourceText('customProductData').match(/const RAW_DATA = `([\s\S]*?)`;\s*\n/)?.[1] || '';
+    } catch { return ''; }
+  }
   async function load() {
-    status('Loading custom products…');
-    try { items = parse(localStorage.getItem(CACHE_KEY) || ''); } catch (error) {}
+    status('Saved product list (6 Nov 2026) - checking Google document...');
+    let saved = '';
+    try { saved = localStorage.getItem(CACHE_KEY) || ''; } catch (error) {}
+    items = parse(saved);
+    if (!items.length) items = parse(bundledRawData());
     render();
     let raw = '', parsed = [], source = '';
     try {
@@ -80,7 +90,10 @@
         const script = await request(BACKUP_URL);
         raw = script.match(/const RAW_DATA = `([\s\S]*?)`;\s*\n/)?.[1] || '';
         parsed = parse(raw);
-        if (parsed.length) source = 'GitHub saved product list (Google Doc unavailable)';
+        if (parsed.length) {
+          const revision = script.match(/const DATA_REVISION = '([^']+)'/)?.[1] || '6 Nov 2026';
+          source = `Saved product list (${revision}) - Google Doc unavailable`;
+        }
       } catch (error) {}
     }
     if (parsed.length) {
@@ -88,12 +101,12 @@
       try { localStorage.setItem(CACHE_KEY, raw); } catch (error) {}
       status(source);
     } else {
-      status(items.length ? 'Using saved product list - sources unavailable' : 'Could not load custom products from Google or GitHub. Reopen to retry.', !items.length);
+      status(items.length ? 'Saved product list (6 Nov 2026) - Google and GitHub unavailable' : 'Could not load custom products from Google or GitHub. Reopen to retry.', !items.length);
     }
     render();
   }
   function status(message,error=false){ const e=document.getElementById(ROOT_ID)?.shadowRoot?.getElementById('status'); if(e){e.textContent=message;e.classList.toggle('error',error);} }
-  function group(item){const label=`${item.code} ${item.name}`.toLowerCase(),t=`${label} ${item.memo}`.toLowerCase();if(label.includes('post'))return'08_POSTS';if(t.includes('baltic'))return'01_PERGOLAS / BALTIC';if(t.includes('caspian'))return'02_PERGOLAS / CASPIAN';if(t.includes('tasman'))return'03_PERGOLAS / TASMAN';if(t.includes('pacific'))return'04_PERGOLAS / PACIFIC';if(t.includes('mediterranean'))return'05_PERGOLAS / MEDITERRANEAN';if(t.includes('dover'))return'06_PERGOLAS / DOVER PVC';if(t.includes('pergola'))return'07_PERGOLAS / OTHER';if(/shutter|privacy|slatted|tongue|glass sliding|bifold/.test(t))return'09_WALLS / DOORS / SCREENS';if(/blind|shade/.test(t))return'10_BLINDS / SHADES';if(/awning|patio cover|carport/.test(t))return'11_AWNINGS / PATIO COVERS / CARPORTS';return'99_OTHER';}
+  function group(item){const label=`${item.code} ${item.name}`.toLowerCase(),t=`${label} ${item.memo}`.toLowerCase();if(label.includes('post'))return'08_POSTS';if(t.includes('baltic'))return'01_PERGOLAS / BALTIC';if(t.includes('caspian'))return'02_PERGOLAS / CASPIAN';if(t.includes('tasman'))return'03_PERGOLAS / TASMAN';if(t.includes('pacific'))return'04_PERGOLAS / PACIFIC';if(t.includes('mediterranean'))return'05_PERGOLAS / MEDITERRANEAN';if(t.includes('dover'))return'06_PERGOLAS / DOVER PVC';if(t.includes('pergola'))return'07_PERGOLAS / OTHER';if(/shutter|privacy|slatted|tongue|glass sliding|bifold/.test(t))return'09_WALLS / DOORS / SCREENS';if(/blind|shade/.test(t))return'10_BLINDS / SHADES';if(/fuji|etna|rainier|awning|patio cover|carport/.test(t))return'11_AWNINGS / PATIO COVERS / CARPORTS';return'99_OTHER';}
   function render(){const s=document.getElementById(ROOT_ID)?.shadowRoot;if(!s)return;const q=clean(s.getElementById('search').value).toLowerCase();const rows=items.filter(x=>!q||`${x.code} ${x.name} ${x.price} ${x.memo}`.toLowerCase().includes(q)).sort((a,b)=>group(a).localeCompare(group(b))||a.name.localeCompare(b.name));s.getElementById('count').textContent=`${rows.length} result${rows.length===1?'':'s'}`;let last='';s.getElementById('rows').innerHTML=rows.map(x=>{const g=group(x),heading=g!==last;last=g;return`${heading?`<tr class="group"><td colspan="4">${html(g.replace(/^\d+_/,''))}</td></tr>`:''}<tr><td><button data-code="${html(x.code)}">Add</button></td><td class="code">${html(x.code)}</td><td><strong>${html(x.name)}</strong><small>${html(x.memo)}</small></td><td class="price">${html(x.price)}</td></tr>`}).join('');s.getElementById('rows').querySelectorAll('button').forEach(button=>button.addEventListener('click',()=>add(rows.find(x=>x.code===button.dataset.code))));}
 
   function exact(text){const wanted=clean(text).toLowerCase();return elements().filter(e=>clean(e.value||e.textContent).toLowerCase()===wanted).sort((a,b)=>a.children.length-b.children.length)[0]||null;}
