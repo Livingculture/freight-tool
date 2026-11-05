@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.188
+// @version      0.1.189
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -4079,121 +4079,87 @@
   function cloneCurrentQuote() {
     if (!isOmniPage() || omniHeadingDraft().documentType !== 'quote') return;
     const orderId = currentQuotePdfOrderId();
-    if (!orderId || document.getElementById('lc-clone-background-worker')) return;
-    const button = document.getElementById(CLONE_QUOTE_BUTTON_ID);
     const sourceNumber = hubSpotGateOrderId();
-    const frame = document.createElement('iframe');
-    frame.id = 'lc-clone-background-worker';
-    frame.name = `lc-clone-worker-${Date.now()}`;
-    frame.setAttribute('aria-hidden', 'true');
-    frame.style.cssText = 'position:fixed;left:-2000px;top:0;width:1200px;height:900px;opacity:0;pointer-events:none;border:0;';
+    const button = document.getElementById(CLONE_QUOTE_BUTTON_ID);
+    const admin = findButtonByLabel('Go to Admin');
+    if (!orderId || !sourceNumber || !admin || admin.disabled) {
+      window.alert('Could not open the Cin7 Admin copy action. Save the quote, then use Go to Admin and Actions > Copy All Items.');
+      return;
+    }
+    let existing = null;
+    try { existing = JSON.parse(sessionStorage.getItem(CLONE_QUOTE_INTENT_KEY) || 'null'); } catch {}
+    if (existing?.at && Date.now() - existing.at < 30000) {
+      window.alert('A clone attempt is already opening. Wait for Cin7 Admin before trying again.');
+      return;
+    }
+    const intent = { orderId, quoteNumber:sourceNumber, customerName:omniHeadingDraft().customerName || '', at:Date.now() };
+    sessionStorage.setItem(CLONE_QUOTE_INTENT_KEY, JSON.stringify(intent));
     if (button) {
       button.disabled = true;
       button.setAttribute('aria-busy', 'true');
-      button.textContent = '';
-      const spinner = document.createElement('span');
-      spinner.style.cssText = 'display:inline-block;width:12px;height:12px;margin-right:8px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;vertical-align:middle;';
-      spinner.animate([{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }], { duration: 800, iterations: Infinity });
-      button.append(spinner, 'Cloning…');
+      button.textContent = 'Opening Admin…';
     }
-    let copied = false;
-    let saving = false;
-    let saveDocument = null;
-    let openedMenu = false;
-    const identity = doc => {
-      const headings = Array.from(doc.querySelectorAll('h1, h2, h3, [role="heading"]')).map(node => clean(node.textContent || ''));
-      const heading = headings.find(text => /^(?:new|edit)\s+quote\b/i.test(text))
-        || headings.find(text => extractOrderId(text)) || clean(doc.title || '');
-      return { heading, number:extractOrderId(heading) || extractOrderId(doc.title || '') };
-    };
-    const cleanup = () => {
-      window.clearInterval(timer);
-      frame.remove();
+    try {
+      admin.setAttribute('target', '_self');
+      admin.setAttribute('formtarget', '_self');
+      if (admin.form) admin.form.target = '_self';
+      admin.click();
+    } catch (error) {
+      sessionStorage.removeItem(CLONE_QUOTE_INTENT_KEY);
       if (button) { button.disabled = false; button.removeAttribute('aria-busy'); button.textContent = 'Clone Quote'; }
-    };
-    const started = Date.now();
-    const timer = window.setInterval(() => {
-      if (Date.now() - started > 120000) {
-        cleanup();
-        window.alert(!copied ? 'Could not find Copy All Items for this quote in Omni. No copy was started.'
-          : !saving ? 'Omni did not show the new quote for saving. Check the quotes list before cloning again.'
-          : 'Could not confirm the cloned quote was saved. Check the quotes list before cloning again.');
-        return;
+      window.alert('Could not open Cin7 Admin. Use Go to Admin and Actions > Copy All Items.');
+      return;
+    }
+    window.setTimeout(() => {
+      if (location.pathname.includes('/TransactionEntry/')
+        && sessionStorage.getItem(CLONE_QUOTE_INTENT_KEY) === JSON.stringify(intent)) {
+        sessionStorage.removeItem(CLONE_QUOTE_INTENT_KEY);
+        if (button) { button.disabled = false; button.removeAttribute('aria-busy'); button.textContent = 'Clone Quote'; }
+        window.alert('Cin7 did not open Admin. No clone was started. Use Go to Admin and Actions > Copy All Items.');
       }
-      try {
-        const doc = frame.contentDocument;
-        if (!doc || frame.contentWindow.location.href === 'about:blank') return;
-        if (doc.readyState !== 'complete') return;
-        const url = new URL(frame.contentWindow.location.href);
-        const controls = Array.from(doc.querySelectorAll('a, button, input[type="button"], input[type="submit"]'));
-        const find = label => controls.find(element => normalizeLabel(element.value || element.textContent || '') === label && !element.disabled);
-        const { heading, number } = identity(doc);
-        const internalId = Array.from(url.searchParams.entries()).find(([key]) => /^(orderid|idorder)$/i.test(key))?.[1];
-        if (!copied) {
-          if (internalId !== orderId || number !== sourceNumber) return;
-          const copy = find('copy all items');
-          if (copy) {
-            copied = true;
-            copy.setAttribute('target', frame.name);
-            copy.setAttribute('formtarget', frame.name);
-            if (copy.form) copy.form.target = frame.name;
-            copy.click();
-          }
-          else if (!openedMenu) { const actions = find('actions'); if (actions) { openedMenu = true; actions.click(); } }
-        } else if (!saving && /\/TransactionEntry\//i.test(url.pathname)) {
-          const newHeading = /^new\s+quote\b/i.test(heading);
-          const changed = number && number !== sourceNumber && internalId && internalId !== orderId;
-          const save = find('save') || find('save as draft');
-          if ((newHeading || changed) && save) {
-            saving = true;
-            saveDocument = doc;
-            save.setAttribute('formtarget', frame.name);
-            if (save.form) save.form.target = frame.name;
-            save.click();
-          }
-        } else if (saving && doc !== saveDocument && number && number !== sourceNumber && internalId && internalId !== orderId
-          && /^edit\s+quote\b/i.test(heading)
-          && /\/TransactionEntry\//i.test(url.pathname)) {
-          cleanup();
-          location.assign(url.href);
-          return;
-        }
-      } catch { /* Wait for same-origin navigation to finish. */ }
-    }, 250);
-    const adminUrl = new URL('https://go.cin7.com/Cloud/ShoppingCartAdmin/Orders/OrderDetail.aspx');
-    adminUrl.searchParams.set('idCustomerAppsLink', currentCustomerAppsLink());
-    adminUrl.searchParams.set('idOrder', orderId);
-    adminUrl.searchParams.set('idWebSite', '27265');
-    document.body.appendChild(frame);
-    frame.src = adminUrl.href;
+    }, 8000);
   }
 
   function continueCloneQuoteFromAdmin() {
     let intent;
     try { intent = JSON.parse(sessionStorage.getItem(CLONE_QUOTE_INTENT_KEY) || 'null'); } catch { return; }
     if (!intent) return;
-    sessionStorage.removeItem(CLONE_QUOTE_INTENT_KEY);
-    if (!intent.at || Date.now() - intent.at > 120000 || intent.at > Date.now()
-      || intent.orderId !== currentQuotePdfOrderId() || intent.quoteNumber !== hubSpotGateOrderId()) return;
+    if (!intent.at || Date.now() - intent.at > 120000 || intent.at > Date.now()) {
+      sessionStorage.removeItem(CLONE_QUOTE_INTENT_KEY);
+      return;
+    }
+    if (intent.orderId !== currentQuotePdfOrderId() || intent.quoteNumber !== hubSpotGateOrderId()) {
+      sessionStorage.removeItem(CLONE_QUOTE_INTENT_KEY);
+      window.alert('Cin7 opened a different order, so cloning was stopped. No copy was started.');
+      return;
+    }
     let attempts = 0;
     const timer = window.setInterval(() => {
       attempts++;
       const action = nativeCopyAllItemsControl();
-      if (action) { window.clearInterval(timer); clickNativeCloneAction(action); }
-      else if (attempts === 1) findButtonByLabel('Actions')?.click();
-      else if (attempts >= 40) {
+      if (action) {
         window.clearInterval(timer);
-        window.alert('Omni\'s Copy All Items action was not found. Choose it from the Actions menu.');
+        sessionStorage.removeItem(CLONE_QUOTE_INTENT_KEY);
+        clickNativeCloneAction(action, intent);
+      }
+      else if (attempts === 1) findButtonByLabel('Actions')?.click();
+      else if (attempts >= 60) {
+        window.clearInterval(timer);
+        sessionStorage.removeItem(CLONE_QUOTE_INTENT_KEY);
+        window.alert('Cin7 Admin did not show Copy All Items. No clone was started. Open Actions and choose Copy All Items manually.');
       }
     }, 125);
   }
 
-  function clickNativeCloneAction(action) {
+  function clickNativeCloneAction(action, sourceIntent = null) {
     sessionStorage.setItem(CLONE_QUOTE_SAVE_KEY, JSON.stringify({
-      orderId: currentQuotePdfOrderId(), quoteNumber: hubSpotGateOrderId(),
-      customerName: omniHeadingDraft().customerName || '', at: Date.now()
+      orderId: sourceIntent?.orderId || currentQuotePdfOrderId(), quoteNumber: sourceIntent?.quoteNumber || hubSpotGateOrderId(),
+      customerName: sourceIntent?.customerName || omniHeadingDraft().customerName || '', at: Date.now()
     }));
     try {
+      action.setAttribute('target', '_self');
+      action.setAttribute('formtarget', '_self');
+      if (action.form) action.form.target = '_self';
       action.click();
       continueSaveClonedQuote();
     } catch (error) {
@@ -5979,7 +5945,6 @@
   }
 
   function boot() {
-    if (window.parent !== window && window.name.startsWith('lc-clone-worker-')) return;
     if (/\/Cloud\/ShoppingCartAdmin\//i.test(location.pathname)) {
       if (window.parent !== window) return;
       continueConvertToSalesOrderFromAdmin();

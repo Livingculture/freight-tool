@@ -71,10 +71,11 @@ function extract(name) {
     assert.equal(await page.evaluate(() => window.copied), 2, 'Use native Copy All Items when available');
     await page.evaluate(() => {
       sessionStorage.setItem('clone-intent', JSON.stringify({ orderId: '999', quoteNumber: 'NZSO-OTHER', at: Date.now() }));
-      continueCloneQuoteFromAdmin();
+      try { continueCloneQuoteFromAdmin(); } catch (error) { window.cloneMismatchAlert = error.message; }
       window.adminOpened = 0; window.complete = true; addConvertToSalesOrderButton(); layoutOmniWorkflowButtons();
     });
     assert.equal(await page.evaluate(() => window.copied), 2, 'Never clone a different quote');
+    assert.match(await page.evaluate(() => window.cloneMismatchAlert), /different order/i, 'Explain why the unsafe clone was stopped');
     const button = page.locator('#lc-convert-sales-order-button');
     assert(await button.isVisible());
     assert(await page.evaluate(() => document.getElementById('lc-convert-sales-order-button').previousElementSibling.id === 'lc-clone-quote-button'));

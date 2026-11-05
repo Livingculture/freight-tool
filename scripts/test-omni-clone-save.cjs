@@ -27,7 +27,11 @@ function extract(name) {
       document.getElementById('save').onclick = () => window.saves++;
     });
     await page.addScriptTag({ content: `const CLONE_QUOTE_SAVE_KEY='clone-save';\n${extract('clickNativeCloneAction')}\n${extract('continueSaveClonedQuote')}` });
-    await page.evaluate(() => clickNativeCloneAction({ click() {} }));
+    await page.evaluate(() => {
+      const nativeCopy = document.createElement('button');
+      document.body.appendChild(nativeCopy);
+      clickNativeCloneAction(nativeCopy);
+    });
     await page.waitForTimeout(350);
     assert.equal(await page.evaluate(() => window.saves), 0, 'Never save original');
     await page.evaluate(() => {
