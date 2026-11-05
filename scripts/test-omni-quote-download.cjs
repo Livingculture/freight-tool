@@ -61,10 +61,10 @@ const workerHelpers = `${extract('quotePdfWorkerHandoff')}\n${extract('completeQ
     await editWorker.close();
     console.log('PASS PDF: Worker uses Cin7 native Go to Admin conversion instead of an invalid constructed Admin URL');
 
-    for(const variant of ['quote','standard','custom','invoice']){
+    for(const variant of ['quote','standard','custom','receipt']){
       const template=variant==='standard'?'quote':variant;
       const admin=await browser.newPage();
-      await admin.route('https://go.cin7.com/**',route=>route.fulfill({contentType:'text/html',body:`<a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Quote&ID=custom">Custom Quote</a><a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Quote&ID=standard">${variant==='standard'?'Standard Quote':'Quote'}</a><a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Invoice&ID=dynamic">Dynamic Invoice</a>`}));
+      await admin.route('https://go.cin7.com/**',route=>route.fulfill({contentType:'text/html',body:`<a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Quote&ID=custom">Custom Quote</a><a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Quote&ID=standard">${variant==='standard'?'Standard Quote':'Quote'}</a><a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Receipt&ID=receipt">Receipt</a>`}));
       await admin.goto('https://go.cin7.com/Cloud/ShoppingCartAdmin/Orders/OrderDetail.aspx?idOrder=388');
       await admin.evaluate(template=>{localStorage.setItem('test-handoff-v2',JSON.stringify({quoteNumber:'NZSO-123',template,startedAt:Date.now()}));window.saved=[];window.alert=()=>{};window.normalizeLabel=value=>String(value).trim().toLowerCase();window.isVisible=()=>true;window.saveQuotePdfBuffer=(_,name)=>window.saved.push(name);window.GM_xmlhttpRequest=options=>{const bytes=new Uint8Array(3501);bytes.set(new TextEncoder().encode('%PDF'));options.onload({status:200,response:bytes.buffer});};},template);
       await admin.addScriptTag({content:`const QUOTE_PDF_HANDOFF_KEY='test-handoff-v2',QUOTE_PDF_TIMEOUT_MS=45000;\n${workerHelpers}\n${extract('quotePdfTemplateLabel')}\n${extract('quotePdfTemplateMatches')}\n${extract('downloadSignedQuotePdf')}\n${extract('continueQuotePdfFromAdmin')}`});
@@ -73,7 +73,7 @@ const workerHelpers = `${extract('quotePdfWorkerHandoff')}\n${extract('completeQ
       assert.deepEqual(await admin.evaluate(() => window.saved),['NZSO-123']);
       await admin.close();
     }
-    console.log('PASS PDF: Admin worker selects Quote, Custom Quote and Dynamic Invoice with NZSO-only filenames');
+    console.log('PASS PDF: Admin worker selects Quote, Custom Quote and Receipt with NZSO-only filenames');
     for(const failure of ['missing','invalid-pdf']){
       const admin=await browser.newPage();
       await admin.route('https://go.cin7.com/**',route=>route.fulfill({contentType:'text/html',body:failure==='missing'?'<a href="/Cloud/Docs/PDF/?T=Quote&ID=custom">Custom Quote</a>':'<a href="/Cloud/Docs/PDF/?T=Quote&ID=standard">Standard Quote</a>'}));
@@ -101,7 +101,7 @@ const workerHelpers = `${extract('quotePdfWorkerHandoff')}\n${extract('completeQ
       window.requests = 0; window.requestUrls = [];
       window.GM_xmlhttpRequest = options => {
         window.requests++; window.requestUrls.push(options.url);
-        options.onload({ status: 200, responseText: '<a href="/Cloud/Docs/PDF/?T=Quote&amp;ID=custom">Custom Quote</a><a href="/Cloud/Docs/PDF/?T=Quote&amp;ID=standard">Quote</a><a href="/Cloud/Docs/PDF/?T=Invoice&amp;ID=wrong">Invoice</a><a href="/Cloud/Docs/PDF/?T=Invoice&amp;ID=dynamic">Dynamic Invoice</a>' });
+        options.onload({ status: 200, responseText: '<a href="/Cloud/Docs/PDF/?T=Quote&amp;ID=custom">Custom Quote</a><a href="/Cloud/Docs/PDF/?T=Quote&amp;ID=standard">Quote</a><a href="/Cloud/Docs/PDF/?T=Invoice&amp;ID=wrong">Invoice</a><a href="/Cloud/Docs/PDF/?T=Receipt&amp;ID=receipt">Receipt</a>' });
       };
       window.downloadCurrentQuotePdf = (_, template) => { window.downloadChoice = template; };
     });
@@ -111,7 +111,7 @@ const workerHelpers = `${extract('quotePdfWorkerHandoff')}\n${extract('completeQ
     assert(urls[1].endsWith('ID=custom'));
     assert.equal(await templates.evaluate(() => window.requests), 2, 'Each template has its own signed-link cache');
     assert((await templates.evaluate(() => window.requestUrls)).every(url => new URL(url).searchParams.get('idCustomerAppsLink') === '1328007'), 'Admin PDF requests use the current Cin7 customer-app link');
-    assert((await templates.evaluate(() => prepareQuotePdfLink('388', 'invoice'))).endsWith('ID=dynamic'), 'Use Dynamic Invoice, not Invoice');
+    assert((await templates.evaluate(() => prepareQuotePdfLink('388', 'receipt'))).endsWith('ID=receipt'), 'Use Receipt, not the removed Dynamic Invoice link');
     await templates.evaluate(() => showQuotePdfTemplateMenu(document.getElementById('pdf')));
     assert.deepEqual(await templates.locator('[role="menuitem"]').allTextContents(), ['Quote', 'Custom Quote']);
     await templates.screenshot({ path: '/tmp/lc-quote-template-menu.png' });
@@ -132,9 +132,9 @@ const workerHelpers = `${extract('quotePdfWorkerHandoff')}\n${extract('completeQ
       catch { return true; }
     }), 'A missing custom template must not silently select Quote');
     assert(await templates.evaluate(async () => {
-      try { await requestAdminQuoteHref('388', 'invoice'); return false; }
+      try { await requestAdminQuoteHref('388', 'receipt'); return false; }
       catch { return true; }
-    }), 'A missing Dynamic Invoice must not silently select Quote');
+    }), 'A missing Receipt must not silently select Quote');
     await templates.addScriptTag({ content: extract('saveQuotePdfBuffer') });
     const namedDownload = templates.waitForEvent('download');
     await templates.evaluate(() => saveQuotePdfBuffer(new TextEncoder().encode('%PDF test').buffer, 'NZSO-17012'));
@@ -173,19 +173,19 @@ const workerHelpers = `${extract('quotePdfWorkerHandoff')}\n${extract('completeQ
     await page.evaluate(() => downloadCurrentQuotePdf(document.getElementById('pdf')));
     assert.equal(await page.evaluate(() => window.alerts.length), 1);
     assert.equal(await page.evaluate(() => window.openedWorker || null), null, 'Locked quote still follows the HubSpot rule');
-    await page.evaluate(() => { window.docType='sales-order'; window.alerts=[]; downloadCurrentQuotePdf(document.getElementById('pdf'),'invoice'); });
+    await page.evaluate(() => { window.docType='sales-order'; window.alerts=[]; downloadCurrentQuotePdf(document.getElementById('pdf'),'receipt'); });
     await page.waitForFunction(() => Boolean(window.openedWorker));
     assert.equal(new URL(await page.evaluate(() => window.openedWorker.url)).searchParams.get('lcQuotePdfWorker'), '1');
-    assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem('test-invoice-handoff-v2:'+new URL(window.openedWorker.url).searchParams.get('lcQuotePdfRequest')))).template, 'invoice');
+    assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem('test-invoice-handoff-v2:'+new URL(window.openedWorker.url).searchParams.get('lcQuotePdfRequest')))).template, 'receipt');
     assert.deepEqual(await page.evaluate(() => window.alerts), []);
     assert.equal(await page.locator('#pdf').isDisabled(), true);
     assert.equal(await page.locator('#pdf').innerText(), 'Downloading…');
     await page.evaluate(() => window.dispatchEvent(new StorageEvent('storage',{key:'test-invoice-handoff-v2:'+new URL(window.openedWorker.url).searchParams.get('lcQuotePdfRequest')+':result',newValue:JSON.stringify({error:''}),storageArea:localStorage})));
     assert.equal(await page.locator('#pdf').isEnabled(), true);
-    assert.equal(await page.locator('#pdf').innerText(), 'Download Invoice');
-    assert.equal(await page.locator('iframe').count(), 0, 'Invoice download does not wait for HubSpot');
+    assert.equal(await page.locator('#pdf').innerText(), 'Download Receipt');
+    assert.equal(await page.locator('iframe').count(), 0, 'Receipt download does not wait for HubSpot');
     await page.close();
-    console.log('PASS PDF: Quote remains gated; invoice is always available');
+    console.log('PASS PDF: Quote remains gated; receipt is always available');
     const ownership = await browser.newPage();
     await ownership.setContent('<button id="lc-hubspot-deal-inline-button-v1">HubSpot Deal</button><button id="lc-quote-pdf-download-button-v1">Old Download Quote</button>');
     await ownership.addScriptTag({ content: `const QUOTE_PDF_BUTTON_ID='lc-quote-pdf-download-button-v2',LEGACY_QUOTE_PDF_BUTTON_ID='lc-quote-pdf-download-button-v1',HUBSPOT_BUTTON_ID='lc-hubspot-deal-inline-button-v1',QUOTE_REVIEW_BUTTON_ID='review',BUTTON_ID='visit',HUBSPOT_GATE_CLASS='gated';const isOmniPage=()=>true;const styleInlineButton=()=>{};const wireActionButton=button=>button.dataset.currentHandler='1';const placeOmniActionButton=(button,anchor)=>anchor.after(button);const omniHeadingDraft=()=>({documentType:'quote'});\n${extract('addQuotePdfButton')}` });

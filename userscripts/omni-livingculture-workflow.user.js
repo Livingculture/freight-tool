@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.181
+// @version      0.1.188
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -45,6 +45,17 @@
   const STAFF_HELP_BUTTON_ID = 'lc-omni-staff-help-button';
   const STAFF_HELP_DIALOG_ID = 'lc-omni-staff-help-dialog';
   const COPY_DELIVERY_BILLING_ID = 'lc-omni-copy-delivery-to-billing';
+  const SHOWROOM_DELIVERY_PANEL_ID = 'lc-omni-showroom-delivery';
+  const SHOWROOM_DELIVERY_STORAGE_PREFIX = 'lc-omni-showroom-delivery-original:';
+  const SHOWROOM_DELIVERY_OPTIONS = [
+    { key:'wairau', label:'Wairau', address:'Wairau Showroom' },
+    { key:'penrose', label:'Penrose', address:'Penrose Showroom' },
+    { key:'hamilton', label:'Hamilton', address:'Hamilton Showroom' },
+    { key:'tauranga', label:'Tauranga', address:'Tauranga Showroom' },
+    { key:'napier', label:'Napier', address:'Napier Showroom' },
+    { key:'christchurch', label:'Christchurch', address:'Christchurch Showroom' },
+    { key:'whangarei', label:'Whangārei', address:'Whangarei Showroom' }
+  ];
   const STAFF_GUIDE_URL = 'https://living-culture-freight.vercel.app/omni-help.html';
   const FLOATING_BAR_ID = 'lc-cin7-floating-actions-v1';
   const OVERLAY_ID = 'lc-site-visit-overlay-v2';
@@ -53,6 +64,21 @@
   const QUOTE_REVIEW_API_URL = 'https://living-culture-workflow.vercel.app/api/quote-reviews';
   const WORKFLOW_PLANNER_URL = 'https://living-culture-workflow.vercel.app/';
   const CUSTOMER_PHOTOS_API_URL = 'https://living-culture-workflow.vercel.app/api/customer-photos';
+  const CUSTOMER_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
+  const CUSTOMER_UPLOAD_ACCEPT = [
+    'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif',
+    'application/pdf', 'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'text/csv', 'text/plain',
+    '.jpg', '.jpeg', '.png', '.webp', '.gif', '.heic', '.heif', '.pdf', '.doc', '.docx',
+    '.xls', '.xlsx', '.ppt', '.pptx', '.csv', '.txt'
+  ].join(',');
+  const CUSTOMER_UPLOAD_EXTENSIONS = new Set([
+    'jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'heif', 'pdf', 'doc', 'docx',
+    'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'txt'
+  ]);
   const HUBSPOT_API_URL = 'https://living-culture-workflow.vercel.app/api/hubspot/create-deal';
   const HUBSPOT_LEAD_SOURCE_OPTIONS_URL = 'https://living-culture-workflow.vercel.app/api/hubspot/lead-source-options';
   const HUBSPOT_LEAD_SOURCE_CACHE_KEY = 'lc-hubspot-lead-source-options-v1';
@@ -839,17 +865,34 @@
       const total = number(read(totalCell));
       const discountPercent = number(read(cell(row,'disc')));
       const discountAmount = number(read(cell(row,'totaldiscount')));
-      let price = null;
-      if (total !== null && total >= 0) {
-        const netUnit = Number((total / quantity).toFixed(2));
-        if (Math.round(netUnit * quantity * 100) !== Math.round(total * 100)) throw new Error(sku + ': the net line total needs manual pricing review before creating a HubSpot deal.');
-        price = netUnit;
-      } else if (!totalCell && unitPrice !== null && unitPrice >= 0 && !(discountPercent > 0) && !(discountAmount > 0)) price = unitPrice;
+      const fullyDiscounted = discountPercent !== null && discountPercent >= 100
+        || unitPrice !== null && unitPrice > 0 && discountAmount !== null
+          && discountAmount + 0.01 >= unitPrice * quantity;
+      const netTotal = total !== null ? total : fullyDiscounted ? 0 : null;
+      let price = '';
+      if (netTotal !== null && netTotal >= 0) {
+        const targetCents = Math.round(netTotal * 100);
+        // HubSpot accepts up to six decimals for line-item unit prices. Use the
+        // least precision needed for quantity x unit price to match Omni's
+        // displayed two-decimal line amount.
+        for (let decimals = 2; decimals <= 6; decimals += 1) {
+          const candidate = (netTotal / quantity).toFixed(decimals);
+          if (Math.round(Number(candidate) * quantity * 100) === targetCents) {
+            const [whole, fraction = ''] = candidate.split('.');
+            price = whole + '.' + fraction.replace(/0+$/, '').padEnd(2, '0');
+            break;
+          }
+        }
+        // Trust the net line amount entered in Omni. A six-decimal fallback
+        // keeps unusual bundle calculations from blocking the entire deal;
+        // staff can verify the selected lines in the review before sending.
+        if (!price) price = (netTotal / quantity).toFixed(6);
+      } else if (!totalCell && unitPrice !== null && unitPrice >= 0 && !(discountPercent > 0) && !(discountAmount > 0)) price = unitPrice.toFixed(2);
       const options = ['option1','option2','option3'].map(option => read(cell(row,option))).filter(Boolean);
       return {sku,name:options.length ? name + ' - ' + options.join(', ') : name,quantity:String(quantity),
-        price:price === null ? '' : price.toFixed(2),total:total === null ? '' : total.toFixed(2),
+        price,total:netTotal === null ? '' : netTotal.toFixed(2),
         listPrice:unitPrice === null ? '' : unitPrice.toFixed(2),discountPercent,discountAmount,priceIsNet:true,
-        description:[unitPrice !== null ? 'Omni unit price: NZD ' + unitPrice.toFixed(2) : '',discountPercent !== null ? 'Discount: ' + discountPercent + '%' : '',discountAmount !== null ? 'Line discount: NZD ' + discountAmount.toFixed(2) : '',total !== null ? 'Net line amount: NZD ' + total.toFixed(2) : ''].filter(Boolean).join('; ')};
+        description:[unitPrice !== null ? 'Omni unit price: NZD ' + unitPrice.toFixed(2) : '',discountPercent !== null ? 'Discount: ' + discountPercent + '%' : '',discountAmount !== null ? 'Line discount: NZD ' + discountAmount.toFixed(2) : '',netTotal !== null ? 'Net line amount: NZD ' + netTotal.toFixed(2) : ''].filter(Boolean).join('; ')};
     }).filter(Boolean);
     if (items.length > 50) throw new Error('This quote has more than 50 commercial lines. Review the HubSpot transfer manually; no lines were sent.');
     return items;
@@ -1931,6 +1974,173 @@
     });
   }
 
+  function omniShowroomDeliveryStorageKey() {
+    const heading = omniHeadingDraft();
+    const pageId = heading.orderId || new URL(window.location.href).searchParams.get('OrderId') || 'new-quote';
+    const customer = clean(readOmniControlByLabel('Selected Customer') || heading.customerName || '').toLowerCase();
+    return `${SHOWROOM_DELIVERY_STORAGE_PREFIX}${pageId}:${customer}`;
+  }
+
+  function showroomFromDeliveryAddress(value) {
+    const address = clean(value).toLowerCase();
+    return SHOWROOM_DELIVERY_OPTIONS.find(showroom => showroom.address.toLowerCase() === address) || null;
+  }
+
+  function omniFreightDescriptionControl() {
+    const editable = document.getElementById('lc-omni-freight-description-select');
+    if (editable && !editable.disabled && !editable.readOnly) return editable;
+    const label = Array.from(document.querySelectorAll('label, span, div, td'))
+      .filter(isVisible)
+      .filter(node => normalizeLabel(node.textContent || '') === 'freight')
+      .sort((left,right) => left.children.length-right.children.length)[0];
+    if (!label) return null;
+    const labelRect = label.getBoundingClientRect();
+    return Array.from(document.querySelectorAll('input:not([type="hidden"])'))
+      .filter(isVisible)
+      .filter(control => !control.disabled && !control.readOnly)
+      .map(control => ({ control, rect:control.getBoundingClientRect() }))
+      .filter(({ rect }) => rect.left >= labelRect.right-8 && Math.abs(rect.top+rect.height/2-labelRect.top-labelRect.height/2)<=8)
+      .sort((left,right) => left.rect.left-right.rect.left)
+      .map(({ control }) => control)
+      .find(control => !/^[\d,.$\s]+$/.test(control.value || '')) || null;
+  }
+
+  function setOmniShowroomFreightDescription(value) {
+    const visible = omniFreightDescriptionControl();
+    if (!visible) return false;
+    setOmniControlValue(visible, value);
+    visible.dispatchEvent(new Event('blur', { bubbles:true }));
+    return true;
+  }
+
+  function syncOmniShowroomDeliveryPanelSelection() {
+    const panel = document.getElementById(SHOWROOM_DELIVERY_PANEL_ID);
+    const address = deliveryBillingFields();
+    const addressOne = address?.fields?.[3]?.source;
+    if (!panel || !addressOne) return;
+    const selected = showroomFromDeliveryAddress(addressOne.value);
+    panel.querySelectorAll('input[type="radio"]').forEach(input => {
+      input.checked = input.value === selected?.key;
+      input.closest('label')?.classList.toggle('is-selected', input.checked);
+    });
+  }
+
+  function applyOmniShowroomDelivery(showroomKey) {
+    const showroom = SHOWROOM_DELIVERY_OPTIONS.find(option => option.key === showroomKey);
+    const address = deliveryBillingFields();
+    const addressOne = address?.fields?.[3]?.source;
+    if (!showroom || !addressOne || addressOne.disabled || addressOne.readOnly) return false;
+    if (!showroomFromDeliveryAddress(addressOne.value)) {
+      const panel = document.getElementById(SHOWROOM_DELIVERY_PANEL_ID);
+      if (panel) panel.dataset.originalAddress = addressOne.value || '';
+      try { localStorage.setItem(omniShowroomDeliveryStorageKey(), addressOne.value || ''); } catch (error) {}
+    }
+    setOmniControlValue(addressOne, showroom.address);
+    setOmniShowroomFreightDescription(`Collect from ${showroom.address}`);
+    if (document.querySelector(`#${COPY_DELIVERY_BILLING_ID} input`)?.checked) copyDeliveryAddressToBilling();
+    syncOmniShowroomDeliveryPanelSelection();
+    lastOmniOrderSyncDigest = '';
+    scheduleOmniWorkflowSync(500, true);
+    return true;
+  }
+
+  function clearOmniShowroomDelivery() {
+    const address = deliveryBillingFields();
+    const addressOne = address?.fields?.[3]?.source;
+    if (!addressOne || addressOne.disabled || addressOne.readOnly) return false;
+    const selected = showroomFromDeliveryAddress(addressOne.value);
+    const panel = document.getElementById(SHOWROOM_DELIVERY_PANEL_ID);
+    let original = panel?.dataset.originalAddress || '';
+    try {
+      original = localStorage.getItem(omniShowroomDeliveryStorageKey()) || original;
+      localStorage.removeItem(omniShowroomDeliveryStorageKey());
+    } catch (error) {}
+    if (panel) delete panel.dataset.originalAddress;
+    if (selected) setOmniControlValue(addressOne, original);
+    const freight = omniFreightDescriptionControl();
+    if (freight && /^Collect from (?:Wairau|Penrose|Hamilton|Tauranga|Napier|Christchurch|Whangarei) Showroom$/i.test(clean(freight.value))) {
+      setOmniShowroomFreightDescription('');
+    }
+    if (document.querySelector(`#${COPY_DELIVERY_BILLING_ID} input`)?.checked) copyDeliveryAddressToBilling();
+    syncOmniShowroomDeliveryPanelSelection();
+    lastOmniOrderSyncDigest = '';
+    scheduleOmniWorkflowSync(500, true);
+    return true;
+  }
+
+  function positionOmniShowroomDeliveryPanel(panel, delivery, billing, addressOne) {
+    if (panel.parentElement !== document.body) document.body.appendChild(panel);
+    const deliveryRect = delivery.getBoundingClientRect();
+    const billingRect = billing.getBoundingClientRect();
+    const addressRect = addressOne.getBoundingClientRect();
+    const leftEdge = Math.max(deliveryRect.right, addressRect.right)+14;
+    const available = billingRect.left-leftEdge-14;
+    if (available < 170 || window.innerWidth < 1050) {
+      panel.hidden = true;
+      return;
+    }
+    panel.hidden = false;
+    panel.style.position = 'absolute';
+    panel.style.left = `${Math.round(window.scrollX+leftEdge)}px`;
+    panel.style.top = `${Math.round(window.scrollY+deliveryRect.top)}px`;
+    panel.style.width = `${Math.min(250,Math.floor(available))}px`;
+    panel.style.margin = '0';
+  }
+
+  function ensureOmniShowroomDelivery() {
+    if (!isOmniPage()) return;
+    const address = deliveryBillingFields();
+    const addressOne = address?.fields?.[3]?.source;
+    if (!address?.delivery || !address?.billing || !addressOne) {
+      document.getElementById(SHOWROOM_DELIVERY_PANEL_ID)?.remove();
+      return;
+    }
+    let panel = document.getElementById(SHOWROOM_DELIVERY_PANEL_ID);
+    if (!panel) {
+      panel = document.createElement('section');
+      panel.id = SHOWROOM_DELIVERY_PANEL_ID;
+      panel.setAttribute('aria-label','Deliver to showroom');
+      panel.innerHTML = `
+        <strong>Deliver to showroom</strong>
+        <div class="lc-omni-showroom-options">
+          ${SHOWROOM_DELIVERY_OPTIONS.map(showroom => `<label title="Set Delivery Address 1 to ${escapeHtml(showroom.address)} and fill the freight collection description"><input type="radio" name="lc-omni-showroom-delivery-option" value="${escapeHtml(showroom.key)}"><span>${escapeHtml(showroom.label)}</span></label>`).join('')}
+        </div>
+        <small>Fills Delivery Address 1 and the collection field automatically.</small>
+        <button type="button" title="Restore the previous customer delivery address and clear the automatic showroom collection description">Clear showroom</button>`;
+      panel.querySelectorAll('input[type="radio"]').forEach(input => input.addEventListener('change', event => {
+        if (event.currentTarget.checked) applyOmniShowroomDelivery(event.currentTarget.value);
+      }));
+      panel.querySelector('button').addEventListener('click', clearOmniShowroomDelivery);
+    }
+    if (!document.getElementById('lc-omni-showroom-delivery-style')) {
+      const style = document.createElement('style');
+      style.id = 'lc-omni-showroom-delivery-style';
+      style.textContent = `
+        #${SHOWROOM_DELIVERY_PANEL_ID}{z-index:20;box-sizing:border-box;padding:10px 12px;border:1px solid #d4e1e6;border-radius:8px;background:#f7fbfc;color:#263b43;font:13px/1.3 Arial,sans-serif;box-shadow:0 2px 8px rgba(23,63,110,.08)}
+        #${SHOWROOM_DELIVERY_PANEL_ID}>strong{display:block;margin:0 0 7px;color:#263b43;font-size:15px}
+        #${SHOWROOM_DELIVERY_PANEL_ID} .lc-omni-showroom-options{display:grid;gap:2px}
+        #${SHOWROOM_DELIVERY_PANEL_ID} label{display:flex;align-items:center;gap:7px;min-height:28px;padding:3px 6px;border-radius:5px;cursor:pointer;white-space:nowrap}
+        #${SHOWROOM_DELIVERY_PANEL_ID} label.is-selected{background:#dff5f1;color:#087e73;font-weight:700}
+        #${SHOWROOM_DELIVERY_PANEL_ID} input{appearance:none;width:16px;height:16px;min-width:16px;margin:0;border:1px solid #8799a0;border-radius:3px;background:#fff;cursor:pointer}
+        #${SHOWROOM_DELIVERY_PANEL_ID} input:checked{border-color:#0aa79a;background:#0aa79a;box-shadow:inset 0 0 0 3px #fff}
+        #${SHOWROOM_DELIVERY_PANEL_ID} small{display:block;margin:8px 0 5px;color:#657982;font-size:11px;white-space:normal}
+        #${SHOWROOM_DELIVERY_PANEL_ID} button{padding:0;border:0;background:transparent;color:#075a9c;font:600 12px Arial,sans-serif;text-decoration:underline;cursor:pointer}
+      `;
+      (document.head || document.documentElement).appendChild(style);
+    }
+    if (addressOne.dataset.lcShowroomDeliveryHook !== '1') {
+      addressOne.dataset.lcShowroomDeliveryHook = '1';
+      addressOne.addEventListener('input',syncOmniShowroomDeliveryPanelSelection);
+      addressOne.addEventListener('change',syncOmniShowroomDeliveryPanelSelection);
+    }
+    positionOmniShowroomDeliveryPanel(panel,address.delivery,address.billing,addressOne);
+    syncOmniShowroomDeliveryPanelSelection();
+    const selected = showroomFromDeliveryAddress(addressOne.value);
+    if (selected && !clean(omniWorkflowFreightDescription())) {
+      setOmniShowroomFreightDescription(`Collect from ${selected.address}`);
+    }
+  }
+
   function omniSalesRep() {
     const createdByLabel = Array.from(document.querySelectorAll('label, legend, span, div, td'))
       .filter(isVisible)
@@ -2278,8 +2488,8 @@
       status.setAttribute('role', 'status');
       info.appendChild(status);
     }
-    status.textContent = `Workflow 0.1.176: ${message}`;
-    status.title = 'Workflow stock reader 0.1.176';
+    status.textContent = `Workflow 0.1.183: ${message}`;
+    status.title = 'Workflow stock reader 0.1.183';
     root.dataset.workflowSyncStatus = message;
   }
 
@@ -2303,6 +2513,7 @@
       if (!Number.isFinite(checkedAt) || !Number.isFinite(age)) return reject('stock timestamp could not be read');
       if (age < -60000) return reject('stock timestamp is in the future; refresh stock');
       if (age > 120000) return reject(`stock check expired (${Math.round(age / 1000)}s); refresh stock`);
+      if (report.complete !== true) return reject('checking stock; previous Workflow result kept');
       if (!Array.isArray(report.lines) || !report.lines.length) return reject('stock check contains no products');
       const table = root.previousElementSibling;
       if (table?.tagName !== 'TABLE') return reject('order table is not beside stock panel');
@@ -4127,7 +4338,7 @@
   }
 
   function quotePdfTemplateLabel(template) {
-    if (template === 'invoice') return 'Dynamic Invoice';
+    if (template === 'receipt' || template === 'invoice') return 'Receipt';
     return template === 'custom' ? 'Custom Quote' : 'Quote';
   }
 
@@ -4264,7 +4475,7 @@
   }
 
   async function downloadCurrentQuotePdf(button, template = 'quote') {
-    const downloadLabel = template === 'invoice' ? 'Download Invoice' : 'Download Quote';
+    const downloadLabel = template === 'receipt' || template === 'invoice' ? 'Download Receipt' : 'Download Quote';
     const heading = omniHeadingDraft();
     if (heading.documentType !== 'sales-order' && !isQuotePdfUnlocked(hubSpotGateOrderId())) {
       applyHubSpotApprovalGate();
@@ -4273,7 +4484,7 @@
     }
     const quoteNumber = heading.orderId || extractOrderId(document.body?.innerText || '');
     if (!quoteNumber) {
-      window.alert('The NZSO quote number could not be found on this page.');
+      window.alert('The NZSO number could not be found on this page.');
       return;
     }
     if (typeof GM_openInTab !== 'function') {
@@ -4333,7 +4544,7 @@
       if (finished) return;
       try { worker.close(); } catch (error) {}
       cleanup();
-      window.alert('Cin7 took too long to prepare the quote PDF.');
+      window.alert('Cin7 took too long to prepare the PDF.');
     }, QUOTE_PDF_TIMEOUT_MS);
   }
 
@@ -4364,7 +4575,7 @@
     if (window.parent !== window || new URL(location.href).searchParams.get('lcQuotePdfWorker') !== '1') return false;
     const handoff = quotePdfWorkerHandoff();
     if (!handoff?.quoteNumber || Date.now() - Number(handoff.startedAt || 0) > QUOTE_PDF_TIMEOUT_MS) {
-      if (handoff?.requestId) completeQuotePdfWorker(handoff, 'The quote download request expired. Please try again.');
+      if (handoff?.requestId) completeQuotePdfWorker(handoff, 'The document download request expired. Please try again.');
       window.close();
       return true;
     }
@@ -4413,17 +4624,17 @@
         const bytes = new Uint8Array(response.response || new ArrayBuffer(0));
         const isPdf = bytes.length > 3000 && String.fromCharCode(...bytes.slice(0, 4)) === '%PDF';
         if (response.status < 200 || response.status >= 300 || !isPdf) {
-          finished('Cin7 did not return a valid quote PDF.');
+          finished('Cin7 did not return a valid PDF.');
           return;
         }
         saveQuotePdfBuffer(response.response, quoteNumber);
         finished();
       },
       onerror: () => {
-        finished('Could not connect to Cin7\'s quote PDF.');
+        finished('Could not connect to Cin7\'s PDF.');
       },
       ontimeout: () => {
-        finished('Cin7\'s quote PDF timed out.');
+        finished('Cin7\'s PDF timed out.');
       }
     });
   }
@@ -4538,12 +4749,22 @@
 
   async function uploadCustomerPhotosFromOmni(button, files) {
     const draft = cin7Draft();
+    const selectedFiles = Array.from(files || []);
     if (!draft.orderId || !draft.customerName) {
       window.alert('The quote number and customer name are required before uploading photos.');
       return;
     }
+    const invalidFile = selectedFiles.find((file) => {
+      const extension = clean(file?.name).split('.').pop()?.toLowerCase() || '';
+      return !CUSTOMER_UPLOAD_EXTENSIONS.has(extension) || Number(file?.size || 0) > CUSTOMER_UPLOAD_MAX_BYTES;
+    });
+    if (invalidFile) {
+      window.alert(`${invalidFile.name || 'A selected file'} must be a supported image, PDF or Office document and no larger than 10 MB.`);
+      return;
+    }
     button.disabled = true;
     button.textContent = 'Preparing…';
+    let uploadedCount = 0;
     try {
       const lookupUrl = new URL(CUSTOMER_PHOTOS_API_URL);
       if (draft.email) lookupUrl.searchParams.set('email', draft.email);
@@ -4597,15 +4818,21 @@
       }
       if (!album?.id) throw new Error('Workflow could not create the customer photo album.');
 
-      button.textContent = 'Uploading…';
-      const form = new FormData();
-      form.set('albumId', album.id);
-      Array.from(files).forEach((file) => form.append('photos', file, file.name));
-      const result = await customerPhotosRequest({ method: 'POST', data: form });
-      const count = Array.isArray(result.photos) ? result.photos.length : files.length;
-      window.alert(`${count} photo${count === 1 ? '' : 's'} uploaded to ${draft.orderId} - ${draft.customerName}.`);
+      for (let index = 0; index < selectedFiles.length; index += 1) {
+        const file = selectedFiles[index];
+        button.textContent = `Uploading ${index + 1} of ${selectedFiles.length}…`;
+        const form = new FormData();
+        form.set('albumId', album.id);
+        form.append('photos', file, file.name);
+        const result = await customerPhotosRequest({ method: 'POST', data: form });
+        uploadedCount += Array.isArray(result.photos) ? result.photos.length : 1;
+      }
+      window.alert(`${uploadedCount} file${uploadedCount === 1 ? '' : 's'} uploaded to ${draft.orderId} - ${draft.customerName}.`);
     } catch (error) {
-      window.alert(error?.message || 'The customer photos could not be uploaded.');
+      const partial = uploadedCount
+        ? ` ${uploadedCount} earlier file${uploadedCount === 1 ? ' was' : 's were'} uploaded successfully.`
+        : '';
+      window.alert(`${error?.message || 'The customer files could not be uploaded.'}${partial}`);
     } finally {
       button.disabled = false;
       button.textContent = 'Upload Photos';
@@ -4615,7 +4842,7 @@
   function chooseCustomerPhotos(button) {
     const picker = document.createElement('input');
     picker.type = 'file';
-    picker.accept = 'image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif';
+    picker.accept = CUSTOMER_UPLOAD_ACCEPT;
     picker.multiple = true;
     picker.style.display = 'none';
     picker.addEventListener('change', () => {
@@ -4972,7 +5199,7 @@
         return;
       }
       if (button.id === QUOTE_PDF_BUTTON_ID) {
-        if (omniHeadingDraft().documentType === 'sales-order') void downloadCurrentQuotePdf(button, 'invoice');
+        if (omniHeadingDraft().documentType === 'sales-order') void downloadCurrentQuotePdf(button, 'receipt');
         else showQuotePdfTemplateMenu(button);
       }
       if (button.id === CONVERT_ORDER_BUTTON_ID) void convertQuoteToSalesOrder(button, event);
@@ -5307,7 +5534,7 @@
       wireActionButton(button);
     }
     button.classList.remove(HUBSPOT_GATE_CLASS);
-    if (button.textContent !== 'Downloading…') button.textContent = omniHeadingDraft().documentType === 'sales-order' ? 'Download Invoice' : 'Download Quote';
+    if (button.textContent !== 'Downloading…') button.textContent = omniHeadingDraft().documentType === 'sales-order' ? 'Download Receipt' : 'Download Quote';
     placeOmniActionButton(button, anchor);
   }
 

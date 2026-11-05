@@ -1,19 +1,19 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {chromium}=require('playwright');
-const ts=require(path.resolve(__dirname,'../../workflow-speed-fix/node_modules/typescript'));
+const ts=require(process.env.TYPESCRIPT_MODULE || path.resolve(__dirname,'../../workflow/node_modules/typescript'));
 const source=fs.readFileSync('userscripts/omni-livingculture-workflow.user.js','utf8');
 const ast=ts.createSourceFile('workflow.js',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
 const names=new Set(['clean','escapeHtml','isVisible','isHubSpotProductLineItem','extractHubSpotLineItems','extractOmniHubSpotCommercialItems','hubSpotDealReview','submitHubSpotDeal','ensureStyles']);
 const declarations=[];function visit(node){if(ts.isFunctionDeclaration(node)&&names.has(node.name?.text))declarations.push(node.getText(ast));ts.forEachChild(node,visit)}visit(ast);
 const headers=['Format','Sort','BOM<br>Load','Image','<b>1</b>Code','<b>1</b>Product','Option1','Option2','Option3','Notes','Stock','<b>1</b>Qty<br>Ordered','Qty Dispatch','Account','Unit<br>Price','% Disc','Total<br>Discount','Amount<br>NZD'];
 const line=(sku,role,qty,price,total,discount='0',discountAmount='0')=>'<tr>'+['Paren','127',role,'',sku,'Tasman Motorised Freestanding Louvre Roof Aluminium Pergola','6 x 3m','White','','','',qty,'','',price,discount,discountAmount,total].map(value=>'<td>'+value+'</td>').join('')+'</tr>';
-const html=(price,total,sku='CS20027-11',qty='1')=>'<style>td,th{padding:8px}table{border-collapse:collapse}.lc-hs-review-panel{background:white;padding:20px}#lc-hs-modal-overlay{position:fixed;inset:10px;background:#eee;overflow:auto}</style><button id="send">HubSpot Deal</button><table><tr><td><table id="products"><tr>'+headers.map(value=>'<th>'+value+'</th>').join('')+'</tr>'+line(sku,'Make',qty,price,total,'15','2145.00')+['CS22148','CS22150','CS22156','CS25360','CS23538','CS23540','CS25368'].map((code,index)=>line(code,'Use',index===4?'5':'1',index===0?'25.00':'','')).join('')+'</table></td></tr></table>';
+const html=(price,total,sku='CS20027-11',qty='1',discount='15',discountAmount='2145.00')=>'<style>td,th{padding:8px}table{border-collapse:collapse}.lc-hs-review-panel{background:white;padding:20px}#lc-hs-modal-overlay{position:fixed;inset:10px;background:#eee;overflow:auto}</style><button id="send">HubSpot Deal</button><table><tr><td><table id="products"><tr>'+headers.map(value=>'<th>'+value+'</th>').join('')+'</tr>'+line(sku,'Make',qty,price,total,discount,discountAmount)+['CS22148','CS22150','CS22156','CS25360','CS23538','CS23540','CS25368'].map((code,index)=>line(code,'Use',index===4?'5':'1',index===0?'25.00':'','')).join('')+'</table></td></tr></table>';
 (async()=>{
  const browser=await chromium.launch();
  try{
   const page=await browser.newPage({viewport:{width:1500,height:1000}});let writes=[];
-  async function open(price='14,299.99',total='12,154.99',sku,qty){
-   await page.setContent(html(price,total,sku,qty));
+  async function open(price='14,299.99',total='12,154.99',sku,qty,discount,discountAmount){
+   await page.setContent(html(price,total,sku,qty,discount,discountAmount));
    await page.addStyleTag({content:'*{box-sizing:border-box}'});
    await page.addScriptTag({content:`window.OVERLAY_ID='lc-site-visit-overlay-v2';${declarations.join('\n')}\nwindow.isOmniPage=()=>true;window.extractOmniTableLineItems=()=>{throw Error('Legacy component reader must not be used')};window.closeHubSpotModal=()=>document.getElementById('lc-hs-modal-overlay')?.remove();`});
   }
@@ -29,11 +29,13 @@ const html=(price,total,sku='CS20027-11',qty='1')=>'<style>td,th{padding:8px}tab
   await page.getByRole('button',{name:'Create Deal',exact:true}).click();assert.equal((await page.evaluate(()=>review)).lineItems.length,1);
   await open('14,299.99','24,309.98','CS20027-11(CS22148CS22150)','2');items=await page.evaluate(()=>extractHubSpotLineItems());assert.equal(items[0].price,'12154.99');assert.equal(items[0].quantity,'2');assert.match(items[0].sku,/\(/,'Composite Make SKUs retained');
   await open('0','0');items=await page.evaluate(()=>extractHubSpotLineItems());assert.equal(items[0].price,'0.00','Explicit free commercial items remain valid');
+  await open('499.99','','BUNDLE-100','1','100','499.99');items=await page.evaluate(()=>extractHubSpotLineItems());assert.equal(items[0].price,'0.00','A bundle discounted by 100% is transferred as a free line even when Omni leaves the amount cell blank');assert.equal(items[0].total,'0.00');assert.match(items[0].description,/Discount: 100%.*Net line amount: NZD 0.00/);
   await open('','');items=await page.evaluate(()=>extractHubSpotLineItems());assert.equal(items[0].price,'');assert.equal(items[0].total,'','Missing is not replaced by zero');
   await page.exposeFunction('captureWrite',options=>writes.push(options));
   await page.addScriptTag({content:`const hubSpotPrerequisites=()=>[],applyHubSpotPrerequisiteGate=()=>{},hubSpotMessage=async(title,lines)=>{window.messages??=[];window.messages.push({title,lines})},hubspotDraft=()=>({orderId:'NZSO-18151',customerName:'Test customer',lineItems:extractHubSpotLineItems()}),extractOrderId=v=>String(v||'').match(/NZSO-\\d+/)?.[0]||'',omniHeadingDraft=()=>({orderId:'NZSO-18151'}),chooseHubSpotLeadSource=async()=>({value:'showroom'}),markHubSpotStepComplete=()=>{throw Error('Missing prices must be blocked before completion')},GM_xmlhttpRequest=options=>captureWrite(options);`});
   await page.evaluate(()=>{window.submission=submitHubSpotDeal(document.querySelector('#send'))});await page.getByRole('button',{name:'Create Deal',exact:true}).click();await page.evaluate(()=>submission);assert.equal(writes.length,0);assert.match((await page.evaluate(()=>messages)).at(-1).lines.join(' '),/no confirmed price/i);
-  await open('10','10','CS10000','3');const error=await page.evaluate(()=>{try{extractHubSpotLineItems();return ''}catch(error){return error.message}});assert.match(error,/manual pricing review/,'Do not silently round net unit prices to a different line total');
-  console.log('PASS: NZSO-18151-shaped grid, Make parent and variants, Use excluded, net discount price, hidden/stale editors ignored, composite SKUs, quantities, explicit free lines, missing-price submission blocked, rounding guarded and review visible. No live requests.');
+  await open('10','10','CS10000','3');items=await page.evaluate(()=>extractHubSpotLineItems());assert.equal(items[0].price,'3.333','Repeating unit prices use the least precision that reproduces the Omni line cents');
+  await open('109.99','461.96','CS27585','6','30','197.98');items=await page.evaluate(()=>extractHubSpotLineItems());assert.equal(items[0].price,'76.993','Discounted Omni totals are reproduced without rejecting valid line rounding');assert.equal(items[0].total,'461.96');
+  console.log('PASS: NZSO-18151-shaped grid, Make parent and variants, Use excluded, net discount price, hidden/stale editors ignored, composite SKUs, quantities, explicit and 100%-discounted free lines, missing-price submission blocked, Omni line rounding reproduced with precise HubSpot unit prices, and review visible. No live requests.');
  }finally{await browser.close()}
 })().catch(error=>{console.error(error);process.exitCode=1});

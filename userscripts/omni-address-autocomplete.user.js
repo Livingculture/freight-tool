@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni New Zealand Address Autocomplete
 // @namespace    livingculture-omni
-// @version      0.1.10
+// @version      0.1.11
 // @description  Adds New Zealand address suggestions to Cin7 Omni delivery addresses.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-address-autocomplete.user.js
@@ -125,6 +125,17 @@
     return '';
   }
 
+  function correctKnownPostalAddress(address) {
+    const suburb = normalise(address.address2);
+    const city = normalise(address.city);
+    // Photon currently returns Greenmeadows as the city and postcode 4141.
+    // NZ Post's postal format is Greenmeadows, Napier 4112.
+    if ((suburb === 'greenmeadows' || suburb === 'greenmeadowscentral') && city === 'napier') {
+      return { ...address, address2: 'Greenmeadows', postcode: '4112' };
+    }
+    return address;
+  }
+
   function applySuggestion(address) {
     suppressSearchUntil = Date.now() + 1500;
     clearTimeout(timer);
@@ -142,16 +153,16 @@
   function photonAddress(feature) {
     const properties = feature?.properties || {};
     const address1 = clean([properties.housenumber, properties.street || properties.name].filter(Boolean).join(' '));
-    const city = clean(properties.district || properties.city || properties.town || properties.village || properties.county);
-    const district = clean(properties.suburb || properties.locality);
-    return {
+    const city = clean(properties.city || properties.town || properties.village || properties.county || properties.district);
+    const district = clean(properties.suburb || properties.district || properties.locality);
+    return correctKnownPostalAddress({
       address1,
       address2: district && normalise(district) !== normalise(city) ? district : '',
       city,
       postcode: clean(properties.postcode),
       region: clean(properties.state) || inferRegion(properties.postcode),
       country: 'New Zealand'
-    };
+    });
   }
 
   function addressLabel(address) {
