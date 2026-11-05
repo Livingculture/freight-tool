@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture All-in-One
 // @namespace    livingculture
-// @version      0.1.216
+// @version      0.1.217
 // @description  Approved Living Culture Omni, Cin7 Core, Gmail, HubSpot and website tools in one Tampermonkey install.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -49,7 +49,8 @@
 // @resource     addressAutocomplete https://raw.githubusercontent.com/Livingculture/freight-tool/57c37fb6fa690b0fe63996b995ba94b84c4952ba/userscripts/omni-address-autocomplete.user.js
 // @resource     customComments https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-custom-comments.user.js?v=0.1.15
 // @resource     installFees https://raw.githubusercontent.com/Livingculture/freight-tool/fb2983a3642d9ebedf63d123eec080a59f2bcc69/userscripts/omni-install-fee-helper.user.js
-// @resource     customProducts https://raw.githubusercontent.com/Livingculture/freight-tool/bb74c90d3434a261d3bc526027a694d4b50b4d5c/userscripts/omni-custom-product-helper.user.js?v=0.1.11
+// @resource     customProducts https://raw.githubusercontent.com/Livingculture/freight-tool/4992b32d4c85359b2ee3150f42c75998746e0507/userscripts/omni-custom-product-helper.user.js
+// @resource     customProductData https://raw.githubusercontent.com/Livingculture/freight-tool/7c01d2ee108fe280fa66b223366f8e7e1ad0f35a/userscripts/cin7-custom-product-helper.user.js
 // @resource     websiteShortcuts https://raw.githubusercontent.com/Livingculture/freight-tool/86774fbd10544cbc5d6b301c74599fa30ec48df5/userscripts/omni-website-shortcuts.user.js
 // @resource     productAvailability https://raw.githubusercontent.com/Livingculture/freight-tool/e569d15651517046b29aaea59c328cad090209a3/userscripts/omni-product-availability.user.js
 // @resource     chinaWarehouse https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-china-warehouse-popup-clean-mode.user.js?v=0.1.1
@@ -137,7 +138,7 @@
     if (earlyOmniTools.has(component.resource)) component.runAt = 'body';
   });
 
-  const status = { version: '0.1.216', loaded: [], skipped: [], errors: [] };
+  const status = { version: '0.1.217', loaded: [], skipped: [], errors: [] };
   window.__lcAllInOneStatus = status;
 
   // BEGIN GENERATED GMAIL COMPONENTS

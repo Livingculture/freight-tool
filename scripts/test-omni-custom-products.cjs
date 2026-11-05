@@ -69,4 +69,8 @@ function visit(node){if(ts.isFunctionDeclaration(node)&&names.has(node.name?.tex
 visit(ast);const core=vm.createContext({});vm.runInContext(declarations.join('\n'),core);
 assert.deepEqual(JSON.parse(JSON.stringify(core.parseData(backup))),products,'Core and Omni show identical corrected product data');
 assert(source.includes('lc-omni-custom-product-data-v2'));assert(coreSource.includes('lc-custom-product-data-v17'));
+const loader=fs.readFileSync(path.join(__dirname,'../userscripts/livingculture-all-in-one.user.js'),'utf8');
+const dataResource=source.match(/@resource\s+customProductData\s+(\S+)/)[1];
+assert.match(dataResource,/freight-tool\/[a-f0-9]{40}\/userscripts\/cin7-custom-product-helper.user.js$/);
+assert(loader.includes(dataResource),'All-in-One carries the same pinned offline product data as the standalone helper');
 console.log('PASS: all 55 screenshot SKUs/prices, confirmed Baltic pricing, minimums, per-metre awnings, modification fees, steel-post notes, retired codes, identical Core/Omni data and Baltic merged memos.');
