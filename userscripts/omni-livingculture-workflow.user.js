@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.187
+// @version      0.1.188
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -64,6 +64,21 @@
   const QUOTE_REVIEW_API_URL = 'https://living-culture-workflow.vercel.app/api/quote-reviews';
   const WORKFLOW_PLANNER_URL = 'https://living-culture-workflow.vercel.app/';
   const CUSTOMER_PHOTOS_API_URL = 'https://living-culture-workflow.vercel.app/api/customer-photos';
+  const CUSTOMER_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
+  const CUSTOMER_UPLOAD_ACCEPT = [
+    'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif',
+    'application/pdf', 'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'text/csv', 'text/plain',
+    '.jpg', '.jpeg', '.png', '.webp', '.gif', '.heic', '.heif', '.pdf', '.doc', '.docx',
+    '.xls', '.xlsx', '.ppt', '.pptx', '.csv', '.txt'
+  ].join(',');
+  const CUSTOMER_UPLOAD_EXTENSIONS = new Set([
+    'jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'heif', 'pdf', 'doc', 'docx',
+    'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'txt'
+  ]);
   const HUBSPOT_API_URL = 'https://living-culture-workflow.vercel.app/api/hubspot/create-deal';
   const HUBSPOT_LEAD_SOURCE_OPTIONS_URL = 'https://living-culture-workflow.vercel.app/api/hubspot/lead-source-options';
   const HUBSPOT_LEAD_SOURCE_CACHE_KEY = 'lc-hubspot-lead-source-options-v1';
@@ -4734,12 +4749,22 @@
 
   async function uploadCustomerPhotosFromOmni(button, files) {
     const draft = cin7Draft();
+    const selectedFiles = Array.from(files || []);
     if (!draft.orderId || !draft.customerName) {
       window.alert('The quote number and customer name are required before uploading photos.');
       return;
     }
+    const invalidFile = selectedFiles.find((file) => {
+      const extension = clean(file?.name).split('.').pop()?.toLowerCase() || '';
+      return !CUSTOMER_UPLOAD_EXTENSIONS.has(extension) || Number(file?.size || 0) > CUSTOMER_UPLOAD_MAX_BYTES;
+    });
+    if (invalidFile) {
+      window.alert(`${invalidFile.name || 'A selected file'} must be a supported image, PDF or Office document and no larger than 10 MB.`);
+      return;
+    }
     button.disabled = true;
     button.textContent = 'Preparing…';
+    let uploadedCount = 0;
     try {
       const lookupUrl = new URL(CUSTOMER_PHOTOS_API_URL);
       if (draft.email) lookupUrl.searchParams.set('email', draft.email);
@@ -4793,15 +4818,21 @@
       }
       if (!album?.id) throw new Error('Workflow could not create the customer photo album.');
 
-      button.textContent = 'Uploading…';
-      const form = new FormData();
-      form.set('albumId', album.id);
-      Array.from(files).forEach((file) => form.append('photos', file, file.name));
-      const result = await customerPhotosRequest({ method: 'POST', data: form });
-      const count = Array.isArray(result.photos) ? result.photos.length : files.length;
-      window.alert(`${count} photo${count === 1 ? '' : 's'} uploaded to ${draft.orderId} - ${draft.customerName}.`);
+      for (let index = 0; index < selectedFiles.length; index += 1) {
+        const file = selectedFiles[index];
+        button.textContent = `Uploading ${index + 1} of ${selectedFiles.length}…`;
+        const form = new FormData();
+        form.set('albumId', album.id);
+        form.append('photos', file, file.name);
+        const result = await customerPhotosRequest({ method: 'POST', data: form });
+        uploadedCount += Array.isArray(result.photos) ? result.photos.length : 1;
+      }
+      window.alert(`${uploadedCount} file${uploadedCount === 1 ? '' : 's'} uploaded to ${draft.orderId} - ${draft.customerName}.`);
     } catch (error) {
-      window.alert(error?.message || 'The customer photos could not be uploaded.');
+      const partial = uploadedCount
+        ? ` ${uploadedCount} earlier file${uploadedCount === 1 ? ' was' : 's were'} uploaded successfully.`
+        : '';
+      window.alert(`${error?.message || 'The customer files could not be uploaded.'}${partial}`);
     } finally {
       button.disabled = false;
       button.textContent = 'Upload Photos';
@@ -4811,7 +4842,7 @@
   function chooseCustomerPhotos(button) {
     const picker = document.createElement('input');
     picker.type = 'file';
-    picker.accept = 'image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif';
+    picker.accept = CUSTOMER_UPLOAD_ACCEPT;
     picker.multiple = true;
     picker.style.display = 'none';
     picker.addEventListener('change', () => {
@@ -5918,7 +5949,6 @@
     try {
       ensureOmniJobProgress();
       ensureDeliveryBillingCopy();
-      ensureOmniShowroomDelivery();
       finishOmniConversionNavigation();
       observeOmniLayout();
       addCustomerPhotosButton();
