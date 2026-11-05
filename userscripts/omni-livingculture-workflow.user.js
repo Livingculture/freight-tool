@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.186
+// @version      0.1.187
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -2054,27 +2054,22 @@
   }
 
   function positionOmniShowroomDeliveryPanel(panel, delivery, billing, addressOne) {
+    if (panel.parentElement !== document.body) document.body.appendChild(panel);
     const deliveryRect = delivery.getBoundingClientRect();
     const billingRect = billing.getBoundingClientRect();
     const addressRect = addressOne.getBoundingClientRect();
     const leftEdge = Math.max(deliveryRect.right, addressRect.right)+14;
     const available = billingRect.left-leftEdge-14;
-    if (available >= 170 && window.innerWidth >= 1050) {
-      panel.style.position = 'absolute';
-      panel.style.left = `${Math.round(window.scrollX+leftEdge)}px`;
-      panel.style.top = `${Math.round(window.scrollY+deliveryRect.top)}px`;
-      panel.style.width = `${Math.min(250,Math.floor(available))}px`;
-      panel.style.margin = '0';
-      if (panel.parentElement !== document.body) document.body.appendChild(panel);
+    if (available < 170 || window.innerWidth < 1050) {
+      panel.hidden = true;
       return;
     }
-    panel.style.position = 'relative';
-    panel.style.left = '';
-    panel.style.top = '';
-    panel.style.width = 'min(100%,320px)';
-    panel.style.margin = '12px 0';
-    const deliveryContainer = delivery.parentElement;
-    if (deliveryContainer && panel.parentElement !== deliveryContainer) delivery.insertAdjacentElement('afterend',panel);
+    panel.hidden = false;
+    panel.style.position = 'absolute';
+    panel.style.left = `${Math.round(window.scrollX+leftEdge)}px`;
+    panel.style.top = `${Math.round(window.scrollY+deliveryRect.top)}px`;
+    panel.style.width = `${Math.min(250,Math.floor(available))}px`;
+    panel.style.margin = '0';
   }
 
   function ensureOmniShowroomDelivery() {
@@ -2115,7 +2110,6 @@
         #${SHOWROOM_DELIVERY_PANEL_ID} input:checked{border-color:#0aa79a;background:#0aa79a;box-shadow:inset 0 0 0 3px #fff}
         #${SHOWROOM_DELIVERY_PANEL_ID} small{display:block;margin:8px 0 5px;color:#657982;font-size:11px;white-space:normal}
         #${SHOWROOM_DELIVERY_PANEL_ID} button{padding:0;border:0;background:transparent;color:#075a9c;font:600 12px Arial,sans-serif;text-decoration:underline;cursor:pointer}
-        @media(max-width:1049px){#${SHOWROOM_DELIVERY_PANEL_ID}{box-shadow:none}}
       `;
       (document.head || document.documentElement).appendChild(style);
     }

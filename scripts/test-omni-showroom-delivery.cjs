@@ -76,6 +76,11 @@ const section=(type,values)=>`<section class="column ${type.toLowerCase()}"><h2>
     assert.equal(await panel.getByRole('radio').evaluateAll(nodes=>nodes.filter(node=>node.checked).length),0);
     await page.evaluate(()=>ensureOmniShowroomDelivery());
     assert.equal(await page.locator('#lc-omni-showroom-delivery').count(),1,'Repeated Omni renders do not duplicate the selector');
+    await page.evaluate(()=>{document.querySelector('.billing').style.left='790px';ensureOmniShowroomDelivery()});
+    assert.equal(await panel.evaluate(node=>node.parentElement===document.body),true,'A narrow gap never reparents the selector into Omni layout');
+    assert.equal(await panel.isHidden(),true,'A narrow gap hides the selector instead of changing Omni layout');
+    await page.evaluate(()=>{document.querySelector('.billing').style.left='1200px';ensureOmniShowroomDelivery()});
+    assert.equal(await panel.isVisible(),true,'The selector returns once the address gap is available');
     await panel.getByRole('radio',{name:'Hamilton'}).check();
     await page.locator('#lc-omni-freight-description-select').fill('');
     await page.evaluate(()=>{document.getElementById('lc-omni-showroom-delivery').remove();window.documentType='sales-order';ensureOmniShowroomDelivery()});
