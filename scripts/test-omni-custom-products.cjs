@@ -4,7 +4,7 @@ const vm = require('node:vm');
 const path = require('node:path');
 
 const source = fs.readFileSync(path.join(__dirname, '../userscripts/omni-custom-product-helper.user.js'), 'utf8');
-const parser = source.slice(source.indexOf('  function isCode('), source.indexOf('  function request('));
+const parser = source.slice(source.indexOf('  function isCode('), source.indexOf('  function bundledRawData('));
 const context = vm.createContext({});
 vm.runInContext("const clean = value => String(value || '').replace(/\\s+/g, ' ').trim();\n" + parser, context);
 const parse = raw => JSON.parse(JSON.stringify(context.parse(raw)));
@@ -68,7 +68,9 @@ const declarations=[];
 function visit(node){if(ts.isFunctionDeclaration(node)&&names.has(node.name?.text))declarations.push(node.getText(ast));ts.forEachChild(node,visit)}
 visit(ast);const core=vm.createContext({});vm.runInContext(declarations.join('\n'),core);
 assert.deepEqual(JSON.parse(JSON.stringify(core.parseData(backup))),products,'Core and Omni show identical corrected product data');
-assert(source.includes('lc-omni-custom-product-data-v2'));assert(coreSource.includes('lc-custom-product-data-v17'));
+assert(!source.includes('localStorage.'), 'Untrusted cached exports cannot replace the bundled list');
+assert(!source.includes('await request('), 'Live merged-cell exports cannot replace the bundled list');
+assert(coreSource.includes('lc-custom-product-data-v17'));
 const loader=fs.readFileSync(path.join(__dirname,'../userscripts/livingculture-all-in-one.user.js'),'utf8');
 const dataResource=source.match(/@resource\s+customProductData\s+(\S+)/)[1];
 assert.match(dataResource,/freight-tool\/[a-f0-9]{40}\/userscripts\/cin7-custom-product-helper.user.js$/);

@@ -6,7 +6,7 @@ const raw=data.match(/const RAW_DATA = `([\s\S]*?)`;\s*\n/)[1];
 (async()=>{
  const browser=await chromium.launch();
  try{
-  for(const scenario of ['offline','google-denied','google-live','google-html','storage-blocked','malformed-cache']){
+  for(const scenario of ['offline','google-denied','google-live','google-html','storage-blocked','malformed-cache','merged-export','partial-csv','poisoned-cache']){
    const page=await browser.newPage({viewport:{width:1280,height:900}}),errors=[];
    page.on('pageerror',error=>errors.push(error.message));
    await page.route('https://go.cin7.com/**',route=>route.fulfill({contentType:'text/html',body:'<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font:14px Arial;padding:20px}td,th{min-width:140px;height:36px;text-align:left}button{height:36px}#suggestions{background:white;border:1px solid #888;padding:8px;z-index:100}</style><h1>New Quote</h1><button id="lc-omni-install-fee-button">Install Fees</button><table><thead><tr><th>Code</th><th>Product</th></tr></thead><tbody><tr><td id="code-cell">Search...</td><td id="product-cell"></td></tr></tbody></table><button>Add a new line</button>'}));
@@ -14,6 +14,8 @@ const raw=data.match(/const RAW_DATA = `([\s\S]*?)`;\s*\n/)[1];
    await page.evaluate(({scenario,data,raw})=>{
     localStorage.setItem('lc-omni-custom-product-data-v1','Name,CS code,Price,Memo\nFuji Manual,SK-00396,$145,Old cached item');
     if(scenario==='malformed-cache')localStorage.setItem('lc-omni-custom-product-data-v2','<!doctype html><html>Sign in</html>');
+    const broken='Name\nCS code\nPrice/per m2\nMemo\nProjection) = 6 post for freestanding model & 3 posts for wall Mounted model Aluminium Shutter Sliding Door\nSK-00391\n$590\nAtlantic Side Post\nCS22253\nCharcoal Middle Post\nCS23434';
+    if(scenario==='poisoned-cache')localStorage.setItem('lc-omni-custom-product-data-v2',broken);
     if(scenario==='storage-blocked'){
      Storage.prototype.getItem=function(){throw Error('Storage disabled')};Storage.prototype.setItem=function(){throw Error('Storage disabled')};
     }
@@ -26,6 +28,8 @@ const raw=data.match(/const RAW_DATA = `([\s\S]*?)`;\s*\n/)[1];
       if(['offline','storage-blocked','malformed-cache'].includes(scenario)){options.onerror();return;}
       if(google){
        if(scenario==='google-live')options.onload({status:200,responseText:raw});
+       else if(scenario==='merged-export')options.onload({status:200,responseText:broken});
+       else if(scenario==='partial-csv')options.onload({status:200,responseText:'Name,CS code,Price,Memo\nCharcoal Middle Post,CS23434,,Missing row boundaries'});
        else if(scenario==='google-html')options.onload({status:200,responseText:'<!doctype html><html>Sign in</html>'});
        else options.onload({status:401,responseText:'Sign in'});
       }else options.onload({status:200,responseText:data});
@@ -51,11 +55,19 @@ const raw=data.match(/const RAW_DATA = `([\s\S]*?)`;\s*\n/)[1];
    await page.getByRole('button',{name:'Custom Products',exact:true}).click();
    const root=page.locator('#lc-omni-custom-product-root');
    await root.locator('#count').filter({hasText:'55 results'}).waitFor();
-   const status=scenario==='google-live'?'Live product list loaded':['offline','storage-blocked','malformed-cache'].includes(scenario)?'Saved product list (6 Nov 2026) - Google and GitHub unavailable':'Saved product list (2026-11-06) - Google Doc unavailable';
+   const status='Verified reference list (6 Nov 2026) - bundled with this script';
    await root.locator('#status').filter({hasText:status}).waitFor();
+   await page.waitForTimeout(100);
+   assert.deepEqual(await page.evaluate(()=>requests),[], 'Unstructured remote data is never requested');
    assert.equal(await root.locator('button[data-code="SK-00396"]').count(),0,'Old cached awning is never offered');
    assert.equal(await root.locator('button[data-code="SK-01530"]').count(),1);
    assert.equal(await root.locator('button[data-code="CS22824"]').locator('xpath=../..').locator('.price').innerText(),'$299.99');
+   const posts=await root.locator('#rows tr').evaluateAll(rows=>{let heading='';return rows.flatMap(row=>{if(row.classList.contains('group')){heading=row.innerText;return []}return heading==='POSTS'?[row.innerText]:[]})});
+   assert.equal(posts.length,18,'All 18 post colour variants appear');
+   assert(posts.every(row=>/Black|White|Charcoal/.test(row)&&/\$(?:299|349)\.99/.test(row)));
+   const shutter=root.locator('button[data-code="SK-00391"]').locator('xpath=../..');
+   assert.equal(await shutter.locator('strong').innerText(),'Aluminium Shutter Sliding Door');
+   assert(!posts.some(row=>row.includes('SK-00391')), 'Door does not appear under posts');
    await root.getByPlaceholder('Search product, SKU or notes').fill('Rainier Pro');
    await root.locator('#count').filter({hasText:'1 result'}).waitFor();
    assert.match(await root.locator('#rows').innerText(),/SK-01533/);assert.match(await root.locator('#rows').innerText(),/\$850/);assert.match(await root.locator('#rows').innerText(),/3.5m projection/);
@@ -73,6 +85,6 @@ const raw=data.match(/const RAW_DATA = `([\s\S]*?)`;\s*\n/)[1];
    }
    assert.deepEqual(errors,[]);await page.close();
   }
-  console.log('PASS: real Custom Products UI with all 55 corrected items, bundled offline data, blocked storage, Google 401/login HTML, live source, backup, old-cache exclusion, search, new-SKU insertion and desktop/mobile framing. Omni and sources mocked; no saved records changed.');
+  console.log('PASS: 55 verified items, all 18 coloured/priced posts, uncontaminated door category, no remote overwrite, poisoned-cache exclusion, search, SKU insertion and desktop/mobile framing. Omni mocked; no saved records changed.');
  }finally{await browser.close()}
 })().catch(error=>{console.error(error);process.exitCode=1});

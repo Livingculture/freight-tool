@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Custom Product Helper
 // @namespace    livingculture-omni
-// @version      0.1.12
+// @version      0.1.13
 // @description  Shows Living Culture custom products and adds the selected SKU to the next empty Cin7 Omni product line.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-custom-product-helper.user.js
@@ -18,11 +18,8 @@
 
 (function () {
   'use strict';
-  const DATA_URL = 'https://docs.google.com/document/d/1Vm28Nvi7hLqbdHKqe15WdpG1zKfK3Y7M/export?format=txt';
-  const BACKUP_URL = 'https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-custom-product-helper.user.js';
   const ROOT_ID = 'lc-omni-custom-product-root';
   const BUTTON_ID = 'lc-omni-custom-product-button';
-  const CACHE_KEY = 'lc-omni-custom-product-data-v2';
   let items = [];
 
   const clean = value => String(value || '').replace(/\s+/g, ' ').trim();
@@ -65,44 +62,16 @@
     }
     return sharedBalticMemo(result.filter(item=>item.name&&item.code));
   }
-  function request(url) { return new Promise((resolve,reject)=>GM_xmlhttpRequest({method:'GET',url:`${url}${url.includes('?')?'&':'?'}cache=${Date.now()}`,timeout:20000,onload:r=>r.status>=200&&r.status<300?resolve(r.responseText||''):reject(new Error(`Product source returned ${r.status}`)),onerror:()=>reject(new Error('Could not load custom products')),ontimeout:()=>reject(new Error('Custom product request timed out'))})); }
   function bundledRawData() {
     try {
       return GM_getResourceText('customProductData').match(/const RAW_DATA = `([\s\S]*?)`;\s*\n/)?.[1] || '';
     } catch { return ''; }
   }
-  async function load() {
-    status('Saved product list (6 Nov 2026) - checking Google document...');
-    let saved = '';
-    try { saved = localStorage.getItem(CACHE_KEY) || ''; } catch (error) {}
-    items = parse(saved);
-    if (!items.length) items = parse(bundledRawData());
-    render();
-    let raw = '', parsed = [], source = '';
-    try {
-      raw = await request(DATA_URL);
-      if (/<!doctype|<html/i.test(raw)) throw new Error('Google document requires access');
-      parsed = parse(raw);
-      if (parsed.length) source = 'Live product list loaded';
-    } catch (error) { /* The GitHub list is available independently of Google access. */ }
-    if (!parsed.length) {
-      try {
-        const script = await request(BACKUP_URL);
-        raw = script.match(/const RAW_DATA = `([\s\S]*?)`;\s*\n/)?.[1] || '';
-        parsed = parse(raw);
-        if (parsed.length) {
-          const revision = script.match(/const DATA_REVISION = '([^']+)'/)?.[1] || '6 Nov 2026';
-          source = `Saved product list (${revision}) - Google Doc unavailable`;
-        }
-      } catch (error) {}
-    }
-    if (parsed.length) {
-      items = parsed;
-      try { localStorage.setItem(CACHE_KEY, raw); } catch (error) {}
-      status(source);
-    } else {
-      status(items.length ? 'Saved product list (6 Nov 2026) - Google and GitHub unavailable' : 'Could not load custom products from Google or GitHub. Reopen to retry.', !items.length);
-    }
+  function load() {
+    // Merged Google Doc cells lose row boundaries in text exports. Use only the
+    // version-pinned, verified CSV resource; never replace it with live or cached text.
+    items = parse(bundledRawData());
+    status(items.length ? 'Verified reference list (6 Nov 2026) - bundled with this script' : 'Product reference missing. Reinstall the latest script and refresh Omni.', !items.length);
     render();
   }
   function status(message,error=false){ const e=document.getElementById(ROOT_ID)?.shadowRoot?.getElementById('status'); if(e){e.textContent=message;e.classList.toggle('error',error);} }
