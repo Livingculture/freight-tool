@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.190
+// @version      0.1.191
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -5889,9 +5889,14 @@
 
   function addDrawingsButton() {
     if (!isOmniPage()) return;
+    const existing = document.getElementById('lc-omni-drawings-button');
+    if (omniHeadingDraft().documentType !== 'sales-order') {
+      existing?.remove();
+      return;
+    }
     const toolsBar = document.getElementById(OMNI_TOOLS_BAR_ID);
     if (!toolsBar) return;
-    let button = document.getElementById('lc-omni-drawings-button');
+    let button = existing;
     if (!button) {
       button = document.createElement('button');
       button.id = 'lc-omni-drawings-button';
@@ -6016,7 +6021,7 @@
     if (isOmniPage() && window.parent === window) {
       installOmniWorkflowChangeHooks();
       setTimeout(checkOmniShowroomCollection, 1500);
-      setInterval(checkOmniShowroomCollection, 2500);
+      setInterval(checkOmniShowroomCollection, 10000);
       document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkOmniShowroomCollection(); });
     }
     if (isOmniPage()) document.getElementById('lc-omni-hubspot-shortcut-button')?.remove();

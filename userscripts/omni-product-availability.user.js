@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Product Availability
 // @namespace    livingculture-omni
-// @version      0.1.14
+// @version      0.1.15
 // @description  Checks Omni products-page stock for all SKUs on the current quote.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-product-availability.user.js
@@ -313,7 +313,7 @@
   document.addEventListener('input', scheduleStockSync);
   document.addEventListener('change', scheduleStockSync);
   document.addEventListener('visibilitychange', scheduleStockSync);
-  setInterval(scheduleStockSync, 1500);
+  setInterval(scheduleStockSync, 5000);
   new MutationObserver(records => {
     if (records.some(record => {
       const target = record.target instanceof Element ? record.target : record.target.parentElement;
@@ -322,9 +322,7 @@
   }).observe(document.body, {
     childList: true,
     subtree: true,
-    characterData: true,
-    attributes: true,
-    attributeFilter: ['class', 'style']
+    characterData: true
   });
   window.addEventListener('resize', scheduleStockSync);
 })();

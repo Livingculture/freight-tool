@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Installation Fee Helper
 // @namespace    livingculture-omni
-// @version      0.1.19
+// @version      0.1.20
 // @description  Automatically matches pergola and blind installation fees in Cin7 Omni, with a manual installation fee picker.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-install-fee-helper.user.js
@@ -26,6 +26,7 @@
   let observedQuoteKey = '', observedSince = 0, processedQuoteKey = '';
   let feesLoading = null;
   let automaticFeesTimer = null;
+  let quoteUiTimer = null;
   let failedQuoteKey = '', failedQuoteAttempts = 0;
   const maskedOptionStyles = new WeakMap();
 
@@ -746,10 +747,34 @@
     button.style.height = `${Math.max(34, rect.height)}px`;
   }
   function refreshQuoteUi() { placeButton(); hideEmptyOptions(); }
+  function scheduleQuoteUiRefresh(delay = 80) {
+    if (document.hidden || quoteUiTimer !== null) return;
+    quoteUiTimer = window.setTimeout(() => {
+      quoteUiTimer = null;
+      refreshQuoteUi();
+    }, delay);
+  }
   function boot() { ensureRoot(); refreshQuoteUi(); void prepareFees(); scheduleAutomaticFees(); }
-  boot(); setInterval(refreshQuoteUi, 1500);
-  new MutationObserver(() => { refreshQuoteUi(); scheduleAutomaticFees(); }).observe(document.body, { childList:true, characterData:true, subtree:true });
+  boot();
+  new MutationObserver(records => {
+    const relevant = records.some(record => {
+      const target = record.target instanceof Element ? record.target : record.target.parentElement;
+      return target && !target.closest?.(`#${ROOT_ID}, #${BUTTON_ID}`);
+    });
+    if (!relevant) return;
+    scheduleQuoteUiRefresh();
+    scheduleAutomaticFees();
+  }).observe(document.body, { childList:true, characterData:true, subtree:true });
   for (const event of ['input', 'change', 'focusout']) document.addEventListener(event, () => scheduleAutomaticFees(), true);
-  setInterval(checkAutomaticFees, 500);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    scheduleQuoteUiRefresh(0);
+    scheduleAutomaticFees(0, true);
+  });
+  setInterval(() => {
+    if (document.visibilityState !== 'visible') return;
+    scheduleQuoteUiRefresh();
+    scheduleAutomaticFees();
+  }, 5000);
   window.addEventListener('resize', placeButton); window.addEventListener('scroll', placeButton, { passive:true });
 })();

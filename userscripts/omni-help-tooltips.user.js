@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Omni Help Tips
 // @namespace    livingculture
-// @version      0.1.1
+// @version      0.1.2
 // @description  Adds optional, plain-language help tooltips to Living Culture controls in Cin7 Omni.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -318,6 +318,7 @@
   }
 
   function scanRoot(root) {
+    if (!enabled) return;
     if (!root?.querySelectorAll) return;
     root.querySelectorAll(`${CONTROL_SELECTOR}, .step`).forEach(bind);
     root.querySelectorAll('*').forEach(element => {
@@ -339,7 +340,7 @@
     if (observedRoots.has(root)) return;
     observedRoots.add(root);
     observer.observe(root, { childList: true, subtree: true });
-    scanRoot(root);
+    if (enabled) scanRoot(root);
   }
 
   function updateToggle(button = document.getElementById(TOGGLE_ID)) {
@@ -370,6 +371,7 @@
         hideTooltip();
         boundElements.forEach(syncNativeTitle);
         updateToggle(button);
+        if (enabled) scanRoot(document);
       });
       document.body.appendChild(button);
     }
@@ -390,7 +392,9 @@
   }
 
   function scheduleScan(records = []) {
-    for (const record of records) for (const node of record.addedNodes || []) pendingNodes.add(node);
+    if (enabled) {
+      for (const record of records) for (const node of record.addedNodes || []) pendingNodes.add(node);
+    }
     if (scheduleScan.pending) return;
     scheduleScan.pending = true;
     requestAnimationFrame(() => {
@@ -398,7 +402,7 @@
       ensureToggle();
       const nodes = Array.from(pendingNodes);
       pendingNodes.clear();
-      nodes.forEach(scanNode);
+      if (enabled) nodes.forEach(scanNode);
     });
   }
 
@@ -415,8 +419,18 @@
       hideTooltip();
       boundElements.forEach(syncNativeTitle);
       updateToggle();
+      if (enabled) scanRoot(document);
     });
-    window.setInterval(() => { ensureToggle(); scanRoot(document); }, 5000);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible') return;
+      ensureToggle();
+      if (enabled) scanRoot(document);
+    });
+    window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      ensureToggle();
+      if (enabled) scanRoot(document);
+    }, 15000);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });

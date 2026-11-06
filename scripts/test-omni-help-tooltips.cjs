@@ -62,15 +62,16 @@ const source = fs.readFileSync('userscripts/omni-help-tooltips.user.js', 'utf8')
     await page.addScriptTag({ content: source });
     await page.locator('#lc-omni-help-tips-toggle').waitFor();
     assert.equal(await page.locator('#lc-omni-help-tips-toggle').textContent(), 'Help Tips: Off', 'Saved setting survives a new page load');
-    await page.locator('#lc-omni-help-tips-toggle').click();
-    assert.equal(await page.locator('#lc-omni-help-tips-toggle').textContent(), 'Help Tips: On');
-
     await page.evaluate(() => {
       const button = document.createElement('button');
       button.id = 'lc-omni-install-fee-button';
       button.textContent = 'Install Fees';
       document.body.appendChild(button);
     });
+    await page.waitForTimeout(100);
+    assert.equal(await page.locator('#lc-omni-install-fee-button').getAttribute('data-lc-help-tip'), null, 'Disabled Help Tips does not scan new controls');
+    await page.locator('#lc-omni-help-tips-toggle').click();
+    assert.equal(await page.locator('#lc-omni-help-tips-toggle').textContent(), 'Help Tips: On');
     await page.waitForFunction(() => document.querySelector('#lc-omni-install-fee-button')?.dataset.lcHelpTip === '1');
     await page.locator('#lc-omni-install-fee-button').focus();
     tip = await page.locator('#lc-omni-help-tooltip').innerText();

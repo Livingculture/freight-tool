@@ -71,12 +71,10 @@ const progress = { orderNumber: 'NZSO-17003', nextAction: 'Arrange installation'
     assert(drawingFeatures.includes('popup=yes,width=800')&&drawingFeatures.includes('resizable=yes,scrollbars=yes'),'Drawings requests a compact resizable popup');
     assert(Number(drawingFeatures.match(/height=(\d+)/)[1])<=760);
     await page.evaluate(()=>{heading.orderId='NZSO-17004';heading.documentType='quote';});
-    await page.locator('#lc-omni-drawings-button').click();
-    assert.equal(await page.evaluate(()=>openedUrls.pop()),'https://living-culture-workflow.vercel.app/drawings?order=NZSO-17004','Reads current quote number on click');
-    await page.evaluate(()=>{heading.orderId='';});
-    await page.locator('#lc-omni-drawings-button').click();
-    assert.equal(await page.evaluate(()=>openedUrls.pop()),'https://living-culture-workflow.vercel.app/drawings','Unsaved quotes open the job finder without inventing an NZSO');
-    await page.evaluate(()=>{heading.orderId='NZSO-17003';heading.documentType='sales-order';popupFeatures.length=0;});
+    await page.evaluate(()=>addDrawingsButton());
+    assert.equal(await page.locator('#lc-omni-drawings-button').count(),0,'Drawings is not shown on quotes');
+    await page.evaluate(()=>{heading.orderId='NZSO-17003';heading.documentType='sales-order';popupFeatures.length=0;addDrawingsButton();});
+    assert.equal(await page.locator('#lc-omni-drawings-button').count(),1,'Drawings returns in the same toolbar on sales orders');
     await page.locator('#lc-omni-jobs-overview-button').click();
     assert.equal(await page.evaluate(()=>new URL(openedUrls[0]).pathname),'/jobs');
     assert.equal(await page.evaluate(()=>new URL(openedUrls[0]).searchParams.get('order')), null, 'Jobs Overview opens the all-jobs view without an order filter');

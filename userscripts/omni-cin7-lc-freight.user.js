@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.33
+// @version      0.1.34
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -1801,7 +1801,9 @@
       attributeFilter: ['value', 'class', 'style', 'aria-label', 'title']
     });
 
-    setInterval(checkForChanges, 2500);
+    setInterval(() => {
+      if (document.visibilityState === 'visible') checkForChanges();
+    }, 5000);
   }
 
   function createPanel() {
@@ -2453,8 +2455,9 @@
   document.addEventListener('DOMContentLoaded', boot);
 
   setInterval(() => {
+    if (document.visibilityState !== 'visible') return;
     createPanel();
     ensureFreightDescriptionDropdown();
     placeFreightButtonNextToMemo();
-  }, 5000);
+  }, 10000);
 })();
