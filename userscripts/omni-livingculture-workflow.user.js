@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.189
+// @version      0.1.190
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -4663,6 +4663,41 @@
     });
   }
 
+  function customerPhotosSignedUpload(prepared, file) {
+    return new Promise((resolve, reject) => {
+      if (!prepared?.signedUrl || !prepared?.anonKey) {
+        reject(new Error('Workflow did not return a valid private upload link.'));
+        return;
+      }
+      const form = new FormData();
+      form.append('cacheControl', '3600');
+      form.append('', file, file.name);
+      GM_xmlhttpRequest({
+        method: 'PUT',
+        url: prepared.signedUrl,
+        headers: {
+          apikey: prepared.anonKey,
+          Authorization: `Bearer ${prepared.anonKey}`,
+          'x-upsert': 'false'
+        },
+        data: form,
+        timeout: 120000,
+        onload: (response) => {
+          if (response.status >= 200 && response.status < 300) {
+            resolve(true);
+            return;
+          }
+          let payload = null;
+          try { payload = JSON.parse(response.responseText || '{}'); } catch (error) {}
+          const detail = payload?.message || payload?.error || response.statusText;
+          reject(new Error(detail || `Private file upload failed (${response.status || 'network error'}).`));
+        },
+        onerror: () => reject(new Error('Could not connect to private customer photo storage.')),
+        ontimeout: () => reject(new Error('The private file upload took too long.'))
+      });
+    });
+  }
+
   const customerAlbumLinkAttempts = new Set();
 
   async function linkExistingCustomerAlbumToQuote(snapshot = null) {
@@ -4787,10 +4822,30 @@
       for (let index = 0; index < selectedFiles.length; index += 1) {
         const file = selectedFiles[index];
         button.textContent = `Uploading ${index + 1} of ${selectedFiles.length}…`;
-        const form = new FormData();
-        form.set('albumId', album.id);
-        form.append('photos', file, file.name);
-        const result = await customerPhotosRequest({ method: 'POST', data: form });
+        const prepared = await customerPhotosRequest({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          data: JSON.stringify({
+            action: 'prepare-upload',
+            albumId: album.id,
+            fileName: file.name,
+            fileSize: file.size,
+            mimeType: file.type
+          })
+        });
+        await customerPhotosSignedUpload(prepared, file);
+        const result = await customerPhotosRequest({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          data: JSON.stringify({
+            action: 'complete-upload',
+            albumId: album.id,
+            path: prepared.path,
+            fileName: file.name,
+            fileSize: file.size,
+            mimeType: prepared.contentType || file.type
+          })
+        });
         uploadedCount += Array.isArray(result.photos) ? result.photos.length : 1;
       }
       window.alert(`${uploadedCount} file${uploadedCount === 1 ? '' : 's'} uploaded to ${draft.orderId} - ${draft.customerName}.`);
