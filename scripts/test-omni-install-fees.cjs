@@ -4,7 +4,7 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync(require('node:path').join(__dirname, '../userscripts/omni-install-fee-helper.user.js'), 'utf8');
 const context = vm.createContext({});
-for (const name of ['clean', 'dimensions', 'pergolaDetails', 'matchingFee', 'matchedFeePlan', 'parseCsvLine', 'parseCsv', 'memoRequiresInstallation', 'blindWidth', 'blindOperation', 'blindMounting', 'matchingBlindFee', 'assemblyProduct']) {
+for (const name of ['clean', 'dimensions', 'pergolaDetails', 'matchingFee', 'matchedFeePlan', 'parseCsvLine', 'parseCsv', 'memoRequiresInstallation', 'blindWidth', 'blindOperation', 'blindMounting', 'matchingBlindFee', 'assemblyProduct', 'alternativeFeeKey']) {
   const start = source.indexOf(`  function ${name}(`);
   const end = source.indexOf('\n  function ', start + 1);
   vm.runInContext(source.slice(start, end), context);
@@ -78,6 +78,15 @@ assert.equal(context.matchingFee(blind('3m'), [...blindFees, blindFees[3]]), nul
 const combined = context.matchedFeePlan([tasman('4x3m'), { ...blind('3m'), quantity: 2 }, { code: 'AS10140', name: blindFees[3].name, quantity: 1 }], [...fees, ...blindFees]);
 assert.equal(combined.fees.find(item => item.code === 'AS10140').quantity, 1);
 assert.equal(combined.fees.find(item => item.code === 'AS10037').quantity, 1);
+const chosenAlternative = { code: 'AS10069', name: blindFees[0].name, quantity: 1 };
+assert.equal(context.matchedFeePlan([
+  blind('Post To Wall 3m', 'Manual Blind For Tasman Wall Mounted Pergola'),
+  chosenAlternative
+], [...fees, ...blindFees]).fees.length, 0, 'A staff-selected manual blind fee prevents AS10176 from being restored');
+assert.equal(context.matchedFeePlan([
+  { ...blind('Post To Wall 3m', 'Manual Blind For Tasman Wall Mounted Pergola'), quantity: 2 },
+  chosenAlternative
+], [...fees, ...blindFees]).fees[0].quantity, 1, 'An alternative fee only covers its selected quantity');
 if (process.argv[2]) {
   const liveFees = context.parseCsv(fs.readFileSync(process.argv[2], 'utf8'));
   assert.equal(context.matchingFee(blind('3m'), liveFees).code, 'AS10140');

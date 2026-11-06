@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Installation Fee Helper
 // @namespace    livingculture-omni
-// @version      0.1.18
+// @version      0.1.19
 // @description  Automatically matches pergola and blind installation fees in Cin7 Omni, with a manual installation fee picker.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-install-fee-helper.user.js
@@ -102,6 +102,11 @@
   function assemblyProduct(line) {
     return !/^AS/i.test(line.code) && /\b(?:pergola|blinds?)\b/i.test(line.name);
   }
+  function alternativeFeeKey(line) {
+    if (!/\bblinds?\b/i.test(line.name)) return '';
+    const operation = blindOperation(line.name);
+    return operation ? `blind:${operation}` : '';
+  }
   function quoteTableInfo() {
     for (const row of pageElements('table tr')) {
       const headings = [...row.children].map(cell => clean(cell.textContent).toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^\d+/, ''));
@@ -177,10 +182,33 @@
       if (existing) existing.quantity += line.quantity;
       else required.set(fee.code, { ...fee, quantity: line.quantity });
     }
+    const alternativeLines = [];
     for (const line of lines) {
       if (!line.name || /^search\.{0,3}$/i.test(line.name)) continue;
       const fee = required.get(line.code.toUpperCase());
-      if (fee) fee.quantity -= line.quantity;
+      let remaining = line.quantity;
+      if (fee && fee.quantity > 0) {
+        const used = Math.min(fee.quantity, remaining);
+        fee.quantity -= used;
+        remaining -= used;
+      }
+      if (remaining > 0 && /^AS/i.test(line.code)) alternativeLines.push({ ...line, quantity: remaining });
+    }
+    // Staff may deliberately choose another valid blind installation service.
+    // Treat a completed manual (or motorised) blind fee as covering the same
+    // quantity instead of restoring the automatically matched mounting code.
+    for (const line of alternativeLines) {
+      const reference = fees.find(item => item.code.toUpperCase() === line.code.toUpperCase()) || line;
+      const key = alternativeFeeKey(reference);
+      if (!key) continue;
+      let remaining = line.quantity;
+      for (const fee of required.values()) {
+        if (remaining <= 0) break;
+        if (fee.quantity <= 0 || alternativeFeeKey(fee) !== key) continue;
+        const used = Math.min(fee.quantity, remaining);
+        fee.quantity -= used;
+        remaining -= used;
+      }
     }
     return { fees: [...required.values()].filter(fee => fee.quantity > 0), unmatched };
   }
