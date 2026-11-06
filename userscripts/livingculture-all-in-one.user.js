@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture All-in-One
 // @namespace    livingculture
-// @version      0.1.222
+// @version      0.1.223
 // @description  Approved Living Culture Omni, Cin7 Core, Gmail, HubSpot and website tools in one Tampermonkey install.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -62,7 +62,7 @@
 // @resource     hubspotShortcut https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-hubspot-shortcut.user.js?v=0.2.0
 // @resource     workflow https://raw.githubusercontent.com/Livingculture/freight-tool/f32263abbd7d3eb8be01d52f6f4acffa27b00366/userscripts/omni-livingculture-workflow.user.js
 // @resource     staffUpdatesWidget https://raw.githubusercontent.com/Livingculture/freight-tool/33c91f265329d527a4e25b3c48c2ceac2e046210/userscripts/workflow-updates-dropdown.js
-// @resource     workflowNavigation https://raw.githubusercontent.com/Livingculture/freight-tool/74f1c12230baa69f83abc615595888c0ddb71b98/userscripts/omni-workflow-navigation.user.js
+// @resource     workflowNavigation https://raw.githubusercontent.com/Livingculture/freight-tool/48cf388f7d6e6ecf8d5766fb9afd65931ff730a5/userscripts/omni-workflow-navigation.user.js
 // @resource     warrantyGuide https://raw.githubusercontent.com/Livingculture/freight-tool/4c8f7709f96fdbd17c59fa9fe4e81cd5dab6345a/userscripts/omni-warranty-guide.user.js
 // @resource     omniHelpTooltips https://raw.githubusercontent.com/Livingculture/freight-tool/f32263abbd7d3eb8be01d52f6f4acffa27b00366/userscripts/omni-help-tooltips.user.js
 // @resource     emailHelperOnly https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-email-helper-only.user.js?v=0.1.1
@@ -138,7 +138,7 @@
     if (earlyOmniTools.has(component.resource)) component.runAt = 'body';
   });
 
-  const status = { version: '0.1.222', loaded: [], skipped: [], errors: [] };
+  const status = { version: '0.1.223', loaded: [], skipped: [], errors: [] };
   window.__lcAllInOneStatus = status;
 
   // BEGIN GENERATED GMAIL COMPONENTS
