@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Living Culture Omni Workflow Navigation
 // @namespace    livingculture
-// @version      0.1.3
-// @description  Adds an Omni-style Workflow dropdown beside Drawings, with top navigation fallback.
+// @version      0.1.4
+// @description  Adds an Omni-style Workflow dropdown to the action toolbar, with top navigation fallback.
 // @match        https://go.cin7.com/*
 // @run-at       document-idle
 // @grant        none
@@ -83,20 +83,22 @@
     scheduled = false;
     const drawings = document.getElementById('lc-omni-drawings-button');
     const toolsBar = document.getElementById('lc-omni-workflow-tools-bar');
-    const placeBesideDrawings = link => {
-      if (!toolsBar || drawings?.parentElement !== toolsBar) return false;
-      if (link.parentElement !== toolsBar || link.previousElementSibling !== drawings) {
+    const placeInToolsBar = link => {
+      if (!toolsBar) return false;
+      const drawingsInBar = drawings?.parentElement === toolsBar ? drawings : null;
+      if (link.parentElement !== toolsBar || (drawingsInBar && link.previousElementSibling !== drawingsInBar)) {
         closeMenu();
         const oldParent = link.parentElement;
-        link.className = '';
-        link.style.cssText = 'box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:7px;width:160px;min-width:160px;height:36px;flex:0 0 auto;padding:0 14px;border:1px solid #06346d;border-radius:4px;background:#06346d;color:white;font:700 14px Arial,sans-serif;cursor:pointer;white-space:nowrap;';
-        drawings.after(link);
+        if (drawingsInBar) drawingsInBar.after(link);
+        else toolsBar.appendChild(link);
         if (oldParent?.tagName === 'LI' && !oldParent.childNodes.length) oldParent.remove();
       }
+      link.className = '';
+      link.style.cssText = 'box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:7px;width:160px;min-width:160px;height:36px;flex:0 0 auto;padding:0 14px;border:1px solid #06346d;border-radius:4px;background:#06346d;color:white;font:700 14px Arial,sans-serif;cursor:pointer;white-space:nowrap;';
       return true;
     };
     const existing = document.getElementById(id);
-    if (existing) { placeBesideDrawings(existing); return; }
+    if (existing) { placeInToolsBar(existing); return; }
     closeMenu();
     const controls = Array.from(document.querySelectorAll('a,button')).filter(element => {
       const rect = element.getBoundingClientRect();
@@ -128,7 +130,7 @@
     link.addEventListener('keydown', event => {
       if (event.key === 'ArrowDown') { event.preventDefault(); openMenu(true); }
     });
-    if (placeBesideDrawings(link)) return;
+    if (placeInToolsBar(link)) return;
     const more = controls.find(element => nav.contains(element) && label(element) === 'more');
     let anchor = more || newQuote;
     while (anchor.parentElement !== nav) anchor = anchor.parentElement;

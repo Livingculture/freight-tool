@@ -83,6 +83,12 @@ const body = `<style>body{margin:0;font:13px Arial}nav{background:#06346d;color:
       await page.waitForTimeout(100);
       assert.equal(await link.count(),1,'Toolbar rerenders do not duplicate the control');
       assert.equal(await link.evaluate(el=>el.previousElementSibling.id),'lc-omni-drawings-button');
+      await page.evaluate(()=>document.getElementById('lc-omni-drawings-button').remove());
+      await page.waitForFunction(()=>{
+        const link=document.getElementById('lc-omni-workflow-nav-link');
+        return link?.parentElement?.id==='lc-omni-workflow-tools-bar'&&getComputedStyle(link).backgroundColor==='rgb(6, 52, 109)'&&getComputedStyle(link).color==='rgb(255, 255, 255)';
+      });
+      assert.equal(await link.count(),1,'Quote toolbar keeps one visible Workflow control without Drawings');
       await page.close();
     }
     const core=await browser.newPage();
