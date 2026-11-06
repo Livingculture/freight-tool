@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture All-in-One
 // @namespace    livingculture
-// @version      0.1.220
+// @version      0.1.221
 // @description  Approved Living Culture Omni, Cin7 Core, Gmail, HubSpot and website tools in one Tampermonkey install.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -48,7 +48,7 @@
 // @resource     omniFreight https://raw.githubusercontent.com/Livingculture/freight-tool/86d0ae6aa379d350ac86e11a6071eb6db6b126d0/userscripts/omni-cin7-lc-freight.user.js
 // @resource     addressAutocomplete https://raw.githubusercontent.com/Livingculture/freight-tool/57c37fb6fa690b0fe63996b995ba94b84c4952ba/userscripts/omni-address-autocomplete.user.js
 // @resource     customComments https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-custom-comments.user.js?v=0.1.15
-// @resource     installFees https://raw.githubusercontent.com/Livingculture/freight-tool/fb2983a3642d9ebedf63d123eec080a59f2bcc69/userscripts/omni-install-fee-helper.user.js
+// @resource     installFees https://raw.githubusercontent.com/Livingculture/freight-tool/ce86d5f73061a7814b14ab5750721bcd49768d68/userscripts/omni-install-fee-helper.user.js
 // @resource     customProducts https://raw.githubusercontent.com/Livingculture/freight-tool/50339b586e7fa71d2787c7fd405cd77d693fde60/userscripts/omni-custom-product-helper.user.js
 // @resource     customProductData https://raw.githubusercontent.com/Livingculture/freight-tool/7c01d2ee108fe280fa66b223366f8e7e1ad0f35a/userscripts/cin7-custom-product-helper.user.js
 // @resource     websiteShortcuts https://raw.githubusercontent.com/Livingculture/freight-tool/86774fbd10544cbc5d6b301c74599fa30ec48df5/userscripts/omni-website-shortcuts.user.js
