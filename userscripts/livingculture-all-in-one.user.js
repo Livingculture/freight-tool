@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture All-in-One
 // @namespace    livingculture
-// @version      0.1.224
+// @version      0.1.225
 // @description  Approved Living Culture Omni, Cin7 Core, Gmail, HubSpot and website tools in one Tampermonkey install.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -57,7 +57,7 @@
 // @resource     caribbeanStock https://raw.githubusercontent.com/Livingculture/freight-tool/28da92afbd1accc345feaaa22904e398d501a81b/userscripts/caribbean-stock.user.js
 // @resource     quoteDefaults https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-defaults.user.js?v=0.1.10
 // @resource     hideOrderSettings https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-hide-order-settings.user.js?v=0.1.2
-// @resource     emailHelperCompose https://raw.githubusercontent.com/Livingculture/freight-tool/2fd6746617d2ce1e56c9d43cc4ef714cc155c382/userscripts/omni-email-helper-compose.user.js
+// @resource     emailHelperCompose https://raw.githubusercontent.com/Livingculture/freight-tool/722b6e81fda1148fdedb7084c658c910395ac77f/userscripts/omni-email-helper-compose.user.js
 // @resource     pdfAttachments https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-pdf-attachments.user.js?v=0.4.9
 // @resource     hubspotShortcut https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-hubspot-shortcut.user.js?v=0.2.0
 // @resource     workflow https://raw.githubusercontent.com/Livingculture/freight-tool/f32263abbd7d3eb8be01d52f6f4acffa27b00366/userscripts/omni-livingculture-workflow.user.js
@@ -138,7 +138,7 @@
     if (earlyOmniTools.has(component.resource)) component.runAt = 'body';
   });
 
-  const status = { version: '0.1.224', loaded: [], skipped: [], errors: [] };
+  const status = { version: '0.1.225', loaded: [], skipped: [], errors: [] };
   window.__lcAllInOneStatus = status;
 
   // BEGIN GENERATED GMAIL COMPONENTS
@@ -476,12 +476,7 @@
             const subject = document.querySelector("#subject-output");
             const order = clean(document.querySelector("#order")?.value).toUpperCase();
             if (!subject || !order) return;
-            const escapedOrder = order.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-            const base = clean(subject.value)
-              .replace(new RegExp(`^${escapedOrder}\\s*[-–—|:]?\\s*`, "i"), "")
-              .replace(new RegExp(`\\s*[-–—|:]?\\s*${escapedOrder}\\s*$`, "i"), "")
-              .trim();
-            const next = base ? `${order} - ${base}` : order;
+            const next = order;
             if (subject.value === next) return;
             subject.value = next;
             subject.dispatchEvent(new Event("input", { bubbles: true }));
