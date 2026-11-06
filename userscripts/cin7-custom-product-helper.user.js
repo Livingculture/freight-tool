@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Custom Product Helper
 // @namespace    livingculture-cin7
-// @version      2.2
+// @version      2.3
 // @description  Shows Living Culture customised pergola/product SKUs inside Cin7 and fills the product code into the quote line.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
@@ -22,9 +22,9 @@
 
   const REMOTE_DATA_URL = 'https://docs.google.com/document/d/1Vm28Nvi7hLqbdHKqe15WdpG1zKfK3Y7M/edit';
 
-  const CACHE_KEY = 'lc-custom-product-data-v17';
-  const CACHE_TIME_KEY = 'lc-custom-product-data-time-v17';
-  const DATA_REVISION = '2026-11-06';
+  const CACHE_KEY = 'lc-custom-product-data-v18';
+  const CACHE_TIME_KEY = 'lc-custom-product-data-time-v18';
+  const DATA_REVISION = '2026-11-06-live';
 
   const RAW_DATA = `
 Name,CS code,Price/per m2,Memo
@@ -142,6 +142,99 @@ Caspian Middle Post Charcoal,CS22252,$349.99,3M leg post. Longer than 3m require
 
   function looksLikeProductPrice(value) {
     return /^\$?\s*\d[\d,]*(?:\.\d+)?\s*$/.test(clean(value));
+  }
+
+  function normaliseProductPrice(value) {
+    const price = clean(value);
+    if (!price) return '';
+    return price.startsWith('$') ? price : `$${price}`;
+  }
+
+  function tableMatrix(table) {
+    const matrix = [];
+
+    Array.from(table?.rows || []).forEach((row, rowIndex) => {
+      matrix[rowIndex] ||= [];
+      let columnIndex = 0;
+
+      Array.from(row.cells || []).forEach(cell => {
+        while (matrix[rowIndex][columnIndex] !== undefined) columnIndex += 1;
+
+        const value = clean(cell.textContent);
+        const rowSpan = Math.max(1, Number(cell.rowSpan) || 1);
+        const columnSpan = Math.max(1, Number(cell.colSpan) || 1);
+
+        for (let rowOffset = 0; rowOffset < rowSpan; rowOffset += 1) {
+          matrix[rowIndex + rowOffset] ||= [];
+          for (let columnOffset = 0; columnOffset < columnSpan; columnOffset += 1) {
+            matrix[rowIndex + rowOffset][columnIndex + columnOffset] = value;
+          }
+        }
+
+        columnIndex += columnSpan;
+      });
+    });
+
+    return matrix;
+  }
+
+  function parseHtmlData(raw) {
+    if (typeof DOMParser !== 'function') return [];
+
+    const documentHtml = new DOMParser().parseFromString(String(raw || ''), 'text/html');
+    const products = [];
+    const postProducts = [];
+    let postMemo = '';
+
+    Array.from(documentHtml.querySelectorAll('table')).forEach(table => {
+      const rows = tableMatrix(table);
+      const headers = (rows[0] || []).map(normaliseHeader);
+      const nameIndex = headers.indexOf('name');
+      const codeIndex = headers.indexOf('cscode');
+
+      if (nameIndex >= 0 && codeIndex >= 0) {
+        const priceIndex = headers.findIndex(header => header.startsWith('priceper'));
+        const memoIndex = headers.indexOf('memo');
+
+        rows.slice(1).forEach(row => {
+          const item = {
+            name: clean(row[nameIndex]),
+            code: clean(row[codeIndex]),
+            price: normaliseProductPrice(row[priceIndex]),
+            memo: clean(row[memoIndex])
+          };
+          if (item.name && looksLikeProductCode(item.code)) products.push(item);
+        });
+        return;
+      }
+
+      rows.forEach(row => {
+        const rowText = clean([...new Set((row || []).map(clean).filter(Boolean))].join(' '));
+        const productCodeIndex = (row || []).findIndex(looksLikeProductCode);
+
+        if (productCodeIndex < 0) {
+          if (/steel posts/i.test(rowText)) postMemo = rowText;
+          return;
+        }
+
+        const code = clean(row[productCodeIndex]);
+        const colour = clean(row[productCodeIndex + 1]);
+        const brand = clean(row[0]);
+        const postType = clean(row[1]);
+        const price = normaliseProductPrice((row || []).find(looksLikeProductPrice));
+        const item = {
+          name: clean(`${brand} ${postType} ${colour}`),
+          code,
+          price,
+          memo: ''
+        };
+
+        if (item.name && looksLikeProductCode(item.code)) postProducts.push(item);
+      });
+    });
+
+    postProducts.forEach(item => { item.memo = postMemo; });
+    return products.concat(postProducts).map(enrichKnownProduct);
   }
 
   function looksLikeVerticalProductName(value) {
@@ -287,9 +380,8 @@ Caspian Middle Post Charcoal,CS22252,$349.99,3M leg post. Longer than 3m require
   function parseData(raw) {
     const text = String(raw || '').trim();
 
-    if (!text || /<!doctype html|<html/i.test(text.slice(0, 300))) {
-      return [];
-    }
+    if (!text) return [];
+    if (/<!doctype html|<html/i.test(text.slice(0, 300))) return parseHtmlData(text);
 
     const lines = text.split(/\r?\n/).filter(Boolean);
     if (!lines.length) return [];
@@ -360,7 +452,7 @@ Caspian Middle Post Charcoal,CS22252,$349.99,3M leg post. Longer than 3m require
 
     const docMatch = value.match(/docs\.google\.com\/document\/d\/([^/]+)/i);
     if (docMatch) {
-      return `https://docs.google.com/document/d/${docMatch[1]}/export?format=txt`;
+      return `https://docs.google.com/document/d/${docMatch[1]}/export?format=html`;
     }
 
     const driveFileMatch = value.match(/drive\.google\.com\/file\/d\/([^/]+)/i);
@@ -413,15 +505,17 @@ Caspian Middle Post Charcoal,CS22252,$349.99,3M leg post. Longer than 3m require
 
     try {
       const raw = await requestText(remoteUrl);
-
-      if (/<!doctype html|<html/i.test(raw.slice(0, 300))) {
-        throw new Error('Google returned an HTML page instead of CSV');
-      }
-
       const nextItems = parseData(raw);
+      const verifiedItems = parseData(RAW_DATA);
+      const minimumRows = Math.max(20, Math.floor(verifiedItems.length * 0.9));
+      const uniqueCodes = new Set(nextItems.map(item => item.code.toUpperCase()));
 
-      if (!nextItems.length) {
-        throw new Error('Remote file had no product rows');
+      if (
+        nextItems.length < minimumRows ||
+        uniqueCodes.size !== nextItems.length ||
+        nextItems.some(item => !item.name || !looksLikeProductCode(item.code) || !looksLikeProductPrice(item.price))
+      ) {
+        throw new Error('Remote file did not contain a complete, valid product table');
       }
 
       items = nextItems;
@@ -430,7 +524,7 @@ Caspian Middle Post Charcoal,CS22252,$349.99,3M leg post. Longer than 3m require
       localStorage.setItem(CACHE_KEY, raw);
       localStorage.setItem(CACHE_TIME_KEY, String(Date.now()));
 
-      setSourceLabel('Google/Drive data loaded');
+      setSourceLabel(`Live Google master loaded (${items.length} products)`);
 
       const root = document.getElementById('lc-custom-product-root');
       const search = root?.shadowRoot?.getElementById('lc-custom-product-search');

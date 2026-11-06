@@ -60,7 +60,7 @@ assert.match(item('SK-00081').memo,/MOQ 9 m2/);
 for(const product of products.filter(row=>row.code.startsWith('CS')))assert.match(product.memo,/individually quoted steel posts/);
 for(const code of ['SK-00396','SK-00397','SK-00398','SK-00399','SK-00400','SK-00401','SK-00080','SK-00085','SK-00082','SK-00083','SK-00084'])assert(!item(code),'Superseded code removed: '+code);
 
-const ts = require(path.resolve(__dirname,'../../workflow-speed-fix/node_modules/typescript'));
+const ts = require(path.resolve(__dirname,'../../workflow/node_modules/typescript'));
 const coreSource = fs.readFileSync(path.join(__dirname,'../userscripts/cin7-custom-product-helper.user.js'),'utf8');
 const ast=ts.createSourceFile('core.js',coreSource,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
 const names=new Set(['clean','parseCsvLine','normaliseHeader','looksLikeProductCode','looksLikeProductPrice','looksLikeVerticalProductName','parseVerticalData','knownProductName','needsKnownProductName','enrichKnownProduct','parseData']);
@@ -69,10 +69,13 @@ function visit(node){if(ts.isFunctionDeclaration(node)&&names.has(node.name?.tex
 visit(ast);const core=vm.createContext({});vm.runInContext(declarations.join('\n'),core);
 assert.deepEqual(JSON.parse(JSON.stringify(core.parseData(backup))),products,'Core and Omni show identical corrected product data');
 assert(!source.includes('localStorage.'), 'Untrusted cached exports cannot replace the bundled list');
-assert(!source.includes('await request('), 'Live merged-cell exports cannot replace the bundled list');
-assert(coreSource.includes('lc-custom-product-data-v17'));
+assert(source.includes('/export?format=html'), 'Omni reads the structured Google document export');
+assert(source.includes('validLiveItems'), 'Omni validates the complete master before replacing its fallback');
+assert(coreSource.includes('lc-custom-product-data-v18'));
+assert(coreSource.includes('/export?format=html'), 'Core reads the same structured Google document export');
+assert(coreSource.includes('complete, valid product table'), 'Core rejects incomplete live exports');
 const loader=fs.readFileSync(path.join(__dirname,'../userscripts/livingculture-all-in-one.user.js'),'utf8');
 const dataResource=source.match(/@resource\s+customProductData\s+(\S+)/)[1];
 assert.match(dataResource,/freight-tool\/[a-f0-9]{40}\/userscripts\/cin7-custom-product-helper.user.js$/);
 assert(loader.includes(dataResource),'All-in-One carries the same pinned offline product data as the standalone helper');
-console.log('PASS: all 55 screenshot SKUs/prices, confirmed Baltic pricing, minimums, per-metre awnings, modification fees, steel-post notes, retired codes, identical Core/Omni data and Baltic merged memos.');
+console.log('PASS: all 55 fallback SKUs/prices, confirmed Baltic pricing, minimums, per-metre awnings, modification fees, steel-post notes, retired codes, identical Core/Omni data, structured live-master loading and safe validation.');

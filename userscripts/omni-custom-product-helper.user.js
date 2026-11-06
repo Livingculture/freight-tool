@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Custom Product Helper
 // @namespace    livingculture-omni
-// @version      0.1.13
+// @version      0.1.14
 // @description  Shows Living Culture custom products and adds the selected SKU to the next empty Cin7 Omni product line.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-custom-product-helper.user.js
@@ -13,6 +13,7 @@
 // @resource     customProductData https://raw.githubusercontent.com/Livingculture/freight-tool/7c01d2ee108fe280fa66b223366f8e7e1ad0f35a/userscripts/cin7-custom-product-helper.user.js
 // @connect      docs.google.com
 // @connect      googleusercontent.com
+// @connect      docs.googleusercontent.com
 // @connect      raw.githubusercontent.com
 // ==/UserScript==
 
@@ -20,7 +21,9 @@
   'use strict';
   const ROOT_ID = 'lc-omni-custom-product-root';
   const BUTTON_ID = 'lc-omni-custom-product-button';
+  const REMOTE_DATA_URL = 'https://docs.google.com/document/d/1Vm28Nvi7hLqbdHKqe15WdpG1zKfK3Y7M/export?format=html';
   let items = [];
+  let loadSequence = 0;
 
   const clean = value => String(value || '').replace(/\s+/g, ' ').trim();
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -29,6 +32,7 @@
   function html(value) { return String(value||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
   function isCode(value) { return /^(?:SK|CS)-?\d{5}$/i.test(clean(value)); }
   function isPrice(value) { return /^\$?\s*\d[\d,]*(?:\.\d+)?\s*$/.test(clean(value)); }
+  function normalisePrice(value){const price=clean(value);return price&&!price.startsWith('$')?`$${price}`:price;}
   function csv(line){const out=[];let value='',quoted=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'&&quoted&&line[i+1]==='"'){value+='"';i++;}else if(c==='"')quoted=!quoted;else if(c===','&&!quoted){out.push(value);value='';}else value+=c;}out.push(value);return out;}
   function sharedBalticMemo(products) {
     const baltic = products.filter(item => /^(?:SK-?00067|SK-?00072)$/i.test(item.code));
@@ -47,8 +51,47 @@
     for (const item of baltic) item.memo = memo;
     return products;
   }
+  function tableMatrix(table){
+    const matrix=[];
+    Array.from(table?.rows||[]).forEach((row,rowIndex)=>{
+      matrix[rowIndex]||=[];let columnIndex=0;
+      Array.from(row.cells||[]).forEach(cell=>{
+        while(matrix[rowIndex][columnIndex]!==undefined)columnIndex+=1;
+        const value=clean(cell.textContent),rowSpan=Math.max(1,Number(cell.rowSpan)||1),columnSpan=Math.max(1,Number(cell.colSpan)||1);
+        for(let rowOffset=0;rowOffset<rowSpan;rowOffset+=1){
+          matrix[rowIndex+rowOffset]||=[];
+          for(let columnOffset=0;columnOffset<columnSpan;columnOffset+=1)matrix[rowIndex+rowOffset][columnIndex+columnOffset]=value;
+        }
+        columnIndex+=columnSpan;
+      });
+    });
+    return matrix;
+  }
+  function parseHtml(raw){
+    if(typeof DOMParser!=='function')return[];
+    const documentHtml=new DOMParser().parseFromString(String(raw||''),'text/html'),products=[],posts=[];let postMemo='';
+    Array.from(documentHtml.querySelectorAll('table')).forEach(table=>{
+      const rows=tableMatrix(table),headers=(rows[0]||[]).map(value=>clean(value).toLowerCase().replace(/[^a-z0-9]+/g,''));
+      const nameIndex=headers.indexOf('name'),codeIndex=headers.indexOf('cscode');
+      if(nameIndex>=0&&codeIndex>=0){
+        const priceIndex=headers.findIndex(header=>header.startsWith('priceper')),memoIndex=headers.indexOf('memo');
+        rows.slice(1).forEach(row=>{const item={name:clean(row[nameIndex]),code:clean(row[codeIndex]),price:normalisePrice(row[priceIndex]),memo:clean(row[memoIndex])};if(item.name&&isCode(item.code))products.push(item);});
+        return;
+      }
+      rows.forEach(row=>{
+        const rowText=clean([...new Set((row||[]).map(clean).filter(Boolean))].join(' ')),productCodeIndex=(row||[]).findIndex(isCode);
+        if(productCodeIndex<0){if(/steel posts/i.test(rowText))postMemo=rowText;return;}
+        const code=clean(row[productCodeIndex]),colour=clean(row[productCodeIndex+1]),brand=clean(row[0]),postType=clean(row[1]),price=normalisePrice((row||[]).find(isPrice));
+        const item={name:clean(`${brand} ${postType} ${colour}`),code,price,memo:''};if(item.name&&isCode(item.code))posts.push(item);
+      });
+    });
+    posts.forEach(item=>{item.memo=postMemo;});
+    return sharedBalticMemo(products.concat(posts));
+  }
   function parse(raw) {
-    const lines=String(raw||'').split(/\r?\n/).map(clean).filter(Boolean);
+    const source=String(raw||'').trim();
+    if(/<!doctype html|<html/i.test(source.slice(0,300)))return parseHtml(source);
+    const lines=source.split(/\r?\n/).map(clean).filter(Boolean);
     if (/^name\s*,\s*cs\s*code/i.test(lines[0]||'')) return sharedBalticMemo(lines.slice(1).map(line=>{const p=csv(line);return{name:clean(p[0]),code:clean(p[1]),price:clean(p[2]),memo:clean(p.slice(3).join(','))};}).filter(item=>item.name&&isCode(item.code)));
     let i=lines.findIndex((line,index)=>/^name$/i.test(line)&&/cs\s*code/i.test(lines[index+1]||''));
     i=i<0?0:i+4; const result=[];
@@ -67,12 +110,37 @@
       return GM_getResourceText('customProductData').match(/const RAW_DATA = `([\s\S]*?)`;\s*\n/)?.[1] || '';
     } catch { return ''; }
   }
+  function requestText(url){
+    return new Promise((resolve,reject)=>{
+      if(typeof GM_xmlhttpRequest==='function'){
+        GM_xmlhttpRequest({method:'GET',url,headers:{'Cache-Control':'no-cache'},onload:response=>response.status>=200&&response.status<300?resolve(response.responseText||''):reject(new Error(`Live master returned ${response.status}`)),onerror:()=>reject(new Error('Could not load the live master'))});
+        return;
+      }
+      fetch(url,{cache:'no-store'}).then(response=>{if(!response.ok)throw new Error(`Live master returned ${response.status}`);return response.text();}).then(resolve).catch(reject);
+    });
+  }
+  function validLiveItems(nextItems,verifiedItems){
+    const minimumRows=Math.max(20,Math.floor(verifiedItems.length*.9)),uniqueCodes=new Set(nextItems.map(item=>item.code.toUpperCase()));
+    return nextItems.length>=minimumRows&&uniqueCodes.size===nextItems.length&&!nextItems.some(item=>!item.name||!isCode(item.code)||!isPrice(item.price));
+  }
+  async function loadLive(sequence,verifiedItems){
+    try{
+      const nextItems=parse(await requestText(REMOTE_DATA_URL));
+      if(!validLiveItems(nextItems,verifiedItems))throw new Error('Live master did not contain a complete, valid product table');
+      if(sequence!==loadSequence)return;
+      items=nextItems;status(`Live Google master - ${items.length} products`);render();
+    }catch(error){
+      console.warn(error);
+      if(sequence!==loadSequence)return;
+      status(`Live master unavailable - showing verified built-in list (${verifiedItems.length} products)`);render();
+    }
+  }
   function load() {
-    // Merged Google Doc cells lose row boundaries in text exports. Use only the
-    // version-pinned, verified CSV resource; never replace it with live or cached text.
-    items = parse(bundledRawData());
-    status(items.length ? 'Verified reference list (6 Nov 2026) - bundled with this script' : 'Product reference missing. Reinstall the latest script and refresh Omni.', !items.length);
+    const sequence=++loadSequence,verifiedItems=parse(bundledRawData());
+    items=verifiedItems;
+    status(items.length?'Checking live Google master...':'Product reference missing. Reinstall the latest script and refresh Omni.',!items.length);
     render();
+    if(items.length)void loadLive(sequence,verifiedItems);
   }
   function status(message,error=false){ const e=document.getElementById(ROOT_ID)?.shadowRoot?.getElementById('status'); if(e){e.textContent=message;e.classList.toggle('error',error);} }
   function group(item){const label=`${item.code} ${item.name}`.toLowerCase(),t=`${label} ${item.memo}`.toLowerCase();if(label.includes('post'))return'08_POSTS';if(t.includes('baltic'))return'01_PERGOLAS / BALTIC';if(t.includes('caspian'))return'02_PERGOLAS / CASPIAN';if(t.includes('tasman'))return'03_PERGOLAS / TASMAN';if(t.includes('pacific'))return'04_PERGOLAS / PACIFIC';if(t.includes('mediterranean'))return'05_PERGOLAS / MEDITERRANEAN';if(t.includes('dover'))return'06_PERGOLAS / DOVER PVC';if(t.includes('pergola'))return'07_PERGOLAS / OTHER';if(/shutter|privacy|slatted|tongue|glass sliding|bifold/.test(t))return'09_WALLS / DOORS / SCREENS';if(/blind|shade/.test(t))return'10_BLINDS / SHADES';if(/fuji|etna|rainier|awning|patio cover|carport/.test(t))return'11_AWNINGS / PATIO COVERS / CARPORTS';return'99_OTHER';}
