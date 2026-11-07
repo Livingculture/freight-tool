@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.194
+// @version      0.1.195
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -47,7 +47,7 @@
   const COPY_DELIVERY_BILLING_ID = 'lc-omni-copy-delivery-to-billing';
   const SHOWROOM_DELIVERY_PANEL_ID = 'lc-omni-showroom-delivery';
   const SHOWROOM_DELIVERY_OPTIONS = [
-    { key:'pilkington', label:'Collect from Pilkington', address:'Collect from Pilkington', collection:true },
+    { key:'pilkington', label:'Collect AKL Warehouse', address:'Collect AKL Warehouse', aliases:['Collect from Pilkington'], collection:true },
     { key:'chch-warehouse', label:'Collect Chch Warehouse', address:'Collect Chch Warehouse', collection:true },
     { key:'hamilton', label:'Hamilton S/R', address:'Deliver to Hamilton S/R' },
     { key:'penrose', label:'Penrose S/R', address:'Deliver to Penrose S/R' },
@@ -1977,7 +1977,8 @@
 
   function showroomFromDeliveryAddress(value) {
     const address = clean(value).toLowerCase();
-    return SHOWROOM_DELIVERY_OPTIONS.find(showroom => showroom.address.toLowerCase() === address) || null;
+    return SHOWROOM_DELIVERY_OPTIONS.find(showroom => showroom.address.toLowerCase() === address
+      || showroom.aliases?.some(alias => alias.toLowerCase() === address)) || null;
   }
 
   function omniDestinationFreightControl() {

@@ -35,7 +35,7 @@ visitFreight(freightAst);
 assert.equal(freightDeclarations.length, freightNames.size);
 assert.match(source, /ensureDeliveryBillingCopy\(\);\s*ensureOmniShowroomDelivery\(\);/, 'Actual startup enables the destination choices');
 const destinations = [
-  'Collect from Pilkington', 'Collect Chch Warehouse', 'Deliver to Hamilton S/R', 'Deliver to Penrose S/R',
+  'Collect AKL Warehouse', 'Collect Chch Warehouse', 'Deliver to Hamilton S/R', 'Deliver to Penrose S/R',
   'Deliver to Christchurch S/R', 'Deliver to Napier S/R', 'Deliver to Whangarei S/R',
   'Deliver to Wairau S/R', 'Deliver to Tauranga S/R'
 ];
@@ -143,6 +143,10 @@ const section = type => `<section class="column ${type.toLowerCase()}"><h2>${typ
     await page.screenshot({ path: '/tmp/omni-destination-mobile.png' });
     await page.evaluate(() => { document.getElementById('lc-omni-showroom-delivery').remove(); ensureOmniShowroomDelivery(); });
     assert.equal(await panel.getByRole('checkbox', { name: checkboxLabel(destinations[3]), exact: true }).isChecked(), true, 'Recreated panel recognises current address');
+    await page.locator('#Delivery-address1').fill('Collect from Pilkington');
+    await page.evaluate(() => ensureOmniShowroomDelivery());
+    assert.equal(await panel.getByRole('checkbox', { name: 'Collect AKL Warehouse', exact: true }).isChecked(), true, 'Existing Pilkington wording still recognises the renamed AKL choice');
+    assert.equal(await page.locator('#Delivery-address1').inputValue(), 'Collect from Pilkington', 'Older orders are not silently rewritten');
     assert.equal(await page.evaluate(() => saves), 0);
     assert(await page.evaluate(() => nativeChanges >= 10), 'Native change events emitted');
     assert.deepEqual(errors, []);
