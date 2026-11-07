@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture All-in-One
 // @namespace    livingculture
-// @version      0.1.232
+// @version      0.1.233
 // @description  Approved Living Culture Omni, Cin7 Core, Gmail, HubSpot and website tools in one Tampermonkey install.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -49,8 +49,8 @@
 // @resource     addressAutocomplete https://raw.githubusercontent.com/Livingculture/freight-tool/b4535df7b0a37793315db278d6fc022b511591c3/userscripts/omni-address-autocomplete.user.js
 // @resource     customComments https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-custom-comments.user.js?v=0.1.15
 // @resource     installFees https://raw.githubusercontent.com/Livingculture/freight-tool/f32263abbd7d3eb8be01d52f6f4acffa27b00366/userscripts/omni-install-fee-helper.user.js
-// @resource     customProducts https://raw.githubusercontent.com/Livingculture/freight-tool/8bbd50b33aec3eb51d233f34146df83b2ea180fa/userscripts/omni-custom-product-helper.user.js
-// @resource     customProductData https://raw.githubusercontent.com/Livingculture/freight-tool/7c01d2ee108fe280fa66b223366f8e7e1ad0f35a/userscripts/cin7-custom-product-helper.user.js
+// @resource     customProducts https://raw.githubusercontent.com/Livingculture/freight-tool/72e0cf7ff05575a36b275e5a48d911d027daa49c/userscripts/omni-custom-product-helper.user.js
+// @resource     customProductData https://raw.githubusercontent.com/Livingculture/freight-tool/454bc4336d12a1adc619d2011ffb61d29c1f08de/userscripts/cin7-custom-product-helper.user.js
 // @resource     websiteShortcuts https://raw.githubusercontent.com/Livingculture/freight-tool/86774fbd10544cbc5d6b301c74599fa30ec48df5/userscripts/omni-website-shortcuts.user.js
 // @resource     productAvailability https://raw.githubusercontent.com/Livingculture/freight-tool/f32263abbd7d3eb8be01d52f6f4acffa27b00366/userscripts/omni-product-availability.user.js
 // @resource     chinaWarehouse https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-china-warehouse-popup-clean-mode.user.js?v=0.1.1
@@ -138,7 +138,7 @@
     if (earlyOmniTools.has(component.resource)) component.runAt = 'body';
   });
 
-  const status = { version: '0.1.232', loaded: [], skipped: [], errors: [] };
+  const status = { version: '0.1.233', loaded: [], skipped: [], errors: [] };
   window.__lcAllInOneStatus = status;
 
   // BEGIN GENERATED GMAIL COMPONENTS
