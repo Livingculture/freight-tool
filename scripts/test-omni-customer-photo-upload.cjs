@@ -26,6 +26,6 @@ assert.doesNotMatch(upload, /form\.append\('photos'/, 'Files are not sent throug
 assert.match(upload, /Uploading \$\{index \+ 1\} of \$\{selectedFiles\.length\}/, 'Staff see per-file upload progress');
 assert.match(upload, /earlier file/, 'Partial success is reported if a later file fails');
 assert.match(picker, /picker\.accept = CUSTOMER_UPLOAD_ACCEPT;/, 'The Omni picker uses the shared supported-file list');
-assert.doesNotMatch(source.slice(source.indexOf('  function runButtonPass()'), source.indexOf('  const omniDomObserver')), /ensureOmniShowroomDelivery\(\)/, 'The rolled-back flashing showroom selector stays disabled');
+assert.match(source.slice(source.indexOf('  function runButtonPass()')), /ensureOmniShowroomDelivery\(\)/, 'The requested destination checkboxes are enabled');
 
-console.log('PASS: Omni uploads selected photos/documents directly to private storage one at a time with a 10 MB per-file limit and keeps the showroom rollback stable.');
+console.log('PASS: Omni uploads selected photos/documents directly to private storage one at a time with a 10 MB per-file limit; destination checkboxes remain enabled.');

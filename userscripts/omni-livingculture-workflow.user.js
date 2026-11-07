@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.191
+// @version      0.1.192
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -46,15 +46,15 @@
   const STAFF_HELP_DIALOG_ID = 'lc-omni-staff-help-dialog';
   const COPY_DELIVERY_BILLING_ID = 'lc-omni-copy-delivery-to-billing';
   const SHOWROOM_DELIVERY_PANEL_ID = 'lc-omni-showroom-delivery';
-  const SHOWROOM_DELIVERY_STORAGE_PREFIX = 'lc-omni-showroom-delivery-original:';
   const SHOWROOM_DELIVERY_OPTIONS = [
-    { key:'wairau', label:'Wairau', address:'Wairau Showroom' },
-    { key:'penrose', label:'Penrose', address:'Penrose Showroom' },
-    { key:'hamilton', label:'Hamilton', address:'Hamilton Showroom' },
-    { key:'tauranga', label:'Tauranga', address:'Tauranga Showroom' },
-    { key:'napier', label:'Napier', address:'Napier Showroom' },
-    { key:'christchurch', label:'Christchurch', address:'Christchurch Showroom' },
-    { key:'whangarei', label:'Whangārei', address:'Whangarei Showroom' }
+    { key:'pilkington', label:'Collect from Pilkington', address:'Collect from Pilkington' },
+    { key:'hamilton', label:'Deliver to Hamilton S/R', address:'Deliver to Hamilton S/R' },
+    { key:'penrose', label:'Deliver to Penrose S/R', address:'Deliver to Penrose S/R' },
+    { key:'christchurch', label:'Deliver to Christchurch S/R', address:'Deliver to Christchurch S/R' },
+    { key:'napier', label:'Deliver to Napier S/R', address:'Deliver to Napier S/R' },
+    { key:'whangarei', label:'Deliver to Whangarei S/R', address:'Deliver to Whangarei S/R' },
+    { key:'wairau', label:'Deliver to Wairau S/R', address:'Deliver to Wairau S/R' },
+    { key:'tauranga', label:'Deliver to Tauranga S/R', address:'Deliver to Tauranga S/R' }
   ];
   const STAFF_GUIDE_URL = 'https://living-culture-freight.vercel.app/omni-help.html';
   const FLOATING_BAR_ID = 'lc-cin7-floating-actions-v1';
@@ -1974,43 +1974,9 @@
     });
   }
 
-  function omniShowroomDeliveryStorageKey() {
-    const heading = omniHeadingDraft();
-    const pageId = heading.orderId || new URL(window.location.href).searchParams.get('OrderId') || 'new-quote';
-    const customer = clean(readOmniControlByLabel('Selected Customer') || heading.customerName || '').toLowerCase();
-    return `${SHOWROOM_DELIVERY_STORAGE_PREFIX}${pageId}:${customer}`;
-  }
-
   function showroomFromDeliveryAddress(value) {
     const address = clean(value).toLowerCase();
     return SHOWROOM_DELIVERY_OPTIONS.find(showroom => showroom.address.toLowerCase() === address) || null;
-  }
-
-  function omniFreightDescriptionControl() {
-    const editable = document.getElementById('lc-omni-freight-description-select');
-    if (editable && !editable.disabled && !editable.readOnly) return editable;
-    const label = Array.from(document.querySelectorAll('label, span, div, td'))
-      .filter(isVisible)
-      .filter(node => normalizeLabel(node.textContent || '') === 'freight')
-      .sort((left,right) => left.children.length-right.children.length)[0];
-    if (!label) return null;
-    const labelRect = label.getBoundingClientRect();
-    return Array.from(document.querySelectorAll('input:not([type="hidden"])'))
-      .filter(isVisible)
-      .filter(control => !control.disabled && !control.readOnly)
-      .map(control => ({ control, rect:control.getBoundingClientRect() }))
-      .filter(({ rect }) => rect.left >= labelRect.right-8 && Math.abs(rect.top+rect.height/2-labelRect.top-labelRect.height/2)<=8)
-      .sort((left,right) => left.rect.left-right.rect.left)
-      .map(({ control }) => control)
-      .find(control => !/^[\d,.$\s]+$/.test(control.value || '')) || null;
-  }
-
-  function setOmniShowroomFreightDescription(value) {
-    const visible = omniFreightDescriptionControl();
-    if (!visible) return false;
-    setOmniControlValue(visible, value);
-    visible.dispatchEvent(new Event('blur', { bubbles:true }));
-    return true;
   }
 
   function syncOmniShowroomDeliveryPanelSelection() {
@@ -2019,8 +1985,9 @@
     const addressOne = address?.fields?.[3]?.source;
     if (!panel || !addressOne) return;
     const selected = showroomFromDeliveryAddress(addressOne.value);
-    panel.querySelectorAll('input[type="radio"]').forEach(input => {
+    panel.querySelectorAll('input[type="checkbox"]').forEach(input => {
       input.checked = input.value === selected?.key;
+      input.disabled = addressOne.disabled || addressOne.readOnly;
       input.closest('label')?.classList.toggle('is-selected', input.checked);
     });
   }
@@ -2033,10 +2000,8 @@
     if (!showroomFromDeliveryAddress(addressOne.value)) {
       const panel = document.getElementById(SHOWROOM_DELIVERY_PANEL_ID);
       if (panel) panel.dataset.originalAddress = addressOne.value || '';
-      try { localStorage.setItem(omniShowroomDeliveryStorageKey(), addressOne.value || ''); } catch (error) {}
     }
     setOmniControlValue(addressOne, showroom.address);
-    setOmniShowroomFreightDescription(`Collect from ${showroom.address}`);
     if (document.querySelector(`#${COPY_DELIVERY_BILLING_ID} input`)?.checked) copyDeliveryAddressToBilling();
     syncOmniShowroomDeliveryPanelSelection();
     lastOmniOrderSyncDigest = '';
@@ -2050,17 +2015,9 @@
     if (!addressOne || addressOne.disabled || addressOne.readOnly) return false;
     const selected = showroomFromDeliveryAddress(addressOne.value);
     const panel = document.getElementById(SHOWROOM_DELIVERY_PANEL_ID);
-    let original = panel?.dataset.originalAddress || '';
-    try {
-      original = localStorage.getItem(omniShowroomDeliveryStorageKey()) || original;
-      localStorage.removeItem(omniShowroomDeliveryStorageKey());
-    } catch (error) {}
+    const original = panel?.dataset.originalAddress || '';
     if (panel) delete panel.dataset.originalAddress;
     if (selected) setOmniControlValue(addressOne, original);
-    const freight = omniFreightDescriptionControl();
-    if (freight && /^Collect from (?:Wairau|Penrose|Hamilton|Tauranga|Napier|Christchurch|Whangarei) Showroom$/i.test(clean(freight.value))) {
-      setOmniShowroomFreightDescription('');
-    }
     if (document.querySelector(`#${COPY_DELIVERY_BILLING_ID} input`)?.checked) copyDeliveryAddressToBilling();
     syncOmniShowroomDeliveryPanelSelection();
     lastOmniOrderSyncDigest = '';
@@ -2073,18 +2030,16 @@
     const deliveryRect = delivery.getBoundingClientRect();
     const billingRect = billing.getBoundingClientRect();
     const addressRect = addressOne.getBoundingClientRect();
-    const leftEdge = Math.max(deliveryRect.right, addressRect.right)+14;
+    const leftEdge = Math.max(deliveryRect.left+130, addressRect.right)+14;
     const available = billingRect.left-leftEdge-14;
-    if (available < 170 || window.innerWidth < 1050) {
-      panel.hidden = true;
-      return;
-    }
-    panel.hidden = false;
-    panel.style.position = 'absolute';
-    panel.style.left = `${Math.round(window.scrollX+leftEdge)}px`;
-    panel.style.top = `${Math.round(window.scrollY+deliveryRect.top)}px`;
-    panel.style.width = `${Math.min(250,Math.floor(available))}px`;
-    panel.style.margin = '0';
+    const docked = available < 130 || window.innerWidth < 900;
+    const details = panel.querySelector('details');
+    if (panel.dataset.layout !== (docked ? 'docked' : 'gap')) details.open = !docked;
+    panel.dataset.layout = docked ? 'docked' : 'gap';
+    const country = deliveryBillingFields()?.fields?.[8]?.source;
+    panel.style.cssText = docked
+      ? 'position:fixed;right:12px;bottom:12px;width:min(260px,calc(100vw - 24px));max-height:60vh;overflow:auto;'
+      : `position:absolute;left:${Math.round(window.scrollX+leftEdge)}px;top:${Math.round(window.scrollY+deliveryRect.top)}px;width:${Math.min(250,Math.floor(available))}px;max-height:${Math.max(180,(country?.getBoundingClientRect().bottom || addressRect.bottom+250)-deliveryRect.top)}px;overflow:auto;`;
   }
 
   function ensureOmniShowroomDelivery() {
@@ -2099,32 +2054,29 @@
     if (!panel) {
       panel = document.createElement('section');
       panel.id = SHOWROOM_DELIVERY_PANEL_ID;
-      panel.setAttribute('aria-label','Deliver to showroom');
+      panel.setAttribute('aria-label','Delivery destination');
       panel.innerHTML = `
-        <strong>Deliver to showroom</strong>
+        <details open><summary>Delivery destination</summary>
         <div class="lc-omni-showroom-options">
-          ${SHOWROOM_DELIVERY_OPTIONS.map(showroom => `<label title="Set Delivery Address 1 to ${escapeHtml(showroom.address)} and fill the freight collection description"><input type="radio" name="lc-omni-showroom-delivery-option" value="${escapeHtml(showroom.key)}"><span>${escapeHtml(showroom.label)}</span></label>`).join('')}
-        </div>
-        <small>Fills Delivery Address 1 and the collection field automatically.</small>
-        <button type="button" title="Restore the previous customer delivery address and clear the automatic showroom collection description">Clear showroom</button>`;
-      panel.querySelectorAll('input[type="radio"]').forEach(input => input.addEventListener('change', event => {
+          ${SHOWROOM_DELIVERY_OPTIONS.map(showroom => `<label title="${escapeHtml(showroom.address)}"><input type="checkbox" value="${escapeHtml(showroom.key)}"><span>${escapeHtml(showroom.label)}</span></label>`).join('')}
+        </div></details>`;
+      panel.querySelectorAll('input[type="checkbox"]').forEach(input => input.addEventListener('change', event => {
         if (event.currentTarget.checked) applyOmniShowroomDelivery(event.currentTarget.value);
+        else clearOmniShowroomDelivery();
       }));
-      panel.querySelector('button').addEventListener('click', clearOmniShowroomDelivery);
     }
     if (!document.getElementById('lc-omni-showroom-delivery-style')) {
       const style = document.createElement('style');
       style.id = 'lc-omni-showroom-delivery-style';
       style.textContent = `
-        #${SHOWROOM_DELIVERY_PANEL_ID}{z-index:20;box-sizing:border-box;padding:10px 12px;border:1px solid #d4e1e6;border-radius:8px;background:#f7fbfc;color:#263b43;font:13px/1.3 Arial,sans-serif;box-shadow:0 2px 8px rgba(23,63,110,.08)}
-        #${SHOWROOM_DELIVERY_PANEL_ID}>strong{display:block;margin:0 0 7px;color:#263b43;font-size:15px}
+        #${SHOWROOM_DELIVERY_PANEL_ID}{z-index:100;box-sizing:border-box;padding:6px;border:0;background:#fff;color:#263b43;font:12px/1.3 Arial,sans-serif}
+        #${SHOWROOM_DELIVERY_PANEL_ID}[data-layout="docked"]{border:1px solid #9db3c1;border-radius:4px;box-shadow:0 2px 8px #173f6e22}
+        #${SHOWROOM_DELIVERY_PANEL_ID} summary{font-weight:700;cursor:pointer;padding:4px 0}
         #${SHOWROOM_DELIVERY_PANEL_ID} .lc-omni-showroom-options{display:grid;gap:2px}
-        #${SHOWROOM_DELIVERY_PANEL_ID} label{display:flex;align-items:center;gap:7px;min-height:28px;padding:3px 6px;border-radius:5px;cursor:pointer;white-space:nowrap}
+        #${SHOWROOM_DELIVERY_PANEL_ID} label{display:flex;align-items:center;gap:6px;min-height:26px;padding:3px 2px;border-radius:3px;cursor:pointer;white-space:normal}
+        #${SHOWROOM_DELIVERY_PANEL_ID} label span{min-width:0;overflow-wrap:break-word}
         #${SHOWROOM_DELIVERY_PANEL_ID} label.is-selected{background:#dff5f1;color:#087e73;font-weight:700}
-        #${SHOWROOM_DELIVERY_PANEL_ID} input{appearance:none;width:16px;height:16px;min-width:16px;margin:0;border:1px solid #8799a0;border-radius:3px;background:#fff;cursor:pointer}
-        #${SHOWROOM_DELIVERY_PANEL_ID} input:checked{border-color:#0aa79a;background:#0aa79a;box-shadow:inset 0 0 0 3px #fff}
-        #${SHOWROOM_DELIVERY_PANEL_ID} small{display:block;margin:8px 0 5px;color:#657982;font-size:11px;white-space:normal}
-        #${SHOWROOM_DELIVERY_PANEL_ID} button{padding:0;border:0;background:transparent;color:#075a9c;font:600 12px Arial,sans-serif;text-decoration:underline;cursor:pointer}
+        #${SHOWROOM_DELIVERY_PANEL_ID} input{width:16px;height:16px;flex:none;margin:0;accent-color:#087e73;cursor:pointer}
       `;
       (document.head || document.documentElement).appendChild(style);
     }
@@ -2133,12 +2085,12 @@
       addressOne.addEventListener('input',syncOmniShowroomDeliveryPanelSelection);
       addressOne.addEventListener('change',syncOmniShowroomDeliveryPanelSelection);
     }
+    if (panel.addressControl !== addressOne) {
+      delete panel.dataset.originalAddress;
+      panel.addressControl = addressOne;
+    }
     positionOmniShowroomDeliveryPanel(panel,address.delivery,address.billing,addressOne);
     syncOmniShowroomDeliveryPanelSelection();
-    const selected = showroomFromDeliveryAddress(addressOne.value);
-    if (selected && !clean(omniWorkflowFreightDescription())) {
-      setOmniShowroomFreightDescription(`Collect from ${selected.address}`);
-    }
   }
 
   function omniSalesRep() {
@@ -5975,6 +5927,7 @@
     try {
       ensureOmniJobProgress();
       ensureDeliveryBillingCopy();
+      ensureOmniShowroomDelivery();
       finishOmniConversionNavigation();
       observeOmniLayout();
       addCustomerPhotosButton();
