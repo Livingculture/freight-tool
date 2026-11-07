@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.197
+// @version      0.1.198
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -1638,6 +1638,7 @@
       document.getElementById(QUOTE_REVIEW_BUTTON_ID),
       document.getElementById(HUBSPOT_BUTTON_ID),
       document.getElementById(QUOTE_PDF_BUTTON_ID),
+      document.getElementById('lc-omni-pro-forma-button'),
       document.getElementById(CLONE_QUOTE_BUTTON_ID),
       document.getElementById(CONVERT_ORDER_BUTTON_ID),
       document.getElementById('lc-omni-jobs-overview-button'),
@@ -5522,6 +5523,106 @@
     placeActionButton(hubspotButton, 'right');
   }
 
+  function proFormaAmount(labelPattern, charge = false) {
+    const numeric = value => {
+      const raw = clean(value).replace(/(?:NZD|NZ\$|\$|,)/gi, '').trim();
+      return /^-?\d+(?:\.\d+)?$/.test(raw) ? Number(raw) : null;
+    };
+    const labels = [...document.querySelectorAll('label,span,div,td,b,strong')].filter(isVisible)
+      .filter(node => !node.closest('[id^="lc-"]') && labelPattern.test(clean(node.textContent)))
+      .sort((a,b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top || a.children.length-b.children.length);
+    for (const label of labels) {
+      const rect = label.getBoundingClientRect();
+      const matches = [...document.querySelectorAll(charge ? 'input:not([type="hidden"])' : 'span,div,td,b,strong')].filter(isVisible)
+        .filter(node => !node.closest('[id^="lc-"]') && !node.contains(label) && node !== label)
+        .map(node => ({ node, rect:node.getBoundingClientRect(), value:numeric(node.value ?? node.textContent) }))
+        .filter(item => item.rect.left >= rect.right-4 && item.rect.left < rect.right+650
+          && Math.abs(item.rect.top+item.rect.height/2-rect.top-rect.height/2)<18
+          && (item.value !== null || charge && !clean(item.node.value)))
+        .sort((a,b) => (charge ? b.rect.left-a.rect.left : a.rect.left-b.rect.left) || a.node.children.length-b.node.children.length);
+      if (matches.length) return matches[0].value ?? 0;
+      if (!charge) {
+        const inline = clean(label.textContent).match(/:\s*(?:NZD|NZ\$|\$)?\s*(-?[\d,]+\.\d{2})\s*(?:NZD)?$/i);
+        if (inline) return numeric(inline[1]);
+      }
+    }
+    return null;
+  }
+
+  function proFormaQuoteData() {
+    const heading = omniHeadingDraft();
+    if (heading.documentType !== 'quote' || !/^NZSO-\d+$/i.test(heading.orderId)) throw new Error('Open a numbered Omni quote first.');
+    if (![...document.querySelectorAll('table th,table td')].filter(isVisible).some(cell=>clean(cell.textContent).toLowerCase().replace(/[^a-z]/g,'')==='amountnzd')) throw new Error('This preview supports NZD quotes only. The NZD amount column could not be confirmed.');
+    const lines = extractOmniHubSpotCommercialItems();
+    if (!lines?.length) throw new Error('No priced quote lines could be read.');
+    const deliveryHeading = findOmniSectionHeading('Delivery Address'), billingHeading = findOmniSectionHeading('Billing Address');
+    const address = (first,other) => {
+      const fields = addressControlsForHeading(first,other);
+      if (fields.length !== 9) throw new Error('Could not read all address fields.');
+      const values = fields.map(field => clean(field.value));
+      return [[values[0],values[1]].filter(Boolean).join(' '), ...values.slice(2)].filter(Boolean);
+    };
+    const contactHeading = findOmniSectionHeading('Contact');
+    const contact = labels => clean(findOmniSectionField(contactHeading,labels)?.value).replace(/^Search\.\.\.$/i,'');
+    const customer = address(billingHeading,deliveryHeading);
+    const contactName = [contact(['First Name']),contact(['Last Name'])].filter(Boolean).join(' ');
+    if (contactName && !customer.includes(contactName)) customer.unshift(contactName);
+    const memo = [...document.querySelectorAll('button,label,span,b,strong')].filter(isVisible)
+      .find(node=>normalizeLabel(node.textContent)==='quote memo info');
+    const memoRect = memo?.getBoundingClientRect();
+    const memoField = memoRect ? [...document.querySelectorAll('textarea')].filter(isVisible)
+      .map(field=>({field,rect:field.getBoundingClientRect()}))
+      .filter(item=>item.rect.top>=memoRect.bottom-4 && item.rect.top<memoRect.bottom+120 && Math.abs(item.rect.left-memoRect.left)<100)
+      .sort((a,b)=>a.rect.top-b.rect.top)[0]?.field : null;
+    const comments = cleanMultiline(memoField?.value || '');
+    return { reference:heading.orderId, date:omniWorkflowDate('Created Date'), createdBy:omniSalesRep(),
+      customer, delivery:address(deliveryHeading,billingHeading), email:contact(['Email Address']), phone:contact(['Mobile']) || contact(['Phone']),
+      comments, lines, freightDescription:omniWorkflowFreightDescription() || '',
+      freight:proFormaAmount(/^Freight\s*:?$/i,true), surcharge:proFormaAmount(/^Surcharge\s*:?$/i,true), discount:proFormaAmount(/^Discount\s*:?$/i,true),
+      total:proFormaAmount(/^Total\s*(?::.*)?$/i), tax:proFormaAmount(/^Total Tax\s*(?:\(?[\d.]+%\)?)?\s*:?$/i),
+      paid:proFormaAmount(/^Total Paid\s*:?$/i), balance:proFormaAmount(/^Total Owing\s*:?$/i) };
+  }
+
+  function openOmniProForma() {
+    let quote;
+    try { quote = proFormaQuoteData(); } catch(error) { window.alert(error.message); return; }
+    const nonce = crypto.randomUUID(), url = new URL('/omni-pro-forma',WORKFLOW_PLANNER_URL);
+    url.searchParams.set('target',location.origin); url.searchParams.set('nonce',nonce);
+    const preview = window.open(url.href,'_blank');
+    if (!preview) { window.alert('Allow pop-ups for Cin7 to open the pro forma preview.'); return; }
+    const cleanup = () => { clearTimeout(timeout); window.removeEventListener('message',receive); };
+    const receive = event => {
+      if (event.origin !== url.origin || event.source !== preview || event.data?.type !== 'lc-pro-forma-ready' || event.data.nonce !== nonce) return;
+      preview.postMessage({type:'lc-pro-forma-data',nonce,quote},url.origin); cleanup();
+    };
+    const timeout = window.setTimeout(cleanup,180000);
+    window.addEventListener('message',receive);
+  }
+
+  function addOmniProFormaButton() {
+    const id = 'lc-omni-pro-forma-button';
+    if (!isOmniPage() || omniHeadingDraft().documentType !== 'quote') { document.getElementById(id)?.remove(); return; }
+    const state = addOmniProFormaButton;
+    if (!state.pending && (!state.checkedAt || Date.now()-state.checkedAt>60000)) {
+      state.pending = true; state.checkedAt = Date.now();
+      const complete = allowed => { state.pending=false; state.allowed=allowed; if (!allowed) document.getElementById(id)?.remove(); scheduleButtonPass(); };
+      GM_xmlhttpRequest({method:'GET',url:new URL('/omni-pro-forma?access=1',WORKFLOW_PLANNER_URL).href,anonymous:false,timeout:15000,
+        headers:{Accept:'application/json','Cache-Control':'no-cache'},
+        onload:response=>{try{complete(response.status===200 && JSON.parse(response.responseText).allowed===true);}catch{complete(false);}},
+        onerror:()=>complete(false),ontimeout:()=>complete(false)});
+    }
+    if (!state.allowed) return;
+    const anchor = document.getElementById(QUOTE_PDF_BUTTON_ID);
+    if (!anchor) return;
+    let button = document.getElementById(id);
+    if (!button) {
+      button = document.createElement('button'); button.id=id; button.type='button'; button.textContent='Pro Forma Invoice';
+      button.title='Preview a pro forma from the current quote'; styleInlineButton(button,'#166e57');
+      button.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();openOmniProForma();});
+    }
+    placeOmniActionButton(button,anchor);
+  }
+
   function addQuotePdfButton() {
     document.getElementById(LEGACY_QUOTE_PDF_BUTTON_ID)?.remove();
     if (!isOmniPage()) {
@@ -5972,6 +6073,7 @@
       applyHubSpotPrerequisiteGate();
       addQuoteReviewButton();
       addQuotePdfButton();
+      addOmniProFormaButton();
       addCloneQuoteButton();
       applyHubSpotApprovalGate();
       addJobsOverviewButton();
