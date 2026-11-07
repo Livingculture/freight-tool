@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Custom Product Helper
 // @namespace    livingculture-omni
-// @version      0.1.14
+// @version      0.1.15
 // @description  Shows Living Culture custom products and adds the selected SKU to the next empty Cin7 Omni product line.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-custom-product-helper.user.js
@@ -10,7 +10,7 @@
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getResourceText
-// @resource     customProductData https://raw.githubusercontent.com/Livingculture/freight-tool/7c01d2ee108fe280fa66b223366f8e7e1ad0f35a/userscripts/cin7-custom-product-helper.user.js
+// @resource     customProductData https://raw.githubusercontent.com/Livingculture/freight-tool/454bc4336d12a1adc619d2011ffb61d29c1f08de/userscripts/cin7-custom-product-helper.user.js
 // @connect      docs.google.com
 // @connect      googleusercontent.com
 // @connect      docs.googleusercontent.com
@@ -51,6 +51,15 @@
     for (const item of baltic) item.memo = memo;
     return products;
   }
+  function deduplicateIdenticalProducts(products) {
+    const seen = new Set();
+    return products.filter(item => {
+      const key = JSON.stringify([clean(item.code).toUpperCase(), clean(item.name), clean(item.price), clean(item.memo)]);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
   function tableMatrix(table){
     const matrix=[];
     Array.from(table?.rows||[]).forEach((row,rowIndex)=>{
@@ -86,7 +95,9 @@
       });
     });
     posts.forEach(item=>{item.memo=postMemo;});
-    return sharedBalticMemo(products.concat(posts));
+    // Deduplicate before shared-note enrichment so conflicting source notes
+    // still leave duplicate codes for the live-table validator to reject.
+    return sharedBalticMemo(deduplicateIdenticalProducts(products.concat(posts)));
   }
   function parse(raw) {
     const source=String(raw||'').trim();
