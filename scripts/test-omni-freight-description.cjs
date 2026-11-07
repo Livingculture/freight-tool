@@ -12,7 +12,7 @@ const functions = names.map(name => {
   const next = tail.search(/\n  (?:async )?function /);
   return source.slice(start, start + next + 1);
 }).join('\n');
-const options = ['Ship from Warehouse', 'Ship from Auckland', 'Ship from Chch', 'Collect from Warehouse', 'Collect from Showroom'];
+const options = ['Ship from Warehouse', 'Ship from Auckland', 'Ship from Chch', 'Collect AKL Warehouse', 'Collect Chch Warehouse', 'Collect from Warehouse', 'Collect from Showroom'];
 assert(source.includes(`const FREIGHT_DESCRIPTION_OPTIONS = ${JSON.stringify(options).replace(/"/g,"'").replace(/,/g,', ')};`), 'Actual preset list includes Ship from Warehouse');
 (async () => {
   const browser = await chromium.launch();
@@ -112,6 +112,6 @@ assert(source.includes(`const FREIGHT_DESCRIPTION_OPTIONS = ${JSON.stringify(opt
     assert.equal(await dropdown.count(), 0, 'Do not replace an amount-only freight row with a description dropdown');
     assert.equal(await page.evaluate(() => fillOmniFreightFields('$37.00', 'Ship from Auckland')), true);
     assert.equal(await page.locator('#amount-only').inputValue(), '37.00');
-    console.log('PASS: Five freight choices save through native inputs, charges stay unchanged on manual selection, calculator autofill and custom methods remain intact, and re-render/read-only handling works.');
+    console.log('PASS: Seven freight choices including AKL/Chch collections save through native inputs, charges stay unchanged on manual selection, calculator autofill and custom methods remain intact, and re-render/read-only handling works.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -70,7 +70,7 @@ const section = type => `<section class="column ${type.toLowerCase()}"><h2>${typ
       document.getElementById('Delivery-address1').addEventListener('change',()=>nativeChanges++);
       ${declarations.join('\n')}
       const FREIGHT_DESCRIPTION_SELECT_ID='lc-omni-freight-description-select';
-      const FREIGHT_DESCRIPTION_OPTIONS=['Ship from Warehouse','Ship from Auckland','Ship from Chch','Collect from Warehouse','Collect from Showroom'];
+      const FREIGHT_DESCRIPTION_OPTIONS=['Ship from Warehouse','Ship from Auckland','Ship from Chch','Collect AKL Warehouse','Collect Chch Warehouse','Collect from Warehouse','Collect from Showroom'];
       let freightDescriptionInput=null,freightDescriptionDisplay='',freightDescriptionSyncCleanup=null;
       ${freightDeclarations.join('\n')}
       ensureDeliveryBillingCopy();ensureOmniShowroomDelivery();
@@ -80,7 +80,7 @@ const section = type => `<section class="column ${type.toLowerCase()}"><h2>${typ
     assert.equal(await panel.locator('input:checked').count(), 0);
     assert.equal(await page.locator('#freight').inputValue(), 'Ship from Warehouse', 'No destination defaults to warehouse shipping on load');
     await panel.getByRole('checkbox', { name: 'Collect Chch Warehouse', exact: true }).check();
-    assert.equal(await page.locator('#freight').inputValue(), 'Collect from Warehouse', 'Native freight fallback works before the freight helper loads');
+    assert.equal(await page.locator('#freight').inputValue(), 'Collect Chch Warehouse', 'Native freight fallback preserves the selected warehouse before the helper loads');
     await panel.getByRole('checkbox', { name: 'Collect Chch Warehouse', exact: true }).uncheck();
     await page.evaluate(() => ensureFreightDescriptionDropdown());
     assert.equal(await page.locator('#lc-omni-freight-description-select-options').inputValue(), 'Ship from Warehouse');
@@ -100,7 +100,7 @@ const section = type => `<section class="column ${type.toLowerCase()}"><h2>${typ
       assert.equal(await page.locator('#Delivery-address1').inputValue(), name);
       assert.equal(await panel.locator('input:checked').count(), 1);
       assert.equal(await page.locator('#Billing-address1').inputValue(), '');
-      const expectedFreight = name.startsWith('Collect') ? 'Collect from Warehouse' : 'Collect from Showroom';
+      const expectedFreight = name.startsWith('Collect') ? name : 'Collect from Showroom';
       assert.equal(await page.locator('#freight').inputValue(), expectedFreight, 'Native saved field matches the destination');
       assert.equal(await page.locator('#lc-omni-freight-description-select').inputValue(), expectedFreight);
       assert.equal(await page.locator('#lc-omni-freight-description-select-options').inputValue(), expectedFreight, 'Real preset dropdown is synchronised');
