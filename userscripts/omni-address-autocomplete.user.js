@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni New Zealand Address Autocomplete
 // @namespace    livingculture-omni
-// @version      0.1.11
+// @version      0.1.12
 // @description  Adds New Zealand address suggestions to Cin7 Omni delivery addresses.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-address-autocomplete.user.js
@@ -137,6 +137,7 @@
   }
 
   function applySuggestion(address) {
+    if (destinationSelected()) { cancelAddressLookup(); return; }
     suppressSearchUntil = Date.now() + 1500;
     clearTimeout(timer);
     requestNumber += 1;
@@ -225,7 +226,20 @@
     if (list) list.innerHTML = '';
   }
 
+  function destinationSelected() {
+    return Boolean(document.querySelector('#lc-omni-showroom-delivery input[type="checkbox"]:checked'));
+  }
+
+  function cancelAddressLookup() {
+    clearTimeout(timer);
+    timer = null;
+    requestNumber += 1;
+    currentSuggestions = [];
+    hideSuggestions();
+  }
+
   async function search(query) {
+    if (destinationSelected()) { cancelAddressLookup(); return; }
     const currentRequest = ++requestNumber;
     const list = getList();
     list.innerHTML = '<div class="lc-omni-address-title">Select delivery address</div><div class="lc-omni-address-message">Finding addresses…</div>';
@@ -239,7 +253,7 @@
         lang: 'en'
       });
       const data = await requestJson(`${API_URL}?${params}`);
-      if (currentRequest !== requestNumber) return;
+      if (currentRequest !== requestNumber || destinationSelected()) return;
       currentSuggestions = (Array.isArray(data.features) ? data.features : [])
         .map(photonAddress)
         .filter(address => address.address1 && address.city);
@@ -248,7 +262,7 @@
         : '<div class="lc-omni-address-title">Select delivery address</div><div class="lc-omni-address-message">No matching New Zealand addresses found. Try including the street number and town.</div>';
       positionList();
     } catch (error) {
-      if (currentRequest !== requestNumber) return;
+      if (currentRequest !== requestNumber || destinationSelected()) return;
       console.error(error);
       list.innerHTML = `<div class="lc-omni-address-title">Address lookup error</div><div class="lc-omni-address-message is-error">${clean(error.message) || 'Address lookup unavailable.'}</div>`;
       positionList();
@@ -261,6 +275,7 @@
     addressInput = input;
     input.setAttribute('autocomplete', 'off');
     input.dataset.lcAddressAutocomplete = 'true';
+    if (destinationSelected()) cancelAddressLookup();
     if (attachedInputs.has(input)) return;
     attachedInputs.add(input);
     input.addEventListener('input', event => handleAddressInput(event), true);
@@ -268,6 +283,7 @@
   }
 
   function handleAddressInput(event) {
+    if (destinationSelected()) { cancelAddressLookup(); return; }
     if (Date.now() < suppressSearchUntil) return;
     const currentField = event.target?.dataset?.lcAddressAutocomplete === 'true'
       ? event.target
@@ -333,6 +349,9 @@
     if (event.target !== addressInput && !event.target.closest('#lc-omni-delivery-address-suggestions')) hideSuggestions();
   });
   document.addEventListener('input', handleAddressInput, true);
+  document.addEventListener('change', event => {
+    if (event.target?.matches?.('#lc-omni-showroom-delivery input[type="checkbox"]') && destinationSelected()) cancelAddressLookup();
+  }, true);
   document.addEventListener('keyup', event => {
     if (event.key === 'Escape') {
       hideSuggestions();
