@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cin7 Living Culture Custom Product Helper
 // @namespace    livingculture-cin7
-// @version      2.3
+// @version      2.4
 // @description  Shows Living Culture customised pergola/product SKUs inside Cin7 and fills the product code into the quote line.
 // @match        https://*.cin7.com/*
 // @match        https://go.cin7.com/*
@@ -178,6 +178,16 @@ Caspian Middle Post Charcoal,CS22252,$349.99,3M leg post. Longer than 3m require
     return matrix;
   }
 
+  function deduplicateIdenticalProducts(products) {
+    const seen = new Set();
+    return products.filter(item => {
+      const key = JSON.stringify([clean(item.code).toUpperCase(), clean(item.name), clean(item.price), clean(item.memo)]);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
   function parseHtmlData(raw) {
     if (typeof DOMParser !== 'function') return [];
 
@@ -234,7 +244,7 @@ Caspian Middle Post Charcoal,CS22252,$349.99,3M leg post. Longer than 3m require
     });
 
     postProducts.forEach(item => { item.memo = postMemo; });
-    return products.concat(postProducts).map(enrichKnownProduct);
+    return deduplicateIdenticalProducts(products.concat(postProducts)).map(enrichKnownProduct);
   }
 
   function looksLikeVerticalProductName(value) {
