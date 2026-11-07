@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.193
+// @version      0.1.194
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -47,7 +47,8 @@
   const COPY_DELIVERY_BILLING_ID = 'lc-omni-copy-delivery-to-billing';
   const SHOWROOM_DELIVERY_PANEL_ID = 'lc-omni-showroom-delivery';
   const SHOWROOM_DELIVERY_OPTIONS = [
-    { key:'pilkington', label:'Collect from Pilkington', address:'Collect from Pilkington' },
+    { key:'pilkington', label:'Collect from Pilkington', address:'Collect from Pilkington', collection:true },
+    { key:'chch-warehouse', label:'Collect Chch Warehouse', address:'Collect Chch Warehouse', collection:true },
     { key:'hamilton', label:'Hamilton S/R', address:'Deliver to Hamilton S/R' },
     { key:'penrose', label:'Penrose S/R', address:'Deliver to Penrose S/R' },
     { key:'christchurch', label:'Christchurch S/R', address:'Deliver to Christchurch S/R' },
@@ -1979,6 +1980,32 @@
     return SHOWROOM_DELIVERY_OPTIONS.find(showroom => showroom.address.toLowerCase() === address) || null;
   }
 
+  function omniDestinationFreightControl() {
+    const helper = document.getElementById('lc-omni-freight-description-select');
+    if (helper) return helper;
+    const label = Array.from(document.querySelectorAll('label, span, div, td')).filter(isVisible)
+      .filter(node => normalizeLabel(node.textContent || '') === 'freight')
+      .sort((a,b) => a.children.length-b.children.length)[0];
+    if (!label) return null;
+    const rect = label.getBoundingClientRect();
+    return Array.from(document.querySelectorAll('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]),select'))
+      .filter(isVisible).filter(control => {
+        const field = control.getBoundingClientRect();
+        return field.left >= rect.right-8 && Math.abs(field.top+field.height/2-rect.top-rect.height/2) <= 6;
+      }).sort((a,b) => a.getBoundingClientRect().left-b.getBoundingClientRect().left)[0] || null;
+  }
+
+  function setOmniDestinationFreight(showroom) {
+    const control = omniDestinationFreightControl();
+    const panel = document.getElementById(SHOWROOM_DELIVERY_PANEL_ID);
+    if (!control || control.disabled || control.readOnly || !panel) return;
+    if (!('originalFreight' in panel.dataset)) panel.dataset.originalFreight = control.value || '';
+    const value = showroom.collection ? 'Collect from Warehouse' : 'Collect from Showroom';
+    setOmniControlValue(control,value);
+    control.dispatchEvent(new Event('blur',{ bubbles:true }));
+    panel.dataset.autoFreight = value;
+  }
+
   function syncOmniShowroomDeliveryPanelSelection() {
     const panel = document.getElementById(SHOWROOM_DELIVERY_PANEL_ID);
     const address = deliveryBillingFields();
@@ -2002,6 +2029,7 @@
       if (panel) panel.dataset.originalAddress = addressOne.value || '';
     }
     setOmniControlValue(addressOne, showroom.address);
+    setOmniDestinationFreight(showroom);
     if (document.querySelector(`#${COPY_DELIVERY_BILLING_ID} input`)?.checked) copyDeliveryAddressToBilling();
     syncOmniShowroomDeliveryPanelSelection();
     lastOmniOrderSyncDigest = '';
@@ -2018,6 +2046,12 @@
     const original = panel?.dataset.originalAddress || '';
     if (panel) delete panel.dataset.originalAddress;
     if (selected) setOmniControlValue(addressOne, original);
+    const freight = omniDestinationFreightControl();
+    if (selected && freight && !freight.disabled && !freight.readOnly && panel?.dataset.autoFreight === freight.value) {
+      setOmniControlValue(freight,panel.dataset.originalFreight || '');
+      freight.dispatchEvent(new Event('blur',{ bubbles:true }));
+    }
+    if (panel) { delete panel.dataset.originalFreight; delete panel.dataset.autoFreight; }
     if (document.querySelector(`#${COPY_DELIVERY_BILLING_ID} input`)?.checked) copyDeliveryAddressToBilling();
     syncOmniShowroomDeliveryPanelSelection();
     lastOmniOrderSyncDigest = '';
@@ -2087,10 +2121,15 @@
     }
     if (panel.addressControl !== addressOne) {
       delete panel.dataset.originalAddress;
+      delete panel.dataset.originalFreight;
+      delete panel.dataset.autoFreight;
       panel.addressControl = addressOne;
     }
     syncOmniShowroomDeliveryPanelSelection();
     positionOmniShowroomDeliveryPanel(panel,address.delivery,address.billing,addressOne,address.fields);
+    const selected = showroomFromDeliveryAddress(addressOne.value);
+    const freight = selected && omniDestinationFreightControl();
+    if (selected && freight && !clean(freight.value)) setOmniDestinationFreight(selected);
   }
 
   function omniSalesRep() {
