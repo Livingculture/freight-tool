@@ -28,6 +28,7 @@ const destinations = [
   'Deliver to Christchurch S/R', 'Deliver to Napier S/R', 'Deliver to Whangarei S/R',
   'Deliver to Wairau S/R', 'Deliver to Tauranga S/R'
 ];
+const checkboxLabel = address => address.replace(/^Deliver to /, '');
 const fields = [
   ['First Name', 'first', 'Example'], ['Last Name', 'last', 'Customer'], ['Company', 'company', 'Demo Company'],
   ['Address 1', 'address1', '12 Example Lane'], ['Address 2', 'address2', 'Demo Suburb'],
@@ -61,14 +62,19 @@ const section = type => `<section class="column ${type.toLowerCase()}"><h2>${typ
     ` });
     const panel = page.locator('#lc-omni-showroom-delivery');
     assert.equal(await panel.getByRole('checkbox').count(), 8);
+    assert.equal(await panel.locator('summary,h1,h2,h3,strong').count(), 0, 'No destination heading');
+    assert(!/Deliver to/.test(await panel.innerText()), 'Checkbox text omits Deliver to');
     const before = await page.locator('.delivery').boundingBox();
     const box = await panel.boundingBox(), addressBox = await page.locator('#Delivery-address1').boundingBox();
     const billingBox = await page.locator('.billing').boundingBox();
     assert(box.x >= addressBox.x + addressBox.width);
     assert(box.x + box.width <= billingBox.x);
+    const firstBilling = await page.locator('#Billing-first').boundingBox();
+    const lastBilling = await page.locator('#Billing-country').boundingBox();
+    assert(Math.abs(box.y+box.height/2-(firstBilling.y+lastBilling.y+lastBilling.height)/2) <= 1, 'List is vertically centred against the nine Billing Address inputs');
     assert(box.y + box.height <= before.y + before.height, 'Choices stay within address-section height');
     for (const name of destinations) {
-      await panel.getByRole('checkbox', { name, exact: true }).check();
+      await panel.getByRole('checkbox', { name: checkboxLabel(name), exact: true }).check();
       assert.equal(await page.locator('#Delivery-address1').inputValue(), name);
       assert.equal(await panel.locator('input:checked').count(), 1);
       assert.equal(await page.locator('#Billing-address1').inputValue(), '');
@@ -78,17 +84,17 @@ const section = type => `<section class="column ${type.toLowerCase()}"><h2>${typ
         assert.equal(await page.locator(`#Delivery-${key}`).inputValue(), value);
       }
     }
-    await panel.getByRole('checkbox', { name: destinations[7], exact: true }).uncheck();
+    await panel.getByRole('checkbox', { name: checkboxLabel(destinations[7]), exact: true }).uncheck();
     assert.equal(await page.locator('#Delivery-address1').inputValue(), '12 Example Lane');
     assert.equal(await panel.locator('input:checked').count(), 0);
     await page.locator('#lc-omni-copy-delivery-to-billing input').check();
-    await panel.getByRole('checkbox', { name: destinations[0], exact: true }).check();
+    await panel.getByRole('checkbox', { name: checkboxLabel(destinations[0]), exact: true }).check();
     assert.equal(await page.locator('#Billing-address1').inputValue(), destinations[0]);
     await page.locator('#lc-omni-copy-delivery-to-billing input').uncheck();
     await page.locator('#Delivery-address1').fill('Another Example Street');
     assert.equal(await panel.locator('input:checked').count(), 0, 'Manual typing clears stale selection');
-    await panel.getByRole('checkbox', { name: destinations[1], exact: true }).check();
-    await panel.getByRole('checkbox', { name: destinations[1], exact: true }).uncheck();
+    await panel.getByRole('checkbox', { name: checkboxLabel(destinations[1]), exact: true }).check();
+    await panel.getByRole('checkbox', { name: checkboxLabel(destinations[1]), exact: true }).uncheck();
     assert.equal(await page.locator('#Delivery-address1').inputValue(), 'Another Example Street');
     await page.evaluate(() => { for (let i = 0; i < 20; i++) ensureOmniShowroomDelivery(); });
     assert.equal(await panel.count(), 1);
@@ -101,15 +107,13 @@ const section = type => `<section class="column ${type.toLowerCase()}"><h2>${typ
     assert.equal(await panel.getAttribute('data-layout'), 'docked', 'Narrow gap retains access without shifting native fields');
     await page.setViewportSize({ width: 390, height: 844 });
     await page.evaluate(() => ensureOmniShowroomDelivery());
-    await panel.locator('summary').click();
-    await panel.getByRole('checkbox', { name: destinations[3], exact: true }).check();
+    await panel.getByRole('checkbox', { name: checkboxLabel(destinations[3]), exact: true }).check();
     assert.equal(await page.locator('#Delivery-address1').inputValue(), destinations[3]);
     assert(await panel.evaluate(node => { const r = node.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight; }));
     assert(await panel.evaluate(node => node.scrollWidth <= node.clientWidth), 'Labels fit narrow panel');
     await page.screenshot({ path: '/tmp/omni-destination-mobile.png' });
     await page.evaluate(() => { document.getElementById('lc-omni-showroom-delivery').remove(); ensureOmniShowroomDelivery(); });
-    await panel.locator('summary').click();
-    assert.equal(await panel.getByRole('checkbox', { name: destinations[3], exact: true }).isChecked(), true, 'Recreated panel recognises current address');
+    assert.equal(await panel.getByRole('checkbox', { name: checkboxLabel(destinations[3]), exact: true }).isChecked(), true, 'Recreated panel recognises current address');
     assert.equal(await page.evaluate(() => saves), 0);
     assert(await page.evaluate(() => nativeChanges >= 10), 'Native change events emitted');
     assert.deepEqual(errors, []);
