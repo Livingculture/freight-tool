@@ -3,6 +3,7 @@
   const tabs = [...document.querySelectorAll('[role="tab"]')];
   const frames = [...document.querySelectorAll('iframe')];
   function closeOnEscape(event) {
+    if (event.defaultPrevented || event.target?.ownerDocument?.querySelector('dialog[open],#guide-index.open')) return;
     if (event.key === 'Escape' && window.parent !== window) {
       event.preventDefault();
       event.stopPropagation();
@@ -19,7 +20,7 @@
       item.tabIndex = selected ? 0 : -1;
       document.getElementById(item.getAttribute('aria-controls')).hidden = !selected;
     });
-    if (tab.id === 'tab-connections') loadFrame(document.getElementById('connections-frame'));
+    document.getElementById(tab.getAttribute('aria-controls')).querySelectorAll(':scope > iframe[data-src]').forEach(loadFrame);
     if (focus) tab.focus();
   }
   tabs.forEach((tab, index) => {
