@@ -12,7 +12,8 @@ const functions = names.map(name => {
   const next = tail.search(/\n  (?:async )?function /);
   return source.slice(start, start + next + 1);
 }).join('\n');
-const options = ['Ship from Auckland', 'Ship from Chch', 'Collect from Warehouse', 'Collect from Showroom'];
+const options = ['Ship from Warehouse', 'Ship from Auckland', 'Ship from Chch', 'Collect from Warehouse', 'Collect from Showroom'];
+assert(source.includes(`const FREIGHT_DESCRIPTION_OPTIONS = ${JSON.stringify(options).replace(/"/g,"'").replace(/,/g,', ')};`), 'Actual preset list includes Ship from Warehouse');
 (async () => {
   const browser = await chromium.launch();
   try {
@@ -58,7 +59,7 @@ const options = ['Ship from Auckland', 'Ship from Chch', 'Collect from Warehouse
       assert.equal(await page.evaluate(() => new FormData(document.querySelector('form')).get('FreightDescription')), value, 'Native saved field retains chosen value');
       assert.equal(await page.locator('#amount').inputValue(), '579.00', 'Description choice never changes the charge');
     }
-    assert.equal(await page.evaluate(() => window.nativeChanges), 4, 'Each manual choice fires the native change once');
+    assert.equal(await page.evaluate(() => window.nativeChanges), options.length, 'Each manual choice fires the native change once');
     await dropdown.fill('Deliver to side gate after 10am');
     await page.evaluate(() => ensureFreightDescriptionDropdown());
     assert.equal(await dropdown.inputValue(), 'Deliver to side gate after 10am', 'Periodic sync preserves custom typing');
@@ -73,7 +74,7 @@ const options = ['Ship from Auckland', 'Ship from Chch', 'Collect from Warehouse
     assert.equal(await page.locator('#amount').inputValue(), '145.25', 'Calculator still writes the amount, not the description control');
     await page.evaluate(() => fillOmniFreightFields('$250.00', 'Ship from Auckland + Christchurch'));
     assert.equal(await dropdown.inputValue(), 'Ship from Auckland + Christchurch', 'Special calculator wording is not truncated');
-    assert.equal(await presets.locator('option:not([disabled])').count(), 4, 'All four presets remain available with custom text');
+    assert.equal(await presets.locator('option:not([disabled])').count(), options.length, 'All presets remain available with custom text');
     assert.equal(await dropdown.getAttribute('list'), null, 'Do not use browser-filtered datalist suggestions');
     await dropdown.fill('Collect from Warehouse');
     await dropdown.blur();
@@ -111,6 +112,6 @@ const options = ['Ship from Auckland', 'Ship from Chch', 'Collect from Warehouse
     assert.equal(await dropdown.count(), 0, 'Do not replace an amount-only freight row with a description dropdown');
     assert.equal(await page.evaluate(() => fillOmniFreightFields('$37.00', 'Ship from Auckland')), true);
     assert.equal(await page.locator('#amount-only').inputValue(), '37.00');
-    console.log('PASS: Four freight choices save through native inputs, charges stay unchanged on manual selection, calculator autofill and custom methods remain intact, and re-render/read-only handling works.');
+    console.log('PASS: Five freight choices save through native inputs, charges stay unchanged on manual selection, calculator autofill and custom methods remain intact, and re-render/read-only handling works.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

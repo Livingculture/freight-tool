@@ -70,17 +70,20 @@ const section = type => `<section class="column ${type.toLowerCase()}"><h2>${typ
       document.getElementById('Delivery-address1').addEventListener('change',()=>nativeChanges++);
       ${declarations.join('\n')}
       const FREIGHT_DESCRIPTION_SELECT_ID='lc-omni-freight-description-select';
-      const FREIGHT_DESCRIPTION_OPTIONS=['Ship from Auckland','Ship from Chch','Collect from Warehouse','Collect from Showroom'];
+      const FREIGHT_DESCRIPTION_OPTIONS=['Ship from Warehouse','Ship from Auckland','Ship from Chch','Collect from Warehouse','Collect from Showroom'];
       let freightDescriptionInput=null,freightDescriptionDisplay='',freightDescriptionSyncCleanup=null;
       ${freightDeclarations.join('\n')}
       ensureDeliveryBillingCopy();ensureOmniShowroomDelivery();
     ` });
     const panel = page.locator('#lc-omni-showroom-delivery');
     assert.equal(await panel.getByRole('checkbox').count(), 9);
+    assert.equal(await panel.locator('input:checked').count(), 0);
+    assert.equal(await page.locator('#freight').inputValue(), 'Ship from Warehouse', 'No destination defaults to warehouse shipping on load');
     await panel.getByRole('checkbox', { name: 'Collect Chch Warehouse', exact: true }).check();
     assert.equal(await page.locator('#freight').inputValue(), 'Collect from Warehouse', 'Native freight fallback works before the freight helper loads');
     await panel.getByRole('checkbox', { name: 'Collect Chch Warehouse', exact: true }).uncheck();
     await page.evaluate(() => ensureFreightDescriptionDropdown());
+    assert.equal(await page.locator('#lc-omni-freight-description-select-options').inputValue(), 'Ship from Warehouse');
     assert.equal(await panel.locator('summary,h1,h2,h3,strong').count(), 0, 'No destination heading');
     assert(!/Deliver to/.test(await panel.innerText()), 'Checkbox text omits Deliver to');
     const before = await page.locator('.delivery').boundingBox();
@@ -108,7 +111,7 @@ const section = type => `<section class="column ${type.toLowerCase()}"><h2>${typ
     }
     await panel.getByRole('checkbox', { name: checkboxLabel(destinations.at(-1)), exact: true }).uncheck();
     assert.equal(await page.locator('#Delivery-address1').inputValue(), '12 Example Lane');
-    assert.equal(await page.locator('#freight').inputValue(), 'Ship from Warehouse', 'Untick restores the preceding freight wording');
+    assert.equal(await page.locator('#freight').inputValue(), 'Ship from Warehouse', 'Unticking the last destination returns to warehouse shipping');
     assert.equal(await panel.locator('input:checked').count(), 0);
     await page.locator('#lc-omni-copy-delivery-to-billing input').check();
     await panel.getByRole('checkbox', { name: checkboxLabel(destinations[0]), exact: true }).check();
@@ -116,6 +119,7 @@ const section = type => `<section class="column ${type.toLowerCase()}"><h2>${typ
     await page.locator('#lc-omni-copy-delivery-to-billing input').uncheck();
     await page.locator('#Delivery-address1').fill('Another Example Street');
     assert.equal(await panel.locator('input:checked').count(), 0, 'Manual typing clears stale selection');
+    assert.equal(await page.locator('#freight').inputValue(), 'Ship from Warehouse', 'Manual address clears destination freight back to shipping');
     await panel.getByRole('checkbox', { name: checkboxLabel(destinations[1]), exact: true }).check();
     await panel.getByRole('checkbox', { name: checkboxLabel(destinations[1]), exact: true }).uncheck();
     assert.equal(await page.locator('#Delivery-address1').inputValue(), 'Another Example Street');
@@ -124,9 +128,11 @@ const section = type => `<section class="column ${type.toLowerCase()}"><h2>${typ
     await page.evaluate(() => ensureOmniShowroomDelivery());
     assert.equal(await page.locator('#freight').inputValue(), 'Custom freight wording', 'Background passes preserve a manual override');
     await panel.getByRole('checkbox', { name: 'Hamilton S/R', exact: true }).uncheck();
-    assert.equal(await page.locator('#freight').inputValue(), 'Custom freight wording', 'Untick never overwrites later manual wording');
+    assert.equal(await page.locator('#freight').inputValue(), 'Ship from Warehouse', 'No-choice rule replaces prior custom wording after unticking');
+    await page.evaluate(() => { window.freightChanges=0;document.getElementById('freight').addEventListener('change',()=>freightChanges++); });
     await page.evaluate(() => { for (let i = 0; i < 20; i++) ensureOmniShowroomDelivery(); });
     assert.equal(await panel.count(), 1);
+    assert.equal(await page.evaluate(() => freightChanges), 0, 'Repeated passes do not re-emit changes once default is correct');
     assert.deepEqual(await page.locator('.delivery').boundingBox(), before, 'No native layout movement across repeated passes');
     await page.evaluate(() => { document.getElementById('Delivery-address1').readOnly = true; ensureOmniShowroomDelivery(); });
     assert.equal(await panel.locator('input:disabled').count(), 9);
@@ -147,9 +153,15 @@ const section = type => `<section class="column ${type.toLowerCase()}"><h2>${typ
     await page.evaluate(() => ensureOmniShowroomDelivery());
     assert.equal(await panel.getByRole('checkbox', { name: 'Collect AKL Warehouse', exact: true }).isChecked(), true, 'Existing Pilkington wording still recognises the renamed AKL choice');
     assert.equal(await page.locator('#Delivery-address1').inputValue(), 'Collect from Pilkington', 'Older orders are not silently rewritten');
+    await page.evaluate(() => {
+      document.getElementById('lc-omni-freight-description-select-wrapper').remove();
+      document.getElementById('freight').remove();
+      setOmniDestinationFreight(null);
+    });
+    assert.equal(await page.locator('#charge').inputValue(), '49.00', 'An amount-only freight row must never receive description text');
     assert.equal(await page.evaluate(() => saves), 0);
     assert(await page.evaluate(() => nativeChanges >= 10), 'Native change events emitted');
     assert.deepEqual(errors, []);
-    console.log('PASS: nine destination checkboxes, centred layout, warehouse/showroom freight mappings through the real freight helper, native fallback, preset synchronisation, restore/manual overrides, unchanged charges and other address fields, mobile access and no saves. Omni mocked.');
+    console.log('PASS: no destination defaults to Ship from Warehouse, untick/manual address transitions, nine destination mappings, preset sync, no redundant changes, amount-only protection, stable layout, billing copy and mobile access. No live saves.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

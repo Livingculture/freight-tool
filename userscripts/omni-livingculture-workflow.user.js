@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.195
+// @version      0.1.196
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -1989,22 +1989,24 @@
       .sort((a,b) => a.children.length-b.children.length)[0];
     if (!label) return null;
     const rect = label.getBoundingClientRect();
-    return Array.from(document.querySelectorAll('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]),select'))
+    const control = Array.from(document.querySelectorAll('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]),select'))
       .filter(isVisible).filter(control => {
         const field = control.getBoundingClientRect();
         return field.left >= rect.right-8 && Math.abs(field.top+field.height/2-rect.top-rect.height/2) <= 6;
       }).sort((a,b) => a.getBoundingClientRect().left-b.getBoundingClientRect().left)[0] || null;
+    if (!control || control.type === 'number' || /amount|total|cost/i.test(control.name || control.id)
+      || /^[\d,.$\s]+$/.test(control.value || '')) return null;
+    return control;
   }
 
   function setOmniDestinationFreight(showroom) {
     const control = omniDestinationFreightControl();
     const panel = document.getElementById(SHOWROOM_DELIVERY_PANEL_ID);
     if (!control || control.disabled || control.readOnly || !panel) return;
-    if (!('originalFreight' in panel.dataset)) panel.dataset.originalFreight = control.value || '';
-    const value = showroom.collection ? 'Collect from Warehouse' : 'Collect from Showroom';
+    const value = !showroom ? 'Ship from Warehouse' : showroom.collection ? 'Collect from Warehouse' : 'Collect from Showroom';
+    if (control.value === value) return;
     setOmniControlValue(control,value);
     control.dispatchEvent(new Event('blur',{ bubbles:true }));
-    panel.dataset.autoFreight = value;
   }
 
   function syncOmniShowroomDeliveryPanelSelection() {
@@ -2018,6 +2020,7 @@
       input.disabled = addressOne.disabled || addressOne.readOnly;
       input.closest('label')?.classList.toggle('is-selected', input.checked);
     });
+    if (!selected) setOmniDestinationFreight(null);
   }
 
   function applyOmniShowroomDelivery(showroomKey) {
@@ -2047,12 +2050,7 @@
     const original = panel?.dataset.originalAddress || '';
     if (panel) delete panel.dataset.originalAddress;
     if (selected) setOmniControlValue(addressOne, original);
-    const freight = omniDestinationFreightControl();
-    if (selected && freight && !freight.disabled && !freight.readOnly && panel?.dataset.autoFreight === freight.value) {
-      setOmniControlValue(freight,panel.dataset.originalFreight || '');
-      freight.dispatchEvent(new Event('blur',{ bubbles:true }));
-    }
-    if (panel) { delete panel.dataset.originalFreight; delete panel.dataset.autoFreight; }
+    setOmniDestinationFreight(null);
     if (document.querySelector(`#${COPY_DELIVERY_BILLING_ID} input`)?.checked) copyDeliveryAddressToBilling();
     syncOmniShowroomDeliveryPanelSelection();
     lastOmniOrderSyncDigest = '';
@@ -2122,8 +2120,6 @@
     }
     if (panel.addressControl !== addressOne) {
       delete panel.dataset.originalAddress;
-      delete panel.dataset.originalFreight;
-      delete panel.dataset.autoFreight;
       panel.addressControl = addressOne;
     }
     syncOmniShowroomDeliveryPanelSelection();

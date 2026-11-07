@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.34
+// @version      0.1.35
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -20,7 +20,7 @@
   const SHOPIFY_BASE = 'https://livingculture.co.nz';
   const CONTAINER_DASHBOARD_URL = `${API_BASE}/containers.html`;
   const FREIGHT_DESCRIPTION_SELECT_ID = 'lc-omni-freight-description-select';
-  const FREIGHT_DESCRIPTION_OPTIONS = ['Ship from Auckland', 'Ship from Chch', 'Collect from Warehouse', 'Collect from Showroom'];
+  const FREIGHT_DESCRIPTION_OPTIONS = ['Ship from Warehouse', 'Ship from Auckland', 'Ship from Chch', 'Collect from Warehouse', 'Collect from Showroom'];
   let freightDescriptionInput = null;
   let freightDescriptionDisplay = '';
   let freightDescriptionSyncCleanup = null;
