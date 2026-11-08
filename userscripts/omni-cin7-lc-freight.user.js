@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.39
+// @version      0.1.40
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -133,7 +133,10 @@
         sku: product.sku,
         requestedQuantity: product.requestedQuantity,
         availableQuantity: product.availableQuantity,
-        preSaleQuantity: Math.max(0, product.requestedQuantity - product.availableQuantity)
+        preSaleQuantity: Math.max(0, product.requestedQuantity - product.availableQuantity),
+        availabilityType: /pre[\s-]?sale|pre[\s-]?order/i.test(product.saleState || '')
+          ? 'pre_sale'
+          : 'shopify_limit'
       }));
     const excludedQuantity = quantityAdjustments.reduce((total, item) => total + item.preSaleQuantity, 0);
 
@@ -650,21 +653,58 @@
     if (breakdownBlock) breakdownBlock.innerHTML = '';
   }
 
-  async function loadFreightBreakdown(items, address, shouldRender = () => true) {
+  function calculateWebsiteLimitedFreight(requestedQuantity, acceptedQuantity, acceptedPrice) {
+    const requested = normaliseQuantity(requestedQuantity);
+    const accepted = Math.min(requested, normaliseQuantityAllowZero(acceptedQuantity));
+    const missing = Math.max(0, requested - accepted);
+    const price = Number(moneyToNumber(acceptedPrice)) || 0;
+
+    return {
+      requestedQuantity: requested,
+      acceptedQuantity: accepted,
+      missingQuantity: missing,
+      estimatedExtra: accepted > 0 && missing > 0
+        ? (price / accepted) * missing
+        : 0
+    };
+  }
+
+  async function loadFreightBreakdown(items, address, shouldRender = () => true, options = {}) {
     const block = document.getElementById('lc-omni-freight-breakdown');
     const freightItems = normaliseFreightItems({ items });
     if (!block || !freightItems.length) return;
 
     block.innerHTML = '<div class="lc-omni-breakdown-title">Product freight breakdown</div>';
     const rows = [];
+    const basePriceNumber = Number(moneyToNumber(options.basePrice || state.price)) || 0;
 
     for (const item of freightItems) {
       try {
         const data = await requestFreight({ items: [item], address });
-        rows.push({ item, price: data.price, method: data.method });
+        const adjustment = (Array.isArray(data.quantityAdjustments) ? data.quantityAdjustments : [])
+          .find(entry => clean(entry.sku).toLowerCase() === clean(item.sku).toLowerCase());
+        const quantities = calculateWebsiteLimitedFreight(
+          item.quantity,
+          adjustment ? adjustment.availableQuantity : item.quantity,
+          data.price
+        );
+
+        rows.push({
+          item,
+          price: data.price,
+          method: data.method,
+          ...quantities
+        });
       } catch (error) {
         console.error(`Freight breakdown failed for ${item.sku}:`, error);
-        rows.push({ item, error: true });
+        rows.push({
+          item,
+          error: true,
+          requestedQuantity: normaliseQuantity(item.quantity),
+          acceptedQuantity: 0,
+          missingQuantity: normaliseQuantity(item.quantity),
+          estimatedExtra: 0
+        });
       }
 
       if (!shouldRender()) return;
@@ -672,11 +712,30 @@
         <div class="lc-omni-breakdown-title">Product freight breakdown</div>
         ${rows.map(row => `
           <div class="lc-omni-breakdown-row">
-            <span>${escapeHtml(row.item.sku)} × ${escapeHtml(row.item.quantity)}</span>
-            <strong>${row.error ? 'Unavailable' : escapeHtml(row.price)}</strong>
+            <span>${escapeHtml(row.item.sku)} × ${escapeHtml(row.requestedQuantity)}</span>
+            <strong>${row.error
+              ? 'Unavailable'
+              : row.estimatedExtra
+                ? `${escapeHtml(row.price)} + ${escapeHtml(`$${row.estimatedExtra.toFixed(2)}`)} est.`
+                : escapeHtml(row.price)}</strong>
           </div>
         `).join('')}
       `;
+    }
+
+    const estimatedExtra = rows.reduce((total, row) => total + (row.estimatedExtra || 0), 0);
+    const estimatedUnits = rows.reduce((total, row) => total + (row.estimatedExtra ? row.missingQuantity : 0), 0);
+    const excludedUnits = rows.reduce((total, row) =>
+      total + (!row.estimatedExtra ? row.missingQuantity : 0), 0);
+
+    if (estimatedExtra > 0 && basePriceNumber > 0 && shouldRender()) {
+      const finalPrice = `$${(basePriceNumber + estimatedExtra).toFixed(2)}`;
+      setResult(finalPrice, state.method);
+      if (options.fill) fillOmniFreightFields(finalPrice, state.method);
+      setStatus(
+        `Freight includes an estimated $${estimatedExtra.toFixed(2)} for ${estimatedUnits} additional website-limited unit${estimatedUnits === 1 ? '' : 's'} using the product breakdown rate.${excludedUnits ? ` ${excludedUnits} other unavailable unit${excludedUnits === 1 ? ' remains' : 's remain'} excluded.` : ''}`,
+        Boolean(excludedUnits)
+      );
     }
   }
 
@@ -814,15 +873,18 @@
             : ''
           : '';
 
+        const isConfirmedPreSale = product.availabilityType === 'pre_sale' || /pre[\s-]?sale|pre[\s-]?order/i.test(saleState);
+        const deferredLabel = isConfirmedPreSale ? 'Pre-sale later' : 'Not included in live cart';
+        const statusLabel = isConfirmedPreSale ? 'PRE-SALE' : 'WEBSITE QUANTITY LIMIT';
         const quantityLine = preSaleQuantity
           ? `
             <div>Qty ${requestedQuantity}</div>
             <div>Ship now: ${lineWeight.toFixed(2)} kg · ${lineCbm.toFixed(3)} CBM · ${cartonCount} ctns</div>
-            <div>Pre-sale later: ${preSaleWeight.toFixed(2)} kg · ${preSaleCbm.toFixed(3)} CBM · ${preSaleCartons} ctns</div>
+            <div>${escapeHtml(deferredLabel)}: ${preSaleWeight.toFixed(2)} kg · ${preSaleCbm.toFixed(3)} CBM · ${preSaleCartons} ctns</div>
           `
           : `<div>Qty ${requestedQuantity} · ${lineWeight.toFixed(2)} kg · ${lineCbm.toFixed(3)} CBM · ${cartonCount} ctns</div>`;
         const statusLine = preSaleQuantity
-          ? `<div>Status: ${quantity} add to cart and <strong class="lc-omni-presale-pulse">${preSaleQuantity} PRE-SALE</strong></div>`
+          ? `<div>Status: ${quantity} add to cart and <strong class="lc-omni-presale-pulse">${preSaleQuantity} ${escapeHtml(statusLabel)}</strong></div>`
           : `<div>${escapeHtml(`Status: ${saleState}`)}</div>`;
 
         const image = product.image
@@ -858,7 +920,7 @@
           Ctns: ${totalCartons || 0}
           ${totalPreSaleCartons ? `
             <br>
-            Pre-sale later total: ${totalPreSaleWeightKg.toFixed(2)} kg ·
+            Not included in live cart total: ${totalPreSaleWeightKg.toFixed(2)} kg ·
             Est CBM: ${totalPreSaleCbm.toFixed(3)} ·
             Ctns: ${totalPreSaleCartons}
           ` : ''}
@@ -1302,6 +1364,7 @@
           ...item,
           quantity: normaliseQuantity(adjustment.availableQuantity),
           requestedQuantity: normaliseQuantity(adjustment.requestedQuantity),
+          availabilityType: adjustment.availabilityType || 'shopify_limit',
           preSaleQuantity: normaliseQuantityAllowZero(
             adjustment.preSaleQuantity ??
             (Number(adjustment.requestedQuantity) - Number(adjustment.availableQuantity))
@@ -1322,7 +1385,10 @@
         pendingProductDetails,
         isCurrentLookup
       );
-      loadFreightBreakdown(quotedItems, address, isCurrentLookup);
+      loadFreightBreakdown(requestedItems, address, isCurrentLookup, {
+        basePrice: data.price,
+        fill
+      });
 
       return true;
     } catch (error) {

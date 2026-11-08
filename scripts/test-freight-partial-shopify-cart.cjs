@@ -28,5 +28,15 @@ assert.match(omniSource, /sold out\|not enough\|unavailable\|cannot be added\|du
   'The browser path also preserves valid lines when one product is unavailable');
 assert.match(omniSource, /availabilityWarning: excludedQuantity/,
   'Omni warns staff when the browser calculation excludes unavailable units');
+assert.match(omniSource, /availabilityType: \/pre\[\\s-\]\?sale\|pre\[\\s-\]\?order\/i/,
+  'Omni distinguishes a confirmed pre-sale from a Shopify cart quantity limit');
+assert.match(source, /availabilityType: \/pre\[\\s-\]\?sale\|pre\[\\s-\]\?order\/i/,
+  'The hosted fallback distinguishes a confirmed pre-sale from a Shopify cart quantity limit');
+assert.match(omniSource, /calculateWebsiteLimitedFreight/,
+  'A partial identical-product price can estimate the website-limited remainder');
+assert.match(omniSource, /WEBSITE QUANTITY LIMIT/,
+  'A Shopify quantity limit is not presented to staff as a pre-sale');
+assert.match(omniSource, /loadFreightBreakdown\(requestedItems/,
+  'The breakdown retains the full requested quantities for transparent estimation');
 
-console.log('PASS: Freight rating avoids redundant cart clears, preserves valid lines when Shopify rejects unavailable quantities, and warns about excluded units.');
+console.log('PASS: Freight rating preserves valid lines, identifies website quantity limits, estimates identical limited units, and warns about genuinely excluded units.');

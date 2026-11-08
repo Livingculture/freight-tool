@@ -4444,7 +4444,10 @@ function buildQuantityAdjustments(products = []) {
         sku: product.sku,
         requestedQuantity,
         availableQuantity,
-        preSaleQuantity: Math.max(0, requestedQuantity - availableQuantity)
+        preSaleQuantity: Math.max(0, requestedQuantity - availableQuantity),
+        availabilityType: /pre[\s-]?sale|pre[\s-]?order/i.test(product.saleState || '')
+          ? 'pre_sale'
+          : 'shopify_limit'
       };
     })
     .filter(adjustment =>
