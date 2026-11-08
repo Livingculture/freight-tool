@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.36
+// @version      0.1.37
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -314,8 +314,8 @@
     // The original Core fallbacks remain below for reference, but are intentionally
     // unreachable in Omni because page-wide text scanning produces false products.
     const rawItems = [];
-    const skuPattern = /\b([A-Z]{2,6}\d{3,}(?:-\d+)?(?:\([A-Z0-9-]+\))?)/i;
-    const skuAtStartPattern = /^([A-Z]{2,6}\d{3,}(?:-\d+)?(?:\([A-Z0-9-]+\))?)\s*:/i;
+    const skuPattern = /\b([A-Z]{2,6}\d{3,}(?:-\d+)*(?:\([A-Z0-9-]+\))?)/i;
+    const skuAtStartPattern = /^([A-Z]{2,6}\d{3,}(?:-\d+)*(?:\([A-Z0-9-]+\))?)\s*:/i;
     const hasFreightItems = () => rawItems.some(item => isFreightSku(item.sku));
 
     const skuLinks = Array.from(document.querySelectorAll('a'))
@@ -366,7 +366,7 @@
     }
 
     if (!hasFreightItems()) {
-      const matches = Array.from((document.body.innerText || '').matchAll(/\b([A-Z]{2,6}\d{3,}(?:-\d+)?(?:\([A-Z0-9-]+\))?)/gi));
+      const matches = Array.from((document.body.innerText || '').matchAll(/\b([A-Z]{2,6}\d{3,}(?:-\d+)*(?:\([A-Z0-9-]+\))?)/gi));
 
       for (const match of matches) {
         rawItems.push({
@@ -419,7 +419,7 @@
 
     const codeRect = headerPair.codeHeader.getBoundingClientRect();
     const quantityRect = headerPair.quantityHeader.getBoundingClientRect();
-    const skuPattern = /^[A-Z]{2,6}\d{3,}(?:-\d+)?(?:\([A-Z0-9-]+\))?$/i;
+    const skuPattern = /^[A-Z]{2,6}\d{3,}(?:-\d+)*(?:\([A-Z0-9-]+\))?$/i;
     const elementValue = element => clean(
       /^(?:INPUT|SELECT|TEXTAREA)$/i.test(element.tagName) ? element.value : element.textContent
     );
@@ -1553,14 +1553,12 @@
     return true;
   }
 
-  function fillOmniFreightFields(price, method) {
+  function fillOmniFreightFields(price) {
     const inputs = findOmniFreightInputs();
-    const descriptionInput = inputs.length > 1 ? inputs[0] : null;
     const amountInput = inputs.length > 1 ? inputs[1] : inputs[0] || null;
     const amount = Number(moneyToNumber(price));
     if (!amountInput || !Number.isFinite(amount)) return false;
 
-    if (descriptionInput && clean(method)) setOmniInputValue(descriptionInput, clean(method));
     setOmniInputValue(amountInput, amount.toFixed(2));
     ensureFreightDescriptionDropdown();
     return true;

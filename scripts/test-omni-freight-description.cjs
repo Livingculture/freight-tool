@@ -69,11 +69,11 @@ assert(source.includes(`const FREIGHT_DESCRIPTION_OPTIONS = ${JSON.stringify(opt
     assert.equal(await page.locator('#surcharge').inputValue(), 'Surcharge description');
     assert.equal(await page.locator('#discount').inputValue(), 'Deal');
     assert.equal(await page.evaluate(() => fillOmniFreightFields('$145.25', 'Ship from Auckland')), true);
-    assert.equal(await dropdown.inputValue(), 'Ship from Auckland');
-    assert.equal(await page.locator('#description').inputValue(), 'Ship from Auckland');
-    assert.equal(await page.locator('#amount').inputValue(), '145.25', 'Calculator still writes the amount, not the description control');
+    assert.equal(await dropdown.inputValue(), 'Deliver to side gate after 10am');
+    assert.equal(await page.locator('#description').inputValue(), 'Deliver to side gate after 10am');
+    assert.equal(await page.locator('#amount').inputValue(), '145.25', 'Calculator writes only the amount and preserves the delivery description');
     await page.evaluate(() => fillOmniFreightFields('$250.00', 'Ship from Auckland + Christchurch'));
-    assert.equal(await dropdown.inputValue(), 'Ship from Auckland + Christchurch', 'Special calculator wording is not truncated');
+    assert.equal(await dropdown.inputValue(), 'Deliver to side gate after 10am', 'Calculator methods do not overwrite custom or showroom descriptions');
     assert.equal(await presets.locator('option:not([disabled])').count(), options.length, 'All presets remain available with custom text');
     assert.equal(await dropdown.getAttribute('list'), null, 'Do not use browser-filtered datalist suggestions');
     await dropdown.fill('Collect from Warehouse');
@@ -112,6 +112,6 @@ assert(source.includes(`const FREIGHT_DESCRIPTION_OPTIONS = ${JSON.stringify(opt
     assert.equal(await dropdown.count(), 0, 'Do not replace an amount-only freight row with a description dropdown');
     assert.equal(await page.evaluate(() => fillOmniFreightFields('$37.00', 'Ship from Auckland')), true);
     assert.equal(await page.locator('#amount-only').inputValue(), '37.00');
-    console.log('PASS: Seven freight choices including AKL/Chch collections save through native inputs, charges stay unchanged on manual selection, calculator autofill and custom methods remain intact, and re-render/read-only handling works.');
+    console.log('PASS: Seven freight choices including AKL/Chch collections save through native inputs, calculator updates only the amount, descriptions remain staff-controlled, and re-render/read-only handling works.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
