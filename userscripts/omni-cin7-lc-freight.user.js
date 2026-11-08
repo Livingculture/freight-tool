@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.37
+// @version      0.1.38
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -992,14 +992,6 @@
     const postcode = clean(address).match(/\b\d{4}\b/)?.[0] || '';
     if (!postcode) throw new Error('Enter a four-digit delivery postcode.');
 
-    try {
-      const shopifyData = await requestShopifyPostcodeFreight(freightItems, postcode);
-      state.freightCache.set(cacheKey, shopifyData);
-      return shopifyData;
-    } catch (shopifyError) {
-      console.error('Direct Shopify postcode freight failed:', shopifyError);
-    }
-
     const firstItem = freightItems[0] || {};
     const firstIsUrl = /^https?:\/\/.+\/products\//i.test(firstItem.sku || firstItem.productUrl || '');
     const controller = new AbortController();
@@ -1263,11 +1255,7 @@
 
       setResult(data.price, data.method, data.preSaleFreightEstimate);
       if (fill) fillOmniFreightFields(data.price, data.method);
-      if (adjustments.length) {
-        setStatus('');
-      } else {
-        setStatus('');
-      }
+      setStatus(data.availabilityWarning || '', Boolean(data.availabilityWarning));
 
       // Show quote and product summary now; enrich measurements in the background.
       loadProductDetails(

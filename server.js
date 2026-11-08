@@ -4064,11 +4064,10 @@ async function prepareFastCartShipping(itemInput, addressText, timing = createTi
 async function getDirectCartShippingQuote(cartItems, fields, { retries = 5 } = {}) {
   let cookieHeader = '';
 
-  const cleared = await requestShopifyCartJson('/cart/clear.js', {
-    method: 'POST',
-    retries
-  }, cookieHeader);
-  cookieHeader = cleared.cookieHeader;
+  // No cart cookie is supplied at the start of a server-side freight request,
+  // so Shopify creates a fresh isolated cart on the first add. Clearing first
+  // is unnecessary and doubles the cart mutations, which makes the shared
+  // storefront endpoint much more likely to rate-limit freight checks.
 
   const addItemsToCart = async itemsToAdd => {
     const added = await requestShopifyCartAdd(itemsToAdd, cookieHeader, { retries });
@@ -4076,7 +4075,38 @@ async function getDirectCartShippingQuote(cartItems, fields, { retries = 5 } = {
     return added;
   };
 
-  let added = await addItemsToCart(cartItems);
+  let added;
+
+  if (cartItems.length > 1) {
+    let acceptedLines = 0;
+
+    for (const item of cartItems) {
+      const line = await addItemsToCart([item]);
+      if (line.response.ok) {
+        acceptedLines += 1;
+      } else {
+        const lineMessage = `${line.data.message || ''} ${line.data.description || ''}`;
+        const linePartialMatch = lineMessage.match(/only\s+(\d+)\s+items?\s+were\s+added/i);
+
+        if (linePartialMatch && Number(linePartialMatch[1]) > 0) {
+          acceptedLines += 1;
+        } else if (!/sold out|not enough|unavailable|cannot be added|due to availability/i.test(lineMessage)) {
+          throw new Error(line.data.description || line.data.message || `Shopify /cart/add.js failed (${line.response.status})`);
+        }
+      }
+
+      // Shopify throttles several rapid AJAX cart changes even when each one is valid.
+      await wait(1200);
+    }
+
+    if (!acceptedLines) {
+      throw new Error('No quoted products are currently available for freight rating.');
+    }
+
+    added = { response: { ok: true }, data: {} };
+  } else {
+    added = await addItemsToCart(cartItems);
+  }
 
   if (!added.response.ok) {
     const message = `${added.data.message || ''} ${added.data.description || ''}`;
@@ -4084,24 +4114,21 @@ async function getDirectCartShippingQuote(cartItems, fields, { retries = 5 } = {
       ? message.match(/only\s+(\d+)\s+items?\s+were\s+added/i)
       : null;
 
-    if (!partialMatch) {
+    if (partialMatch) {
+      const partialQuantity = Math.max(0, Math.min(cartItems[0].quantity, Number(partialMatch[1]) || 0));
+      if (!partialQuantity) {
+        throw new Error(added.data.description || added.data.message || `Shopify /cart/add.js failed (${added.response.status})`);
+      }
+    } else {
       throw new Error(added.data.description || added.data.message || `Shopify /cart/add.js failed (${added.response.status})`);
     }
+  }
 
-    const partialQuantity = Math.max(0, Math.min(cartItems[0].quantity, Number(partialMatch[1]) || 0));
-    if (!partialQuantity) {
-      throw new Error(added.data.description || added.data.message || `Shopify /cart/add.js failed (${added.response.status})`);
-    }
-
-    await requestShopifyCartJson('/cart/clear.js', { method: 'POST', retries }, cookieHeader)
-      .then(result => {
-        cookieHeader = result.cookieHeader;
-      });
-    added = await addItemsToCart([{ ...cartItems[0], quantity: partialQuantity }]);
-
-    if (!added.response.ok) {
-      throw new Error(added.data.description || added.data.message || `Shopify /cart/add.js failed (${added.response.status})`);
-    }
+  const cart = await requestShopifyCartJson('/cart.js', { method: 'GET', retries }, cookieHeader);
+  cookieHeader = cart.cookieHeader;
+  const acceptedCartItems = Array.isArray(cart.data.items) ? cart.data.items : [];
+  if (!acceptedCartItems.length) {
+    throw new Error('No quoted products are currently available for freight rating.');
   }
 
   const params = new URLSearchParams();
@@ -4131,7 +4158,7 @@ async function getDirectCartShippingQuote(cartItems, fields, { retries = 5 } = {
   return {
     price: asMoney(rate.price),
     method: normaliseSuggestion(rate.name || rate.title || rate.code || 'Shipping'),
-    cartItems: (Array.isArray(added.data.items) ? added.data.items : []).map(item => ({
+    cartItems: acceptedCartItems.map(item => ({
       sku: item.sku || '',
       title: item.product_title || item.title || '',
       quantity: item.quantity || 1,
@@ -4149,7 +4176,14 @@ function buildFastCartShippingResult(result, products, addressText) {
     .map(item => [String(item.sku).toLowerCase(), normaliseQuantity(item.quantity)]));
   const quotedProducts = products.map(product => {
     const cartQuantity = cartQuantityBySku.get(String(product.sku || '').toLowerCase());
-    if (cartQuantity == null) return product;
+    if (cartQuantity == null) {
+      return {
+        ...product,
+        quantity: 0,
+        availableQuantity: 0,
+        requestedQuantity: normaliseQuantity(product.requestedQuantity || product.quantity)
+      };
+    }
 
     return {
       ...product,
@@ -4339,6 +4373,9 @@ async function buildFreightResponsePayload(result, fallbackSku = '') {
 function buildFreightPriceOnlyPayload(result, fallbackSku = '') {
   const products = Array.isArray(result.products) ? result.products : [];
   const cartItems = Array.isArray(result.cartItems) ? result.cartItems : [];
+  const quantityAdjustments = buildQuantityAdjustments(products);
+  const excludedQuantity = quantityAdjustments.reduce((total, adjustment) =>
+    total + Math.max(0, Number(adjustment.preSaleQuantity) || 0), 0);
 
   return {
     sku: products?.[0]?.sku || fallbackSku || '',
@@ -4351,13 +4388,16 @@ function buildFreightPriceOnlyPayload(result, fallbackSku = '') {
     products: products.map(product => ({
       sku: product.sku || '',
       title: product.title || product.name || product.sku || '',
-      quantity: normaliseQuantity(product.quantity || product.requestedQuantity || 1),
+      quantity: Math.max(0, Number(product.quantity) || 0),
       requestedQuantity: normaliseQuantity(product.requestedQuantity || product.quantity || 1),
       productUrl: product.productUrl || product.url || '',
       url: product.url || product.productUrl || '',
       image: product.image || ''
     })),
-    quantityAdjustments: []
+    quantityAdjustments,
+    availabilityWarning: excludedQuantity
+      ? `Freight calculated for the currently available Shopify quantities. ${excludedQuantity} unavailable quoted unit${excludedQuantity === 1 ? ' was' : 's were'} excluded.`
+      : ''
   };
 }
 
@@ -5449,7 +5489,7 @@ app.post('/get-freight', async (req, res) => {
           createTiming('get freight direct'),
           {
             checkAvailability: quoteAvailableQuantityOnly,
-            cartRetries: freightPriceOnly && skipBrowserFallback ? 1 : 5
+            cartRetries: freightPriceOnly && skipBrowserFallback ? 3 : 5
           }
         );
         return freightPriceOnly
