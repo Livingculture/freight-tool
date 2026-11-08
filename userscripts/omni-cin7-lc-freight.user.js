@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Cin7 Living Culture Freight
 // @namespace    livingculture-omni
-// @version      0.1.38
+// @version      0.1.39
 // @description  Living Culture freight panel for Cin7 Omni using the hosted freight service.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-cin7-lc-freight.user.js
@@ -47,7 +47,7 @@
     return String(value || '').replace(/\s+/g, ' ').trim();
   }
 
-  function gmRequestJson(url, options = {}) {
+  function gmRequestJsonOnce(url, options = {}) {
     return new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
         method: options.method || 'GET',
@@ -70,6 +70,19 @@
     });
   }
 
+  async function gmRequestJson(url, options = {}) {
+    const delays = [1500, 3500, 7000];
+    let result;
+
+    for (let attempt = 0; attempt <= delays.length; attempt += 1) {
+      result = await gmRequestJsonOnce(url, options);
+      if (result.status !== 429 || attempt === delays.length) return result;
+      await new Promise(resolve => setTimeout(resolve, delays[attempt]));
+    }
+
+    return result;
+  }
+
   async function requestShopifyPostcodeFreightNow(freightItems, postcode) {
     const prepareResponse = await fetch(`${API_BASE}/api/prepare`, {
       method: 'POST',
@@ -90,8 +103,39 @@
 
     for (const item of cartItems) {
       const added = await gmRequestJson(`${SHOPIFY_BASE}/cart/add.js`, { method: 'POST', body: { items: [item] } });
-      if (!added.ok) throw new Error(added.data.description || `Shopify cart add failed (${added.status}).`);
+      if (!added.ok) {
+        const message = clean(`${added.data.message || ''} ${added.data.description || ''}`);
+        const partial = message.match(/only\s+(\d+)\s+items?\s+were\s+added/i);
+        if (!partial && !/sold out|not enough|unavailable|cannot be added|due to availability/i.test(message)) {
+          throw new Error(added.data.description || `Shopify cart add failed (${added.status}).`);
+        }
+      }
+      await new Promise(resolve => setTimeout(resolve, 700));
     }
+
+    const cart = await gmRequestJson(`${SHOPIFY_BASE}/cart.js`);
+    const acceptedItems = Array.isArray(cart.data.items) ? cart.data.items : [];
+    if (!cart.ok || !acceptedItems.length) throw new Error('No quoted products are currently available for freight rating.');
+
+    const acceptedBySku = new Map(acceptedItems
+      .filter(item => clean(item.sku))
+      .map(item => [clean(item.sku).toLowerCase(), normaliseQuantity(item.quantity)]));
+    const ratedProducts = products.map(product => {
+      const requestedQuantity = normaliseQuantity(
+        freightItems.find(item => clean(item.sku).toLowerCase() === clean(product.sku).toLowerCase())?.quantity || 1
+      );
+      const availableQuantity = acceptedBySku.get(clean(product.sku).toLowerCase()) || 0;
+      return { ...product, quantity: availableQuantity, requestedQuantity, availableQuantity };
+    });
+    const quantityAdjustments = ratedProducts
+      .filter(product => product.requestedQuantity !== product.availableQuantity)
+      .map(product => ({
+        sku: product.sku,
+        requestedQuantity: product.requestedQuantity,
+        availableQuantity: product.availableQuantity,
+        preSaleQuantity: Math.max(0, product.requestedQuantity - product.availableQuantity)
+      }));
+    const excludedQuantity = quantityAdjustments.reduce((total, item) => total + item.preSaleQuantity, 0);
 
     const params = new URLSearchParams();
     params.set('shipping_address[zip]', postcode);
@@ -105,7 +149,11 @@
     return {
       price: `$${Number(rate.price).toFixed(2)}`,
       method: clean(rate.name || rate.title || rate.code || 'Shipping'),
-      products
+      products: ratedProducts,
+      quantityAdjustments,
+      availabilityWarning: excludedQuantity
+        ? `Freight calculated for the currently available Shopify quantities. ${excludedQuantity} unavailable quoted unit${excludedQuantity === 1 ? ' was' : 's were'} excluded.`
+        : ''
     };
   }
 
@@ -991,6 +1039,14 @@
 
     const postcode = clean(address).match(/\b\d{4}\b/)?.[0] || '';
     if (!postcode) throw new Error('Enter a four-digit delivery postcode.');
+
+    try {
+      const shopifyData = await requestShopifyPostcodeFreight(freightItems, postcode);
+      state.freightCache.set(cacheKey, shopifyData);
+      return shopifyData;
+    } catch (shopifyError) {
+      console.error('Direct Shopify postcode freight failed:', shopifyError);
+    }
 
     const firstItem = freightItems[0] || {};
     const firstIsUrl = /^https?:\/\/.+\/products\//i.test(firstItem.sku || firstItem.productUrl || '');
