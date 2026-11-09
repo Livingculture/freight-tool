@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.198
+// @version      0.1.199
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -192,10 +192,10 @@
   }
 
   function extractOrderId(text) {
-    const match = clean(text).match(/\b(?:NZSO-?\d+|SFOR\d+(?:-[A-Z0-9]+)?)\b/i);
+    const match = clean(text).match(/\b(?:NZSO-?\d+[A-Z]?|SFOR\d+(?:-[A-Z0-9]+)?)\b(?![-A-Z0-9])/i);
     if (!match) return '';
     const value = match[0].toUpperCase();
-    return /^NZSO\d+$/i.test(value) ? value.replace(/^NZSO/i, 'NZSO-') : value;
+    return /^NZSO\d+[A-Z]?$/i.test(value) ? value.replace(/^NZSO/i, 'NZSO-') : value;
   }
 
   function omniHeadingDraft() {
@@ -208,7 +208,7 @@
     const headingNodes = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"]'));
     const node = headingNodes.find(element => /(?:Edit|New)\s+(?:Quote|Sales Order)\s*-/i.test(headingTextOf(element)) && extractOrderId(headingTextOf(element)) && isVisible(element));
     const pageText = node ? headingTextOf(node) : clean(document.body?.innerText || document.body?.textContent || '');
-    const pageMatch = pageText.match(/(?:Edit|New)\s+(Quote|Sales Order)\s*-\s*(.+?)\s*-\s*((?:NZSO-?\d+|SFOR\d+(?:-[A-Z0-9]+)?))\b/i);
+    const pageMatch = pageText.match(/(?:Edit|New)\s+(Quote|Sales Order)\s*-\s*(.+?)\s*-\s*((?:NZSO-?\d+[A-Z]?|SFOR\d+(?:-[A-Z0-9]+)?))\b(?![-A-Z0-9])/i);
     if (pageMatch) {
       const value = {
         customerName: clean(pageMatch[2]),
@@ -226,7 +226,7 @@
       headings.find(text => extractOrderId(text)) ||
       clean(document.title || '');
     const orderId = extractOrderId(heading);
-    const customerMatch = heading.match(/^(?:Edit|New)\s+(?:Quote|Sales Order)\s*-\s*(.+?)\s*-\s*(?:NZSO-?\d+|SFOR\d+(?:-[A-Z0-9]+)?)\b/i);
+    const customerMatch = heading.match(/^(?:Edit|New)\s+(?:Quote|Sales Order)\s*-\s*(.+?)\s*-\s*(?:NZSO-?\d+[A-Z]?|SFOR\d+(?:-[A-Z0-9]+)?)\b/i);
     return {
       customerName: clean(customerMatch?.[1] || ''),
       orderId,
@@ -376,7 +376,7 @@
     if (isOmniWorkflowGateExempt()) return [];
     const heading = omniHeadingDraft();
     const order = extractOrderId(heading.orderId);
-    if (!/^NZSO-\d+$/.test(order)) return ['Save as Draft to obtain an NZSO number'];
+    if (!/^NZSO-\d+[A-Z]?$/.test(order)) return ['Save as Draft to obtain an NZSO number'];
     if (isQuotePdfUnlocked(order)) return [];
     if (heading.documentType !== 'quote' && !findButtonByLabel('Save As Draft')) return [];
     const key = order ? `lc-omni-hubspot-prerequisites:${order}` : '';
@@ -2422,7 +2422,7 @@
 
   function requestQuoteWorkflowTracking(action) {
     const heading = omniHeadingDraft();
-    if (heading.documentType !== 'quote' || !/^NZSO-\d+$/.test(heading.orderId) || !['site-visit','quote-review'].includes(action)) return;
+    if (heading.documentType !== 'quote' || !/^NZSO-\d+[A-Z]?$/.test(heading.orderId) || !['site-visit','quote-review'].includes(action)) return;
     quoteWorkflowRequestAction.requested ||= {};
     quoteWorkflowRequestAction.requested[heading.orderId] = action;
     try { window.localStorage.setItem(`lc-workflow-quote-request:${heading.orderId}`,action); } catch {}
@@ -2565,7 +2565,7 @@
   function omniWorkflowSnapshot() {
     if (!isOmniPage()) return null;
     const heading = omniHeadingDraft();
-    if (!/^NZSO-\d+$/i.test(heading.orderId) || !heading.documentType) return null;
+    if (!/^NZSO-\d+[A-Z]?$/i.test(heading.orderId) || !heading.documentType) return null;
     const draft = cin7Draft();
     const labelled = (...labels) => labels
       .map(label => readOmniControlByLabel(label) || readValueNearLabel(label))
@@ -2928,7 +2928,7 @@
     if (!isOmniPage() || document.visibilityState !== 'visible' || collectionDispatchInFlight) return;
     if (omniQuoteConversionLoaded || new URL(window.location.href).searchParams.get('ConvertQuoteToSalesOrder')?.toLowerCase() === 'yes') return;
     const heading = omniHeadingDraft();
-    if (!['sales-order','quote'].includes(heading.documentType) || !/^NZSO-\d+$/.test(heading.orderId)) return;
+    if (!['sales-order','quote'].includes(heading.documentType) || !/^NZSO-\d+[A-Z]?$/.test(heading.orderId)) return;
     const requestedStage = omniWorkflowStage();
     const versionKey = `${heading.orderId}|${heading.documentType}|${requestedStage}`;
     const cachedVersion = checkOmniShowroomCollection.cachedVersion;
@@ -3261,7 +3261,7 @@
     let payload;
     try { payload = hubspotDraft(); }
     catch (error) { await hubSpotMessage('HubSpot Pricing', [error.message || 'Could not read the Omni product prices.'], {intent:'danger'}); return; }
-    if (isOmniPage() && (!/^NZSO-\d+$/i.test(String(payload.orderId || '').trim()) || extractOrderId(payload.orderId) !== extractOrderId(omniHeadingDraft().orderId))) {
+    if (isOmniPage() && (!/^NZSO-\d+[A-Z]?$/i.test(String(payload.orderId || '').trim()) || extractOrderId(payload.orderId) !== extractOrderId(omniHeadingDraft().orderId))) {
       await hubSpotMessage('HubSpot Deal', ['Save As Draft first, then wait for the NZSO number to appear before sending to HubSpot.'], { intent:'danger' });
       return;
     }
@@ -3285,7 +3285,7 @@
     if (!review?.confirmed) {
       return;
     }
-    if (isOmniPage() && (!/^NZSO-\d+$/i.test(String(payload.orderId || '').trim()) || extractOrderId(payload.orderId) !== extractOrderId(omniHeadingDraft().orderId) || hubSpotPrerequisites().length)) return;
+    if (isOmniPage() && (!/^NZSO-\d+[A-Z]?$/i.test(String(payload.orderId || '').trim()) || extractOrderId(payload.orderId) !== extractOrderId(omniHeadingDraft().orderId) || hubSpotPrerequisites().length)) return;
     payload.lineItems = Array.isArray(review.lineItems) ? review.lineItems : [];
     if (isOmniPage()) {
       const unpriced = payload.lineItems.filter(item => item.priceIsNet ? !clean(item.price) : !clean(item.price) && !clean(item.total));
@@ -5551,7 +5551,7 @@
 
   function proFormaQuoteData() {
     const heading = omniHeadingDraft();
-    if (heading.documentType !== 'quote' || !/^NZSO-\d+$/i.test(heading.orderId)) throw new Error('Open a numbered Omni quote first.');
+    if (heading.documentType !== 'quote' || !/^NZSO-\d+[A-Z]?$/i.test(heading.orderId)) throw new Error('Open a numbered Omni quote first.');
     if (![...document.querySelectorAll('table th,table td')].filter(isVisible).some(cell=>clean(cell.textContent).toLowerCase().replace(/[^a-z]/g,'')==='amountnzd')) throw new Error('This preview supports NZD quotes only. The NZD amount column could not be confirmed.');
     const lines = extractOmniHubSpotCommercialItems();
     if (!lines?.length) throw new Error('No priced quote lines could be read.');
@@ -5773,7 +5773,7 @@
     const heading=omniHeadingDraft();
     const progressLabel=heading.documentType==='quote'?'Quote progress':'Job progress';
     let panel=document.getElementById('lc-omni-job-progress');
-    if(!['sales-order','quote'].includes(heading.documentType)||!/^NZSO-\d+$/.test(heading.orderId)){panel?.remove();return null;}
+    if(!['sales-order','quote'].includes(heading.documentType)||!/^NZSO-\d+[A-Z]?$/.test(heading.orderId)){panel?.remove();return null;}
     if(panel&&panel.dataset.order!==heading.orderId){panel.remove();panel=null;}
     const placement=omniJobProgressPlacement(heading);
     if(!placement)return panel;
@@ -5928,7 +5928,7 @@
     const url = new URL('jobs', WORKFLOW_PLANNER_URL);
     url.searchParams.set('popup', '1');
     const order = hubSpotGateOrderId();
-    if (currentJob === true && /^NZSO-\d+$/i.test(order)) url.searchParams.set('order', order.toUpperCase());
+    if (currentJob === true && /^NZSO-\d+[A-Z]?$/i.test(order)) url.searchParams.set('order', order.toUpperCase());
     // A top-level popup preserves Workflow's same-site authenticated session.
     const width = Math.min(900, screen.availWidth || window.innerWidth);
     const height = Math.min(900, screen.availHeight || window.innerHeight);
@@ -5962,7 +5962,7 @@
 
   function openDrawingsPopup(order) {
     const url = new URL('/drawings', WORKFLOW_PLANNER_URL);
-    if (/^NZSO-\d+$/i.test(order || '')) url.searchParams.set('order', order.toUpperCase());
+    if (/^NZSO-\d+[A-Z]?$/i.test(order || '')) url.searchParams.set('order', order.toUpperCase());
     const width = Math.min(800, screen.availWidth || window.innerWidth);
     const height = Math.min(760, screen.availHeight || window.innerHeight);
     const left = Math.round((screen.availLeft || 0) + ((screen.availWidth || width) - width) / 2);
@@ -6004,7 +6004,7 @@
     const parent = document.getElementById('lc-omni-report-issue')?.parentElement;
     const nativeHeading = parent?.id === 'lc-omni-heading-actions' ? parent.parentElement : parent;
     const order = nativeHeading ? extractOrderId(issueReportHeadingText(nativeHeading)) : heading.orderId;
-    url.searchParams.set('order', /^NZSO-\d+$/i.test(order) ? order : '');
+    url.searchParams.set('order', /^NZSO-\d+[A-Z]?$/i.test(order) ? order : '');
     const customer = heading.customerName || readOmniControlByLabel('Selected Customer') || readValueNearLabel('Selected Customer') || readOmniControlByLabel('Customer') || readValueNearLabel('Customer');
     url.searchParams.set('customer', clean(customer));
     url.searchParams.set('sourceUrl', location.href);

@@ -2,14 +2,14 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { chromium } = require('playwright');
 const source = fs.readFileSync('userscripts/omni-livingculture-workflow.user.js', 'utf8');
-const names = ['omniFullyDispatchedInputs', 'omniFullyDispatchedState', 'claimOmniCollectionDispatch', 'fillOmniShowroomDispatch', 'checkOmniShowroomCollection', 'omniCollectionDispatchAllowed', 'omniWorkflowStageControl', 'omniWorkflowStage', 'omniWorkflowStageKey', 'applyOmniWorkflowDispatch', 'applyOmniWorkflowResponse', 'scheduleOmniDispatchDate', 'installOmniWorkflowChangeHooks'];
+const names = ['omniDateInputs', 'omniFullyDispatchedInputs', 'omniFullyDispatchedState', 'claimOmniCollectionDispatch', 'fillOmniShowroomDispatch', 'checkOmniShowroomCollection', 'omniCollectionDispatchAllowed', 'omniWorkflowStageControl', 'omniWorkflowStage', 'omniWorkflowStageKey', 'applyOmniWorkflowDispatch', 'applyOmniWorkflowResponse', 'scheduleOmniDispatchDate', 'installOmniWorkflowChangeHooks'];
 const functions = names.map(name => {
   const start = source.indexOf(`  function ${name}(`);
   const next = source.slice(start + 1).search(/\n  (?:async )?function /);
   const extracted = source.slice(start, start + next + 1);
   return name === 'installOmniWorkflowChangeHooks' ? extracted.split('  let omniQuoteConversionLoaded')[0] : extracted;
 }).join('\n');
-const attempts = 'const collectionDispatchAttempts = new Set();let omniQuoteConversionLoaded=false;let forceShortage=false;const omniHasStockShortage=()=>forceShortage;';
+const attempts = 'const collectionDispatchAttempts = new Set();let omniQuoteConversionLoaded=false;let forceShortage=false;const omniHasStockShortage=()=>forceShortage;const omniWorkflowSnapshot=()=>({orderNumber:heading.orderId});const renderOmniJobProgress=()=>{};const omniJobProgressStatus=()=>{};';
 (async () => {
   const browser = await chromium.launch();
   try {
@@ -174,6 +174,11 @@ const attempts = 'const collectionDispatchAttempts = new Set();let omniQuoteConv
     await page.waitForTimeout(1800);
     assert.equal(await page.locator('#dispatch').inputValue(),'','A stage reversal cancels deferred date filling');
     assert.equal(await page.evaluate(()=>saved),0,'Direct stage and settled date changes do not auto-save');
+    await page.evaluate(()=>{clearTimeout(scheduleOmniDispatchDate.timer);heading.orderId='NZSO-99001A';});
+    assert.equal(await page.evaluate(()=>applyOmniWorkflowDispatch({orderNumber:'NZSO-99001',dispatchedAt:'2026-12-01T01:00:00Z'})),false,'Parent completion cannot dispatch the open A order');
+    assert.equal(await page.evaluate(()=>applyOmniWorkflowDispatch({orderNumber:'NZSO-99001A',dispatchedAt:'2026-12-01T01:00:00Z'})),true,'A order accepts only its own completion');
+    await page.evaluate(()=>{clearTimeout(scheduleOmniDispatchDate.timer);heading.orderId='NZSO-99001';document.getElementById('stage').value='7';});
+    assert.equal(await page.evaluate(()=>applyOmniWorkflowDispatch({orderNumber:'NZSO-99001A',dispatchedAt:'2026-12-01T01:00:00Z'})),false,'A completion cannot dispatch the original order');
     console.log('PASS: Completion and explicit reversal synchronize native Omni stage/date fields without auto-saving or warning loops. Browser/API mocked.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
