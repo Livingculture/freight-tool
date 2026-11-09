@@ -6,7 +6,7 @@ const { chromium } = require('playwright');
 const source = fs.readFileSync('userscripts/omni-livingculture-workflow.user.js', 'utf8');
 const warranty = fs.readFileSync('userscripts/omni-warranty-guide.user.js', 'utf8');
 const parsed = ts.createSourceFile('workflow.js', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
-const names = new Set(['omniHeadingDraft', 'openStaffHelpPopup', 'addStaffHelpButton', 'openIssueReportPopup', 'issueReportHeadingText', 'addIssueReportButton']);
+const names = new Set(['extractOrderId', 'omniHeadingDraft', 'openStaffHelpPopup', 'addStaffHelpButton', 'openIssueReportPopup', 'issueReportHeadingText', 'addIssueReportButton']);
 const functions = [];
 function visit(node) {
   if (ts.isFunctionDeclaration(node) && names.has(node.name?.text)) functions.push(node.getText(parsed));
@@ -29,7 +29,7 @@ assert(!layout.includes('document.getElementById(STAFF_HELP_BUTTON_ID)'), 'Foote
         const OMNI_TOOLS_BAR_ID='lc-omni-workflow-tools-bar',STAFF_HELP_BAR_ID='old',STAFF_HELP_BUTTON_ID='lc-omni-staff-help-button',STAFF_HELP_DIALOG_ID='lc-omni-staff-help-dialog';
         const STAFF_GUIDE_URL='https://living-culture-freight.vercel.app/omni-help.html',WORKFLOW_PLANNER_URL='https://living-culture-workflow.vercel.app/';
         const isOmniPage=()=>true,isVisible=node=>node.getBoundingClientRect().width>0;
-        const clean=value=>String(value||'').replace(/\\s+/g,' ').trim(),extractOrderId=value=>String(value).match(/NZSO-\\d+/)?.[0]||'';
+        const clean=value=>String(value||'').replace(/\\s+/g,' ').trim(),addStaffUpdatesButton=()=>{};
         const readOmniControlByLabel=()=>'',readValueNearLabel=()=>'';
         window.opened=[];window.open=url=>{opened.push(url);return {focus(){}}};
         ${functions.join('\n')}
