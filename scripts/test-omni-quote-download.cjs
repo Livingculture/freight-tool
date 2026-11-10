@@ -64,7 +64,7 @@ const workerHelpers = `${extract('quotePdfWorkerHandoff')}\n${extract('completeQ
     for(const variant of ['quote','standard','custom','receipt']){
       const template=variant==='standard'?'quote':variant;
       const admin=await browser.newPage();
-      await admin.route('https://go.cin7.com/**',route=>route.fulfill({contentType:'text/html',body:`<a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Quote&ID=custom">Custom Quote</a><a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Quote&ID=standard">${variant==='standard'?'Standard Quote':'Quote'}</a><a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Receipt&ID=receipt">Receipt</a>`}));
+      await admin.route('https://go.cin7.com/**',route=>route.fulfill({contentType:'text/html',body:`<a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Quote&ID=custom">Custom Quote</a><a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Quote&ID=standard">${variant==='standard'?'Standard Quote':'Quote'}</a><a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Receipt&ID=receipt">Dynamic Receipt</a>`}));
       await admin.goto('https://go.cin7.com/Cloud/ShoppingCartAdmin/Orders/OrderDetail.aspx?idOrder=388');
       await admin.evaluate(template=>{localStorage.setItem('test-handoff-v2',JSON.stringify({quoteNumber:'NZSO-123',template,startedAt:Date.now()}));window.saved=[];window.alert=()=>{};window.normalizeLabel=value=>String(value).trim().toLowerCase();window.isVisible=()=>true;window.saveQuotePdfBuffer=(_,name)=>window.saved.push(name);window.GM_xmlhttpRequest=options=>{const bytes=new Uint8Array(3501);bytes.set(new TextEncoder().encode('%PDF'));options.onload({status:200,response:bytes.buffer});};},template);
       await admin.addScriptTag({content:`const QUOTE_PDF_HANDOFF_KEY='test-handoff-v2',QUOTE_PDF_TIMEOUT_MS=45000;\n${workerHelpers}\n${extract('quotePdfTemplateLabel')}\n${extract('quotePdfTemplateMatches')}\n${extract('downloadSignedQuotePdf')}\n${extract('continueQuotePdfFromAdmin')}`});
@@ -73,7 +73,7 @@ const workerHelpers = `${extract('quotePdfWorkerHandoff')}\n${extract('completeQ
       assert.deepEqual(await admin.evaluate(() => window.saved),['NZSO-123']);
       await admin.close();
     }
-    console.log('PASS PDF: Admin worker selects Quote, Custom Quote and Receipt with NZSO-only filenames');
+    console.log('PASS PDF: Admin worker selects Quote, Custom Quote and Dynamic Receipt with NZSO-only filenames');
     for(const failure of ['missing','invalid-pdf']){
       const admin=await browser.newPage();
       await admin.route('https://go.cin7.com/**',route=>route.fulfill({contentType:'text/html',body:failure==='missing'?'<a href="/Cloud/Docs/PDF/?T=Quote&ID=custom">Custom Quote</a>':'<a href="/Cloud/Docs/PDF/?T=Quote&ID=standard">Standard Quote</a>'}));
@@ -101,7 +101,7 @@ const workerHelpers = `${extract('quotePdfWorkerHandoff')}\n${extract('completeQ
       window.requests = 0; window.requestUrls = [];
       window.GM_xmlhttpRequest = options => {
         window.requests++; window.requestUrls.push(options.url);
-        options.onload({ status: 200, responseText: '<a href="/Cloud/Docs/PDF/?T=Quote&amp;ID=custom">Custom Quote</a><a href="/Cloud/Docs/PDF/?T=Quote&amp;ID=standard">Quote</a><a href="/Cloud/Docs/PDF/?T=Invoice&amp;ID=wrong">Invoice</a><a href="/Cloud/Docs/PDF/?T=Receipt&amp;ID=receipt">Receipt</a>' });
+        options.onload({ status: 200, responseText: '<a href="/Cloud/Docs/PDF/?T=Quote&amp;ID=custom">Custom Quote</a><a href="/Cloud/Docs/PDF/?T=Quote&amp;ID=standard">Quote</a><a href="/Cloud/Docs/PDF/?T=Invoice&amp;ID=wrong">Dynamic Invoice</a><a href="/Cloud/Docs/PDF/?T=Receipt&amp;ID=receipt">Dynamic Receipt</a>' });
       };
       window.downloadCurrentQuotePdf = (_, template) => { window.downloadChoice = template; };
     });
@@ -111,7 +111,11 @@ const workerHelpers = `${extract('quotePdfWorkerHandoff')}\n${extract('completeQ
     assert(urls[1].endsWith('ID=custom'));
     assert.equal(await templates.evaluate(() => window.requests), 2, 'Each template has its own signed-link cache');
     assert((await templates.evaluate(() => window.requestUrls)).every(url => new URL(url).searchParams.get('idCustomerAppsLink') === '1328007'), 'Admin PDF requests use the current Cin7 customer-app link');
-    assert((await templates.evaluate(() => prepareQuotePdfLink('388', 'receipt'))).endsWith('ID=receipt'), 'Use Receipt, not the removed Dynamic Invoice link');
+    assert((await templates.evaluate(() => prepareQuotePdfLink('388', 'receipt'))).endsWith('ID=receipt'), 'Use Dynamic Receipt, never Dynamic Invoice');
+    assert.equal(await templates.evaluate(() => {
+      const link = document.createElement('a'); link.textContent = 'Receipt';
+      return quotePdfTemplateMatches(link, 'receipt');
+    }), true, 'The older Receipt label remains supported during the Omni transition');
     await templates.evaluate(() => showQuotePdfTemplateMenu(document.getElementById('pdf')));
     assert.deepEqual(await templates.locator('[role="menuitem"]').allTextContents(), ['Quote', 'Custom Quote']);
     await templates.screenshot({ path: '/tmp/lc-quote-template-menu.png' });
@@ -134,7 +138,7 @@ const workerHelpers = `${extract('quotePdfWorkerHandoff')}\n${extract('completeQ
     assert(await templates.evaluate(async () => {
       try { await requestAdminQuoteHref('388', 'receipt'); return false; }
       catch { return true; }
-    }), 'A missing Receipt must not silently select Quote');
+    }), 'A missing Dynamic Receipt must not silently select Quote');
     await templates.addScriptTag({ content: extract('saveQuotePdfBuffer') });
     const namedDownload = templates.waitForEvent('download');
     await templates.evaluate(() => saveQuotePdfBuffer(new TextEncoder().encode('%PDF test').buffer, 'NZSO-17012'));

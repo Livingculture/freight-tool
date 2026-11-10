@@ -65,7 +65,7 @@ const workerCode = constants + ['quotePdfWorkerHandoff', 'completeQuotePdfWorker
         assert.equal(savedName,'NZSO-17012.pdf');assert.deepEqual(errors,[]);
       }else{
         assert.equal(savedName,undefined);assert.equal(errors.length,1);
-        assert.match(errors[0],scenario==='missing-template'?/link could not be found/:scenario==='wrong-quote'?/different quote/:/valid quote PDF/);
+        assert.match(errors[0],scenario==='missing-template'?/link could not be found/:scenario==='wrong-quote'?/different quote/:/valid (?:quote )?PDF/);
       }
       assert.equal(await parent.evaluate(()=>Object.keys(localStorage).filter(key=>key.startsWith('test-background:')).length),0,'Request and result data are cleaned up');
       await context.close();

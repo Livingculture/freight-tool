@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.199
+// @version      0.1.200
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -4293,14 +4293,17 @@
   }
 
   function quotePdfTemplateLabel(template) {
-    if (template === 'receipt' || template === 'invoice') return 'Receipt';
+    if (template === 'receipt' || template === 'invoice') return 'Dynamic Receipt';
     return template === 'custom' ? 'Custom Quote' : 'Quote';
   }
 
   function quotePdfTemplateMatches(element, template = 'quote') {
     const label = normalizeLabel(element.textContent || element.value || '');
-    return template === 'quote' ? ['quote', 'standard quote'].includes(label)
-      : label === normalizeLabel(quotePdfTemplateLabel(template));
+    if (template === 'quote') return ['quote', 'standard quote'].includes(label);
+    if (template === 'receipt' || template === 'invoice') {
+      return ['dynamic receipt', 'receipt'].includes(label);
+    }
+    return label === normalizeLabel(quotePdfTemplateLabel(template));
   }
 
   function showQuotePdfTemplateMenu(button) {
