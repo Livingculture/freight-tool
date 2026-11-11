@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.211
+// @version      0.1.212
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -4309,19 +4309,26 @@
     ].map(normalizeLabel).filter(Boolean);
     if (template === 'quote') return labels.some(label => ['quote', 'standard quote'].includes(label));
     if (template === 'receipt' || template === 'invoice') {
-      return labels.some(label => ['dynamic receipt', 'receipt'].includes(label));
+      return labels.some(label => (label.includes('dynamic receipt') || label === 'receipt') && !label.includes('dynamic invoice'));
     }
     return labels.includes(normalizeLabel(quotePdfTemplateLabel(template)));
   }
 
   function findQuotePdfAdminControl(template = 'quote') {
-    const documents = [document];
-    for (const frame of document.querySelectorAll('iframe, frame')) {
-      try { if (frame.contentDocument) documents.push(frame.contentDocument); } catch (error) {}
+    const roots = [document];
+    for (let index = 0; index < roots.length; index += 1) {
+      const root = roots[index];
+      for (const element of root.querySelectorAll('*')) {
+        if (element.shadowRoot) roots.push(element.shadowRoot);
+      }
+      for (const frame of root.querySelectorAll('iframe, frame')) {
+        try { if (frame.contentDocument) roots.push(frame.contentDocument); } catch (error) {}
+      }
     }
-    const controls = documents.flatMap(root => Array.from(root.querySelectorAll(
+    const controls = roots.flatMap(root => Array.from(root.querySelectorAll(
       'a, button, input[type="button"], input[type="submit"], [role="button"], option'
-    ))).filter(element => quotePdfTemplateMatches(element, template));
+    ))).filter(element => quotePdfTemplateMatches(element, template)
+      || ((template === 'receipt' || template === 'invoice') && /(?:\?|&)T=Receipt(?:&|$)/i.test((element.getAttribute('href') || '').replace(/&amp;/gi, '&'))));
 
     // Background worker tabs can report zero layout dimensions even though the
     // Admin link is present and usable. Prefer a visible control, then fall back
@@ -4783,9 +4790,15 @@
             window.location.assign(href);
           }).catch(error => {
             if (finished) return;
-            finished = true;
-            cleanup();
-            complete(error.message || 'Cin7\'s Dynamic Receipt action could not be opened.');
+            clickedControl = null;
+            const liveControl = findQuotePdfAdminControl('receipt');
+            if (liveControl) {
+              const nextHandoff = {...handoff, receiptOpened:true};
+              localStorage.setItem(`${QUOTE_PDF_HANDOFF_KEY}:${handoff.requestId}`, JSON.stringify(nextHandoff));
+              localStorage.setItem(QUOTE_PDF_HANDOFF_KEY, JSON.stringify(nextHandoff));
+              sessionStorage.setItem(receiptOpenedKey, handoff.requestId || 'legacy');
+              activateNativeReceiptControl(liveControl);
+            }
           });
           return;
         }
