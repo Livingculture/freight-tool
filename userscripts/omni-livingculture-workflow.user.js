@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.200
+// @version      0.1.201
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -4298,12 +4298,34 @@
   }
 
   function quotePdfTemplateMatches(element, template = 'quote') {
-    const label = normalizeLabel(element.textContent || element.value || '');
-    if (template === 'quote') return ['quote', 'standard quote'].includes(label);
+    const labels = [
+      element.textContent,
+      element.value,
+      element.getAttribute?.('aria-label'),
+      element.getAttribute?.('title'),
+      element.getAttribute?.('data-original-title')
+    ].map(normalizeLabel).filter(Boolean);
+    if (template === 'quote') return labels.some(label => ['quote', 'standard quote'].includes(label));
     if (template === 'receipt' || template === 'invoice') {
-      return ['dynamic receipt', 'receipt'].includes(label);
+      return labels.some(label => ['dynamic receipt', 'receipt'].includes(label));
     }
-    return label === normalizeLabel(quotePdfTemplateLabel(template));
+    return labels.includes(normalizeLabel(quotePdfTemplateLabel(template)));
+  }
+
+  function findQuotePdfAdminControl(template = 'quote') {
+    const controls = Array.from(document.querySelectorAll(
+      'a[href], button, input[type="button"], input[type="submit"], [role="button"]'
+    )).filter(element => quotePdfTemplateMatches(element, template));
+    // Background worker tabs can report zero layout dimensions even though the
+    // Admin link is present and usable. Prefer a visible control, then fall back
+    // to the exact semantic match. Receipt matching remains deliberately exact
+    // so Dynamic Invoice can never be selected here.
+    return controls.find(isVisible) || controls.find(element => {
+      if (element.disabled || element.getAttribute('aria-disabled') === 'true') return false;
+      return element instanceof HTMLAnchorElement
+        ? Boolean(element.getAttribute('href'))
+        : true;
+    }) || null;
   }
 
   function showQuotePdfTemplateMenu(button) {
@@ -4604,10 +4626,8 @@
     let attempts = 0;
     const findQuote = window.setInterval(() => {
       attempts += 1;
-      const quoteControl = Array.from(document.querySelectorAll('a, button, input[type="button"], input[type="submit"]'))
-        .filter(isVisible)
-        .find((element) => quotePdfTemplateMatches(element, handoff.template));
-      if (!quoteControl && attempts < 40) return;
+      const quoteControl = findQuotePdfAdminControl(handoff.template);
+      if (!quoteControl && attempts < 60) return;
       window.clearInterval(findQuote);
       if (!handoff.requestId) localStorage.removeItem(QUOTE_PDF_HANDOFF_KEY);
       if (!quoteControl) {

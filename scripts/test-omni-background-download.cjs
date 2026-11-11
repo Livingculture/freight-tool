@@ -8,24 +8,30 @@ function extract(name) {
   return rest.slice(0, end + 1);
 }
 const constants = "const QUOTE_PDF_HANDOFF_KEY='test-background',QUOTE_PDF_TIMEOUT_MS=45000;";
-const workerCode = constants + ['quotePdfWorkerHandoff', 'completeQuotePdfWorker', 'quotePdfTemplateLabel', 'quotePdfTemplateMatches', 'saveQuotePdfBuffer', 'downloadSignedQuotePdf', 'continueQuotePdfFromEditWorker', 'continueQuotePdfFromAdmin'].map(extract).join('\n');
+const workerCode = constants + ['quotePdfWorkerHandoff', 'completeQuotePdfWorker', 'quotePdfTemplateLabel', 'quotePdfTemplateMatches', 'findQuotePdfAdminControl', 'saveQuotePdfBuffer', 'downloadSignedQuotePdf', 'continueQuotePdfFromEditWorker', 'continueQuotePdfFromAdmin'].map(extract).join('\n');
 
 (async () => {
   const browser = await chromium.launch();
   try {
-    for (const scenario of ['success', 'missing-template', 'wrong-quote', 'http-error']) {
+    for (const scenario of ['success', 'receipt-background', 'missing-receipt', 'wrong-quote', 'http-error']) {
       const context = await browser.newContext({ acceptDownloads: true });
       let worker, savedName, openedOptions, closed = false;
       await context.route('https://go.cin7.com/**', route => {
         const admin = route.request().url().includes('ShoppingCartAdmin');
         return route.fulfill({contentType:'text/html',body:admin
-          ? scenario === 'missing-template' ? '<a>Custom Quote</a>' : '<a href="/Cloud/Docs/PDF/?T=Quote&ID=363">Standard Quote</a>'
+          ? scenario === 'receipt-background'
+            ? '<a href="/Cloud/Docs/PDF/?T=Invoice&ID=363">Dynamic Invoice</a><a aria-label="Dynamic Receipt" href="/Cloud/Docs/PDF/?T=Receipt&ID=363"><span>PDF</span></a>'
+            : scenario === 'missing-receipt'
+              ? '<a href="/Cloud/Docs/PDF/?T=Invoice&ID=363">Dynamic Invoice</a>'
+              : '<a href="/Cloud/Docs/PDF/?T=Quote&ID=363">Standard Quote</a>'
           : '<h1>Edit Quote - Customer - NZSO-17012</h1><a href="/Cloud/ShoppingCartAdmin/Orders/OrderDetails.aspx?idOrder=432" target="_blank">Go to Admin</a><button id="download">Download Quote</button>'});
       });
       await context.addInitScript({content:`
         if(location.search.includes('lcQuotePdfWorker')||location.pathname.includes('ShoppingCartAdmin')){
           window.normalizeLabel=value=>String(value||'').trim().toLowerCase();
-          window.isVisible=element=>element.getClientRects().length>0;
+          window.isVisible=element=>${scenario === 'receipt-background'
+            ? "location.pathname.includes('ShoppingCartAdmin') ? false : element.getClientRects().length>0"
+            : 'element.getClientRects().length>0'};
           window.omniHeadingDraft=()=>({orderId:${JSON.stringify(scenario === 'wrong-quote' ? 'NZSO-99999' : 'NZSO-17012')}});
           window.GM_xmlhttpRequest=options=>{const bytes=new Uint8Array(3501);bytes.set(new TextEncoder().encode('%PDF'));options.onload({status:${scenario === 'http-error' ? 403 : 200},response:bytes.buffer});};
           ${workerCode}
@@ -55,17 +61,17 @@ const workerCode = constants + ['quotePdfWorkerHandoff', 'completeQuotePdfWorker
         };
       });
       await parent.addScriptTag({content:constants+extract('downloadCurrentQuotePdf')});
-      await parent.evaluate(()=>{void downloadCurrentQuotePdf(document.getElementById('download'));});
+      await parent.evaluate((template)=>{void downloadCurrentQuotePdf(document.getElementById('download'),template);}, scenario.includes('receipt') ? 'receipt' : 'quote');
       await parent.waitForFunction(()=>document.getElementById('download').disabled===false,{},{timeout:18000});
       for(let i=0;i<50&&!closed;i++)await new Promise(resolve=>setTimeout(resolve,20));
       assert(closed,'Background tab closes after result');
       assert.deepEqual(openedOptions,{active:false,insert:true,setParent:true});
       const errors=await parent.evaluate(()=>window.alerts);
-      if(scenario==='success'){
+      if(scenario==='success'||scenario==='receipt-background'){
         assert.equal(savedName,'NZSO-17012.pdf');assert.deepEqual(errors,[]);
       }else{
         assert.equal(savedName,undefined);assert.equal(errors.length,1);
-        assert.match(errors[0],scenario==='missing-template'?/link could not be found/:scenario==='wrong-quote'?/different quote/:/valid (?:quote )?PDF/);
+        assert.match(errors[0],scenario==='missing-receipt'?/Dynamic Receipt link could not be found/:scenario==='wrong-quote'?/different quote/:/valid (?:quote )?PDF/);
       }
       assert.equal(await parent.evaluate(()=>Object.keys(localStorage).filter(key=>key.startsWith('test-background:')).length),0,'Request and result data are cleaned up');
       await context.close();
