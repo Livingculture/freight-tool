@@ -8,7 +8,7 @@ function extract(name) {
   return rest.slice(0, end + 1);
 }
 const constants = "const QUOTE_PDF_HANDOFF_KEY='test-background',QUOTE_PDF_TIMEOUT_MS=1000,QUOTE_PDF_RECEIPT_TIMEOUT_MS=3000,QUOTE_PDF_RETRY_MS=10,QUOTE_PDF_ADMIN_LINK_ATTEMPTS=4;";
-const workerCode = constants + ['quotePdfTimeout', 'quotePdfWorkerHandoff', 'completeQuotePdfWorker', 'quotePdfTemplateLabel', 'quotePdfTemplateMatches', 'findQuotePdfAdminControl', 'saveQuotePdfBuffer', 'downloadSignedQuotePdf', 'continueQuotePdfFromEditWorker', 'continueQuotePdfFromAdmin'].map(extract).join('\n');
+const workerCode = constants + ['quotePdfTimeout', 'quotePdfWorkerHandoff', 'completeQuotePdfWorker', 'quotePdfTemplateLabel', 'quotePdfTemplateMatches', 'findQuotePdfAdminControl', 'findNativeReceiptDownloadControl', 'activateNativeReceiptControl', 'saveQuotePdfBuffer', 'downloadSignedQuotePdf', 'continueQuotePdfFromEditWorker', 'continueQuotePdfFromAdmin'].map(extract).join('\n');
 
 (async () => {
   const browser = await chromium.launch();
@@ -30,9 +30,11 @@ const workerCode = constants + ['quotePdfTimeout', 'quotePdfWorkerHandoff', 'com
         if(location.search.includes('lcQuotePdfWorker')||location.pathname.includes('ShoppingCartAdmin')){
           window.normalizeLabel=value=>String(value||'').trim().toLowerCase();
           window.nativeReceiptClicks=0;
+          window.nativeDownloadClicks=0;
           document.addEventListener('click',event=>{
             if(window.normalizeLabel(event.target.closest('a,button')?.getAttribute('aria-label')||event.target.closest('a,button')?.textContent)==='dynamic receipt'){
               event.preventDefault();window.nativeReceiptClicks+=1;localStorage.setItem('test-native-receipt-clicks',String(window.nativeReceiptClicks));
+              const download=document.createElement('button');download.textContent='Download';download.addEventListener('click',()=>{window.nativeDownloadClicks+=1;localStorage.setItem('test-native-download-clicks',String(window.nativeDownloadClicks));});document.body.appendChild(download);
             }
           },true);
           if(${JSON.stringify(scenario)}.includes('receipt')){
@@ -87,6 +89,7 @@ const workerCode = constants + ['quotePdfTimeout', 'quotePdfWorkerHandoff', 'com
       }else if(scenario==='receipt-background'||scenario==='receipt-delayed'){
         assert.equal(savedName,undefined);assert.deepEqual(errors,[]);
         assert.equal(await parent.evaluate(()=>localStorage.getItem('test-native-receipt-clicks')),'1','Dynamic Receipt is invoked through Cin7 native action');
+        assert.equal(await parent.evaluate(()=>localStorage.getItem('test-native-download-clicks')),'1','The native receipt page Download action is invoked');
       }else{
         assert.equal(savedName,undefined);assert.equal(errors.length,1);
         assert.match(errors[0],scenario==='missing-receipt'?/Dynamic Receipt link could not be found/:scenario==='wrong-quote'?/different quote/:/valid (?:quote )?PDF/);

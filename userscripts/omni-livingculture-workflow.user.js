@@ -1,11 +1,11 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.205
+// @version      0.1.206
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
-// @match        https://go.cin7.com/Cloud/ShoppingCartAdmin/*
+// @match        https://go.cin7.com/Cloud/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_openInTab
 // @grant        GM_getResourceText
@@ -4315,9 +4315,13 @@
   }
 
   function findQuotePdfAdminControl(template = 'quote') {
-    const controls = Array.from(document.querySelectorAll(
-      'a, button, input[type="button"], input[type="submit"], [role="button"]'
-    )).filter(element => quotePdfTemplateMatches(element, template));
+    const documents = [document];
+    for (const frame of document.querySelectorAll('iframe, frame')) {
+      try { if (frame.contentDocument) documents.push(frame.contentDocument); } catch (error) {}
+    }
+    const controls = documents.flatMap(root => Array.from(root.querySelectorAll(
+      'a, button, input[type="button"], input[type="submit"], [role="button"], option'
+    ))).filter(element => quotePdfTemplateMatches(element, template));
 
     // Background worker tabs can report zero layout dimensions even though the
     // Admin link is present and usable. Prefer a visible control, then fall back
@@ -4325,10 +4329,41 @@
     // so Dynamic Invoice can never be selected here.
     return controls.find(isVisible) || controls.find(element => {
       if (element.disabled || element.getAttribute('aria-disabled') === 'true') return false;
-      return element instanceof HTMLAnchorElement
+      return element.tagName === 'A'
         ? Boolean(element.getAttribute('href') || element.getAttribute('onclick') || element.onclick)
         : true;
     }) || null;
+  }
+
+  function findNativeReceiptDownloadControl() {
+    const documents = [document];
+    for (const frame of document.querySelectorAll('iframe, frame')) {
+      try { if (frame.contentDocument) documents.push(frame.contentDocument); } catch (error) {}
+    }
+    const controls = documents.flatMap(root => Array.from(root.querySelectorAll(
+      'a, button, input[type="button"], input[type="submit"], [role="button"]'
+    ))).filter(element => {
+      const label = normalizeLabel(element.value || element.textContent || element.getAttribute('aria-label') || element.getAttribute('title') || '');
+      return ['download', 'download pdf', 'download receipt'].includes(label) && !element.disabled && element.getAttribute('aria-disabled') !== 'true';
+    });
+    return controls.find(isVisible) || controls[0] || null;
+  }
+
+  function activateNativeReceiptControl(control) {
+    if (control.tagName === 'OPTION') {
+      const select = control.closest('select');
+      if (!select) return false;
+      select.value = control.value;
+      select.dispatchEvent(new Event('input', { bubbles:true }));
+      select.dispatchEvent(new Event('change', { bubbles:true }));
+      return true;
+    }
+    control.setAttribute('target', '_top');
+    control.setAttribute('formtarget', '_top');
+    const form = control.form || control.closest?.('form');
+    if (form) form.target = '_top';
+    control.click();
+    return true;
   }
 
   function prepareQuotePdfControlSameTab(control) {
@@ -4560,6 +4595,7 @@
   }
 
   function completeQuotePdfWorker(handoff, error = '') {
+    sessionStorage.removeItem(`${QUOTE_PDF_HANDOFF_KEY}:receipt-opened`);
     if (handoff.requestId) {
       const key = `${QUOTE_PDF_HANDOFF_KEY}:${handoff.requestId}`;
       localStorage.setItem(`${key}:result`, JSON.stringify({error}));
@@ -4694,13 +4730,16 @@
 
     const findQuote = () => {
       if (finished) return;
-      const quoteControl = findQuotePdfAdminControl(handoff.template);
-      if (!quoteControl) return;
 
       if (handoff.template === 'receipt' || handoff.template === 'invoice') {
-        if (clickedControl) return;
-        clickedControl = quoteControl;
-        quoteControl.click();
+        const receiptOpenedKey = `${QUOTE_PDF_HANDOFF_KEY}:receipt-opened`;
+        const receiptOpened = sessionStorage.getItem(receiptOpenedKey) === handoff.requestId;
+        const receiptControl = receiptOpened ? findNativeReceiptDownloadControl() : findQuotePdfAdminControl(handoff.template);
+        if (!receiptControl || clickedControl === receiptControl) return;
+        clickedControl = receiptControl;
+        if (!receiptOpened) sessionStorage.setItem(receiptOpenedKey, handoff.requestId || 'legacy');
+        activateNativeReceiptControl(receiptControl);
+        if (!receiptOpened) return;
         window.setTimeout(() => {
           if (finished) return;
           finished = true;
@@ -4709,6 +4748,9 @@
         }, 15000);
         return;
       }
+
+      const quoteControl = findQuotePdfAdminControl(handoff.template);
+      if (!quoteControl) return;
 
       const rawHref = quoteControl.getAttribute('href') || quoteControl.getAttribute('formaction') || '';
       const href = rawHref && !/^javascript:/i.test(rawHref)
@@ -6224,10 +6266,16 @@
   }
 
   function boot() {
-    if (/\/Cloud\/ShoppingCartAdmin\//i.test(location.pathname)) {
+    const workerHandoff = quotePdfWorkerHandoff();
+    const isReceiptWorkerPage = workerHandoff?.requestId
+      && (workerHandoff.template === 'receipt' || workerHandoff.template === 'invoice')
+      && !new URL(location.href).searchParams.has('lcQuotePdfWorker');
+    if (/\/Cloud\/ShoppingCartAdmin\//i.test(location.pathname) || isReceiptWorkerPage) {
       if (window.parent !== window) return;
-      continueConvertToSalesOrderFromAdmin();
-      continueCloneQuoteFromAdmin();
+      if (!isReceiptWorkerPage || /\/Cloud\/ShoppingCartAdmin\//i.test(location.pathname)) {
+        continueConvertToSalesOrderFromAdmin();
+        continueCloneQuoteFromAdmin();
+      }
       continueQuotePdfFromAdmin();
       return;
     }
