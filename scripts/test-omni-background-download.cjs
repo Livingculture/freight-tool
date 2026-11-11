@@ -7,19 +7,19 @@ function extract(name) {
   const rest = source.slice(start), end = rest.slice(1).search(/\n  (?:async )?function /);
   return rest.slice(0, end + 1);
 }
-const constants = "const QUOTE_PDF_HANDOFF_KEY='test-background',QUOTE_PDF_TIMEOUT_MS=45000;";
-const workerCode = constants + ['quotePdfWorkerHandoff', 'completeQuotePdfWorker', 'quotePdfTemplateLabel', 'quotePdfTemplateMatches', 'findQuotePdfAdminControl', 'saveQuotePdfBuffer', 'downloadSignedQuotePdf', 'continueQuotePdfFromEditWorker', 'continueQuotePdfFromAdmin'].map(extract).join('\n');
+const constants = "const QUOTE_PDF_HANDOFF_KEY='test-background',QUOTE_PDF_TIMEOUT_MS=1000,QUOTE_PDF_RECEIPT_TIMEOUT_MS=3000,QUOTE_PDF_RETRY_MS=10,QUOTE_PDF_ADMIN_LINK_ATTEMPTS=4;";
+const workerCode = constants + ['quotePdfTimeout', 'quotePdfWorkerHandoff', 'completeQuotePdfWorker', 'quotePdfTemplateLabel', 'quotePdfTemplateMatches', 'findQuotePdfAdminControl', 'saveQuotePdfBuffer', 'downloadSignedQuotePdf', 'continueQuotePdfFromEditWorker', 'continueQuotePdfFromAdmin'].map(extract).join('\n');
 
 (async () => {
   const browser = await chromium.launch();
   try {
-    for (const scenario of ['success', 'receipt-background', 'missing-receipt', 'wrong-quote', 'http-error']) {
+    for (const scenario of ['success', 'receipt-background', 'receipt-delayed', 'missing-receipt', 'wrong-quote', 'http-error']) {
       const context = await browser.newContext({ acceptDownloads: true });
       let worker, savedName, openedOptions, closed = false;
       await context.route('https://go.cin7.com/**', route => {
         const admin = route.request().url().includes('ShoppingCartAdmin');
         return route.fulfill({contentType:'text/html',body:admin
-          ? scenario === 'receipt-background'
+          ? scenario === 'receipt-background' || scenario === 'receipt-delayed'
             ? '<a href="/Cloud/Docs/PDF/?T=Invoice&ID=363">Dynamic Invoice</a><a aria-label="Dynamic Receipt" href="/Cloud/Docs/PDF/?T=Receipt&ID=363"><span>PDF</span></a>'
             : scenario === 'missing-receipt'
               ? '<a href="/Cloud/Docs/PDF/?T=Invoice&ID=363">Dynamic Invoice</a>'
@@ -29,11 +29,16 @@ const workerCode = constants + ['quotePdfWorkerHandoff', 'completeQuotePdfWorker
       await context.addInitScript({content:`
         if(location.search.includes('lcQuotePdfWorker')||location.pathname.includes('ShoppingCartAdmin')){
           window.normalizeLabel=value=>String(value||'').trim().toLowerCase();
-          window.isVisible=element=>${scenario === 'receipt-background'
+          window.isVisible=element=>${scenario === 'receipt-background' || scenario === 'receipt-delayed'
             ? "location.pathname.includes('ShoppingCartAdmin') ? false : element.getClientRects().length>0"
             : 'element.getClientRects().length>0'};
           window.omniHeadingDraft=()=>({orderId:${JSON.stringify(scenario === 'wrong-quote' ? 'NZSO-99999' : 'NZSO-17012')}});
-          window.GM_xmlhttpRequest=options=>{const bytes=new Uint8Array(3501);bytes.set(new TextEncoder().encode('%PDF'));options.onload({status:${scenario === 'http-error' ? 403 : 200},response:bytes.buffer});};
+          window.GM_xmlhttpRequest=options=>{
+            window.pdfAttempts=(window.pdfAttempts||0)+1;
+            const bytes=new Uint8Array(3501);bytes.set(new TextEncoder().encode('%PDF'));
+            if(${JSON.stringify(scenario)}==='receipt-delayed'&&window.pdfAttempts===1){options.onload({status:202,response:new ArrayBuffer(0)});return;}
+            options.onload({status:${scenario === 'http-error' ? 403 : 200},response:bytes.buffer});
+          };
           ${workerCode}
           document.addEventListener('DOMContentLoaded',()=>{
             if(location.pathname.includes('ShoppingCartAdmin'))continueQuotePdfFromAdmin();else continueQuotePdfFromEditWorker();
@@ -60,14 +65,14 @@ const workerCode = constants + ['quotePdfWorkerHandoff', 'completeQuotePdfWorker
           return {closed:false,close(){window.closeWorker();}};
         };
       });
-      await parent.addScriptTag({content:constants+extract('downloadCurrentQuotePdf')});
+      await parent.addScriptTag({content:constants+extract('quotePdfTimeout')+extract('downloadCurrentQuotePdf')});
       await parent.evaluate((template)=>{void downloadCurrentQuotePdf(document.getElementById('download'),template);}, scenario.includes('receipt') ? 'receipt' : 'quote');
       await parent.waitForFunction(()=>document.getElementById('download').disabled===false,{},{timeout:18000});
       for(let i=0;i<50&&!closed;i++)await new Promise(resolve=>setTimeout(resolve,20));
       assert(closed,'Background tab closes after result');
       assert.deepEqual(openedOptions,{active:false,insert:true,setParent:true});
       const errors=await parent.evaluate(()=>window.alerts);
-      if(scenario==='success'||scenario==='receipt-background'){
+      if(scenario==='success'||scenario==='receipt-background'||scenario==='receipt-delayed'){
         assert.equal(savedName,'NZSO-17012.pdf');assert.deepEqual(errors,[]);
       }else{
         assert.equal(savedName,undefined);assert.equal(errors.length,1);

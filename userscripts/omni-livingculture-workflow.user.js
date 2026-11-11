@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.201
+// @version      0.1.202
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -104,6 +104,9 @@
   let omniStaffGateRequest = 0;
   const QUOTE_PDF_HANDOFF_KEY = 'lc-omni-quote-pdf-handoff-v3';
   const QUOTE_PDF_TIMEOUT_MS = 45000;
+  const QUOTE_PDF_RECEIPT_TIMEOUT_MS = 120000;
+  const QUOTE_PDF_RETRY_MS = 2000;
+  const QUOTE_PDF_ADMIN_LINK_ATTEMPTS = 60;
   const quotePdfLinkCache = new Map();
   const HUBSPOT_GATED_LABELS = new Set([
     'go to admin',
@@ -4524,8 +4527,16 @@
       if (finished) return;
       try { worker.close(); } catch (error) {}
       cleanup();
-      window.alert('Cin7 took too long to prepare the PDF.');
-    }, QUOTE_PDF_TIMEOUT_MS);
+      window.alert(template === 'receipt' || template === 'invoice'
+        ? 'Cin7 took too long to prepare the Dynamic Receipt PDF.'
+        : 'Cin7 took too long to prepare the PDF.');
+    }, quotePdfTimeout(template) + 5000);
+  }
+
+  function quotePdfTimeout(template = 'quote') {
+    return template === 'receipt' || template === 'invoice'
+      ? QUOTE_PDF_RECEIPT_TIMEOUT_MS
+      : QUOTE_PDF_TIMEOUT_MS;
   }
 
   function quotePdfWorkerHandoff() {
@@ -4554,7 +4565,7 @@
   function continueQuotePdfFromEditWorker() {
     if (window.parent !== window || new URL(location.href).searchParams.get('lcQuotePdfWorker') !== '1') return false;
     const handoff = quotePdfWorkerHandoff();
-    if (!handoff?.quoteNumber || Date.now() - Number(handoff.startedAt || 0) > QUOTE_PDF_TIMEOUT_MS) {
+    if (!handoff?.quoteNumber || Date.now() - Number(handoff.startedAt || 0) > quotePdfTimeout(handoff?.template)) {
       if (handoff?.requestId) completeQuotePdfWorker(handoff, 'The document download request expired. Please try again.');
       window.close();
       return true;
@@ -4594,40 +4605,64 @@
     return window.parent !== window && new URL(location.href).searchParams.get('lcQuotePdfBackground') === '1';
   }
 
-  function downloadSignedQuotePdf(url, quoteNumber, finished = () => {}) {
-    GM_xmlhttpRequest({
-      method: 'GET',
-      url,
-      responseType: 'arraybuffer',
-      timeout: QUOTE_PDF_TIMEOUT_MS,
-      onload(response) {
-        const bytes = new Uint8Array(response.response || new ArrayBuffer(0));
-        const isPdf = bytes.length > 3000 && String.fromCharCode(...bytes.slice(0, 4)) === '%PDF';
-        if (response.status < 200 || response.status >= 300 || !isPdf) {
-          finished('Cin7 did not return a valid PDF.');
-          return;
-        }
-        saveQuotePdfBuffer(response.response, quoteNumber);
-        finished();
-      },
-      onerror: () => {
-        finished('Could not connect to Cin7\'s PDF.');
-      },
-      ontimeout: () => {
-        finished('Cin7\'s PDF timed out.');
+  function downloadSignedQuotePdf(url, quoteNumber, template = 'quote', finished = () => {}) {
+    const canRetry = template === 'receipt' || template === 'invoice';
+    const deadline = Date.now() + quotePdfTimeout(template);
+    let completed = false;
+    const finish = error => {
+      if (completed) return;
+      completed = true;
+      finished(error);
+    };
+    const retryOrFinish = error => {
+      const remaining = deadline - Date.now();
+      if (canRetry && remaining > QUOTE_PDF_RETRY_MS) {
+        window.setTimeout(requestPdf, QUOTE_PDF_RETRY_MS);
+        return;
       }
-    });
+      finish(canRetry ? 'Cin7 took too long to prepare the Dynamic Receipt PDF.' : error);
+    };
+    const requestPdf = () => {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        finish(canRetry ? 'Cin7 took too long to prepare the Dynamic Receipt PDF.' : 'Cin7\'s PDF timed out.');
+        return;
+      }
+      GM_xmlhttpRequest({
+        method: 'GET',
+        url,
+        responseType: 'arraybuffer',
+        timeout: Math.max(1000, Math.min(30000, remaining)),
+        onload(response) {
+          const bytes = new Uint8Array(response.response || new ArrayBuffer(0));
+          const isPdf = bytes.length > 3000 && String.fromCharCode(...bytes.slice(0, 4)) === '%PDF';
+          if (response.status >= 200 && response.status < 300 && isPdf) {
+            saveQuotePdfBuffer(response.response, quoteNumber);
+            finish();
+            return;
+          }
+          const stillPreparing = response.status === 202 || response.status === 429
+            || (response.status >= 500 && response.status <= 504)
+            || (response.status >= 200 && response.status < 300 && !isPdf);
+          if (canRetry && stillPreparing) retryOrFinish('Cin7 did not return a valid PDF.');
+          else finish('Cin7 did not return a valid PDF.');
+        },
+        onerror: () => retryOrFinish('Could not connect to Cin7\'s PDF.'),
+        ontimeout: () => retryOrFinish('Cin7\'s PDF timed out.')
+      });
+    };
+    requestPdf();
   }
 
   function continueQuotePdfFromAdmin() {
     const handoff = quotePdfWorkerHandoff();
-    if (!handoff?.quoteNumber || Date.now() - Number(handoff.startedAt || 0) > QUOTE_PDF_TIMEOUT_MS) return;
+    if (!handoff?.quoteNumber || Date.now() - Number(handoff.startedAt || 0) > quotePdfTimeout(handoff?.template)) return;
     const complete = error => completeQuotePdfWorker(handoff, error);
     let attempts = 0;
     const findQuote = window.setInterval(() => {
       attempts += 1;
       const quoteControl = findQuotePdfAdminControl(handoff.template);
-      if (!quoteControl && attempts < 60) return;
+      if (!quoteControl && attempts < QUOTE_PDF_ADMIN_LINK_ATTEMPTS) return;
       window.clearInterval(findQuote);
       if (!handoff.requestId) localStorage.removeItem(QUOTE_PDF_HANDOFF_KEY);
       if (!quoteControl) {
@@ -4635,7 +4670,7 @@
         return;
       }
       const href = quoteControl instanceof HTMLAnchorElement ? quoteControl.href : quoteControl.getAttribute('formaction');
-      if (href && /\/Cloud\/Docs\/PDF/i.test(href)) downloadSignedQuotePdf(href, handoff.quoteNumber, complete);
+      if (href && /\/Cloud\/Docs\/PDF/i.test(href)) downloadSignedQuotePdf(href, handoff.quoteNumber, handoff.template, complete);
       else quoteControl.click();
     }, 250);
   }
