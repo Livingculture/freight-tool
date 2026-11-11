@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.207
+// @version      0.1.208
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -4526,7 +4526,9 @@
     workerUrl.searchParams.set('lcQuotePdfRequest', requestId);
     const handoffKey = `${QUOTE_PDF_HANDOFF_KEY}:${requestId}`;
     const resultKey = `${handoffKey}:result`;
-    localStorage.setItem(handoffKey, JSON.stringify({ requestId, quoteNumber, template, startedAt: Date.now() }));
+    const handoff = { requestId, quoteNumber, template, startedAt: Date.now() };
+    localStorage.setItem(handoffKey, JSON.stringify(handoff));
+    if (template === 'receipt' || template === 'invoice') localStorage.setItem(QUOTE_PDF_HANDOFF_KEY, JSON.stringify(handoff));
     let worker = null;
     button.disabled = true;
     button.textContent = 'Downloading…';
@@ -4541,6 +4543,10 @@
       window.removeEventListener('storage', complete);
       localStorage.removeItem(handoffKey);
       localStorage.removeItem(resultKey);
+      try {
+        const shared = JSON.parse(localStorage.getItem(QUOTE_PDF_HANDOFF_KEY) || 'null');
+        if (shared?.requestId === requestId) localStorage.removeItem(QUOTE_PDF_HANDOFF_KEY);
+      } catch (error) {}
       try { worker?.close(); } catch (error) {}
       button.disabled = false;
       button.textContent = downloadLabel;
@@ -4601,7 +4607,12 @@
       const key = `${QUOTE_PDF_HANDOFF_KEY}:${handoff.requestId}`;
       localStorage.setItem(`${key}:result`, JSON.stringify({error}));
       localStorage.removeItem(key);
+      try {
+        const shared = JSON.parse(localStorage.getItem(QUOTE_PDF_HANDOFF_KEY) || 'null');
+        if (shared?.requestId === handoff.requestId) localStorage.removeItem(QUOTE_PDF_HANDOFF_KEY);
+      } catch (parseError) {}
       sessionStorage.removeItem(`${QUOTE_PDF_HANDOFF_KEY}:worker`);
+      if (window.opener) window.close();
     } else {
       if (error) window.alert(error);
       window.opener?.postMessage('lc-quote-pdf-finished', location.origin);
