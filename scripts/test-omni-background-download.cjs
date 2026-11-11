@@ -29,6 +29,16 @@ const workerCode = constants + ['quotePdfTimeout', 'quotePdfWorkerHandoff', 'com
       await context.addInitScript({content:`
         if(location.search.includes('lcQuotePdfWorker')||location.pathname.includes('ShoppingCartAdmin')){
           window.normalizeLabel=value=>String(value||'').trim().toLowerCase();
+          window.nativeReceiptClicks=0;
+          document.addEventListener('click',event=>{
+            if(window.normalizeLabel(event.target.closest('a,button')?.getAttribute('aria-label')||event.target.closest('a,button')?.textContent)==='dynamic receipt'){
+              event.preventDefault();window.nativeReceiptClicks+=1;localStorage.setItem('test-native-receipt-clicks',String(window.nativeReceiptClicks));
+            }
+          },true);
+          if(${JSON.stringify(scenario)}.includes('receipt')){
+            const nativeSetTimeout=window.setTimeout.bind(window);
+            window.setTimeout=(callback,delay,...args)=>nativeSetTimeout(callback,delay===15000?10:delay,...args);
+          }
           window.isVisible=element=>${scenario === 'receipt-background' || scenario === 'receipt-delayed'
             ? "location.pathname.includes('ShoppingCartAdmin') ? false : element.getClientRects().length>0"
             : 'element.getClientRects().length>0'};
@@ -72,8 +82,11 @@ const workerCode = constants + ['quotePdfTimeout', 'quotePdfWorkerHandoff', 'com
       assert(closed,'Background tab closes after result');
       assert.deepEqual(openedOptions,{active:false,insert:true,setParent:true});
       const errors=await parent.evaluate(()=>window.alerts);
-      if(scenario==='success'||scenario==='receipt-background'||scenario==='receipt-delayed'){
+      if(scenario==='success'){
         assert.equal(savedName,'NZSO-17012.pdf');assert.deepEqual(errors,[]);
+      }else if(scenario==='receipt-background'||scenario==='receipt-delayed'){
+        assert.equal(savedName,undefined);assert.deepEqual(errors,[]);
+        assert.equal(await parent.evaluate(()=>localStorage.getItem('test-native-receipt-clicks')),'1','Dynamic Receipt is invoked through Cin7 native action');
       }else{
         assert.equal(savedName,undefined);assert.equal(errors.length,1);
         assert.match(errors[0],scenario==='missing-receipt'?/Dynamic Receipt link could not be found/:scenario==='wrong-quote'?/different quote/:/valid (?:quote )?PDF/);

@@ -9,7 +9,7 @@ function extract(name) {
   const next = rest.slice(1).search(/\n  (?:async )?function /);
   return rest.slice(0, next + 1);
 }
-const workerHelpers = `${extract('quotePdfWorkerHandoff')}\n${extract('completeQuotePdfWorker')}`;
+const workerHelpers = `${extract('quotePdfTimeout')}\n${extract('quotePdfWorkerHandoff')}\n${extract('completeQuotePdfWorker')}`;
 
 (async () => {
   const browser = await chromium.launch({ headless: true });
@@ -24,7 +24,7 @@ const workerHelpers = `${extract('quotePdfWorkerHandoff')}\n${extract('completeQ
       window.open=()=>{throw Error('Downloads must not open a foreground popup');};
       window.GM_openInTab=(url,options)=>{window.openedWorker={url,options,closed:false,close(){this.closed=true;}};return window.openedWorker;};
     });
-    await parent.addScriptTag({ content:`const QUOTE_PDF_HANDOFF_KEY='test-handoff-v2',QUOTE_PDF_TIMEOUT_MS=45000;\n${extract('currentCustomerAppsLink')}\n${extract('downloadCurrentQuotePdf')}` });
+    await parent.addScriptTag({ content:`const QUOTE_PDF_HANDOFF_KEY='test-handoff-v2',QUOTE_PDF_TIMEOUT_MS=45000,QUOTE_PDF_RECEIPT_TIMEOUT_MS=120000;\n${extract('currentCustomerAppsLink')}\n${extract('quotePdfTimeout')}\n${extract('downloadCurrentQuotePdf')}` });
     await parent.evaluate(() => downloadCurrentQuotePdf(document.getElementById('pdf'),'quote'));
     const openedUrl=new URL(await parent.evaluate(() => window.openedWorker.url));
     assert.equal(openedUrl.pathname,'/Cloud/TransactionEntry/TransactionEntry.aspx');
@@ -53,7 +53,7 @@ const workerHelpers = `${extract('quotePdfWorkerHandoff')}\n${extract('completeQ
       window.omniHeadingDraft=()=>({orderId:'NZSO-123'});
       document.getElementById('admin').addEventListener('click', event => { event.preventDefault(); window.nativeClicks += 1; });
     });
-    await editWorker.addScriptTag({ content:`const QUOTE_PDF_HANDOFF_KEY='test-native-worker-v3',QUOTE_PDF_TIMEOUT_MS=45000;\n${workerHelpers}\n${extract('continueQuotePdfFromEditWorker')}` });
+    await editWorker.addScriptTag({ content:`const QUOTE_PDF_HANDOFF_KEY='test-native-worker-v3',QUOTE_PDF_TIMEOUT_MS=45000,QUOTE_PDF_RECEIPT_TIMEOUT_MS=120000;\n${workerHelpers}\n${extract('continueQuotePdfFromEditWorker')}` });
     assert.equal(await editWorker.evaluate(() => continueQuotePdfFromEditWorker()), true);
     await editWorker.waitForFunction(() => window.nativeClicks === 1);
     assert.equal(await editWorker.locator('#admin').getAttribute('formtarget'), '_self');
@@ -66,14 +66,19 @@ const workerHelpers = `${extract('quotePdfWorkerHandoff')}\n${extract('completeQ
       const admin=await browser.newPage();
       await admin.route('https://go.cin7.com/**',route=>route.fulfill({contentType:'text/html',body:`<a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Quote&ID=custom">Custom Quote</a><a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Quote&ID=standard">${variant==='standard'?'Standard Quote':'Quote'}</a><a href="https://go.cin7.com/Cloud/Docs/PDF/?T=Receipt&ID=receipt">Dynamic Receipt</a>`}));
       await admin.goto('https://go.cin7.com/Cloud/ShoppingCartAdmin/Orders/OrderDetail.aspx?idOrder=388');
-      await admin.evaluate(template=>{localStorage.setItem('test-handoff-v2',JSON.stringify({quoteNumber:'NZSO-123',template,startedAt:Date.now()}));window.saved=[];window.alert=()=>{};window.normalizeLabel=value=>String(value).trim().toLowerCase();window.isVisible=()=>true;window.saveQuotePdfBuffer=(_,name)=>window.saved.push(name);window.GM_xmlhttpRequest=options=>{const bytes=new Uint8Array(3501);bytes.set(new TextEncoder().encode('%PDF'));options.onload({status:200,response:bytes.buffer});};},template);
-      await admin.addScriptTag({content:`const QUOTE_PDF_HANDOFF_KEY='test-handoff-v2',QUOTE_PDF_TIMEOUT_MS=45000;\n${workerHelpers}\n${extract('quotePdfTemplateLabel')}\n${extract('quotePdfTemplateMatches')}\n${extract('downloadSignedQuotePdf')}\n${extract('continueQuotePdfFromAdmin')}`});
+      await admin.evaluate(template=>{localStorage.setItem('test-handoff-v2',JSON.stringify({quoteNumber:'NZSO-123',template,startedAt:Date.now()}));window.saved=[];window.nativeReceiptClicks=0;window.alert=()=>{};window.normalizeLabel=value=>String(value).trim().toLowerCase();window.isVisible=()=>true;window.saveQuotePdfBuffer=(_,name)=>window.saved.push(name);window.GM_xmlhttpRequest=options=>{const bytes=new Uint8Array(3501);bytes.set(new TextEncoder().encode('%PDF'));options.onload({status:200,response:bytes.buffer});};if(template==='receipt'){document.addEventListener('click',event=>{if(event.target.closest('a')?.textContent==='Dynamic Receipt'){event.preventDefault();window.nativeReceiptClicks+=1;}},true);const nativeSetTimeout=window.setTimeout.bind(window);window.setTimeout=(callback,delay,...args)=>nativeSetTimeout(callback,delay===15000?10:delay,...args);}},template);
+      await admin.addScriptTag({content:`const QUOTE_PDF_HANDOFF_KEY='test-handoff-v2',QUOTE_PDF_TIMEOUT_MS=45000,QUOTE_PDF_RECEIPT_TIMEOUT_MS=120000;\n${workerHelpers}\n${extract('quotePdfTemplateLabel')}\n${extract('quotePdfTemplateMatches')}\n${extract('findQuotePdfAdminControl')}\n${extract('downloadSignedQuotePdf')}\n${extract('continueQuotePdfFromAdmin')}`});
       await admin.evaluate(() => continueQuotePdfFromAdmin());
-      await admin.waitForFunction(() => window.saved.length===1);
-      assert.deepEqual(await admin.evaluate(() => window.saved),['NZSO-123']);
+      if(template==='receipt'){
+        await admin.waitForFunction(() => window.nativeReceiptClicks===1);
+        assert.deepEqual(await admin.evaluate(() => window.saved),[]);
+      }else{
+        await admin.waitForFunction(() => window.saved.length===1);
+        assert.deepEqual(await admin.evaluate(() => window.saved),['NZSO-123']);
+      }
       await admin.close();
     }
-    console.log('PASS PDF: Admin worker selects Quote, Custom Quote and Dynamic Receipt with NZSO-only filenames');
+    console.log('PASS PDF: Admin worker fetches quote PDFs and invokes Dynamic Receipt through Cin7 native action');
     for(const failure of ['missing','invalid-pdf']){
       const admin=await browser.newPage();
       await admin.route('https://go.cin7.com/**',route=>route.fulfill({contentType:'text/html',body:failure==='missing'?'<a href="/Cloud/Docs/PDF/?T=Quote&ID=custom">Custom Quote</a>':'<a href="/Cloud/Docs/PDF/?T=Quote&ID=standard">Standard Quote</a>'}));
@@ -87,7 +92,7 @@ const workerHelpers = `${extract('quotePdfWorkerHandoff')}\n${extract('completeQ
         window.GM_xmlhttpRequest=options=>options.onload({status:403,response:new TextEncoder().encode('Access denied').buffer});
         const interval=window.setInterval;window.setInterval=callback=>interval(callback,1);
       });
-      await admin.addScriptTag({content:`const QUOTE_PDF_HANDOFF_KEY='test-failed-worker',QUOTE_PDF_TIMEOUT_MS=45000;\n${workerHelpers}\n${extract('quotePdfTemplateLabel')}\n${extract('quotePdfTemplateMatches')}\n${extract('downloadSignedQuotePdf')}\n${extract('continueQuotePdfFromAdmin')}\ncontinueQuotePdfFromAdmin();`});
+      await admin.addScriptTag({content:`const QUOTE_PDF_HANDOFF_KEY='test-failed-worker',QUOTE_PDF_TIMEOUT_MS=100,QUOTE_PDF_RECEIPT_TIMEOUT_MS=120000;\n${workerHelpers}\n${extract('quotePdfTemplateLabel')}\n${extract('quotePdfTemplateMatches')}\n${extract('findQuotePdfAdminControl')}\n${extract('downloadSignedQuotePdf')}\n${extract('continueQuotePdfFromAdmin')}\ncontinueQuotePdfFromAdmin();`});
       await admin.waitForFunction(()=>window.closeCalled);
       assert.equal(await admin.evaluate(()=>window.saved),false);assert.equal(await admin.evaluate(()=>window.alerts.length),1);
       assert.deepEqual(await admin.evaluate(()=>window.messages),[['lc-quote-pdf-finished','https://go.cin7.com']],'Failures tell the quote window to restore its Download button');
@@ -173,7 +178,7 @@ const workerHelpers = `${extract('quotePdfWorkerHandoff')}\n${extract('completeQ
         return window.openedWorker;
       };
     });
-    await page.addScriptTag({ content: `const QUOTE_PDF_HANDOFF_KEY='test-invoice-handoff-v2',QUOTE_PDF_TIMEOUT_MS=45000;\n${extract('currentCustomerAppsLink')}\n${extract('downloadCurrentQuotePdf')}` });
+    await page.addScriptTag({ content: `const QUOTE_PDF_HANDOFF_KEY='test-invoice-handoff-v2',QUOTE_PDF_TIMEOUT_MS=45000,QUOTE_PDF_RECEIPT_TIMEOUT_MS=120000;\n${extract('currentCustomerAppsLink')}\n${extract('quotePdfTimeout')}\n${extract('downloadCurrentQuotePdf')}` });
     await page.evaluate(() => downloadCurrentQuotePdf(document.getElementById('pdf')));
     assert.equal(await page.evaluate(() => window.alerts.length), 1);
     assert.equal(await page.evaluate(() => window.openedWorker || null), null, 'Locked quote still follows the HubSpot rule');
