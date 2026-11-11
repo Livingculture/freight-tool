@@ -18,21 +18,25 @@ const workerCode = constants + ['quotePdfTimeout', 'quotePdfWorkerHandoff', 'com
       let worker, savedName, openedOptions, closed = false;
       await context.route('https://go.cin7.com/**', route => {
         const admin = route.request().url().includes('ShoppingCartAdmin');
+        const receipt = route.request().url().includes('/Cloud/Docs/PDF') && route.request().url().includes('T=Receipt');
         return route.fulfill({contentType:'text/html',body:admin
           ? scenario === 'receipt-background' || scenario === 'receipt-delayed'
             ? '<a href="/Cloud/Docs/PDF/?T=Invoice&ID=363">Dynamic Invoice</a><a aria-label="Dynamic Receipt" href="/Cloud/Docs/PDF/?T=Receipt&ID=363"><span>PDF</span></a>'
             : scenario === 'missing-receipt'
               ? '<a href="/Cloud/Docs/PDF/?T=Invoice&ID=363">Dynamic Invoice</a>'
               : '<a href="/Cloud/Docs/PDF/?T=Quote&ID=363">Standard Quote</a>'
+          : receipt ? '<button id="native-download">Download</button>'
           : '<h1>Edit Quote - Customer - NZSO-17012</h1><a href="/Cloud/ShoppingCartAdmin/Orders/OrderDetails.aspx?idOrder=432" target="_blank">Go to Admin</a><button id="download">Download Quote</button>'});
       });
       await context.addInitScript({content:`
-        if(location.search.includes('lcQuotePdfWorker')||location.pathname.includes('ShoppingCartAdmin')){
+        if(location.search.includes('lcQuotePdfWorker')||location.pathname.includes('ShoppingCartAdmin')||location.pathname.includes('/Cloud/Docs/PDF')){
           window.normalizeLabel=value=>String(value||'').trim().toLowerCase();
           window.nativeReceiptClicks=0;
           window.nativeDownloadClicks=0;
           document.addEventListener('click',event=>{
-            if(window.normalizeLabel(event.target.closest('a,button')?.getAttribute('aria-label')||event.target.closest('a,button')?.textContent)==='dynamic receipt'){
+            const clickedLabel=window.normalizeLabel(event.target.closest('a,button')?.getAttribute('aria-label')||event.target.closest('a,button')?.textContent);
+            if(clickedLabel==='download'){window.nativeDownloadClicks+=1;localStorage.setItem('test-native-download-clicks',String(window.nativeDownloadClicks));}
+            if(clickedLabel==='dynamic receipt'){
               event.preventDefault();window.nativeReceiptClicks+=1;localStorage.setItem('test-native-receipt-clicks',String(window.nativeReceiptClicks));
               const download=document.createElement('button');download.textContent='Download';download.addEventListener('click',()=>{window.nativeDownloadClicks+=1;localStorage.setItem('test-native-download-clicks',String(window.nativeDownloadClicks));});document.body.appendChild(download);
             }
@@ -53,7 +57,7 @@ const workerCode = constants + ['quotePdfTimeout', 'quotePdfWorkerHandoff', 'com
           };
           ${workerCode}
           document.addEventListener('DOMContentLoaded',()=>{
-            if(location.pathname.includes('ShoppingCartAdmin'))continueQuotePdfFromAdmin();else continueQuotePdfFromEditWorker();
+            if(location.pathname.includes('ShoppingCartAdmin')||location.pathname.includes('/Cloud/Docs/PDF'))continueQuotePdfFromAdmin();else continueQuotePdfFromEditWorker();
           },{once:true});
         }
       `});
@@ -70,6 +74,8 @@ const workerCode = constants + ['quotePdfTimeout', 'quotePdfWorkerHandoff', 'com
       await parent.evaluate(() => {
         window.alerts=[];window.alert=message=>window.alerts.push(message);
         window.omniHeadingDraft=()=>({orderId:'NZSO-17012',documentType:'quote'});
+        window.currentQuotePdfOrderId=()=> '388';
+        window.prepareQuotePdfLink=async()=> 'https://go.cin7.com/Cloud/Docs/PDF/?T=Receipt&ID=363';
         window.hubSpotGateOrderId=()=> 'NZSO-17012';window.isQuotePdfUnlocked=()=>true;
         window.open=()=>{throw Error('Foreground popup must not be opened');};
         window.GM_openInTab=(url,options)=>{
@@ -77,22 +83,25 @@ const workerCode = constants + ['quotePdfTimeout', 'quotePdfWorkerHandoff', 'com
           return {closed:false,close(){window.closeWorker();}};
         };
       });
+      if(scenario==='missing-receipt')await parent.evaluate(()=>{window.prepareQuotePdfLink=async()=>{throw new Error("Cin7 Admin did not include its signed Dynamic Receipt link.");};});
       await parent.addScriptTag({content:constants+extract('quotePdfTimeout')+extract('downloadCurrentQuotePdf')});
       await parent.evaluate((template)=>{void downloadCurrentQuotePdf(document.getElementById('download'),template);}, scenario.includes('receipt') ? 'receipt' : 'quote');
       await parent.waitForFunction(()=>document.getElementById('download').disabled===false,{},{timeout:18000});
       for(let i=0;i<50&&!closed;i++)await new Promise(resolve=>setTimeout(resolve,20));
-      assert(closed,'Background tab closes after result');
-      assert.deepEqual(openedOptions,{active:false,insert:true,setParent:true});
+      if(scenario==='missing-receipt')assert.equal(worker,undefined,'Missing receipt stops before opening a worker');
+      else {
+        assert(closed,'Background tab closes after result');
+        assert.deepEqual(openedOptions,{active:false,insert:true,setParent:true});
+      }
       const errors=await parent.evaluate(()=>window.alerts);
       if(scenario==='success'){
         assert.equal(savedName,'NZSO-17012.pdf');assert.deepEqual(errors,[]);
       }else if(scenario==='receipt-background'||scenario==='receipt-delayed'){
         assert.equal(savedName,undefined);assert.deepEqual(errors,[]);
-        assert.equal(await parent.evaluate(()=>localStorage.getItem('test-native-receipt-clicks')),'1','Dynamic Receipt is invoked through Cin7 native action');
         assert.equal(await parent.evaluate(()=>localStorage.getItem('test-native-download-clicks')),'1','The native receipt page Download action is invoked');
       }else{
         assert.equal(savedName,undefined);assert.equal(errors.length,1);
-        assert.match(errors[0],scenario==='missing-receipt'?/Dynamic Receipt link could not be found/:scenario==='wrong-quote'?/different quote/:/valid (?:quote )?PDF/);
+        assert.match(errors[0],scenario==='missing-receipt'?/Dynamic Receipt link/:scenario==='wrong-quote'?/different quote/:/valid (?:quote )?PDF/);
       }
       assert.equal(await parent.evaluate(()=>Object.keys(localStorage).filter(key=>key.startsWith('test-background:')).length),0,'Request and result data are cleaned up');
       await context.close();

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.209
+// @version      0.1.210
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -4519,14 +4519,26 @@
       window.alert('Update Living Culture All-in-One to enable background downloads.');
       return;
     }
+    const nativeReceipt = template === 'receipt' || template === 'invoice';
+    let receiptHref = '';
+    if (nativeReceipt) {
+      try {
+        receiptHref = await prepareQuotePdfLink(currentQuotePdfOrderId(), 'receipt');
+      } catch (error) {
+        window.alert(error.message || 'Cin7\'s Dynamic Receipt link could not be resolved.');
+        return;
+      }
+    }
     // Keep Cin7's native ID conversion, but never select the worker tab.
     const requestId = crypto.randomUUID();
-    const workerUrl = new URL(location.href);
-    workerUrl.searchParams.set('lcQuotePdfWorker', '1');
-    workerUrl.searchParams.set('lcQuotePdfRequest', requestId);
+    const workerUrl = new URL(receiptHref || location.href);
+    if (!nativeReceipt) {
+      workerUrl.searchParams.set('lcQuotePdfWorker', '1');
+      workerUrl.searchParams.set('lcQuotePdfRequest', requestId);
+    }
     const handoffKey = `${QUOTE_PDF_HANDOFF_KEY}:${requestId}`;
     const resultKey = `${handoffKey}:result`;
-    const handoff = { requestId, quoteNumber, template, startedAt: Date.now() };
+    const handoff = { requestId, quoteNumber, template, receiptOpened:nativeReceipt, startedAt: Date.now() };
     localStorage.setItem(handoffKey, JSON.stringify(handoff));
     if (template === 'receipt' || template === 'invoice') localStorage.setItem(QUOTE_PDF_HANDOFF_KEY, JSON.stringify(handoff));
     let worker = null;
@@ -4744,7 +4756,7 @@
 
       if (handoff.template === 'receipt' || handoff.template === 'invoice') {
         const receiptOpenedKey = `${QUOTE_PDF_HANDOFF_KEY}:receipt-opened`;
-        const receiptOpened = sessionStorage.getItem(receiptOpenedKey) === handoff.requestId;
+        const receiptOpened = handoff.receiptOpened || sessionStorage.getItem(receiptOpenedKey) === handoff.requestId;
         const receiptControl = receiptOpened ? findNativeReceiptDownloadControl() : findQuotePdfAdminControl(handoff.template);
         if (!receiptControl || clickedControl === receiptControl) return;
         clickedControl = receiptControl;
