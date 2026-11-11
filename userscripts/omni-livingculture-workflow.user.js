@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.202
+// @version      0.1.203
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -106,7 +106,6 @@
   const QUOTE_PDF_TIMEOUT_MS = 45000;
   const QUOTE_PDF_RECEIPT_TIMEOUT_MS = 120000;
   const QUOTE_PDF_RETRY_MS = 2000;
-  const QUOTE_PDF_ADMIN_LINK_ATTEMPTS = 60;
   const quotePdfLinkCache = new Map();
   const HUBSPOT_GATED_LABELS = new Set([
     'go to admin',
@@ -4656,23 +4655,58 @@
 
   function continueQuotePdfFromAdmin() {
     const handoff = quotePdfWorkerHandoff();
-    if (!handoff?.quoteNumber || Date.now() - Number(handoff.startedAt || 0) > quotePdfTimeout(handoff?.template)) return;
+    const startedAt = Number(handoff?.startedAt || 0);
+    const timeoutMs = quotePdfTimeout(handoff?.template);
+    if (!handoff?.quoteNumber || !startedAt || Date.now() - startedAt > timeoutMs) return;
     const complete = error => completeQuotePdfWorker(handoff, error);
-    let attempts = 0;
-    const findQuote = window.setInterval(() => {
-      attempts += 1;
-      const quoteControl = findQuotePdfAdminControl(handoff.template);
-      if (!quoteControl && attempts < QUOTE_PDF_ADMIN_LINK_ATTEMPTS) return;
-      window.clearInterval(findQuote);
+    let finished = false;
+    let clickedControl = null;
+    let pollTimer = 0;
+    let expiryTimer = 0;
+    let observer = null;
+
+    const cleanup = () => {
+      if (pollTimer) window.clearInterval(pollTimer);
+      if (expiryTimer) window.clearTimeout(expiryTimer);
+      observer?.disconnect();
+    };
+
+    const fail = () => {
+      if (finished) return;
+      finished = true;
+      cleanup();
       if (!handoff.requestId) localStorage.removeItem(QUOTE_PDF_HANDOFF_KEY);
-      if (!quoteControl) {
-        complete(`Cin7's ${quotePdfTemplateLabel(handoff.template)} link could not be found on the Admin page.`);
+      complete(`Cin7's ${quotePdfTemplateLabel(handoff.template)} link could not be found on the Admin page.`);
+    };
+
+    const findQuote = () => {
+      if (finished) return;
+      const quoteControl = findQuotePdfAdminControl(handoff.template);
+      if (!quoteControl) return;
+      const href = quoteControl instanceof HTMLAnchorElement ? quoteControl.href : quoteControl.getAttribute('formaction');
+      if (href && /\/Cloud\/Docs\/PDF/i.test(href)) {
+        finished = true;
+        cleanup();
+        if (!handoff.requestId) localStorage.removeItem(QUOTE_PDF_HANDOFF_KEY);
+        downloadSignedQuotePdf(href, handoff.quoteNumber, handoff.template, complete);
         return;
       }
-      const href = quoteControl instanceof HTMLAnchorElement ? quoteControl.href : quoteControl.getAttribute('formaction');
-      if (href && /\/Cloud\/Docs\/PDF/i.test(href)) downloadSignedQuotePdf(href, handoff.quoteNumber, handoff.template, complete);
-      else quoteControl.click();
-    }, 250);
+      if (quoteControl !== clickedControl) {
+        clickedControl = quoteControl;
+        quoteControl.click();
+      }
+    };
+
+    observer = new MutationObserver(findQuote);
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['href', 'formaction'],
+    });
+    pollTimer = window.setInterval(findQuote, 500);
+    expiryTimer = window.setTimeout(fail, Math.max(500, timeoutMs - (Date.now() - startedAt)));
+    findQuote();
   }
 
   function shouldHandleAction(button) {
