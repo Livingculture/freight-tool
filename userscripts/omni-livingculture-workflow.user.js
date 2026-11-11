@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.203
+// @version      0.1.204
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -4316,8 +4316,9 @@
 
   function findQuotePdfAdminControl(template = 'quote') {
     const controls = Array.from(document.querySelectorAll(
-      'a[href], button, input[type="button"], input[type="submit"], [role="button"]'
+      'a, button, input[type="button"], input[type="submit"], [role="button"]'
     )).filter(element => quotePdfTemplateMatches(element, template));
+
     // Background worker tabs can report zero layout dimensions even though the
     // Admin link is present and usable. Prefer a visible control, then fall back
     // to the exact semantic match. Receipt matching remains deliberately exact
@@ -4325,9 +4326,19 @@
     return controls.find(isVisible) || controls.find(element => {
       if (element.disabled || element.getAttribute('aria-disabled') === 'true') return false;
       return element instanceof HTMLAnchorElement
-        ? Boolean(element.getAttribute('href'))
+        ? Boolean(element.getAttribute('href') || element.getAttribute('onclick') || element.onclick)
         : true;
     }) || null;
+  }
+
+  function prepareQuotePdfControlSameTab(control) {
+    control.setAttribute('target', '_self');
+    control.setAttribute('formtarget', '_self');
+    const form = control.form || control.closest?.('form');
+    if (form) {
+      form.target = '_self';
+      form.setAttribute('target', '_self');
+    }
   }
 
   function showQuotePdfTemplateMenu(button) {
@@ -4676,14 +4687,21 @@
       finished = true;
       cleanup();
       if (!handoff.requestId) localStorage.removeItem(QUOTE_PDF_HANDOFF_KEY);
-      complete(`Cin7's ${quotePdfTemplateLabel(handoff.template)} link could not be found on the Admin page.`);
+      complete(clickedControl
+        ? `Cin7 did not open the ${quotePdfTemplateLabel(handoff.template)} from the Admin page.`
+        : `Cin7's ${quotePdfTemplateLabel(handoff.template)} link could not be found on the Admin page.`);
     };
 
     const findQuote = () => {
       if (finished) return;
       const quoteControl = findQuotePdfAdminControl(handoff.template);
       if (!quoteControl) return;
-      const href = quoteControl instanceof HTMLAnchorElement ? quoteControl.href : quoteControl.getAttribute('formaction');
+
+      const rawHref = quoteControl.getAttribute('href') || quoteControl.getAttribute('formaction') || '';
+      const href = rawHref && !/^javascript:/i.test(rawHref)
+        ? new URL(rawHref, location.href).href
+        : '';
+
       if (href && /\/Cloud\/Docs\/PDF/i.test(href)) {
         finished = true;
         cleanup();
@@ -4693,7 +4711,12 @@
       }
       if (quoteControl !== clickedControl) {
         clickedControl = quoteControl;
-        quoteControl.click();
+        prepareQuotePdfControlSameTab(quoteControl);
+        if (href && rawHref !== '#' && !/^javascript:/i.test(rawHref)) {
+          window.location.assign(href);
+        } else {
+          quoteControl.click();
+        }
       }
     };
 
