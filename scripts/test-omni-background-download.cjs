@@ -82,7 +82,7 @@ const workerCode = constants + ['quotePdfTimeout', 'quotePdfWorkerHandoff', 'com
       await parent.waitForFunction(()=>document.getElementById('download').disabled===false,{},{timeout:18000});
       for(let i=0;i<50&&!closed;i++)await new Promise(resolve=>setTimeout(resolve,20));
       assert(closed,'Background tab closes after result');
-      assert.deepEqual(openedOptions,{active:scenario.includes('receipt'),insert:true,setParent:true});
+      assert.deepEqual(openedOptions,{active:false,insert:true,setParent:true});
       const errors=await parent.evaluate(()=>window.alerts);
       if(scenario==='success'){
         assert.equal(savedName,'NZSO-17012.pdf');assert.deepEqual(errors,[]);
