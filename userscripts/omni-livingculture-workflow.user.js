@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.210
+// @version      0.1.211
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -4470,6 +4470,33 @@
     });
   }
 
+  function requestCurrentAdminReceiptHref() {
+    return new Promise((resolve, reject) => {
+      GM_xmlhttpRequest({
+        method: 'GET',
+        url: location.href,
+        timeout: 15000,
+        onload: response => {
+          if (response.status < 200 || response.status >= 300) {
+            reject(new Error(`Cin7 Admin returned HTTP ${response.status}.`));
+            return;
+          }
+          const parsed = new DOMParser().parseFromString(response.responseText || '', 'text/html');
+          const control = Array.from(parsed.querySelectorAll('a[href]'))
+            .find(element => quotePdfTemplateMatches(element, 'receipt'));
+          const href = control?.getAttribute('href') || '';
+          if (!href) {
+            reject(new Error("Cin7 Admin did not include its Dynamic Receipt action."));
+            return;
+          }
+          resolve(new URL(href.replace(/&amp;/gi, '&'), location.href).href);
+        },
+        onerror: () => reject(new Error('Could not connect to the converted Cin7 Admin order.')),
+        ontimeout: () => reject(new Error('The converted Cin7 Admin order timed out.'))
+      });
+    });
+  }
+
   function fetchSignedQuotePdf(url) {
     return new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
@@ -4520,25 +4547,14 @@
       return;
     }
     const nativeReceipt = template === 'receipt' || template === 'invoice';
-    let receiptHref = '';
-    if (nativeReceipt) {
-      try {
-        receiptHref = await prepareQuotePdfLink(currentQuotePdfOrderId(), 'receipt');
-      } catch (error) {
-        window.alert(error.message || 'Cin7\'s Dynamic Receipt link could not be resolved.');
-        return;
-      }
-    }
     // Keep Cin7's native ID conversion, but never select the worker tab.
     const requestId = crypto.randomUUID();
-    const workerUrl = new URL(receiptHref || location.href);
-    if (!nativeReceipt) {
-      workerUrl.searchParams.set('lcQuotePdfWorker', '1');
-      workerUrl.searchParams.set('lcQuotePdfRequest', requestId);
-    }
+    const workerUrl = new URL(location.href);
+    workerUrl.searchParams.set('lcQuotePdfWorker', '1');
+    workerUrl.searchParams.set('lcQuotePdfRequest', requestId);
     const handoffKey = `${QUOTE_PDF_HANDOFF_KEY}:${requestId}`;
     const resultKey = `${handoffKey}:result`;
-    const handoff = { requestId, quoteNumber, template, receiptOpened:nativeReceipt, startedAt: Date.now() };
+    const handoff = { requestId, quoteNumber, template, receiptOpened:false, startedAt: Date.now() };
     localStorage.setItem(handoffKey, JSON.stringify(handoff));
     if (template === 'receipt' || template === 'invoice') localStorage.setItem(QUOTE_PDF_HANDOFF_KEY, JSON.stringify(handoff));
     let worker = null;
@@ -4757,12 +4773,26 @@
       if (handoff.template === 'receipt' || handoff.template === 'invoice') {
         const receiptOpenedKey = `${QUOTE_PDF_HANDOFF_KEY}:receipt-opened`;
         const receiptOpened = handoff.receiptOpened || sessionStorage.getItem(receiptOpenedKey) === handoff.requestId;
-        const receiptControl = receiptOpened ? findNativeReceiptDownloadControl() : findQuotePdfAdminControl(handoff.template);
+        if (!receiptOpened) {
+          if (clickedControl) return;
+          clickedControl = document.documentElement;
+          requestCurrentAdminReceiptHref().then(href => {
+            const nextHandoff = {...handoff, receiptOpened:true};
+            localStorage.setItem(`${QUOTE_PDF_HANDOFF_KEY}:${handoff.requestId}`, JSON.stringify(nextHandoff));
+            localStorage.setItem(QUOTE_PDF_HANDOFF_KEY, JSON.stringify(nextHandoff));
+            window.location.assign(href);
+          }).catch(error => {
+            if (finished) return;
+            finished = true;
+            cleanup();
+            complete(error.message || 'Cin7\'s Dynamic Receipt action could not be opened.');
+          });
+          return;
+        }
+        const receiptControl = findNativeReceiptDownloadControl();
         if (!receiptControl || clickedControl === receiptControl) return;
         clickedControl = receiptControl;
-        if (!receiptOpened) sessionStorage.setItem(receiptOpenedKey, handoff.requestId || 'legacy');
         activateNativeReceiptControl(receiptControl);
-        if (!receiptOpened) return;
         window.setTimeout(() => {
           if (finished) return;
           finished = true;
