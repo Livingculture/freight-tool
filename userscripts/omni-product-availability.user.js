@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Product Availability
 // @namespace    livingculture-omni
-// @version      0.1.17
+// @version      0.1.18
 // @description  Checks Omni products-page stock for all SKUs on the current quote.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-product-availability.user.js
@@ -175,7 +175,7 @@
     })?.closest('table');
   }
 
-  function showQuoteStock(items, table) {
+  function showQuoteStock(items, table, refresh = false) {
     stopReport?.();
     const retained = retainedStockReport(items);
     const root = document.createElement('div'); root.id = REPORT_ID;
@@ -219,7 +219,8 @@
       document.dispatchEvent(new Event('lc-omni-stock-updated'));
       return true;
     };
-    const frame = document.createElement('iframe'); frame.title = 'Omni stock lookup'; frame.tabIndex = -1; frame.setAttribute('aria-hidden', 'true'); shadow.appendChild(frame);
+    const frame = document.createElement('iframe'); frame.title = 'Omni stock lookup'; frame.tabIndex = -1; frame.setAttribute('aria-hidden', 'true');
+    if (refresh) shadow.appendChild(frame);
     const tbody = shadow.querySelector('tbody'), progress = shadow.getElementById('progress');
     const renderStock = (row, item, stock) => {
       while (row.children.length > 3) row.lastElementChild.remove();
@@ -236,7 +237,7 @@
       const previous = checked.get(item.sku);
       if (previous) renderStock(row, item, previous);
       else {
-        const status = document.createElement('td'); status.textContent = 'Checking...'; status.colSpan = 7; row.appendChild(status);
+        const status = document.createElement('td'); status.textContent = refresh ? 'Checking...' : 'Not checked'; status.colSpan = 7; row.appendChild(status);
       }
       tbody.appendChild(row); return row;
     });
@@ -244,9 +245,13 @@
     stopReport = () => { cancelled = true; root.remove(); };
     if (retained) {
       root.dataset.workflowStock = JSON.stringify({ ...retained, page:location.pathname + location.search });
-      progress.textContent = `Rechecking - showing result from ${new Date(retained.checkedAt).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })}`;
+      progress.textContent = `${refresh ? 'Rechecking - showing' : 'Showing'} result from ${new Date(retained.checkedAt).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })}`;
     }
-    shadow.getElementById('refresh').onclick = () => { stockCache.clear(); lastQuoteKey = ''; syncQuoteStock(); };
+    shadow.getElementById('refresh').onclick = () => { stockCache.clear(); syncQuoteStock(true); };
+    if (!refresh) {
+      if (!retained) progress.textContent = 'Click Refresh to check stock';
+      return;
+    }
     void (async () => {
       let errors = 0;
       for (let index = 0; index < items.length && !cancelled; index += 1) {
@@ -281,7 +286,7 @@
     })();
   }
 
-  function syncQuoteStock() {
+  function syncQuoteStock(forceRefresh = false) {
     autoTimer = null;
     const items = quoteItems(), table = quoteTable();
     if (!table || !items.length) {
@@ -289,15 +294,15 @@
     }
     const key = JSON.stringify(items);
     const report = document.getElementById(REPORT_ID);
-    if (key === lastQuoteKey && report?.previousElementSibling === table) return;
+    if (!forceRefresh && key === lastQuoteKey && report?.previousElementSibling === table) return;
     lastQuoteKey = key;
-    showQuoteStock(items, table);
+    showQuoteStock(items, table, forceRefresh);
   }
 
   function scheduleStockSync() {
     const active = document.activeElement;
     const focused = active?.shadowRoot?.activeElement || active;
-    if (document.hidden || (focused && focused !== document.body
+    if (document.hidden || Date.now() < Number(window.__lcOmniEditingUntil || 0) || (focused && focused !== document.body
       && (/^(INPUT|TEXTAREA|SELECT)$/i.test(focused.tagName) || focused.isContentEditable))) return;
     if (autoTimer !== null) return;
     autoTimer = setTimeout(syncQuoteStock, 300);
@@ -318,12 +323,12 @@
     if (!report || !table || table.contains(event.target)) scheduleStockSync();
   };
   document.addEventListener('change', scheduleForQuoteChange);
-  document.addEventListener('focusout', scheduleForQuoteChange);
+  document.addEventListener('focusout', event => window.setTimeout(() => scheduleForQuoteChange(event), 700));
   new MutationObserver(records => {
     const active = document.activeElement;
     const focused = active?.shadowRoot?.activeElement || active;
-    if (focused && focused !== document.body
-      && (/^(INPUT|TEXTAREA|SELECT)$/i.test(focused.tagName) || focused.isContentEditable)) return;
+    if (Date.now() < Number(window.__lcOmniEditingUntil || 0) || (focused && focused !== document.body
+      && (/^(INPUT|TEXTAREA|SELECT)$/i.test(focused.tagName) || focused.isContentEditable))) return;
     const report = document.getElementById(REPORT_ID);
     const table = report?.previousElementSibling;
     if (!report?.isConnected || !table || records.some(record => {

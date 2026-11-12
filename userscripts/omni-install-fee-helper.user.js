@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Installation Fee Helper
 // @namespace    livingculture-omni
-// @version      0.1.20
+// @version      0.1.21
 // @description  Automatically matches pergola and blind installation fees in Cin7 Omni, with a manual installation fee picker.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-install-fee-helper.user.js
@@ -597,7 +597,8 @@
   function editingQuote() {
     const active = document.activeElement;
     const focused = active?.shadowRoot?.activeElement || active;
-    return Boolean(focused && (/^(INPUT|TEXTAREA|SELECT)$/i.test(focused.tagName) || focused.isContentEditable));
+    return Date.now() < Number(window.__lcOmniEditingUntil || 0)
+      || Boolean(focused && (/^(INPUT|TEXTAREA|SELECT)$/i.test(focused.tagName) || focused.isContentEditable));
   }
   function memoRequiresInstallation(text) {
     const memo = clean(text);
@@ -748,7 +749,7 @@
   }
   function refreshQuoteUi() { placeButton(); hideEmptyOptions(); }
   function scheduleQuoteUiRefresh(delay = 80) {
-    if (document.hidden || quoteUiTimer !== null) return;
+    if (document.hidden || editingQuote() || quoteUiTimer !== null) return;
     quoteUiTimer = window.setTimeout(() => {
       quoteUiTimer = null;
       refreshQuoteUi();
@@ -765,7 +766,8 @@
     scheduleQuoteUiRefresh();
     scheduleAutomaticFees();
   }).observe(document.body, { childList:true, characterData:true, subtree:true });
-  for (const event of ['input', 'change', 'focusout']) document.addEventListener(event, () => scheduleAutomaticFees(), true);
+  for (const event of ['input', 'change']) document.addEventListener(event, () => scheduleAutomaticFees(), true);
+  document.addEventListener('focusout', () => window.setTimeout(() => { scheduleQuoteUiRefresh(); scheduleAutomaticFees(); }, 700), true);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') return;
     scheduleQuoteUiRefresh(0);

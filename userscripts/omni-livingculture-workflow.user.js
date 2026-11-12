@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.213
+// @version      0.1.214
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -6326,8 +6326,8 @@
   function scheduleButtonPass() {
     const active = document.activeElement;
     const focused = active?.shadowRoot?.activeElement || active;
-    if (focused && focused !== document.body
-      && (/^(INPUT|TEXTAREA|SELECT)$/i.test(focused.tagName) || focused.isContentEditable)) return;
+    if (Date.now() < Number(window.__lcOmniEditingUntil || 0) || (focused && focused !== document.body
+      && (/^(INPUT|TEXTAREA|SELECT)$/i.test(focused.tagName) || focused.isContentEditable))) return;
     if (buttonPassScheduled) return;
     buttonPassScheduled = true;
     const delay = Math.max(0, 200 - (Date.now() - lastButtonPassAt));
@@ -6371,7 +6371,16 @@
     setTimeout(scheduleButtonPass, 3000);
     setTimeout(scheduleButtonPass, 6000);
     if (isOmniPage()) {
-      document.addEventListener('focusout', () => window.setTimeout(scheduleButtonPass, 0), true);
+      const extendEditLock = delay => { window.__lcOmniEditingUntil = Date.now() + delay; };
+      document.addEventListener('pointerdown', event => {
+        if (event.target.closest?.('table td, input, textarea, select, [contenteditable="true"]')) extendEditLock(2500);
+      }, true);
+      document.addEventListener('input', () => extendEditLock(1500), true);
+      document.addEventListener('keydown', () => extendEditLock(1500), true);
+      document.addEventListener('focusout', () => {
+        extendEditLock(600);
+        window.setTimeout(scheduleButtonPass, 700);
+      }, true);
       document.addEventListener('click', (event) => {
         const target = event.target instanceof Element ? event.target.closest('button, a, input[type="button"], input[type="submit"]') : null;
         const label = normalizeLabel(target?.value || target?.textContent || '');
