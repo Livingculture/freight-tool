@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Product Availability
 // @namespace    livingculture-omni
-// @version      0.1.16
+// @version      0.1.17
 // @description  Checks Omni products-page stock for all SKUs on the current quote.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-product-availability.user.js
@@ -295,7 +295,10 @@
   }
 
   function scheduleStockSync() {
-    if (document.hidden) return;
+    const active = document.activeElement;
+    const focused = active?.shadowRoot?.activeElement || active;
+    if (document.hidden || (focused && focused !== document.body
+      && (/^(INPUT|TEXTAREA|SELECT)$/i.test(focused.tagName) || focused.isContentEditable))) return;
     if (autoTimer !== null) return;
     autoTimer = setTimeout(syncQuoteStock, 300);
   }
@@ -314,9 +317,13 @@
     const table = report?.previousElementSibling;
     if (!report || !table || table.contains(event.target)) scheduleStockSync();
   };
-  document.addEventListener('input', scheduleForQuoteChange);
   document.addEventListener('change', scheduleForQuoteChange);
+  document.addEventListener('focusout', scheduleForQuoteChange);
   new MutationObserver(records => {
+    const active = document.activeElement;
+    const focused = active?.shadowRoot?.activeElement || active;
+    if (focused && focused !== document.body
+      && (/^(INPUT|TEXTAREA|SELECT)$/i.test(focused.tagName) || focused.isContentEditable)) return;
     const report = document.getElementById(REPORT_ID);
     const table = report?.previousElementSibling;
     if (!report?.isConnected || !table || records.some(record => {
