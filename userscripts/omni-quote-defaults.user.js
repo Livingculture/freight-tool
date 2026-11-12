@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Quote Defaults
 // @namespace    livingculture-omni
-// @version      0.1.10
+// @version      0.1.11
 // @description  Sets Expected Order Date to 14 days after Created Date and Probability of Winning to 50%.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-defaults.user.js
@@ -70,7 +70,6 @@
   }
 
   function setInput(input, value) {
-    input.focus();
     const prototype = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype
       : input instanceof HTMLSelectElement ? HTMLSelectElement.prototype
         : input instanceof HTMLInputElement ? HTMLInputElement.prototype : null;
@@ -80,10 +79,15 @@
     else input.textContent = value;
     input.setAttribute('value', value);
     input.dispatchEvent(new Event('input', { bubbles: true }));
-    input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Tab' }));
     input.dispatchEvent(new Event('change', { bubbles: true }));
-    input.dispatchEvent(new Event('blur', { bubbles: true }));
-    if (window.jQuery) window.jQuery(input).val(value).trigger('input').trigger('change').trigger('blur');
+    if (window.jQuery) window.jQuery(input).val(value).trigger('input').trigger('change');
+  }
+
+  function editingFieldActive() {
+    const active = document.activeElement;
+    const focused = active?.shadowRoot?.activeElement || active;
+    return Boolean(focused && focused !== document.body
+      && (/^(INPUT|TEXTAREA|SELECT)$/i.test(focused.tagName) || focused.isContentEditable));
   }
 
   function dateValue(input) {
@@ -216,6 +220,7 @@
   }
 
   function applyDefaults() {
+    if (document.hidden || editingFieldActive()) return;
     document.getElementById('lc-omni-defaults-diagnostic')?.remove();
     if (!label('Expected Order Date')) return;
     const probability = fieldNearLabel('Probability of Winning', 'select');
@@ -233,12 +238,13 @@
     setProbability(probability);
   }
 
+  let scheduleTimer = 0;
   function schedule() {
-    if (window.__lcOmniQuoteDefaultsFrame) return;
-    window.__lcOmniQuoteDefaultsFrame = requestAnimationFrame(() => {
-      window.__lcOmniQuoteDefaultsFrame = 0;
+    if (scheduleTimer || editingFieldActive()) return;
+    scheduleTimer = window.setTimeout(() => {
+      scheduleTimer = 0;
       applyDefaults();
-    });
+    }, 300);
   }
 
   applyDefaults();
@@ -246,5 +252,5 @@
   document.addEventListener('change', event => {
     if (event.target === dateFieldNearLabel('Created Date')) schedule();
   }, true);
-  setInterval(applyDefaults, 2000);
+  setInterval(applyDefaults, 10000);
 })();
