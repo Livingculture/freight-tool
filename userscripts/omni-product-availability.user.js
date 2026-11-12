@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Product Availability
 // @namespace    livingculture-omni
-// @version      0.1.15
+// @version      0.1.16
 // @description  Checks Omni products-page stock for all SKUs on the current quote.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-product-availability.user.js
@@ -144,7 +144,7 @@
   }
 
   const stockCache = new Map();
-  let lastQuoteKey = '', stopReport = null, autoTimer = null, lastFinishedAt = 0;
+  let lastQuoteKey = '', stopReport = null, autoTimer = null;
 
   function retainedStockKey() {
     const orderId = [...new URLSearchParams(location.search)].find(([key]) => key.toLowerCase() === 'orderid')?.[1] || location.search;
@@ -202,7 +202,6 @@
     syncStatus.title = 'Stock panel 0.1.14';
     shadow.querySelector('.info').appendChild(syncStatus);
     table.insertAdjacentElement('afterend', root);
-    lastFinishedAt = 0;
     const checked = new Map((retained?.lines || []).map(line => [line.sku, line]));
     const refreshed = new Set();
     const publish = () => {
@@ -272,7 +271,7 @@
         }
       }
       if (!cancelled) {
-        frame.remove(); lastFinishedAt = Date.now();
+        frame.remove();
         const saved = publish();
         progress.textContent = saved
           ? `Checked ${items.length} products at ${new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })}`
@@ -290,7 +289,7 @@
     }
     const key = JSON.stringify(items);
     const report = document.getElementById(REPORT_ID);
-    if (key === lastQuoteKey && report?.previousElementSibling === table && (!lastFinishedAt || Date.now() - lastFinishedAt < 60000)) return;
+    if (key === lastQuoteKey && report?.previousElementSibling === table) return;
     lastQuoteKey = key;
     showQuoteStock(items, table);
   }
@@ -310,19 +309,23 @@
 
   document.getElementById(BUTTON_ID)?.remove();
   scheduleStockSync();
-  document.addEventListener('input', scheduleStockSync);
-  document.addEventListener('change', scheduleStockSync);
-  document.addEventListener('visibilitychange', scheduleStockSync);
-  setInterval(scheduleStockSync, 5000);
+  const scheduleForQuoteChange = event => {
+    const report = document.getElementById(REPORT_ID);
+    const table = report?.previousElementSibling;
+    if (!report || !table || table.contains(event.target)) scheduleStockSync();
+  };
+  document.addEventListener('input', scheduleForQuoteChange);
+  document.addEventListener('change', scheduleForQuoteChange);
   new MutationObserver(records => {
-    if (records.some(record => {
+    const report = document.getElementById(REPORT_ID);
+    const table = report?.previousElementSibling;
+    if (!report?.isConnected || !table || records.some(record => {
       const target = record.target instanceof Element ? record.target : record.target.parentElement;
-      return target && !target.closest?.(`#${BUTTON_ID}, #${REPORT_ID}`);
+      return target && (target === table || table.contains(target));
     })) scheduleStockSync();
   }).observe(document.body, {
     childList: true,
     subtree: true,
     characterData: true
   });
-  window.addEventListener('resize', scheduleStockSync);
 })();
