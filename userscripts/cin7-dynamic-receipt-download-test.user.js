@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Cin7 Dynamic Receipt Download Test
 // @namespace    livingculture-cin7-receipt-test
-// @version      0.1.0
-// @description  Tests downloading Cin7's native Dynamic Receipt PDF from its authenticated Order 5 URL.
+// @version      0.2.0
+// @description  Tests intercepting Cin7 Admin's native Dynamic Receipt action and downloading its authenticated PDF.
 // @author       Living Culture
-// @match        https://go.cin7.com/Cloud/Docs/PDF/*
+// @match        https://go.cin7.com/Cloud/ShoppingCartAdmin/*
 // @run-at       document-start
 // @grant        GM_xmlhttpRequest
 // @connect      go.cin7.com
@@ -15,16 +15,10 @@
 (function () {
   'use strict';
 
-  const url = new URL(location.href);
-  if (url.searchParams.get('T') !== 'Order 5') return;
-
-  const runKey = `lc-dynamic-receipt-test:${url.href}`;
-  if (sessionStorage.getItem(runKey)) return;
-  sessionStorage.setItem(runKey, '1');
-
-  GM_xmlhttpRequest({
+  function downloadReceipt(url) {
+    GM_xmlhttpRequest({
     method: 'GET',
-    url: url.href,
+    url,
     responseType: 'arraybuffer',
     timeout: 60000,
     onload(response) {
@@ -50,5 +44,27 @@
     ontimeout() {
       window.alert('Receipt test failed: Cin7 took longer than 60 seconds to return the PDF.');
     }
-  });
+    });
+  }
+
+  document.addEventListener('click', event => {
+    const control = event.target.closest?.('a, button, [role="button"]');
+    if (!control) return;
+    const label = String(control.textContent || control.getAttribute('aria-label') || control.getAttribute('title') || '')
+      .replace(/\s+/g, ' ').trim().toLowerCase();
+    const rawHref = control.getAttribute('href') || control.getAttribute('formaction') || '';
+    let receiptUrl = '';
+    try {
+      const candidate = new URL(rawHref, location.href);
+      if (candidate.searchParams.get('T') === 'Order 5') receiptUrl = candidate.href;
+    } catch (error) {}
+    if (!receiptUrl && !label.includes('dynamic receipt')) return;
+    if (!receiptUrl) {
+      window.alert('Receipt test found Dynamic Receipt, but the control did not contain its PDF URL.');
+      return;
+    }
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    downloadReceipt(receiptUrl);
+  }, true);
 })();
