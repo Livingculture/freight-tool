@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture All-in-One
 // @namespace    livingculture
-// @version      0.1.253
+// @version      0.1.254
 // @description  Approved Living Culture Omni, Cin7 Core, Gmail, HubSpot and website tools in one Tampermonkey install.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -52,7 +52,7 @@
 // @resource     customProducts https://raw.githubusercontent.com/Livingculture/freight-tool/72e0cf7ff05575a36b275e5a48d911d027daa49c/userscripts/omni-custom-product-helper.user.js
 // @resource     customProductData https://raw.githubusercontent.com/Livingculture/freight-tool/454bc4336d12a1adc619d2011ffb61d29c1f08de/userscripts/cin7-custom-product-helper.user.js
 // @resource     websiteShortcuts https://raw.githubusercontent.com/Livingculture/freight-tool/86774fbd10544cbc5d6b301c74599fa30ec48df5/userscripts/omni-website-shortcuts.user.js
-// @resource     productAvailability https://raw.githubusercontent.com/Livingculture/freight-tool/f32263abbd7d3eb8be01d52f6f4acffa27b00366/userscripts/omni-product-availability.user.js
+// @resource     productAvailability https://raw.githubusercontent.com/Livingculture/freight-tool/2bc76cbe6436128c3822478407a784974d768b94/userscripts/omni-product-availability.user.js
 // @resource     chinaWarehouse https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-china-warehouse-popup-clean-mode.user.js?v=0.1.1
 // @resource     caribbeanStock https://raw.githubusercontent.com/Livingculture/freight-tool/28da92afbd1accc345feaaa22904e398d501a81b/userscripts/caribbean-stock.user.js
 // @resource     quoteDefaults https://raw.githubusercontent.com/Livingculture/freight-tool/69f86c1861a6612f7a62c86208dbb36f8de6bf12/userscripts/omni-quote-defaults.user.js
@@ -146,7 +146,7 @@
     if (earlyOmniTools.has(component.resource)) component.runAt = 'body';
   });
 
-  const status = { version: '0.1.253', loaded: [], skipped: [], errors: [] };
+  const status = { version: '0.1.254', loaded: [], skipped: [], errors: [] };
   window.__lcAllInOneStatus = status;
 
   // BEGIN GENERATED GMAIL COMPONENTS
