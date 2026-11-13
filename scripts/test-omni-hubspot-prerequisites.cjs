@@ -2,7 +2,9 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const {chromium}=require('playwright');
 const source=fs.readFileSync('userscripts/omni-livingculture-workflow.user.js','utf8');
-const gate=source.slice(source.indexOf('  function hubSpotPrerequisites()'),source.indexOf('  function applyHubSpotApprovalGate('));
+const actualGate=source.slice(source.indexOf('  const HUBSPOT_PREREQUISITES_REQUIRED'),source.indexOf('  function applyHubSpotApprovalGate('));
+assert.match(actualGate,/const HUBSPOT_PREREQUISITES_REQUIRED = false;/,'Production keeps HubSpot Deal clickable while the prerequisite lock is temporarily disabled');
+const gate=actualGate.replace('const HUBSPOT_PREREQUISITES_REQUIRED = false;','const HUBSPOT_PREREQUISITES_REQUIRED = true;');
 const submit=source.slice(source.indexOf('  async function submitHubSpotDeal('),source.indexOf('  function confirmOmniQuoteReview('));
 const completion=source.slice(source.indexOf('  function hubSpotGateStorageKey('),source.indexOf('  function ensureHubSpotGateStyles('));
 assert(gate&&submit);
@@ -26,6 +28,12 @@ installHubSpotPrerequisiteHooks();installHubSpotPrerequisiteHooks();applyHubSpot
  const browser=await chromium.launch();
  try{
   const context=await browser.newContext();
+  const temporarilyUnlocked=await context.newPage();
+  await temporarilyUnlocked.route('https://go.cin7.com/**',route=>route.fulfill({contentType:'text/html',body:'<button id="hubspot">HubSpot Deal</button><button id="save">Save To Draft</button><button id="lc-omni-quote-memo-button">Quote Memo Info</button>'}));
+  await temporarilyUnlocked.goto('https://go.cin7.com/quote');
+  await temporarilyUnlocked.addScriptTag({content:setup.replace('const HUBSPOT_PREREQUISITES_REQUIRED = true;','const HUBSPOT_PREREQUISITES_REQUIRED = false;')});
+  assert(await temporarilyUnlocked.locator('#hubspot').isEnabled(),'Temporary override keeps HubSpot Deal clickable before memo or draft steps');
+  await temporarilyUnlocked.close();
   const page=await context.newPage();
   await page.route('https://go.cin7.com/**',route=>route.fulfill({contentType:'text/html',body:'<button id="hubspot">HubSpot Deal</button><button id="save">Save As Draft</button><button id="lc-omni-quote-memo-button">Quote Memo Info</button><button>Save</button>'}));
   await page.goto('https://go.cin7.com/quote');await page.addScriptTag({content:setup});
