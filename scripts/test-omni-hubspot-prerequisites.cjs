@@ -93,15 +93,15 @@ installHubSpotPrerequisiteHooks();installHubSpotPrerequisiteHooks();applyHubSpot
   await page.locator('#save').click();await page.locator('#lc-omni-quote-memo-button').click();assert(await hubspot.isEnabled(),'Current-page steps work when storage is blocked');
   await page.evaluate(()=>{isOmni=false;applyHubSpotPrerequisiteGate();});assert(await hubspot.isEnabled(),'Core is unaffected');
   const newQuote=await page.context().newPage();
-  await newQuote.route('https://go.cin7.com/**',route=>route.fulfill({contentType:'text/html',body:'<button id="hubspot">HubSpot Deal</button><button id="save">Save As Draft</button><button id="lc-omni-quote-memo-button">Quote Memo Info</button>'}));
+  await newQuote.route('https://go.cin7.com/**',route=>route.fulfill({contentType:'text/html',body:'<button id="hubspot">HubSpot Deal</button><button id="save">Save To Draft</button><button id="lc-omni-quote-memo-button">Quote Memo Info</button>'}));
   await newQuote.goto('https://go.cin7.com/quote');await newQuote.addScriptTag({content:setup});
   await newQuote.evaluate(()=>{order='';deliveryInstructions='Memo entered before first save';applyHubSpotPrerequisiteGate();});
   await newQuote.locator('#save').click();
-  assert(await newQuote.evaluate(()=>Boolean(sessionStorage.getItem(HUBSPOT_PENDING_DRAFT_KEY))),'Orderless Save As Draft is retained through native reload');
+  assert(await newQuote.evaluate(()=>Boolean(sessionStorage.getItem(HUBSPOT_PENDING_DRAFT_KEY))),'Orderless Save To Draft is retained through native reload');
   await newQuote.evaluate(()=>{order='NZSO-17011';applyHubSpotPrerequisiteGate();});
-  assert(await newQuote.locator('#hubspot').isEnabled(),'Quote Memo before Save As Draft unlocks after Omni assigns the NZSO number');
+  assert(await newQuote.locator('#hubspot').isEnabled(),'Quote Memo before Save To Draft unlocks after Omni assigns the NZSO number');
   assert.deepEqual(await newQuote.evaluate(()=>JSON.parse(localStorage.getItem('lc-omni-hubspot-prerequisites:NZSO-17011'))),{savedDraft:true,quoteMemo:true});
   await newQuote.close();
-  console.log('PASS: New quotes require Save As Draft plus memo; transferred quotes accept Save plus memo; per-quote persistence, isolation, guarded submission, approved-sales and Core compatibility preserved. No HubSpot requests sent.');
+  console.log('PASS: New quotes accept Save As Draft or Save To Draft plus memo; transferred quotes accept Save plus memo; per-quote persistence, isolation, guarded submission, approved-sales and Core compatibility preserved. No HubSpot requests sent.');
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

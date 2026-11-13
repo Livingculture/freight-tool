@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.214
+// @version      0.1.215
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -380,7 +380,7 @@
     const order = extractOrderId(heading.orderId);
     if (!/^NZSO-\d+[A-Z]?$/.test(order)) return ['Save as Draft to obtain an NZSO number'];
     if (isQuotePdfUnlocked(order)) return [];
-    if (heading.documentType !== 'quote' && !findButtonByLabel('Save As Draft')) return [];
+    if (heading.documentType !== 'quote' && !findButtonByLabel('Save As Draft') && !findButtonByLabel('Save To Draft')) return [];
     const key = order ? `lc-omni-hubspot-prerequisites:${order}` : '';
     const clicks = readHubSpotPrerequisiteSteps(key);
     claimPendingHubSpotDraft(key, clicks, heading);
@@ -388,7 +388,7 @@
       clicks.quoteMemo = true;
       persistHubSpotPrerequisiteSteps(key, clicks);
     }
-    const saveLabel = findButtonByLabel('Save As Draft') ? 'Save as Draft' : 'Save';
+    const saveLabel = findButtonByLabel('Save As Draft') || findButtonByLabel('Save To Draft') ? 'Save as Draft' : 'Save';
     return [!clicks.savedDraft && saveLabel, !clicks.quoteMemo && 'Quote Memo Info'].filter(Boolean);
   }
 
@@ -475,8 +475,10 @@
       const step = control.id === 'lc-omni-quote-memo-button' || label === 'quote memo info' ? 'quoteMemo'
         : !control.id?.startsWith('lc-') && (
           label === 'save as draft'
+          || label === 'save to draft'
           || (omniHeadingDraft().documentType === 'quote'
             && !findButtonByLabel('Save As Draft')
+            && !findButtonByLabel('Save To Draft')
             && EXISTING_QUOTE_SAVE_LABELS.has(label))
         ) ? 'savedDraft' : '';
       const order = extractOrderId(hubSpotGateOrderId());
@@ -1607,7 +1609,7 @@
   }
 
   function leftmostOmniSaveButton() {
-    const labels = ['Save As Draft', 'Save', 'Save & Email', 'Save Back to List', 'Save to Admin', 'Approve Back to List', 'Approve'];
+    const labels = ['Save As Draft', 'Save To Draft', 'Save', 'Save & Email', 'Save Back to List', 'Save to Admin', 'Approve Back to List', 'Approve'];
     return labels
       .map(visibleOmniControl)
       .filter(Boolean)
@@ -6324,10 +6326,6 @@
   }
 
   function scheduleButtonPass() {
-    const active = document.activeElement;
-    const focused = active?.shadowRoot?.activeElement || active;
-    if (Date.now() < Number(window.__lcOmniEditingUntil || 0) || (focused && focused !== document.body
-      && (/^(INPUT|TEXTAREA|SELECT)$/i.test(focused.tagName) || focused.isContentEditable))) return;
     if (buttonPassScheduled) return;
     buttonPassScheduled = true;
     const delay = Math.max(0, 200 - (Date.now() - lastButtonPassAt));
@@ -6371,16 +6369,6 @@
     setTimeout(scheduleButtonPass, 3000);
     setTimeout(scheduleButtonPass, 6000);
     if (isOmniPage()) {
-      const extendEditLock = delay => { window.__lcOmniEditingUntil = Date.now() + delay; };
-      document.addEventListener('pointerdown', event => {
-        if (event.target.closest?.('table td, input, textarea, select, [contenteditable="true"]')) extendEditLock(2500);
-      }, true);
-      document.addEventListener('input', () => extendEditLock(1500), true);
-      document.addEventListener('keydown', () => extendEditLock(1500), true);
-      document.addEventListener('focusout', () => {
-        extendEditLock(600);
-        window.setTimeout(scheduleButtonPass, 700);
-      }, true);
       document.addEventListener('click', (event) => {
         const target = event.target instanceof Element ? event.target.closest('button, a, input[type="button"], input[type="submit"]') : null;
         const label = normalizeLabel(target?.value || target?.textContent || '');
