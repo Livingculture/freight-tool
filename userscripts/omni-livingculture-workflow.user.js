@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.217
+// @version      0.1.218
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -62,6 +62,7 @@
   const OVERLAY_ID = 'lc-site-visit-overlay-v2';
   const WORKFLOW_API_URL = 'https://living-culture-workflow.vercel.app/api/site-visits';
   const OMNI_ORDER_SYNC_API_URL = 'https://living-culture-workflow.vercel.app/api/omni/orders';
+  const OMNI_ORDER_SEARCH_API_URL = 'https://living-culture-workflow.vercel.app/api/omni/order-search';
   const QUOTE_REVIEW_API_URL = 'https://living-culture-workflow.vercel.app/api/quote-reviews';
   const WORKFLOW_PLANNER_URL = 'https://living-culture-workflow.vercel.app/';
   const CUSTOMER_PHOTOS_API_URL = 'https://living-culture-workflow.vercel.app/api/customer-photos';
@@ -6206,6 +6207,53 @@
     if (button.parentElement !== toolsBar) toolsBar.appendChild(button);
   }
 
+  function installOmniOrderSearch() {
+    if (!/\/Cloud\/ShoppingCartAdmin\/Orders\/OrdersList\.aspx/i.test(location.pathname) || window.parent !== window) return;
+    const add = () => {
+      if (document.getElementById('lc-omni-order-search')) return true;
+      const reset = Array.from(document.querySelectorAll('button,input[type="button"],input[type="submit"],a'))
+        .find(node => isVisible(node) && normalizeLabel(node.value || node.textContent) === 'reset');
+      if (!reset?.parentElement) return false;
+      const form = document.createElement('form');
+      form.id = 'lc-omni-order-search';
+      form.setAttribute('role', 'search');
+      form.style.cssText = 'display:inline-flex;align-items:center;gap:8px;margin-left:8px;vertical-align:middle;max-width:100%;';
+      const input = document.createElement('input');
+      input.type = 'search'; input.placeholder = 'Sales order or quote'; input.autocomplete = 'off'; input.setAttribute('aria-label', 'Sales order or quote number');
+      input.style.cssText = 'box-sizing:border-box;width:210px;max-width:42vw;height:36px;padding:0 10px;border:1px solid #06346d;border-radius:4px;background:#fff;color:#1f2937;font:14px Arial,sans-serif;';
+      const button = document.createElement('button');
+      button.type = 'submit'; button.textContent = 'Open'; button.title = 'Open a sales order or quote from your branch';
+      button.style.cssText = 'box-sizing:border-box;height:36px;padding:0 16px;border:1px solid #06346d;border-radius:4px;background:#06346d;color:#fff;font:700 14px Arial,sans-serif;cursor:pointer;';
+      const status = document.createElement('span');
+      status.setAttribute('role', 'status'); status.style.cssText = 'font:13px Arial,sans-serif;color:#9b2c2c;white-space:nowrap;';
+      form.append(input, button, status);
+      reset.after(form);
+      form.addEventListener('submit', event => {
+        event.preventDefault();
+        const compact = clean(input.value).toUpperCase().replace(/\s+/g, '').replace(/^NZSO-?/, '');
+        if (!/^\d+[A-Z]?$/.test(compact)) { status.textContent = 'Enter a valid NZSO number'; input.focus(); return; }
+        button.disabled = true; button.textContent = 'Opening…'; status.textContent = '';
+        const url = new URL(OMNI_ORDER_SEARCH_API_URL); url.searchParams.set('number', `NZSO-${compact}`);
+        GM_xmlhttpRequest({ method:'GET', url:url.href, anonymous:false, timeout:15000, headers:{Accept:'application/json','Cache-Control':'no-cache'},
+          onload: response => {
+            try {
+              const payload = JSON.parse(response.responseText || '{}');
+              if (response.status !== 200 || !/^https:\/\/go\.cin7\.com\//i.test(payload.url || '')) throw new Error(payload.error || 'The record could not be opened.');
+              location.assign(payload.url);
+            } catch (error) { status.textContent = error.message || 'The record could not be opened.'; button.disabled = false; button.textContent = 'Open'; }
+          },
+          onerror: () => { status.textContent = 'Could not search. Please retry.'; button.disabled = false; button.textContent = 'Open'; },
+          ontimeout: () => { status.textContent = 'Search timed out. Please retry.'; button.disabled = false; button.textContent = 'Open'; }
+        });
+      });
+      return true;
+    };
+    if (add()) return;
+    const observer = new MutationObserver(() => { if (add()) observer.disconnect(); });
+    observer.observe(document.documentElement, { childList:true, subtree:true });
+    window.setTimeout(() => observer.disconnect(), 15000);
+  }
+
   function openDrawingsPopup(order) {
     const url = new URL('/drawings', WORKFLOW_PLANNER_URL);
     if (/^NZSO-\d+[A-Z]?$/i.test(order || '')) url.searchParams.set('order', order.toUpperCase());
@@ -6348,6 +6396,7 @@
       && !new URL(location.href).searchParams.has('lcQuotePdfWorker');
     if (/\/Cloud\/ShoppingCartAdmin\//i.test(location.pathname) || isReceiptWorkerPage) {
       if (window.parent !== window) return;
+      installOmniOrderSearch();
       if (!isReceiptWorkerPage || /\/Cloud\/ShoppingCartAdmin\//i.test(location.pathname)) {
         continueConvertToSalesOrderFromAdmin();
         continueCloneQuoteFromAdmin();
