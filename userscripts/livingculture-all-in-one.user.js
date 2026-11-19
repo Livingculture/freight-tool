@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture All-in-One
 // @namespace    livingculture
-// @version      0.1.260
+// @version      0.1.261
 // @description  Approved Living Culture Omni, Cin7 Core, Gmail, HubSpot and website tools in one Tampermonkey install.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -66,7 +66,7 @@
 // @resource     warrantyGuide https://raw.githubusercontent.com/Livingculture/freight-tool/4c8f7709f96fdbd17c59fa9fe4e81cd5dab6345a/userscripts/omni-warranty-guide.user.js
 // @resource     omniHelpTooltips https://raw.githubusercontent.com/Livingculture/freight-tool/f32263abbd7d3eb8be01d52f6f4acffa27b00366/userscripts/omni-help-tooltips.user.js
 // @resource     emailHelperOnly https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-email-helper-only.user.js?v=0.1.1
-// @resource     quoteMemo https://raw.githubusercontent.com/Livingculture/freight-tool/b3e3a323b1b0ba6a9aed3bf11f328375a7728e34/userscripts/omni-quote-memo-info.user.js
+// @resource     quoteMemo https://raw.githubusercontent.com/Livingculture/freight-tool/e3c6fbddf7d4c8dc6dde55c5b57754ff2b3f3b74/userscripts/omni-quote-memo-info.user.js
 // @resource     pergolaGuide https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-pergola-modification-guide.user.js?v=0.1.1
 // @resource     hubspotColours https://raw.githubusercontent.com/Livingculture/freight-tool/7a8b7129734197d862365448fafebb651cf4e133/userscripts/hubspot-contrast-colours.user.js
 // @resource     hubspotQuoteReview https://raw.githubusercontent.com/Livingculture/freight-tool/2c12856/userscripts/hubspot-quote-line-review.user.js
