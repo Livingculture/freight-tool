@@ -60,8 +60,14 @@ const observer=source.slice(observerStart<0?oldObserverStart:observerStart,sourc
   assert.equal(await page.evaluate(()=>observedHeading.orderId),'NZSO-17001','Injected buttons do not corrupt heading parsing');
   await page.waitForTimeout(300);
   const before=await page.evaluate(()=>passes);
-  await page.evaluate(()=>{for(let i=0;i<100;i++)document.getElementById('native-lines').append(document.createElement('span'));});
-  await page.waitForTimeout(400);
+  await page.evaluate(()=>new Promise(resolve=>{
+    let count=0;
+    const timer=setInterval(()=>{
+      document.getElementById('native-lines').append(document.createElement('span'));
+      if(++count===10){clearInterval(timer);resolve();}
+    },50);
+  }));
+  await page.waitForTimeout(700);
   assert.equal(await page.evaluate(()=>passes),before+1,'Native loading bursts are coalesced into one pass');
   await page.evaluate(()=>document.querySelector('h4').firstChild.textContent='Edit Quote - Different customer - NZSO-17002');
   assert.deepEqual(await page.evaluate(()=>omniHeadingDraft()),{customerName:'Different customer',orderId:'NZSO-17002',documentType:'quote'},'Cache invalidates when saved heading changes');

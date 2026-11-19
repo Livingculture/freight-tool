@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.216
+// @version      0.1.217
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -1702,7 +1702,10 @@
 
   function observeOmniLayout() {
     if (!isOmniPage() || typeof ResizeObserver === 'undefined') return;
-    if (!omniLayoutResizeObserver) omniLayoutResizeObserver = new ResizeObserver(scheduleButtonPass);
+    if (!omniLayoutResizeObserver) omniLayoutResizeObserver = new ResizeObserver(() => {
+      window.clearTimeout(omniLayoutResizeObserver.lcPassTimer);
+      omniLayoutResizeObserver.lcPassTimer = window.setTimeout(scheduleButtonPass, 300);
+    });
     document.querySelectorAll('textarea').forEach(element => omniLayoutResizeObserver.observe(element));
     const anchor = findOmniActionAnchor();
     if (anchor) omniLayoutResizeObserver.observe(anchor);
@@ -6396,7 +6399,8 @@
   omniDomObserver = new MutationObserver((records) => {
     if (!document.body) return;
     if (records.some(record => !record.target.closest?.(`#${CUSTOMER_PHOTOS_ACTIONS_ID}, #${OMNI_TOOLS_BAR_ID}, #${STAFF_HELP_BAR_ID}, #${STAFF_HELP_DIALOG_ID}, #${OVERLAY_ID}`))) {
-      scheduleButtonPass();
+      window.clearTimeout(omniDomObserver.lcPassTimer);
+      omniDomObserver.lcPassTimer = window.setTimeout(scheduleButtonPass, 300);
     }
   });
   omniDomObserver.observe(document.documentElement, { childList: true, subtree: true });
