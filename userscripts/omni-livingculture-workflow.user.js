@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.218
+// @version      0.1.219
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -6254,6 +6254,120 @@
     window.setTimeout(() => observer.disconnect(), 15000);
   }
 
+  const OMNI_LIST_SYNC_CACHE_PREFIX = 'lc-omni-list-sync-v1:';
+  const omniListSyncQueue = [];
+  let omniListSyncActive = false;
+  let omniListScanTimer = null;
+
+  function omniListHeaderKey(value) {
+    return clean(value).toLowerCase().replace(/[^a-z0-9]+/g, '');
+  }
+
+  function omniListMoney(value) {
+    const match = clean(value).replace(/,/g, '').match(/-?\d+(?:\.\d+)?/);
+    const amount = match ? Number(match[0]) : NaN;
+    return Number.isFinite(amount) ? amount : null;
+  }
+
+  function omniListRowSnapshots() {
+    const snapshots = [];
+    for (const table of document.querySelectorAll('table')) {
+      const rows = Array.from(table.querySelectorAll('tr')).filter(row => row.closest('table') === table);
+      const header = rows.find(row => {
+        const keys = Array.from(row.children, cell => omniListHeaderKey(cell.textContent));
+        return keys.includes('ref') && keys.some(key => key === 'totalincl' || key === 'total')
+          && keys.some(key => key === 'paid' || key === 'payment');
+      });
+      if (!header) continue;
+      const keys = Array.from(header.children, cell => omniListHeaderKey(cell.textContent));
+      const index = (...names) => keys.findIndex(key => names.includes(key));
+      const refIndex = index('ref', 'reference');
+      const totalIndex = index('totalincl', 'totalincludingtax', 'total');
+      const paidIndex = index('paid', 'payment');
+      const stageIndex = index('stage');
+      const statusIndex = index('cin7status', 'status');
+      const branchIndex = index('branch');
+      const createdByIndex = index('createdby', 'salesrep');
+      for (const row of rows.slice(rows.indexOf(header) + 1)) {
+        if (row.children.length <= Math.max(refIndex, totalIndex, paidIndex)) continue;
+        const cell = position => position >= 0 ? clean(row.children[position]?.textContent) : '';
+        const orderNumber = cell(refIndex).toUpperCase().match(/NZSO-\d+[A-Z]?/)?.[0];
+        if (!orderNumber) continue;
+        const total = omniListMoney(cell(totalIndex));
+        const paidMatch = cell(paidIndex).match(/\bPAID\s*:?\s*(\d+(?:\.\d+)?)\s*%/i);
+        const paidPercent = paidMatch ? Math.max(0, Math.min(100, Number(paidMatch[1]))) : null;
+        const paidAmount = total !== null && paidPercent !== null ? Math.round(total * paidPercent) / 100 : undefined;
+        const balanceDue = total !== null && paidAmount !== undefined ? Math.max(0, Math.round((total - paidAmount) * 100) / 100) : undefined;
+        const stage = cell(stageIndex) || cell(statusIndex);
+        const dispatched = /\bdispatched\b/i.test(stage);
+        const payload = {
+          orderNumber,
+          documentType: 'sales-order',
+          syncSource: 'omni-list-page',
+          sourceUrl: location.href,
+          stage: stage || undefined,
+          branch: cell(branchIndex) || undefined,
+          salesRep: cell(createdByIndex) || undefined,
+          total: total ?? undefined,
+          fullyDispatched: dispatched || undefined,
+          paid: paidPercent === null ? undefined : paidPercent >= 99.99,
+          paidAmount,
+          balanceDue,
+          paymentStatus: paidPercent === null ? undefined : paidPercent >= 99.99 ? 'PAID' : paidPercent > 0 ? 'PART PAID' : 'UNPAID'
+        };
+        snapshots.push(payload);
+      }
+    }
+    return snapshots;
+  }
+
+  function runOmniListSyncQueue() {
+    if (omniListSyncActive || !omniListSyncQueue.length) return;
+    omniListSyncActive = true;
+    const item = omniListSyncQueue.shift();
+    const headers = { 'Content-Type':'application/json' };
+    if (API_KEY) headers.Authorization = `Bearer ${API_KEY}`;
+    const finish = success => {
+      if (success) {
+        try { sessionStorage.setItem(item.cacheKey, item.digest); } catch {}
+      }
+      omniListSyncActive = false;
+      window.setTimeout(runOmniListSyncQueue, 250);
+    };
+    try {
+      GM_xmlhttpRequest({
+        method:'POST', url:OMNI_ORDER_SYNC_API_URL, headers,
+        data:JSON.stringify({ ...item.payload, includeProgress:true }), timeout:20000,
+        onload:response => finish(response.status >= 200 && response.status < 300),
+        onerror:() => finish(false), ontimeout:() => finish(false)
+      });
+    } catch { finish(false); }
+  }
+
+  function scanOmniOrderList() {
+    if (!/\/Cloud\/ShoppingCartAdmin\/Orders\/OrdersList\.aspx/i.test(location.pathname) || window.parent !== window) return;
+    for (const payload of omniListRowSnapshots()) {
+      const digest = JSON.stringify(payload);
+      const cacheKey = `${OMNI_LIST_SYNC_CACHE_PREFIX}${payload.orderNumber}`;
+      let cached = '';
+      try { cached = sessionStorage.getItem(cacheKey) || ''; } catch {}
+      if (cached === digest || omniListSyncQueue.some(item => item.cacheKey === cacheKey && item.digest === digest)) continue;
+      omniListSyncQueue.push({ payload, digest, cacheKey });
+    }
+    runOmniListSyncQueue();
+  }
+
+  function installOmniOrderListSync() {
+    if (!/\/Cloud\/ShoppingCartAdmin\/Orders\/OrdersList\.aspx/i.test(location.pathname) || window.parent !== window) return;
+    const schedule = () => {
+      window.clearTimeout(omniListScanTimer);
+      omniListScanTimer = window.setTimeout(scanOmniOrderList, 500);
+    };
+    schedule();
+    new MutationObserver(schedule).observe(document.documentElement, { childList:true, subtree:true, characterData:true });
+    window.setInterval(() => { if (document.visibilityState === 'visible') scanOmniOrderList(); }, 30000);
+  }
+
   function openDrawingsPopup(order) {
     const url = new URL('/drawings', WORKFLOW_PLANNER_URL);
     if (/^NZSO-\d+[A-Z]?$/i.test(order || '')) url.searchParams.set('order', order.toUpperCase());
@@ -6397,6 +6511,7 @@
     if (/\/Cloud\/ShoppingCartAdmin\//i.test(location.pathname) || isReceiptWorkerPage) {
       if (window.parent !== window) return;
       installOmniOrderSearch();
+      installOmniOrderListSync();
       if (!isReceiptWorkerPage || /\/Cloud\/ShoppingCartAdmin\//i.test(location.pathname)) {
         continueConvertToSalesOrderFromAdmin();
         continueCloneQuoteFromAdmin();
