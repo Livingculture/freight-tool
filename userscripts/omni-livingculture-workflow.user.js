@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.219
+// @version      0.1.220
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -63,6 +63,7 @@
   const WORKFLOW_API_URL = 'https://living-culture-workflow.vercel.app/api/site-visits';
   const OMNI_ORDER_SYNC_API_URL = 'https://living-culture-workflow.vercel.app/api/omni/orders';
   const OMNI_ORDER_SEARCH_API_URL = 'https://living-culture-workflow.vercel.app/api/omni/order-search';
+  const OMNI_BACKFILL_QUEUE_API_URL = 'https://living-culture-workflow.vercel.app/api/omni/backfill-queue';
   const QUOTE_REVIEW_API_URL = 'https://living-culture-workflow.vercel.app/api/quote-reviews';
   const WORKFLOW_PLANNER_URL = 'https://living-culture-workflow.vercel.app/';
   const CUSTOMER_PHOTOS_API_URL = 'https://living-culture-workflow.vercel.app/api/customer-photos';
@@ -2623,7 +2624,9 @@
       stockPartial: stock?.partial === true,
       stockCheckedAt: stock?.checkedAt || '',
       lineItems: omniReviewLineItems(),
-      sourceUrl: window.location.href
+      sourceUrl: window.location.href,
+      syncSource: 'omni-detail-page',
+      detailSyncVersion: 1
     };
   }
 
@@ -2689,6 +2692,10 @@
         finishOmniWorkflowSync();
         if (response.status >= 200 && response.status < 300) {
           lastOmniOrderSyncDigest = digest;
+          if (new URL(location.href).searchParams.get('lcBackfill') === '1') {
+            try { localStorage.setItem('lc-omni-backfill-result-v1', JSON.stringify({ orderNumber:payload.orderNumber, ok:true, at:Date.now() })); } catch {}
+            window.setTimeout(() => window.close(), 500);
+          }
           void linkExistingCustomerAlbumToQuote({ ...payload, orderId:payload.orderNumber });
           try {
             const result = JSON.parse(response.responseText);
@@ -6368,6 +6375,91 @@
     window.setInterval(() => { if (document.visibilityState === 'visible') scanOmniOrderList(); }, 30000);
   }
 
+  function installOmniDetailBackfill() {
+    if (!/\/Cloud\/ShoppingCartAdmin\/Orders\/OrdersList\.aspx/i.test(location.pathname) || window.parent !== window) return;
+    const owner = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const lockKey = 'lc-omni-backfill-lock-v1';
+    const resultKey = 'lc-omni-backfill-result-v1';
+    const failed = new Set();
+    let activeTab = null;
+    let activeOrder = '';
+    let activeTimer = null;
+    let stopped = false;
+    const status = () => {
+      let node = document.getElementById('lc-omni-backfill-status');
+      if (!node) {
+        node = document.createElement('span');
+        node.id = 'lc-omni-backfill-status';
+        node.style.cssText = 'font:12px Arial,sans-serif;color:#4b5563;white-space:nowrap;';
+        (document.getElementById('lc-omni-order-search') || document.body)?.appendChild(node);
+      }
+      return node;
+    };
+    const ownsLock = () => {
+      try {
+        const current = JSON.parse(localStorage.getItem(lockKey) || '{}');
+        if (current.owner && current.owner !== owner && Number(current.expiresAt) > Date.now()) return false;
+        localStorage.setItem(lockKey, JSON.stringify({ owner, expiresAt:Date.now() + 120000 }));
+        return true;
+      } catch { return true; }
+    };
+    const release = () => {
+      stopped = true;
+      window.clearTimeout(activeTimer);
+      try { activeTab?.close?.(); } catch {}
+      try { const current = JSON.parse(localStorage.getItem(lockKey) || '{}'); if (current.owner === owner) localStorage.removeItem(lockKey); } catch {}
+    };
+    const requestQueue = () => {
+      if (stopped || !ownsLock()) return;
+      status().textContent = 'Background sync: checking…';
+      GM_xmlhttpRequest({ method:'GET', url:OMNI_BACKFILL_QUEUE_API_URL, anonymous:false, timeout:20000,
+        headers:{ Accept:'application/json', 'Cache-Control':'no-cache' },
+        onload:response => {
+          if (response.status !== 200) {
+            try { status().textContent = `Background sync: ${JSON.parse(response.responseText || '{}').error || 'unavailable'}`; } catch { status().textContent = 'Background sync unavailable'; }
+            release(); return;
+          }
+          let payload;
+          try { payload = JSON.parse(response.responseText || '{}'); } catch { status().textContent = 'Background sync response error'; release(); return; }
+          const items = Array.isArray(payload.items) ? payload.items.filter(item => item && !failed.has(item.orderNumber) && /^https:\/\/go\.cin7\.com\//i.test(item.url || '')) : [];
+          if (!items.length) { status().textContent = failed.size ? `Background sync paused; ${failed.size} could not load` : 'Background sync complete'; release(); return; }
+          process(items, Number(payload.remaining) || items.length);
+        },
+        onerror:() => { status().textContent = 'Background sync connection failed'; release(); },
+        ontimeout:() => { status().textContent = 'Background sync timed out'; release(); }
+      });
+    };
+    const process = (items, remaining) => {
+      if (stopped || !ownsLock()) return;
+      const item = items.shift();
+      if (!item) { window.setTimeout(requestQueue, 10000); return; }
+      activeOrder = item.orderNumber;
+      status().textContent = `Background sync: ${activeOrder} (${remaining} remaining)`;
+      const url = new URL(item.url); url.searchParams.set('lcBackfill', '1');
+      try { activeTab = GM_openInTab(url.href, { active:false, insert:true, setParent:true }); }
+      catch { failed.add(activeOrder); activeOrder = ''; window.setTimeout(() => process(items, Math.max(0, remaining - 1)), 10000); return; }
+      window.clearTimeout(activeTimer);
+      activeTimer = window.setTimeout(() => {
+        try { activeTab?.close?.(); } catch {}
+        failed.add(activeOrder); activeOrder = '';
+        process(items, Math.max(0, remaining - 1));
+      }, 60000);
+    };
+    window.addEventListener('storage', event => {
+      if (event.key !== resultKey || !activeOrder || stopped) return;
+      let result;
+      try { result = JSON.parse(event.newValue || '{}'); } catch { return; }
+      if (result.orderNumber !== activeOrder || result.ok !== true) return;
+      window.clearTimeout(activeTimer);
+      try { activeTab?.close?.(); } catch {}
+      activeOrder = '';
+      // Eight or fewer orders per minute keeps HubSpot below its write limit.
+      window.setTimeout(requestQueue, 8000);
+    });
+    window.addEventListener('beforeunload', release, { once:true });
+    window.setTimeout(requestQueue, 5000);
+  }
+
   function openDrawingsPopup(order) {
     const url = new URL('/drawings', WORKFLOW_PLANNER_URL);
     if (/^NZSO-\d+[A-Z]?$/i.test(order || '')) url.searchParams.set('order', order.toUpperCase());
@@ -6512,6 +6604,7 @@
       if (window.parent !== window) return;
       installOmniOrderSearch();
       installOmniOrderListSync();
+      installOmniDetailBackfill();
       if (!isReceiptWorkerPage || /\/Cloud\/ShoppingCartAdmin\//i.test(location.pathname)) {
         continueConvertToSalesOrderFromAdmin();
         continueCloneQuoteFromAdmin();
