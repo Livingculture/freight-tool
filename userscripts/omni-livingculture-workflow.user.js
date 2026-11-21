@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.221
+// @version      0.1.222
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -6386,7 +6386,7 @@
     let activeTimer = null;
     let retryTimer = null;
     let queueFailures = 0;
-    let stopped = false;
+    let stopped = true;
     const status = () => {
       let node = document.getElementById('lc-omni-backfill-status');
       if (!node) {
@@ -6396,6 +6396,17 @@
         (document.getElementById('lc-omni-order-search') || document.body)?.appendChild(node);
       }
       return node;
+    };
+    const control = () => {
+      let button = document.getElementById('lc-omni-backfill-control');
+      if (!button) {
+        button = document.createElement('button');
+        button.id = 'lc-omni-backfill-control';
+        button.type = 'button';
+        button.style.cssText = 'margin-left:8px;padding:5px 9px;border:1px solid #0b3b76;border-radius:5px;background:#fff;color:#0b3b76;font:600 12px Arial,sans-serif;cursor:pointer;';
+        status().insertAdjacentElement('afterend', button);
+      }
+      return button;
     };
     const ownsLock = () => {
       try {
@@ -6410,6 +6421,9 @@
       window.clearTimeout(activeTimer);
       window.clearTimeout(retryTimer);
       try { activeTab?.close?.(); } catch {}
+      activeTab = null;
+      activeOrder = '';
+      control().textContent = 'Start background sync';
       try { const current = JSON.parse(localStorage.getItem(lockKey) || '{}'); if (current.owner === owner) localStorage.removeItem(lockKey); } catch {}
     };
     const retryQueue = reason => {
@@ -6426,6 +6440,7 @@
       GM_xmlhttpRequest({ method:'GET', url:OMNI_BACKFILL_QUEUE_API_URL, anonymous:false, timeout:45000,
         headers:{ Accept:'application/json', 'Cache-Control':'no-cache' },
         onload:response => {
+          if (stopped) return;
           if (response.status !== 200) {
             let message = 'temporarily unavailable';
             try { message = JSON.parse(response.responseText || '{}').error || message; } catch {}
@@ -6471,7 +6486,20 @@
       window.setTimeout(requestQueue, 8000);
     });
     window.addEventListener('beforeunload', release, { once:true });
-    window.setTimeout(requestQueue, 5000);
+    status().textContent = 'Background sync paused';
+    control().textContent = 'Start background sync';
+    control().addEventListener('click', () => {
+      if (!stopped) {
+        release();
+        status().textContent = 'Background sync paused';
+        return;
+      }
+      stopped = false;
+      queueFailures = 0;
+      failed.clear();
+      control().textContent = 'Pause background sync';
+      requestQueue();
+    });
   }
 
   function openDrawingsPopup(order) {

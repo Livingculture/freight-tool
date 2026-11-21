@@ -8,6 +8,9 @@ assert.match(source, /syncSource:\s*'omni-detail-page'/, 'detail pages identify 
 assert.match(source, /detailSyncVersion:\s*1/, 'detail pages mark the current backfill schema');
 assert.match(source, /ontimeout:\(\)\s*=>\s*retryQueue\('service timed out'\)/, 'background queue timeouts retry instead of stopping');
 assert.match(source, /timeout:\s*45000/, 'background queue allows transient backend delays');
+assert.match(source, /let stopped = true;/, 'resource-intensive detail backfill is paused by default');
+assert.match(source, /Start background sync/, 'staff can explicitly start the detail backfill when Cin7 is idle');
+assert.doesNotMatch(source, /setTimeout\(requestQueue, 5000\)/, 'detail backfill does not start automatically during normal Cin7 work');
 assert.match(source, /GM_openInTab\(url\.href, \{ active:false/, 'backfill opens orders without taking over the staff screen');
 assert.match(source, /setTimeout\(requestQueue, 8000\)/, 'backfill remains below the HubSpot write limit');
 const functionSource = name => {
