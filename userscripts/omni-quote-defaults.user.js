@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Quote Defaults
 // @namespace    livingculture-omni
-// @version      0.1.11
+// @version      0.1.12
 // @description  Sets Expected Order Date to 14 days after Created Date and Probability of Winning to 50%.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-quote-defaults.user.js
@@ -15,6 +15,7 @@
   'use strict';
 
   const clean = value => String(value || '').replace(/\s+/g, ' ').trim();
+  let lastUserActivity = 0;
 
   function visible(element) {
     if (!element) return false;
@@ -80,14 +81,13 @@
     input.setAttribute('value', value);
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new Event('change', { bubbles: true }));
-    if (window.jQuery) window.jQuery(input).val(value).trigger('input').trigger('change');
   }
 
   function editingFieldActive() {
-    const active = document.activeElement;
-    const focused = active?.shadowRoot?.activeElement || active;
+    let focused = document.activeElement;
+    while (focused?.shadowRoot?.activeElement) focused = focused.shadowRoot.activeElement;
     return Boolean(focused && focused !== document.body
-      && (/^(INPUT|TEXTAREA|SELECT)$/i.test(focused.tagName) || focused.isContentEditable));
+      && (/^(INPUT|TEXTAREA|SELECT|IFRAME)$/i.test(focused.tagName) || focused.isContentEditable));
   }
 
   function dateValue(input) {
@@ -148,19 +148,6 @@
     return candidates[0]?.value || '';
   }
 
-  function calendarTriggerNearLabel(text, input) {
-    const heading = label(text);
-    if (!heading || !input) return null;
-    const headingRect = heading.getBoundingClientRect();
-    const inputRect = input.getBoundingClientRect();
-    return Array.from(document.querySelectorAll('button, a, img, input[type="button"], input[type="image"]'))
-      .filter(visible)
-      .map(element => ({ element, rect: element.getBoundingClientRect() }))
-      .filter(item => item.rect.top < inputRect.bottom + 12 && item.rect.bottom > inputRect.top - 12)
-      .filter(item => item.rect.left > inputRect.right && item.rect.left < headingRect.right + 300)
-      .sort((a, b) => a.rect.left - b.rect.left)[0]?.element || null;
-  }
-
   function setCalendarDate(input, date, value) {
     let usedWidget = false;
     const jq = window.jQuery ? window.jQuery(input) : null;
@@ -188,23 +175,8 @@
       }
     } catch (_) {}
 
-    setInput(input, value);
-    input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter', code: 'Enter' }));
-    input.dispatchEvent(new KeyboardEvent('keypress', { bubbles: true, key: 'Enter', code: 'Enter' }));
-    input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Enter', code: 'Enter' }));
-
-    if (!usedWidget && !input.dataset.lcCalendarOpened) {
-      const trigger = calendarTriggerNearLabel('Expected Order Date', input);
-      if (trigger) {
-        input.dataset.lcCalendarOpened = '1';
-        trigger.click();
-        setTimeout(() => {
-          setInput(input, value);
-          input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter', code: 'Enter' }));
-          input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Enter', code: 'Enter' }));
-        }, 150);
-      }
-    }
+    // Background defaults must not open calendars or simulate navigation keys.
+    if (usedWidget || !input.readOnly) setInput(input, value);
   }
 
   function setProbability(select) {
@@ -220,14 +192,14 @@
   }
 
   function applyDefaults() {
-    if (document.hidden || editingFieldActive()) return;
+    if (document.hidden || editingFieldActive() || Date.now() - lastUserActivity < 1200) return;
     document.getElementById('lc-omni-defaults-diagnostic')?.remove();
     if (!label('Expected Order Date')) return;
     const probability = fieldNearLabel('Probability of Winning', 'select');
     const expected = expectedDateField(probability);
     const created = createdDateField(expected);
     const createdValue = dateValue(created) || displayedDateNearLabel('Created Date');
-    if (createdValue && expected && !parseDate(dateValue(expected))) {
+    if (createdValue && expected && !expected.disabled && !dateValue(expected)) {
       const createdDate = parseDate(createdValue);
       if (createdDate && !Number.isNaN(createdDate.getTime())) {
         createdDate.setDate(createdDate.getDate() + 14);
@@ -235,7 +207,7 @@
         setCalendarDate(expected, createdDate, targetValue);
       }
     }
-    setProbability(probability);
+    if (probability && !probability.disabled) setProbability(probability);
   }
 
   let scheduleTimer = 0;
@@ -248,6 +220,12 @@
   }
 
   applyDefaults();
+  for (const type of ['pointerdown', 'keydown', 'input', 'focusin']) {
+    document.addEventListener(type, event => {
+      if (event.isTrusted) lastUserActivity = Date.now();
+    }, true);
+  }
+  document.addEventListener('focusout', schedule, true);
   new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true });
   document.addEventListener('change', event => {
     if (event.target === dateFieldNearLabel('Created Date')) schedule();
