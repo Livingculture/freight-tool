@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.220
+// @version      0.1.221
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -6384,6 +6384,8 @@
     let activeTab = null;
     let activeOrder = '';
     let activeTimer = null;
+    let retryTimer = null;
+    let queueFailures = 0;
     let stopped = false;
     const status = () => {
       let node = document.getElementById('lc-omni-backfill-status');
@@ -6406,27 +6408,39 @@
     const release = () => {
       stopped = true;
       window.clearTimeout(activeTimer);
+      window.clearTimeout(retryTimer);
       try { activeTab?.close?.(); } catch {}
       try { const current = JSON.parse(localStorage.getItem(lockKey) || '{}'); if (current.owner === owner) localStorage.removeItem(lockKey); } catch {}
+    };
+    const retryQueue = reason => {
+      if (stopped) return;
+      queueFailures += 1;
+      const delay = Math.min(60000, 10000 * queueFailures);
+      status().textContent = `Background sync: ${reason}; retrying in ${Math.round(delay / 1000)}s`;
+      window.clearTimeout(retryTimer);
+      retryTimer = window.setTimeout(requestQueue, delay);
     };
     const requestQueue = () => {
       if (stopped || !ownsLock()) return;
       status().textContent = 'Background sync: checking…';
-      GM_xmlhttpRequest({ method:'GET', url:OMNI_BACKFILL_QUEUE_API_URL, anonymous:false, timeout:20000,
+      GM_xmlhttpRequest({ method:'GET', url:OMNI_BACKFILL_QUEUE_API_URL, anonymous:false, timeout:45000,
         headers:{ Accept:'application/json', 'Cache-Control':'no-cache' },
         onload:response => {
           if (response.status !== 200) {
-            try { status().textContent = `Background sync: ${JSON.parse(response.responseText || '{}').error || 'unavailable'}`; } catch { status().textContent = 'Background sync unavailable'; }
-            release(); return;
+            let message = 'temporarily unavailable';
+            try { message = JSON.parse(response.responseText || '{}').error || message; } catch {}
+            if (response.status === 401 || response.status === 403) { status().textContent = `Background sync: ${message}`; release(); return; }
+            retryQueue(message); return;
           }
+          queueFailures = 0;
           let payload;
           try { payload = JSON.parse(response.responseText || '{}'); } catch { status().textContent = 'Background sync response error'; release(); return; }
           const items = Array.isArray(payload.items) ? payload.items.filter(item => item && !failed.has(item.orderNumber) && /^https:\/\/go\.cin7\.com\//i.test(item.url || '')) : [];
           if (!items.length) { status().textContent = failed.size ? `Background sync paused; ${failed.size} could not load` : 'Background sync complete'; release(); return; }
           process(items, Number(payload.remaining) || items.length);
         },
-        onerror:() => { status().textContent = 'Background sync connection failed'; release(); },
-        ontimeout:() => { status().textContent = 'Background sync timed out'; release(); }
+        onerror:() => retryQueue('connection failed'),
+        ontimeout:() => retryQueue('service timed out')
       });
     };
     const process = (items, remaining) => {

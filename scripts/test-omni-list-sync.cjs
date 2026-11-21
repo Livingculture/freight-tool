@@ -6,6 +6,8 @@ const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname, '..', 'userscripts', 'omni-livingculture-workflow.user.js'), 'utf8');
 assert.match(source, /syncSource:\s*'omni-detail-page'/, 'detail pages identify authoritative backfill snapshots');
 assert.match(source, /detailSyncVersion:\s*1/, 'detail pages mark the current backfill schema');
+assert.match(source, /ontimeout:\(\)\s*=>\s*retryQueue\('service timed out'\)/, 'background queue timeouts retry instead of stopping');
+assert.match(source, /timeout:\s*45000/, 'background queue allows transient backend delays');
 assert.match(source, /GM_openInTab\(url\.href, \{ active:false/, 'backfill opens orders without taking over the staff screen');
 assert.match(source, /setTimeout\(requestQueue, 8000\)/, 'backfill remains below the HubSpot write limit');
 const functionSource = name => {
