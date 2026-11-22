@@ -100,7 +100,8 @@ const workerHelpers = `${extract('quotePdfTimeout')}\n${extract('quotePdfWorkerH
     }
     console.log('PASS PDF: Missing Standard Quote and invalid PDFs report errors and release the parent download button');
     const templates = await browser.newPage();
-    await templates.setContent('<button id="pdf" style="position:absolute;left:30px;top:30px">Download Quote</button>');
+    await templates.route('https://go.cin7.com/**', route => route.fulfill({contentType:'text/html',body:'<button id="pdf" style="position:absolute;left:30px;top:30px">Download Quote</button>'}));
+    await templates.goto('https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx?idCustomerAppsLink=1328007&OrderId=388');
     await templates.evaluate(() => {
       window.normalizeLabel = value => String(value).trim().toLowerCase();
       window.requests = 0; window.requestUrls = [];
