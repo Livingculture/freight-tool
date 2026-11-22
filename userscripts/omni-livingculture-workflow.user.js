@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.223
+// @version      0.1.224
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -4327,6 +4327,17 @@
     ].map(normalizeLabel).filter(Boolean);
     if (template === 'quote') return labels.some(label => ['quote', 'standard quote'].includes(label));
     if (template === 'receipt' || template === 'invoice') {
+      const rawHref = element.getAttribute?.('href') || element.getAttribute?.('formaction') || '';
+      if (rawHref && !/^(?:javascript:|#)/i.test(rawHref)) {
+        try {
+          const url = new URL(rawHref.replace(/&amp;/gi, '&'), location.href);
+          if (url.protocol !== 'https:' || url.hostname !== 'go.cin7.com') return false;
+          if (/\/Cloud\/Docs\/PDF\/?$/i.test(url.pathname)) {
+            const nativeTemplate = normalizeLabel(url.searchParams.get('T') || '');
+            return nativeTemplate === 'receipt' || nativeTemplate === 'order 5';
+          }
+        } catch { return false; }
+      }
       return labels.some(label => (label.includes('dynamic receipt') || label === 'receipt') && !label.includes('dynamic invoice'));
     }
     return labels.includes(normalizeLabel(quotePdfTemplateLabel(template)));
@@ -4345,8 +4356,7 @@
     }
     const controls = roots.flatMap(root => Array.from(root.querySelectorAll(
       'a, button, input[type="button"], input[type="submit"], [role="button"], option'
-    ))).filter(element => quotePdfTemplateMatches(element, template)
-      || ((template === 'receipt' || template === 'invoice') && /(?:\?|&)T=Receipt(?:&|$)/i.test((element.getAttribute('href') || '').replace(/&amp;/gi, '&'))));
+    ))).filter(element => quotePdfTemplateMatches(element, template));
 
     // Background worker tabs can report zero layout dimensions even though the
     // Admin link is present and usable. Prefer a visible control, then fall back

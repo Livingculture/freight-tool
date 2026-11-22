@@ -13,14 +13,17 @@ const workerCode = constants + ['quotePdfTimeout', 'quotePdfWorkerHandoff', 'com
 (async () => {
   const browser = await chromium.launch();
   try {
-    for (const scenario of ['success', 'receipt-background', 'receipt-delayed', 'missing-receipt', 'wrong-quote', 'http-error']) {
+    for (const scenario of ['success', 'receipt-background', 'receipt-delayed', 'receipt-order5', 'receipt-order5-live', 'missing-receipt', 'wrong-quote', 'http-error']) {
+      const order5 = scenario.startsWith('receipt-order5');
+      const receiptLink = order5 ? '/Cloud/Docs/PDF/?T=Order%205&idWebSite=1&UN=demo&ID=363&SID=123' : '/Cloud/Docs/PDF/?T=Receipt&ID=363';
+      const receiptAdminHtml = `<a href="/Cloud/Docs/PDF/?T=Invoice&ID=363">Dynamic Invoice</a><a href="${receiptLink}">PDF</a>`;
       const context = await browser.newContext({ acceptDownloads: true });
       let worker, savedName, openedOptions, closed = false;
       await context.route('https://go.cin7.com/**', route => {
         const admin = route.request().url().includes('ShoppingCartAdmin');
-        const receipt = route.request().url().includes('/Cloud/Docs/PDF') && route.request().url().includes('T=Receipt');
+        const receipt = route.request().url().includes('/Cloud/Docs/PDF') && ['Receipt','Order 5'].includes(new URL(route.request().url()).searchParams.get('T'));
         return route.fulfill({contentType:'text/html',body:admin
-          ? scenario === 'receipt-background' || scenario === 'receipt-delayed'
+          ? order5 ? receiptAdminHtml : scenario === 'receipt-background' || scenario === 'receipt-delayed'
             ? '<a href="/Cloud/Docs/PDF/?T=Invoice&ID=363">Dynamic Invoice</a><a aria-label="Dynamic Receipt" href="/Cloud/Docs/PDF/?T=Receipt&ID=363"><span>PDF</span></a>'
             : scenario === 'missing-receipt'
               ? '<a href="/Cloud/Docs/PDF/?T=Invoice&ID=363">Dynamic Invoice</a>'
@@ -51,7 +54,7 @@ const workerCode = constants + ['quotePdfTimeout', 'quotePdfWorkerHandoff', 'com
           window.omniHeadingDraft=()=>({orderId:${JSON.stringify(scenario === 'wrong-quote' ? 'NZSO-99999' : 'NZSO-17012')}});
           window.GM_xmlhttpRequest=options=>{
             window.pdfAttempts=(window.pdfAttempts||0)+1;
-            if(!options.responseType){options.onload({status:200,responseText:${JSON.stringify(scenario === 'missing-receipt' ? '<a href="/Cloud/Docs/PDF/?T=Invoice&ID=363">Dynamic Invoice</a>' : '<a href="/Cloud/Docs/PDF/?T=Receipt&ID=363">Dynamic Receipt</a>')}});return;}
+            if(!options.responseType){options.onload({status:${scenario === 'receipt-order5-live' ? 503 : 200},responseText:${JSON.stringify(scenario === 'missing-receipt' ? '<a href="/Cloud/Docs/PDF/?T=Invoice&ID=363">Dynamic Invoice</a>' : order5 ? receiptAdminHtml : '<a href="/Cloud/Docs/PDF/?T=Receipt&ID=363">Dynamic Receipt</a>')}});return;}
             const bytes=new Uint8Array(3501);bytes.set(new TextEncoder().encode('%PDF'));
             if(${JSON.stringify(scenario)}==='receipt-delayed'&&window.pdfAttempts===1){options.onload({status:202,response:new ArrayBuffer(0)});return;}
             options.onload({status:${scenario === 'http-error' ? 403 : 200},response:bytes.buffer});
@@ -93,7 +96,7 @@ const workerCode = constants + ['quotePdfTimeout', 'quotePdfWorkerHandoff', 'com
       const errors=await parent.evaluate(()=>window.alerts);
       if(scenario==='success'){
         assert.equal(savedName,'NZSO-17012.pdf');assert.deepEqual(errors,[]);
-      }else if(scenario==='receipt-background'||scenario==='receipt-delayed'){
+      }else if(scenario==='receipt-background'||scenario==='receipt-delayed'||order5){
         assert.equal(savedName,undefined);assert.deepEqual(errors,[]);
         assert.equal(await parent.evaluate(()=>localStorage.getItem('test-native-download-clicks')),'1','The native receipt page Download action is invoked');
       }else{
