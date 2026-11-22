@@ -1,21 +1,24 @@
 // ==UserScript==
 // @name         Living Culture Receipt Pilot - Private Test
 // @namespace    livingculture-receipt-pilot
-// @version      0.1.0
+// @version      0.1.1
 // @description  Separate visible-tab receipt test. Not included in All-in-One.
 // @match        https://go.cin7.com/Cloud/*
 // @run-at       document-idle
 // @grant        GM_openInTab
+// @grant        GM_registerMenuCommand
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-receipt-pilot.user.js
 // @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-receipt-pilot.user.js
 // ==/UserScript==
 
 (function () {
   'use strict';
-  if (window.top !== window.self || document.getElementById('lc-receipt-pilot-marker')) return;
+  const isEditScreen = /\/Cloud\/TransactionEntry\/TransactionEntry\.aspx/i.test(location.pathname);
+  if ((window.top !== window.self && !isEditScreen) || document.getElementById('lc-receipt-pilot-marker')) return;
   const STATE_KEY = 'lc-receipt-pilot-v1';
   const PARAM = 'lcReceiptPilot';
   const clean = value => String(value || '').replace(/\s+/g, ' ').trim();
+  const headingText = () => [...Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"]')).map(element=>clean(element.textContent)),document.title,clean(document.body.innerText)].join(' ');
   const visible = element => {
     const rect = element.getBoundingClientRect(), style = getComputedStyle(element);
     return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
@@ -31,13 +34,13 @@
     if (!panel) {
       panel = document.createElement('aside'); panel.id = 'lc-receipt-pilot-status';
       panel.style.cssText = 'position:fixed;bottom:16px;right:16px;z-index:2147483647;box-sizing:border-box;width:360px;max-width:calc(100vw - 32px);padding:14px;border:1px solid #178477;border-radius:6px;background:#f0faf8;color:#163e38;font:14px/1.45 Arial,sans-serif;box-shadow:0 3px 16px #0002';
-      const title = document.createElement('strong'); title.textContent = 'Receipt Pilot 0.1.0';
+      const title = document.createElement('strong'); title.textContent = 'Receipt Pilot 0.1.1';
       const text = document.createElement('p'); text.dataset.message = '1'; text.style.margin = '8px 0';
       const copy = document.createElement('button'); copy.type = 'button'; copy.textContent = 'Copy diagnostics';
       copy.onclick = async () => {
         // Diagnostics deliberately exclude URLs, document parameters and customer data.
         const current = read();
-        const report = JSON.stringify({ version:'0.1.0', stage:current?.stage, page:location.pathname, message:text.textContent, events:current?.events || [] },null,2);
+        const report = JSON.stringify({ version:'0.1.1', stage:current?.stage, page:location.pathname, message:text.textContent, events:current?.events || [] },null,2);
         try { await navigator.clipboard.writeText(report); copy.textContent = 'Copied'; }
         catch { copy.textContent = 'Copy unavailable'; }
       };
@@ -84,7 +87,7 @@
 
   function tick() {
     if (busy || !state) return;
-    const pageOrder = Array.from(document.querySelectorAll('h1,h2,h3,h4,[role="heading"]')).map(element=>clean(element.textContent)).join(' ')
+    const pageOrder = headingText()
       .match(/\bNZSO-?\d+[A-Z]?\b(?![-A-Z0-9])/i)?.[0]?.replace(/^NZSO(?!-)/i,'NZSO-').toUpperCase();
     if (pageOrder && pageOrder !== state.order) {
       busy = true; clearInterval(timer); status('Stopped: this tab opened a different order.',true); return;
@@ -95,8 +98,8 @@
       return;
     }
     if (state.stage === 'edit') {
-      const heading = Array.from(document.querySelectorAll('h1,h2,h3,h4,[role="heading"]')).map(element=>clean(element.textContent)).find(value=>/Edit\s+Sales Order/i.test(value));
-      if (!heading) return;
+      const heading = headingText();
+      if (!/Edit\s+Sales Order/i.test(heading)) return;
       const order = heading.match(/\bNZSO-?\d+[A-Z]?\b(?![-A-Z0-9])/i)?.[0]?.replace(/^NZSO(?!-)/i,'NZSO-').toUpperCase();
       if (order && order !== state.order) { busy = true; status('Stopped: this tab opened a different order.',true); clearInterval(timer); return; }
       const admin = controls().find(element=>labels(element).includes('go to admin'));
@@ -119,10 +122,12 @@
 
   const token = new URL(location.href).searchParams.get(PARAM);
   if (token && /^[a-f0-9-]{36}$/i.test(token) && (!state || state.id !== token)) {
-    const heading = Array.from(document.querySelectorAll('h1,h2,h3,h4,[role="heading"]')).map(element=>clean(element.textContent)).find(value=>/Sales Order/i.test(value)) || '';
+    const heading = headingText();
     const order = heading.match(/\bNZSO-?\d+[A-Z]?\b(?![-A-Z0-9])/i)?.[0]?.replace(/^NZSO(?!-)/i,'NZSO-').toUpperCase();
     if (order) { state = {id:token,order,stage:'edit',startedAt:Date.now(),events:[]}; write(state); }
   }
+  // A normal edit tab must always retain the launcher, even after an earlier test.
+  if (!token && isEditScreen) state = null;
   if (state && Date.now()-state.startedAt > 180000) { sessionStorage.removeItem(STATE_KEY); state = null; }
   if (state && Date.now()-state.startedAt <= 180000 && state.stage !== 'requested') {
     status(`Receipt test: waiting at ${state.stage}. Keep this tab visible.`);
@@ -133,11 +138,10 @@
 
   function addButton() {
     if (!/\/Cloud\/TransactionEntry\/TransactionEntry\.aspx/i.test(location.pathname) || document.getElementById('lc-receipt-pilot-button')) return;
-    const heading = Array.from(document.querySelectorAll('h1,h2,h3,h4,[role="heading"]')).find(element=>/Edit\s+Sales Order/i.test(clean(element.textContent)));
-    if (!heading) return;
     const button = document.createElement('button'); button.id = 'lc-receipt-pilot-button'; button.type = 'button'; button.textContent = 'Receipt Test';
-    button.style.cssText = 'position:fixed;bottom:16px;left:16px;z-index:2147483646;padding:11px 18px;background:#177c62;color:white;border:1px solid #11644f;border-radius:4px;font:700 14px Arial;cursor:pointer';
+    button.style.cssText = 'position:fixed!important;top:90px!important;right:16px!important;bottom:auto!important;left:auto!important;z-index:2147483647!important;display:block!important;visibility:visible!important;opacity:1!important;padding:11px 18px;background:#177c62;color:white;border:1px solid #11644f;border-radius:4px;font:700 14px Arial;cursor:pointer';
     button.onclick = () => {
+      if (!/Edit\s+Sales Order/i.test(headingText())) { status('Receipt Pilot is running. Open a saved sales order to start the test.',true); return; }
       const url = new URL(location.href); url.searchParams.set(PARAM,crypto.randomUUID());
       try {
         const tab = GM_openInTab(url.href,{active:true,insert:true});
@@ -147,7 +151,10 @@
     };
     document.body.append(button);
   }
-  if (!token && !state) {
+  if (typeof GM_registerMenuCommand === 'function') GM_registerMenuCommand('Receipt Pilot: show test button', () => {
+    addButton(); status('Receipt Pilot 0.1.1 is running. The green Receipt Test button is at the top-right of the order screen.');
+  });
+  if (!token) {
     addButton();
     const observer = new MutationObserver(addButton); observer.observe(document.body,{childList:true,subtree:true});
   }

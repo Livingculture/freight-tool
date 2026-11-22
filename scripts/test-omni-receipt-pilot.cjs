@@ -6,7 +6,7 @@ assert(!fs.readFileSync('userscripts/livingculture-all-in-one.user.js','utf8').i
 (async()=>{
   const browser=await chromium.launch({headless:true,...(process.env.BROWSER_CHANNEL?{channel:process.env.BROWSER_CHANNEL}:{})});
   try {
-    for(const scenario of ['order5','receipt','missing-download','wrong-order']) {
+    for(const scenario of ['order5','receipt','heading-h5','heading-div','stale-state','missing-download','wrong-order']) {
       const context=await browser.newContext({acceptDownloads:true,viewport:{width:390,height:844}});
       let worker, options, downloaded, receiptUrl, invoiceRequests=0;
       const errors=[];
@@ -14,7 +14,7 @@ assert(!fs.readFileSync('userscripts/livingculture-all-in-one.user.js','utf8').i
         const url=new URL(route.request().url());
         if(url.searchParams.get('T')==='Invoice')invoiceRequests++;
         let html;
-        if(url.pathname.includes('TransactionEntry'))html='<h4>Edit Sales Order - Example Customer - NZSO-99001</h4><a href="/Cloud/ShoppingCartAdmin/Orders/OrderDetail.aspx?idOrder=432" target="_blank">Go to Admin</a><button id="normal">Download Receipt</button>';
+        if(url.pathname.includes('TransactionEntry')){const tag=scenario==='heading-h5'?'h5':scenario==='heading-div'?'div':'h4';html=`<${tag}>Edit Sales Order - Example Customer - NZSO-99001</${tag}><h3>Contact</h3><a href="/Cloud/ShoppingCartAdmin/Orders/OrderDetail.aspx?idOrder=432" target="_blank">Go to Admin</a><button id="normal">Download Receipt</button>`;}
         else if(url.pathname.includes('ShoppingCartAdmin'))html=`<h4>Admin - Example Customer - NZSO-${scenario==='wrong-order'?'99002':'99001'}</h4><a href="/Cloud/Docs/PDF/?T=Invoice&ID=987">Dynamic Invoice</a><a href="/Cloud/Docs/PDF/?T=${scenario==='receipt'?'Receipt':'Order%205'}&ID=987&SID=456&idWebSite=1">Dynamic Receipt</a>`;
         else {
           receiptUrl=url;
@@ -25,9 +25,11 @@ assert(!fs.readFileSync('userscripts/livingculture-all-in-one.user.js','utf8').i
       await context.exposeBinding('openPilotTab',async(_,url,tabOptions)=>{
         options=tabOptions;worker=await context.newPage();worker.on('pageerror',e=>errors.push(e.message));worker.on('download',d=>downloaded=d.suggestedFilename());await worker.goto(url);
       });
-      await context.addInitScript({content:`window.GM_openInTab=(url,options)=>{window.openPilotTab(url,options);return {};};document.addEventListener('DOMContentLoaded',()=>{${source}\n},{once:true});`});
+      await context.addInitScript({content:`window.GM_openInTab=(url,options)=>{window.openPilotTab(url,options);return {};};window.GM_registerMenuCommand=(name,action)=>{window.pilotMenu=action;};if(${JSON.stringify(scenario)}==='stale-state'&&location.pathname.includes('TransactionEntry')&&!location.search.includes('lcReceiptPilot'))sessionStorage.setItem('lc-receipt-pilot-v1',JSON.stringify({id:'old',stage:'requested',startedAt:Date.now()}));document.addEventListener('DOMContentLoaded',()=>{${source}\n},{once:true});`});
       const parent=await context.newPage();parent.on('pageerror',e=>errors.push(e.message));
       await parent.goto('https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx?OrderId=123');
+      assert(await parent.getByRole('button',{name:'Receipt Test',exact:true}).isVisible());
+      assert.equal(await parent.evaluate(()=>typeof window.pilotMenu),'function','Menu command confirms the standalone script loaded');
       await parent.evaluate(()=>localStorage.setItem('lc-quote-pdf-handoff-v2','untouched'));
       await parent.getByRole('button',{name:'Receipt Test',exact:true}).click();
       for(let i=0;i<100&&!worker;i++)await new Promise(r=>setTimeout(r,20));
@@ -60,5 +62,11 @@ assert(!fs.readFileSync('userscripts/livingculture-all-in-one.user.js','utf8').i
       assert.deepEqual(errors,[]);await context.close();
       console.log('PASS receipt pilot: '+scenario+'; isolated state, visible native flow, retained tab and safe diagnostics.');
     }
+    const framed=await browser.newContext();
+    await framed.route('**/*',route=>route.fulfill({contentType:'text/html',body:route.request().url().includes('TransactionEntry')?'<h5>Edit Sales Order - Example Customer - NZSO-99001</h5>':'<iframe style="width:800px;height:600px" src="/Cloud/TransactionEntry/TransactionEntry.aspx?OrderId=123"></iframe>'}));
+    await framed.addInitScript({content:`document.addEventListener('DOMContentLoaded',()=>{${source}\n},{once:true});`});
+    const shell=await framed.newPage();await shell.goto('https://go.cin7.com/Cloud/Shell.aspx');
+    await shell.frameLocator('iframe').getByRole('button',{name:'Receipt Test',exact:true}).waitFor({state:'visible'});
+    await framed.close();console.log('PASS receipt pilot: button appears inside embedded Omni order screen.');
   } finally {await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
