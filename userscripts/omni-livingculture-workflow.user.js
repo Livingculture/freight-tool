@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.227
+// @version      0.1.228
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -4309,28 +4309,6 @@
     const link = document.createElement('a');
     link.href = blobUrl;
     link.download = template === 'receipt' || template === 'invoice' ? `${quoteNumber}-receipt.pdf` : `${quoteNumber}.pdf`;
-    if (template === 'receipt' || template === 'invoice') {
-      document.getElementById('lc-receipt-save-panel')?.remove();
-      const panel = document.createElement('aside');
-      panel.id = 'lc-receipt-save-panel';
-      panel.style.cssText = 'position:fixed;bottom:16px;right:16px;z-index:2147483647;max-width:calc(100vw - 32px);padding:16px;background:#f0faf8;border:1px solid #178477;border-radius:6px;color:#163e38;font:14px/1.5 Arial,sans-serif';
-      const message = document.createElement('p');
-      message.textContent = 'Receipt PDF received. Check Downloads, or save it below.';
-      link.textContent = 'Save receipt PDF';
-      const close = document.createElement('button');
-      close.type = 'button'; close.textContent = 'Close'; close.style.marginLeft = '16px';
-      close.onclick = () => panel.remove();
-      panel.append(message, link, close);
-      document.body.append(panel);
-      link.click();
-      // Keep the fallback link valid until the panel is closed or replaced.
-      const observer = new MutationObserver(() => {
-        if (panel.isConnected) return;
-        observer.disconnect(); URL.revokeObjectURL(blobUrl);
-      });
-      observer.observe(document.body, {childList:true});
-      return;
-    }
     document.body.appendChild(link);
     link.click();
     link.remove();

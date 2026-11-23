@@ -16,7 +16,7 @@ const parentResource=`const normalizeLabel=value=>String(value||'').trim().toLow
 (async()=>{
   const browser=await chromium.launch({channel:process.env.BROWSER_CHANNEL || undefined});
   try{
-    for(const scenario of ['native-submit','native-postback','attached-handler','direct','receipt-template','blocked-auto',
+    for(const scenario of ['native-submit','native-postback','attached-handler','direct','receipt-template',
       'wrong-order','missing-receipt','pdf-http-error','invalid-pdf','open-failure','parallel']){
       const context=await browser.newContext({acceptDownloads:true});
       let parent,worker,workerOptions,pdfRequests=0,postbacks=0,downloads=[],errors=[],requestUrls=[],workerHelpers=[];
@@ -68,9 +68,6 @@ const parentResource=`const normalizeLabel=value=>String(value||'').trim().toLow
         if(options.responseType==='arraybuffer')result.response=await response.arrayBuffer();else result.responseText=await response.text();options.onload(result);
        }).catch(()=>options.onerror());};
        window.alerts=[];window.alert=message=>window.alerts.push(message);
-       if(${JSON.stringify(scenario)}==='blocked-auto')document.addEventListener('click',event=>{
-        if(event.target.tagName==='A'&&event.target.href.startsWith('blob:')&&!event.isTrusted)event.preventDefault();
-       },true);
        document.addEventListener('DOMContentLoaded',()=>{${loader}\n});`});
       parent=await context.newPage();parent.on('download',download=>downloads.push(download.suggestedFilename()));parent.on('pageerror',error=>errors.push(error.message));
       await parent.goto(entryUrl);
@@ -91,9 +88,6 @@ const parentResource=`const normalizeLabel=value=>String(value||'').trim().toLow
         assert.equal(downloads.length,0);assert.equal((await parent.evaluate(()=>window.alerts)).length,1);
       }else{
         assert.deepEqual(await parent.evaluate(()=>window.alerts),[]);
-        if(scenario==='blocked-auto'){
-          assert.equal(downloads.length,0);await parent.getByRole('link',{name:'Save receipt PDF'}).click();
-        }
         await parent.waitForTimeout(100);assert.deepEqual(downloads,['NZSO-99001A-receipt.pdf']);
         assert.equal(pdfRequests,1);assert.equal(requestUrls.at(-1).searchParams.get('ID'),'987');
         assert.equal(requestUrls.at(-1).searchParams.get('SID'),'456');
@@ -105,6 +99,7 @@ const parentResource=`const normalizeLabel=value=>String(value||'').trim().toLow
         if(scenario!=='direct')assert.equal(postbacks,1,'Uses native control once, including server postbacks');
       }
       assert.equal(parent.url(),entryUrl,'Staff order does not navigate');
+      assert.equal(await parent.locator('#lc-receipt-save-panel').count(),0,'Receipt downloads without a popup panel');
       assert.equal(await parent.locator('#notes').inputValue(),'Unsaved fictional note');
       assert.equal(await parent.locator('#receipt').innerText(),'Download Receipt');
       assert.equal(await parent.evaluate(()=>Object.keys(localStorage).filter(key=>key.startsWith('lc-native-receipt:')).length),0);
