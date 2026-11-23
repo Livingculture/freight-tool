@@ -6,7 +6,7 @@ assert(!fs.readFileSync('userscripts/livingculture-all-in-one.user.js','utf8').i
 (async()=>{
   const browser=await chromium.launch({headless:true,...(process.env.BROWSER_CHANNEL?{channel:process.env.BROWSER_CHANNEL}:{})});
   try {
-    for(const scenario of ['order5','receipt','heading-h5','heading-div','stale-state','missing-download','wrong-order']) {
+    for(const scenario of ['order5','receipt','heading-h5','heading-div','stale-state','css-hostile','body-replaced','menu-only','missing-download','wrong-order']) {
       const context=await browser.newContext({acceptDownloads:true,viewport:{width:390,height:844}});
       let worker, options, downloaded, receiptUrl, invoiceRequests=0;
       const errors=[];
@@ -25,13 +25,16 @@ assert(!fs.readFileSync('userscripts/livingculture-all-in-one.user.js','utf8').i
       await context.exposeBinding('openPilotTab',async(_,url,tabOptions)=>{
         options=tabOptions;worker=await context.newPage();worker.on('pageerror',e=>errors.push(e.message));worker.on('download',d=>downloaded=d.suggestedFilename());await worker.goto(url);
       });
-      await context.addInitScript({content:`window.GM_openInTab=(url,options)=>{window.openPilotTab(url,options);return {};};window.GM_registerMenuCommand=(name,action)=>{window.pilotMenu=action;};if(${JSON.stringify(scenario)}==='stale-state'&&location.pathname.includes('TransactionEntry')&&!location.search.includes('lcReceiptPilot'))sessionStorage.setItem('lc-receipt-pilot-v1',JSON.stringify({id:'old',stage:'requested',startedAt:Date.now()}));document.addEventListener('DOMContentLoaded',()=>{${source}\n},{once:true});`});
+      await context.addInitScript({content:`window.GM_openInTab=(url,options)=>{window.openPilotTab(url,options);return {};};window.pilotMenus={};window.GM_registerMenuCommand=(name,action)=>{window.pilotMenus[name]=action;window.pilotMenu=action;};if(${JSON.stringify(scenario)}==='stale-state'&&location.pathname.includes('TransactionEntry')&&!location.search.includes('lcReceiptPilot'))sessionStorage.setItem('lc-receipt-pilot-v1',JSON.stringify({id:'old',stage:'requested',startedAt:Date.now()}));document.addEventListener('DOMContentLoaded',()=>{${source}\n},{once:true});`});
       const parent=await context.newPage();parent.on('pageerror',e=>errors.push(e.message));
       await parent.goto('https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx?OrderId=123');
+      if(scenario==='css-hostile')await parent.addStyleTag({content:'body{transform:translate(0);overflow:hidden;height:20px}button{display:none!important}'});
+      if(scenario==='body-replaced')await parent.evaluate(()=>{const replacement=document.createElement('body');replacement.innerHTML=document.body.innerHTML;document.body.replaceWith(replacement);});
       assert(await parent.getByRole('button',{name:'Receipt Test',exact:true}).isVisible());
       assert.equal(await parent.evaluate(()=>typeof window.pilotMenu),'function','Menu command confirms the standalone script loaded');
       await parent.evaluate(()=>localStorage.setItem('lc-quote-pdf-handoff-v2','untouched'));
-      await parent.getByRole('button',{name:'Receipt Test',exact:true}).click();
+      if(scenario==='menu-only')await parent.evaluate(()=>{document.getElementById('lc-receipt-pilot-launcher').style.setProperty('display','none','important');window.pilotMenus['Receipt Pilot: START visible receipt test']();});
+      else await parent.getByRole('button',{name:'Receipt Test',exact:true}).click();
       for(let i=0;i<100&&!worker;i++)await new Promise(r=>setTimeout(r,20));
       assert(worker);assert.deepEqual(options,{active:true,insert:true});
       if(scenario==='wrong-order'){

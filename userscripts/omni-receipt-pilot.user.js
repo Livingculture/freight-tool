@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture Receipt Pilot - Private Test
 // @namespace    livingculture-receipt-pilot
-// @version      0.1.1
+// @version      0.1.2
 // @description  Separate visible-tab receipt test. Not included in All-in-One.
 // @match        https://go.cin7.com/Cloud/*
 // @run-at       document-idle
@@ -18,6 +18,24 @@
   const STATE_KEY = 'lc-receipt-pilot-v1';
   const PARAM = 'lcReceiptPilot';
   const clean = value => String(value || '').replace(/\s+/g, ' ').trim();
+  function startVisibleTest() {
+    let url = new URL(location.href);
+    if (!/\/Cloud\/TransactionEntry\/TransactionEntry\.aspx/i.test(url.pathname)) {
+      const orders = Array.from(document.querySelectorAll('iframe,frame')).filter(frame=>frame.getBoundingClientRect().width>0 && frame.getBoundingClientRect().height>0)
+        .map(frame=>{try{return new URL(frame.src,location.href);}catch{return null;}})
+        .filter(candidate=>candidate?.origin===location.origin && /\/Cloud\/TransactionEntry\/TransactionEntry\.aspx/i.test(candidate.pathname));
+      if (orders.length === 1) url = orders[0];
+    }
+    if (!/\/Cloud\/TransactionEntry\/TransactionEntry\.aspx/i.test(url.pathname)) {
+      window.alert('Receipt Pilot: open the saved sales-order screen first.'); return;
+    }
+    url.searchParams.set(PARAM,crypto.randomUUID());
+    try {
+      if (!GM_openInTab(url.href,{active:true,insert:true})) throw Error('No test tab opened.');
+    } catch { window.alert('Receipt Pilot could not open its test tab. Check Tampermonkey permissions.'); }
+  }
+  // Register before mounting UI, so the pilot can launch even if the page hides it.
+  if (typeof GM_registerMenuCommand === 'function') GM_registerMenuCommand('Receipt Pilot: START visible receipt test', startVisibleTest);
   const headingText = () => [...Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"]')).map(element=>clean(element.textContent)),document.title,clean(document.body.innerText)].join(' ');
   const visible = element => {
     const rect = element.getBoundingClientRect(), style = getComputedStyle(element);
@@ -27,20 +45,20 @@
   const read = () => { try { return JSON.parse(sessionStorage.getItem(STATE_KEY) || 'null'); } catch { return null; } };
   const write = state => sessionStorage.setItem(STATE_KEY, JSON.stringify(state));
   let state = read(), busy = false, timer = null;
-  const marker = document.createElement('span'); marker.id = 'lc-receipt-pilot-marker'; marker.hidden = true; document.body.append(marker);
+  const marker = document.createElement('span'); marker.id = 'lc-receipt-pilot-marker'; marker.hidden = true; document.documentElement.append(marker);
 
   function status(message, failed = false) {
     let panel = document.getElementById('lc-receipt-pilot-status');
     if (!panel) {
       panel = document.createElement('aside'); panel.id = 'lc-receipt-pilot-status';
       panel.style.cssText = 'position:fixed;bottom:16px;right:16px;z-index:2147483647;box-sizing:border-box;width:360px;max-width:calc(100vw - 32px);padding:14px;border:1px solid #178477;border-radius:6px;background:#f0faf8;color:#163e38;font:14px/1.45 Arial,sans-serif;box-shadow:0 3px 16px #0002';
-      const title = document.createElement('strong'); title.textContent = 'Receipt Pilot 0.1.1';
+      const title = document.createElement('strong'); title.textContent = 'Receipt Pilot 0.1.2';
       const text = document.createElement('p'); text.dataset.message = '1'; text.style.margin = '8px 0';
       const copy = document.createElement('button'); copy.type = 'button'; copy.textContent = 'Copy diagnostics';
       copy.onclick = async () => {
         // Diagnostics deliberately exclude URLs, document parameters and customer data.
         const current = read();
-        const report = JSON.stringify({ version:'0.1.1', stage:current?.stage, page:location.pathname, message:text.textContent, events:current?.events || [] },null,2);
+        const report = JSON.stringify({ version:'0.1.2', stage:current?.stage, page:location.pathname, message:text.textContent, events:current?.events || [] },null,2);
         try { await navigator.clipboard.writeText(report); copy.textContent = 'Copied'; }
         catch { copy.textContent = 'Copy unavailable'; }
       };
@@ -137,25 +155,30 @@
   }
 
   function addButton() {
-    if (!/\/Cloud\/TransactionEntry\/TransactionEntry\.aspx/i.test(location.pathname) || document.getElementById('lc-receipt-pilot-button')) return;
+    if (!isEditScreen) return;
+    const existing = document.getElementById('lc-receipt-pilot-launcher');
+    if (existing) {
+      try { if (existing.showPopover && !existing.matches(':popover-open')) existing.showPopover(); } catch {}
+      return;
+    }
+    const host = document.createElement('div'); host.id = 'lc-receipt-pilot-launcher';
+    host.style.cssText = 'all:initial!important;position:fixed!important;inset:90px 16px auto auto!important;margin:0!important;padding:0!important;border:0!important;background:transparent!important;z-index:2147483647!important;display:block!important;visibility:visible!important;opacity:1!important;width:max-content!important;height:auto!important;';
+    host.setAttribute('popover','manual');
+    const root = host.attachShadow({mode:'open'});
     const button = document.createElement('button'); button.id = 'lc-receipt-pilot-button'; button.type = 'button'; button.textContent = 'Receipt Test';
-    button.style.cssText = 'position:fixed!important;top:90px!important;right:16px!important;bottom:auto!important;left:auto!important;z-index:2147483647!important;display:block!important;visibility:visible!important;opacity:1!important;padding:11px 18px;background:#177c62;color:white;border:1px solid #11644f;border-radius:4px;font:700 14px Arial;cursor:pointer';
+    button.style.cssText = 'all:initial;display:block;box-sizing:border-box;padding:11px 18px;background:#177c62;color:white;border:1px solid #11644f;border-radius:4px;font:700 14px Arial;cursor:pointer';
     button.onclick = () => {
       if (!/Edit\s+Sales Order/i.test(headingText())) { status('Receipt Pilot is running. Open a saved sales order to start the test.',true); return; }
-      const url = new URL(location.href); url.searchParams.set(PARAM,crypto.randomUUID());
-      try {
-        const tab = GM_openInTab(url.href,{active:true,insert:true});
-        if (!tab) throw Error('No test tab opened.');
-        status('Test opened in a separate visible tab. Use Receipt Test, not the normal Download Receipt button, for this pilot.');
-      } catch { status('Could not open the test tab. Check Tampermonkey permissions.',true); }
+      startVisibleTest();
     };
-    document.body.append(button);
+    root.append(button); document.documentElement.append(host);
+    try { host.showPopover?.(); } catch {}
   }
   if (typeof GM_registerMenuCommand === 'function') GM_registerMenuCommand('Receipt Pilot: show test button', () => {
-    addButton(); status('Receipt Pilot 0.1.1 is running. The green Receipt Test button is at the top-right of the order screen.');
+    addButton(); status('Receipt Pilot 0.1.2 is running. You can also start the test from the Tampermonkey menu.');
   });
   if (!token) {
     addButton();
-    const observer = new MutationObserver(addButton); observer.observe(document.body,{childList:true,subtree:true});
+    const observer = new MutationObserver(addButton); observer.observe(document.documentElement,{childList:true,subtree:true});
   }
 })();
