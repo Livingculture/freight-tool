@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.226
+// @version      0.1.227
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -23,6 +23,9 @@
 
 (function () {
   'use strict';
+
+  // Receipt helpers run the proven pilot sequence without booting normal order tools.
+  if (continueNativeReceiptWorker()) return;
 
   const BUTTON_ID = 'lc-site-visit-inline-button-v2';
   const HUBSPOT_BUTTON_ID = 'lc-hubspot-deal-inline-button-v1';
@@ -4673,61 +4676,115 @@
     }, quotePdfTimeout(template) + 5000);
   }
 
-  function receiptAdminUrlOnOrder() {
-    const admin = Array.from(document.querySelectorAll('a,button,input[type="button"],input[type="submit"]'))
-      .find(element => [element.value,element.textContent,element.getAttribute('aria-label'),element.title]
-        .some(label => normalizeLabel(label || '') === 'go to admin'));
-    if (!admin) throw new Error('Go to Admin was not found. Refresh the saved sales order and try again.');
-    const candidates = [admin.getAttribute('href'),admin.getAttribute('formaction')];
-    // Read literal destinations without executing native handlers or changing the form.
-    const handler = [admin.getAttribute('onclick'),admin.getAttribute('href')].filter(Boolean).join(' ');
-    for (const match of handler.matchAll(/["']([^"']+)["']/g)) candidates.push(match[1]);
-    for (const raw of candidates) {
-      if (!raw || /^(?:javascript:|#)/i.test(raw)) continue;
-      try {
-        const url = new URL(raw.replace(/&amp;/gi,'&'),location.href);
-        if (url.origin === location.origin && /\/Cloud\/ShoppingCartAdmin\//i.test(url.pathname)) return url.href;
-      } catch {}
+  function continueNativeReceiptWorker() {
+    const sessionKey = 'lc-native-receipt-worker';
+    const token = new URL(location.href).searchParams.get('lcNativeReceipt');
+    let state;
+    try { state = JSON.parse(sessionStorage.getItem(sessionKey) || 'null'); } catch {}
+    if (token && /^[a-f0-9-]{36}$/i.test(token) && state?.id!==token) {
+      state={id:token,stage:'edit'};sessionStorage.setItem(sessionKey,JSON.stringify(state));
     }
-    throw new Error('Cin7 did not expose a readable Admin link on this order. No screen was opened. Use the Receipt Pilot for now and report this message.');
-  }
-
-  function requestReceiptHrefOnOrder(adminUrl, quoteNumber) {
-    return new Promise((resolve,reject) => {
-      GM_xmlhttpRequest({method:'GET',url:adminUrl,timeout:30000,
-        onload:response => {
-          if (response.status < 200 || response.status >= 300) {
-            reject(new Error(`Cin7 Admin returned HTTP ${response.status}.`)); return;
+    if (!state?.id || !/^[a-f0-9-]{36}$/i.test(state.id)) return false;
+    if (window.parent !== window) return true;
+    let handoff;
+    try { handoff = JSON.parse(localStorage.getItem(`lc-native-receipt:${state.id}`) || 'null'); } catch {}
+    if (!handoff || Date.now()-handoff.startedAt > 180000) {
+      sessionStorage.removeItem(sessionKey); return true;
+    }
+    const channel = new BroadcastChannel(`lc-native-receipt:${state.id}`);
+    let busy = false, timer;
+    const cleanLabel = value => String(value || '').replace(/\s+/g,' ').trim().toLowerCase();
+    const finish = (error,buffer) => {
+      busy = true; clearInterval(timer); sessionStorage.removeItem(sessionKey);
+      channel.postMessage(buffer ? {buffer} : {error});
+    };
+    const stage = value => { state.stage=value; sessionStorage.setItem(sessionKey,JSON.stringify(state)); };
+    const controls = () => {
+      const roots=[document],seen=new Set(),result=[];
+      for(let i=0;i<roots.length && i<30;i++) {
+        const root=roots[i]; if(seen.has(root))continue; seen.add(root);
+        result.push(...root.querySelectorAll('a,button,input[type="button"],input[type="submit"],[role="button"]'));
+        for(const frame of root.querySelectorAll('iframe,frame')) {try{if(frame.contentDocument)roots.push(frame.contentDocument);}catch{}}
+        for(const element of root.querySelectorAll('*'))if(element.shadowRoot)roots.push(element.shadowRoot);
+      }
+      return result.filter(element=>!element.disabled && element.getAttribute('aria-disabled')!=='true');
+    };
+    const tick = () => {
+      if(busy)return;
+      if(!localStorage.getItem(`lc-native-receipt:${state.id}`)) {busy=true;clearInterval(timer);return;}
+      const heading=[...document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"]')].map(element=>element.textContent).join(' ')
+        || document.title || document.body?.innerText || '';
+      const order=heading.match(/\bNZSO-?\d+[A-Z]?\b(?![-A-Z0-9])/i)?.[0]?.replace(/^NZSO(?!-)/i,'NZSO-').toUpperCase();
+      if(order && order!==handoff.quoteNumber) {finish('The receipt helper opened a different order. Download cancelled.');return;}
+      if(Date.now()-handoff.startedAt>175000) {finish('Cin7 did not prepare the receipt in time. Please try again.');return;}
+      if(state.stage==='edit') {
+        if(!order || !/edit\s+sales order/i.test(heading))return;
+        const admin=controls().find(element=>[element.value,element.textContent,element.getAttribute('aria-label'),element.title].some(label=>cleanLabel(label)==='go to admin'));
+        if(!admin)return;
+        stage('admin');
+        // The pilot's native click handles server postbacks and attached JS handlers.
+        admin.setAttribute('target','_self');admin.setAttribute('formtarget','_self');
+        const form=admin.form || admin.closest('form');if(form)form.target='_self';
+        admin.click();return;
+      }
+      if(state.stage!=='admin')return;
+      let url;
+      for(const element of controls()) {
+        const raw=element.getAttribute('href') || element.getAttribute('formaction') || '';
+        if(!raw || /^(?:javascript:|#)/i.test(raw))continue;
+        try {
+          const candidate=new URL(raw.replace(/&amp;/gi,'&'),location.href);
+          if(candidate.origin===location.origin && /^\/Cloud\/Docs\/PDF\/?$/i.test(candidate.pathname)
+            && ['receipt','order 5'].includes(cleanLabel(candidate.searchParams.get('T')))) {url=candidate.href;break;}
+        }catch{}
+      }
+      if(!url)return;
+      busy=true;
+      GM_xmlhttpRequest({method:'GET',url,responseType:'arraybuffer',timeout:120000,
+        onload:response=>{
+          if(!localStorage.getItem(`lc-native-receipt:${state.id}`))return;
+          const bytes=new Uint8Array(response.response || new ArrayBuffer(0));
+          if(response.status>=200 && response.status<300 && bytes.length>=32 && String.fromCharCode(...bytes.slice(0,5))==='%PDF-') {
+            finish('',response.response);return;
           }
-          const parsed = new DOMParser().parseFromString(response.responseText || '', 'text/html');
-          const headings = Array.from(parsed.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"]'))
-            .map(element => element.textContent || '').join(' ');
-          const reference = headings.match(/\bNZSO-\d+[A-Z]?\b/i)?.[0]?.toUpperCase();
-          if (reference && reference !== quoteNumber.toUpperCase()) {
-            reject(new Error('Cin7 returned Admin for a different order. Receipt download cancelled.')); return;
-          }
-          const receipt = Array.from(parsed.querySelectorAll('a[href]'))
-            .find(element => quotePdfTemplateMatches(element,'receipt') && /\/Cloud\/Docs\/PDF\/?\?/i.test(element.getAttribute('href') || ''));
-          if (!receipt) {
-            reject(new Error('Cin7 did not return its generated Dynamic Receipt link. Check that you are signed in and refresh the order.')); return;
-          }
-          resolve(new URL(receipt.getAttribute('href').replace(/&amp;/gi,'&'),adminUrl).href);
+          finish(response.status<200 || response.status>=300 ? `Cin7 returned HTTP ${response.status} for the receipt.` : 'Cin7 did not return a receipt PDF. Please try again.');
         },
-        onerror:() => reject(new Error('Could not connect to Cin7 Admin.')),
-        ontimeout:() => reject(new Error('Cin7 Admin timed out. Please try again.'))
+        onerror:()=>finish('Could not retrieve the receipt PDF.'),
+        ontimeout:()=>finish('Cin7 timed out while generating the receipt PDF.')
       });
-    });
+    };
+    const start=()=>{timer=setInterval(tick,500);tick();};
+    if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
+    return true;
   }
 
   async function downloadReceiptOnOrder(button, quoteNumber) {
     if (button.disabled) return;
     button.disabled = true; button.textContent = 'Downloading…';
+    const id=crypto.randomUUID(),key=`lc-native-receipt:${id}`;
+    let worker,channel,timer;
     try {
-      const href = await requestReceiptHrefOnOrder(receiptAdminUrlOnOrder(),quoteNumber);
-      await new Promise((resolve,reject) => downloadSignedQuotePdf(href,quoteNumber,'receipt',error => error ? reject(new Error(error)) : resolve()));
+      if(typeof GM_openInTab!=='function' || typeof BroadcastChannel!=='function')throw new Error('Update All-in-One and refresh Omni to enable receipt downloads.');
+      const url=new URL(location.href);url.searchParams.set('lcNativeReceipt',id);
+      localStorage.setItem(key,JSON.stringify({quoteNumber,startedAt:Date.now()}));
+      channel=new BroadcastChannel(key);
+      const buffer=await new Promise((resolve,reject)=>{
+        channel.onmessage=event=>{
+          if(event.data?.error){reject(new Error(event.data.error));return;}
+          const bytes=new Uint8Array(event.data?.buffer || new ArrayBuffer(0));
+          if(bytes.length<32 || String.fromCharCode(...bytes.slice(0,5))!=='%PDF-'){reject(new Error('Cin7 did not return a receipt PDF.'));return;}
+          resolve(event.data.buffer);
+        };
+        timer=setTimeout(()=>reject(new Error('Cin7 did not prepare the receipt in time. Please try again.')),180000);
+        worker=GM_openInTab(url.href,{active:false,insert:true,setParent:true});
+        if(!worker)reject(new Error('The receipt helper could not start. Check Tampermonkey permissions.'));
+      });
+      saveQuotePdfBuffer(buffer,quoteNumber,'receipt');
     } catch (error) {
       window.alert(error.message || 'Could not download the receipt.');
     } finally {
+      clearTimeout(timer);channel?.close();localStorage.removeItem(key);
+      try{worker?.close();}catch{}
       button.disabled = false; button.textContent = 'Download Receipt';
     }
   }
