@@ -175,6 +175,7 @@ const workerHelpers = `${extract('quotePdfTimeout')}\n${extract('quotePdfWorkerH
       window.omniHeadingDraft = () => ({ documentType:window.docType, orderId:'NZSO-123', customerName:'Test Customer' }); window.extractOrderId = () => '';
       window.currentQuotePdfOrderId = () => '388';
       window.prepareQuotePdfLink = async () => 'https://go.cin7.com/Cloud/Docs/PDF/?T=Receipt&ID=363';
+      window.downloadReceiptOnOrder = async () => { window.receiptOnOrderCalled = true; };
       window.GM_openInTab = (url, options) => {
         window.openedWorker = { url, options, closed:false, close(){ this.closed = true; } };
         return window.openedWorker;
@@ -185,15 +186,10 @@ const workerHelpers = `${extract('quotePdfTimeout')}\n${extract('quotePdfWorkerH
     assert.equal(await page.evaluate(() => window.alerts.length), 1);
     assert.equal(await page.evaluate(() => window.openedWorker || null), null, 'Locked quote still follows the HubSpot rule');
     await page.evaluate(() => { window.docType='sales-order'; window.alerts=[]; downloadCurrentQuotePdf(document.getElementById('pdf'),'receipt'); });
-    await page.waitForFunction(() => Boolean(window.openedWorker));
-    assert.equal(new URL(await page.evaluate(() => window.openedWorker.url)).searchParams.get('lcQuotePdfWorker'), '1');
-    assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem('test-invoice-handoff-v2'))).template, 'receipt');
+    await page.waitForFunction(() => window.receiptOnOrderCalled);
+    assert.equal(await page.evaluate(() => window.openedWorker || null), null, 'Receipt bypasses the background worker');
+    assert.equal(await page.evaluate(() => localStorage.getItem('test-invoice-handoff-v2')),null);
     assert.deepEqual(await page.evaluate(() => window.alerts), []);
-    assert.equal(await page.locator('#pdf').isDisabled(), true);
-    assert.equal(await page.locator('#pdf').innerText(), 'Downloading…');
-    await page.evaluate(() => {const requestId=JSON.parse(localStorage.getItem('test-invoice-handoff-v2')).requestId;window.dispatchEvent(new StorageEvent('storage',{key:'test-invoice-handoff-v2:'+requestId+':result',newValue:JSON.stringify({error:''}),storageArea:localStorage}));});
-    assert.equal(await page.locator('#pdf').isEnabled(), true);
-    assert.equal(await page.locator('#pdf').innerText(), 'Download Receipt');
     assert.equal(await page.locator('iframe').count(), 0, 'Receipt download does not wait for HubSpot');
     await page.close();
     console.log('PASS PDF: Quote remains gated; receipt is always available');

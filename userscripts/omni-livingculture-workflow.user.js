@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.225
+// @version      0.1.226
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -4306,6 +4306,28 @@
     const link = document.createElement('a');
     link.href = blobUrl;
     link.download = template === 'receipt' || template === 'invoice' ? `${quoteNumber}-receipt.pdf` : `${quoteNumber}.pdf`;
+    if (template === 'receipt' || template === 'invoice') {
+      document.getElementById('lc-receipt-save-panel')?.remove();
+      const panel = document.createElement('aside');
+      panel.id = 'lc-receipt-save-panel';
+      panel.style.cssText = 'position:fixed;bottom:16px;right:16px;z-index:2147483647;max-width:calc(100vw - 32px);padding:16px;background:#f0faf8;border:1px solid #178477;border-radius:6px;color:#163e38;font:14px/1.5 Arial,sans-serif';
+      const message = document.createElement('p');
+      message.textContent = 'Receipt PDF received. Check Downloads, or save it below.';
+      link.textContent = 'Save receipt PDF';
+      const close = document.createElement('button');
+      close.type = 'button'; close.textContent = 'Close'; close.style.marginLeft = '16px';
+      close.onclick = () => panel.remove();
+      panel.append(message, link, close);
+      document.body.append(panel);
+      link.click();
+      // Keep the fallback link valid until the panel is closed or replaced.
+      const observer = new MutationObserver(() => {
+        if (panel.isConnected) return;
+        observer.disconnect(); URL.revokeObjectURL(blobUrl);
+      });
+      observer.observe(document.body, {childList:true});
+      return;
+    }
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -4577,6 +4599,10 @@
       window.alert('The NZSO number could not be found on this page.');
       return;
     }
+    if (template === 'receipt' || template === 'invoice') {
+      await downloadReceiptOnOrder(button, quoteNumber);
+      return;
+    }
     if (typeof GM_openInTab !== 'function') {
       window.alert('Update Living Culture All-in-One to enable background downloads.');
       return;
@@ -4645,6 +4671,65 @@
         ? 'Cin7 took too long to prepare the Dynamic Receipt PDF.'
         : 'Cin7 took too long to prepare the PDF.');
     }, quotePdfTimeout(template) + 5000);
+  }
+
+  function receiptAdminUrlOnOrder() {
+    const admin = Array.from(document.querySelectorAll('a,button,input[type="button"],input[type="submit"]'))
+      .find(element => [element.value,element.textContent,element.getAttribute('aria-label'),element.title]
+        .some(label => normalizeLabel(label || '') === 'go to admin'));
+    if (!admin) throw new Error('Go to Admin was not found. Refresh the saved sales order and try again.');
+    const candidates = [admin.getAttribute('href'),admin.getAttribute('formaction')];
+    // Read literal destinations without executing native handlers or changing the form.
+    const handler = [admin.getAttribute('onclick'),admin.getAttribute('href')].filter(Boolean).join(' ');
+    for (const match of handler.matchAll(/["']([^"']+)["']/g)) candidates.push(match[1]);
+    for (const raw of candidates) {
+      if (!raw || /^(?:javascript:|#)/i.test(raw)) continue;
+      try {
+        const url = new URL(raw.replace(/&amp;/gi,'&'),location.href);
+        if (url.origin === location.origin && /\/Cloud\/ShoppingCartAdmin\//i.test(url.pathname)) return url.href;
+      } catch {}
+    }
+    throw new Error('Cin7 did not expose a readable Admin link on this order. No screen was opened. Use the Receipt Pilot for now and report this message.');
+  }
+
+  function requestReceiptHrefOnOrder(adminUrl, quoteNumber) {
+    return new Promise((resolve,reject) => {
+      GM_xmlhttpRequest({method:'GET',url:adminUrl,timeout:30000,
+        onload:response => {
+          if (response.status < 200 || response.status >= 300) {
+            reject(new Error(`Cin7 Admin returned HTTP ${response.status}.`)); return;
+          }
+          const parsed = new DOMParser().parseFromString(response.responseText || '', 'text/html');
+          const headings = Array.from(parsed.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"]'))
+            .map(element => element.textContent || '').join(' ');
+          const reference = headings.match(/\bNZSO-\d+[A-Z]?\b/i)?.[0]?.toUpperCase();
+          if (reference && reference !== quoteNumber.toUpperCase()) {
+            reject(new Error('Cin7 returned Admin for a different order. Receipt download cancelled.')); return;
+          }
+          const receipt = Array.from(parsed.querySelectorAll('a[href]'))
+            .find(element => quotePdfTemplateMatches(element,'receipt') && /\/Cloud\/Docs\/PDF\/?\?/i.test(element.getAttribute('href') || ''));
+          if (!receipt) {
+            reject(new Error('Cin7 did not return its generated Dynamic Receipt link. Check that you are signed in and refresh the order.')); return;
+          }
+          resolve(new URL(receipt.getAttribute('href').replace(/&amp;/gi,'&'),adminUrl).href);
+        },
+        onerror:() => reject(new Error('Could not connect to Cin7 Admin.')),
+        ontimeout:() => reject(new Error('Cin7 Admin timed out. Please try again.'))
+      });
+    });
+  }
+
+  async function downloadReceiptOnOrder(button, quoteNumber) {
+    if (button.disabled) return;
+    button.disabled = true; button.textContent = 'Downloading…';
+    try {
+      const href = await requestReceiptHrefOnOrder(receiptAdminUrlOnOrder(),quoteNumber);
+      await new Promise((resolve,reject) => downloadSignedQuotePdf(href,quoteNumber,'receipt',error => error ? reject(new Error(error)) : resolve()));
+    } catch (error) {
+      window.alert(error.message || 'Could not download the receipt.');
+    } finally {
+      button.disabled = false; button.textContent = 'Download Receipt';
+    }
   }
 
   function quotePdfTimeout(template = 'quote') {

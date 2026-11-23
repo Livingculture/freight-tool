@@ -13,7 +13,8 @@ const workerCode = constants + ['quotePdfTimeout', 'quotePdfWorkerHandoff', 'com
 (async () => {
   const browser = await chromium.launch({channel:process.env.BROWSER_CHANNEL || undefined});
   try {
-    for (const scenario of ['success', 'receipt-background', 'receipt-delayed', 'receipt-html', 'receipt-small', 'receipt-http-error', 'receipt-order5', 'receipt-order5-live', 'missing-receipt', 'wrong-quote', 'http-error']) {
+    // Receipts now stay on the order screen; covered by test-omni-receipt-on-order.cjs.
+    for (const scenario of ['success', 'wrong-quote', 'http-error']) {
       const order5 = scenario.startsWith('receipt-order5');
       const receiptLink = order5 ? '/Cloud/Docs/PDF/?T=Order%205&idWebSite=1&UN=demo&ID=363&SID=123' : '/Cloud/Docs/PDF/?T=Receipt&ID=363';
       const receiptAdminHtml = `<a href="/Cloud/Docs/PDF/?T=Invoice&ID=363">Dynamic Invoice</a><a href="${receiptLink}">PDF</a>`;
