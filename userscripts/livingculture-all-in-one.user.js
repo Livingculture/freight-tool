@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture All-in-One
 // @namespace    livingculture
-// @version      0.1.270
+// @version      0.1.271
 // @description  Approved Living Culture Omni, Cin7 Core, Gmail, HubSpot and website tools in one Tampermonkey install.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -60,7 +60,7 @@
 // @resource     emailHelperCompose https://raw.githubusercontent.com/Livingculture/freight-tool/722b6e81fda1148fdedb7084c658c910395ac77f/userscripts/omni-email-helper-compose.user.js
 // @resource     pdfAttachments https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-pdf-attachments.user.js?v=0.4.9
 // @resource     hubspotShortcut https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-hubspot-shortcut.user.js?v=0.2.0
-// @resource     workflow https://raw.githubusercontent.com/Livingculture/freight-tool/12693ff1514d031f087f7e80ff0b188a29b18558/userscripts/omni-livingculture-workflow.user.js
+// @resource     workflow https://raw.githubusercontent.com/Livingculture/freight-tool/73f58edfc7dc8a951ec7db3c21a418398c1c9fe6/userscripts/omni-livingculture-workflow.user.js
 // @resource     staffUpdatesWidget https://raw.githubusercontent.com/Livingculture/freight-tool/33c91f265329d527a4e25b3c48c2ceac2e046210/userscripts/workflow-updates-dropdown.js
 // @resource     workflowNavigation https://raw.githubusercontent.com/Livingculture/freight-tool/48cf388f7d6e6ecf8d5766fb9afd65931ff730a5/userscripts/omni-workflow-navigation.user.js
 // @resource     warrantyGuide https://raw.githubusercontent.com/Livingculture/freight-tool/4c8f7709f96fdbd17c59fa9fe4e81cd5dab6345a/userscripts/omni-warranty-guide.user.js
@@ -88,6 +88,14 @@
   const isOmniQuote = isOmni && /\/Cloud\/TransactionEntry\/TransactionEntry\.aspx/i.test(path);
   const isOmniContactLog = isOmni && /\/Cloud\/CRM\/ContactLog\.aspx/i.test(path);
   const isOmniShoppingAdmin = isOmni && /\/Cloud\/ShoppingCartAdmin\//i.test(path);
+  let isNativeReceiptWorker = false;
+  if (isOmni) {
+    try {
+      const nativeId = new URL(location.href).searchParams.get('lcNativeReceipt')
+        || JSON.parse(sessionStorage.getItem('lc-native-receipt-worker') || 'null')?.id;
+      isNativeReceiptWorker = Boolean(nativeId && /^[a-f0-9-]{36}$/i.test(nativeId));
+    } catch {}
+  }
   let isOmniReceiptWorker = false;
   if (isOmni) {
     try {
@@ -123,7 +131,7 @@
     { resource: 'gmailDrawings', file: 'gmail-drawings.user.js', runAt: 'idle', enabled: isGmail },
     { resource: 'gmailCareGuides', file: 'gmail-care-guides.user.js', runAt: 'idle', enabled: isGmail },
     { resource: 'hubspotShortcut', file: 'omni-hubspot-shortcut.user.js', runAt: 'idle', enabled: isOmniQuote },
-    { resource: 'workflow', file: 'omni-livingculture-workflow.user.js', runAt: 'start', enabled: isOmniQuote || isOmniShoppingAdmin || isOmniReceiptWorker },
+    { resource: 'workflow', file: 'omni-livingculture-workflow.user.js', runAt: 'start', enabled: isOmniQuote || isOmniShoppingAdmin || isOmniReceiptWorker || isNativeReceiptWorker },
     { resource: 'workflowNavigation', file: 'omni-workflow-navigation.user.js', runAt: 'idle', enabled: isOmni },
     { resource: 'warrantyGuide', file: 'omni-warranty-guide.user.js', runAt: 'idle', enabled: isOmniQuote },
     { resource: 'gmailHubspotAttachments', file: 'gmail-hubspot-attachments.user.js', runAt: 'start', enabled: isGmail },
@@ -139,12 +147,15 @@
     { resource: 'wecomPayment', file: 'cin7-wecom-payment-message.user.js', runAt: 'idle', enabled: isCin7Core }
   ];
 
+  // A receipt helper must only run its native-button sequence, never normal order helpers.
+  if (isNativeReceiptWorker) components.forEach(component => { component.enabled = component.resource === 'workflow'; });
+
   const earlyOmniTools = new Set(['omniFreight', 'installFees', 'customProducts', 'websiteShortcuts', 'productAvailability', 'chinaWarehouse', 'quoteMemo', 'pergolaGuide']);
   if (isOmniQuote) components.forEach(component => {
     if (earlyOmniTools.has(component.resource)) component.runAt = 'body';
   });
 
-  const status = { version: '0.1.270', loaded: [], skipped: [], errors: [] };
+  const status = { version: '0.1.271', loaded: [], skipped: [], errors: [] };
   window.__lcAllInOneStatus = status;
 
   // BEGIN GENERATED GMAIL COMPONENTS
