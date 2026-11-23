@@ -1,12 +1,14 @@
 // ==UserScript==
 // @name         Living Culture Receipt Pilot - Private Test
 // @namespace    livingculture-receipt-pilot
-// @version      0.1.2
+// @version      0.1.3
 // @description  Separate visible-tab receipt test. Not included in All-in-One.
 // @match        https://go.cin7.com/Cloud/*
 // @run-at       document-idle
 // @grant        GM_openInTab
 // @grant        GM_registerMenuCommand
+// @grant        GM_xmlhttpRequest
+// @connect      go.cin7.com
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-receipt-pilot.user.js
 // @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-receipt-pilot.user.js
 // ==/UserScript==
@@ -44,7 +46,7 @@
   const labels = element => [element.value, element.textContent, element.getAttribute('aria-label'), element.getAttribute('title'), element.getAttribute('alt')].map(value => clean(value).toLowerCase());
   const read = () => { try { return JSON.parse(sessionStorage.getItem(STATE_KEY) || 'null'); } catch { return null; } };
   const write = state => sessionStorage.setItem(STATE_KEY, JSON.stringify(state));
-  let state = read(), busy = false, timer = null;
+  let state = read(), busy = false, timer = null, request = null, pdfUrl = '';
   const marker = document.createElement('span'); marker.id = 'lc-receipt-pilot-marker'; marker.hidden = true; document.documentElement.append(marker);
 
   function status(message, failed = false) {
@@ -52,18 +54,18 @@
     if (!panel) {
       panel = document.createElement('aside'); panel.id = 'lc-receipt-pilot-status';
       panel.style.cssText = 'position:fixed;bottom:16px;right:16px;z-index:2147483647;box-sizing:border-box;width:360px;max-width:calc(100vw - 32px);padding:14px;border:1px solid #178477;border-radius:6px;background:#f0faf8;color:#163e38;font:14px/1.45 Arial,sans-serif;box-shadow:0 3px 16px #0002';
-      const title = document.createElement('strong'); title.textContent = 'Receipt Pilot 0.1.2';
+      const title = document.createElement('strong'); title.textContent = 'Receipt Pilot 0.1.3';
       const text = document.createElement('p'); text.dataset.message = '1'; text.style.margin = '8px 0';
       const copy = document.createElement('button'); copy.type = 'button'; copy.textContent = 'Copy diagnostics';
       copy.onclick = async () => {
         // Diagnostics deliberately exclude URLs, document parameters and customer data.
         const current = read();
-        const report = JSON.stringify({ version:'0.1.2', stage:current?.stage, page:location.pathname, message:text.textContent, events:current?.events || [] },null,2);
+        const report = JSON.stringify({ version:'0.1.3', stage:current?.stage, page:location.pathname, message:text.textContent, events:current?.events || [] },null,2);
         try { await navigator.clipboard.writeText(report); copy.textContent = 'Copied'; }
         catch { copy.textContent = 'Copy unavailable'; }
       };
       const stop = document.createElement('button'); stop.type = 'button'; stop.textContent = 'Stop test'; stop.style.marginLeft = '8px';
-      stop.onclick = () => { if (timer) clearInterval(timer); sessionStorage.removeItem(STATE_KEY); busy = true; panel.remove(); };
+      stop.onclick = () => { if (timer) clearInterval(timer); sessionStorage.removeItem(STATE_KEY); busy = true; request?.abort?.(); if (pdfUrl) URL.revokeObjectURL(pdfUrl); panel.remove(); };
       panel.append(title,text,copy,stop); document.body.append(panel);
     }
     panel.querySelector('[data-message]').textContent = message;
@@ -103,6 +105,40 @@
     control.click();
   }
 
+  function fetchReceipt(url) {
+    const requestId = state.id;
+    busy = true;
+    transition('fetching','Step 2: Retrieving the receipt PDF directly from Cin7.');
+    const active = () => read()?.id === requestId && read()?.stage === 'fetching';
+    const fail = message => {
+      if (!active()) return;
+      transition('failed',message); status(message,true); clearInterval(timer);
+    };
+    try {
+      request = GM_xmlhttpRequest({method:'GET',url,responseType:'arraybuffer',timeout:120000,
+        onload:response=>{
+          if (!active()) return;
+          if (response.status < 200 || response.status >= 300) { fail(`Cin7 returned HTTP ${response.status}. No file was saved.`); return; }
+          const bytes = new Uint8Array(response.response || new ArrayBuffer(0));
+          if (bytes.length >= 32 && String.fromCharCode(...bytes.slice(0,5)) === '%PDF-') {
+            pdfUrl = URL.createObjectURL(new Blob([bytes],{type:'application/pdf'}));
+            transition('requested',`Step 3: Receipt PDF received (${bytes.length} bytes). Download requested; check Chrome Downloads or use Save receipt PDF below.`);
+            clearInterval(timer);
+            const link = document.createElement('a'); link.href = pdfUrl; link.download = `${state.order}-receipt.pdf`; link.textContent = 'Save receipt PDF';
+            link.style.cssText = 'display:block;margin-top:10px;color:#006b58;font-weight:700';
+            document.getElementById('lc-receipt-pilot-status').append(link); link.click();
+            return;
+          }
+          // Some Cin7 templates return an HTML generation screen before the PDF.
+          transition('receipt','Cin7 returned a page rather than PDF bytes. Opening the native receipt page to check its Download action.');
+          busy = false; location.assign(url);
+        },
+        onerror:()=>fail('Could not retrieve the receipt PDF. No file was saved. Copy diagnostics.'),
+        ontimeout:()=>fail('Cin7 did not return the receipt within two minutes. No file was saved. Copy diagnostics.')
+      });
+    } catch { fail('The PDF request could not start. Update the pilot and allow its Cin7 request permission.'); }
+  }
+
   function tick() {
     if (busy || !state) return;
     const pageOrder = headingText()
@@ -127,8 +163,7 @@
     if (state.stage === 'admin') {
       const receipt = controls().find(element=>receiptUrl(element));
       if (!receipt) return;
-      transition('receipt','Step 2: Opening the native receipt. Waiting for Download. If a PDF downloads directly, check Chrome Downloads.');
-      location.assign(receiptUrl(receipt)); return;
+      fetchReceipt(receiptUrl(receipt)); return;
     }
     if (state.stage === 'receipt') {
       const download = controls().find(element=>labels(element).some(value=>['download','download pdf','download receipt'].includes(value)));
@@ -175,7 +210,7 @@
     try { host.showPopover?.(); } catch {}
   }
   if (typeof GM_registerMenuCommand === 'function') GM_registerMenuCommand('Receipt Pilot: show test button', () => {
-    addButton(); status('Receipt Pilot 0.1.2 is running. You can also start the test from the Tampermonkey menu.');
+    addButton(); status('Receipt Pilot 0.1.3 is running. You can also start the test from the Tampermonkey menu.');
   });
   if (!token) {
     addButton();

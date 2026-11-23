@@ -6,7 +6,7 @@ assert(!fs.readFileSync('userscripts/livingculture-all-in-one.user.js','utf8').i
 (async()=>{
   const browser=await chromium.launch({headless:true,...(process.env.BROWSER_CHANNEL?{channel:process.env.BROWSER_CHANNEL}:{})});
   try {
-    for(const scenario of ['order5','receipt','heading-h5','heading-div','stale-state','css-hostile','body-replaced','menu-only','missing-download','wrong-order']) {
+    for(const scenario of ['direct-pdf','blocked-auto-download','pdf-http-error','order5','receipt','heading-h5','heading-div','stale-state','css-hostile','body-replaced','menu-only','missing-download','wrong-order']) {
       const context=await browser.newContext({acceptDownloads:true,viewport:{width:390,height:844}});
       let worker, options, downloaded, receiptUrl, invoiceRequests=0;
       const errors=[];
@@ -25,7 +25,8 @@ assert(!fs.readFileSync('userscripts/livingculture-all-in-one.user.js','utf8').i
       await context.exposeBinding('openPilotTab',async(_,url,tabOptions)=>{
         options=tabOptions;worker=await context.newPage();worker.on('pageerror',e=>errors.push(e.message));worker.on('download',d=>downloaded=d.suggestedFilename());await worker.goto(url);
       });
-      await context.addInitScript({content:`window.GM_openInTab=(url,options)=>{window.openPilotTab(url,options);return {};};window.pilotMenus={};window.GM_registerMenuCommand=(name,action)=>{window.pilotMenus[name]=action;window.pilotMenu=action;};if(${JSON.stringify(scenario)}==='stale-state'&&location.pathname.includes('TransactionEntry')&&!location.search.includes('lcReceiptPilot'))sessionStorage.setItem('lc-receipt-pilot-v1',JSON.stringify({id:'old',stage:'requested',startedAt:Date.now()}));document.addEventListener('DOMContentLoaded',()=>{${source}\n},{once:true});`});
+      await context.exposeBinding('recordPilotRequest',async(_,url)=>{receiptUrl=new URL(url);});
+      await context.addInitScript({content:`if(${JSON.stringify(scenario)}==='blocked-auto-download')document.addEventListener('click',e=>{if(e.target?.tagName==='A'&&e.target.href.startsWith('blob:')&&!e.isTrusted)e.preventDefault();},true);window.GM_xmlhttpRequest=options=>{let cancelled=false;window.recordPilotRequest(options.url).then(()=>{if(cancelled)return;const pdf=['direct-pdf','blocked-auto-download'].includes(${JSON.stringify(scenario)});const text=pdf?'%PDF-1.7\\n'+('example '.repeat(100))+'\\n%%EOF':'<html>Receipt generation screen, not PDF</html>';options.onload({status:${scenario==='pdf-http-error'?403:200},response:new TextEncoder().encode(text).buffer});});return{abort(){cancelled=true;}};};window.GM_openInTab=(url,options)=>{window.openPilotTab(url,options);return {};};window.pilotMenus={};window.GM_registerMenuCommand=(name,action)=>{window.pilotMenus[name]=action;window.pilotMenu=action;};if(${JSON.stringify(scenario)}==='stale-state'&&location.pathname.includes('TransactionEntry')&&!location.search.includes('lcReceiptPilot'))sessionStorage.setItem('lc-receipt-pilot-v1',JSON.stringify({id:'old',stage:'requested',startedAt:Date.now()}));document.addEventListener('DOMContentLoaded',()=>{${source}\n},{once:true});`});
       const parent=await context.newPage();parent.on('pageerror',e=>errors.push(e.message));
       await parent.goto('https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx?OrderId=123');
       if(scenario==='css-hostile')await parent.addStyleTag({content:'body{transform:translate(0);overflow:hidden;height:20px}button{display:none!important}'});
@@ -40,6 +41,20 @@ assert(!fs.readFileSync('userscripts/livingculture-all-in-one.user.js','utf8').i
       if(scenario==='wrong-order'){
         await worker.waitForURL(/ShoppingCartAdmin/);await worker.getByText('Stopped: this tab opened a different order.',{exact:true}).waitFor();
         assert.equal(receiptUrl,undefined);
+      } else if(['direct-pdf','blocked-auto-download'].includes(scenario)) {
+        await worker.getByText(/Step 3: Receipt PDF received/).waitFor();
+        if(scenario==='blocked-auto-download') {
+          assert.equal(downloaded,undefined,'A blocked automatic click is not reported as file completion');
+          await worker.getByRole('link',{name:'Save receipt PDF'}).click();
+        }
+        for(let i=0;i<100&&!downloaded;i++)await new Promise(r=>setTimeout(r,20));
+        assert.equal(downloaded,'NZSO-99001-receipt.pdf');
+        assert(worker.url().includes('ShoppingCartAdmin'),'Direct PDF download bypasses Chrome viewer entirely');
+        assert.equal(await worker.getByRole('link',{name:'Save receipt PDF'}).count(),1,'A manual save link remains if automatic download is blocked');
+        assert.equal(receiptUrl.searchParams.get('ID'),'987');assert.equal(receiptUrl.searchParams.get('SID'),'456');
+      } else if(scenario==='pdf-http-error') {
+        await worker.getByText('Cin7 returned HTTP 403. No file was saved.',{exact:true}).waitFor();
+        assert.equal(downloaded,undefined);assert.equal(await worker.getByRole('link',{name:'Save receipt PDF'}).count(),0);
       } else {
         await worker.waitForURL(/\/Cloud\/Docs\/PDF/);
         if(scenario==='missing-download'){
