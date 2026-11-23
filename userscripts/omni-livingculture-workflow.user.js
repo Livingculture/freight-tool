@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Workflow
 // @namespace    livingculture-omni
-// @version      0.1.224
+// @version      0.1.225
 // @description  Adds Living Culture workflow tools and NZSO tracking to Cin7 Omni quotes and sales orders.
 // @author       Living Culture
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
@@ -4301,11 +4301,11 @@
     });
   }
 
-  function saveQuotePdfBuffer(buffer, quoteNumber) {
+  function saveQuotePdfBuffer(buffer, quoteNumber, template = 'quote') {
     const blobUrl = URL.createObjectURL(new Blob([buffer], { type: 'application/pdf' }));
     const link = document.createElement('a');
     link.href = blobUrl;
-    link.download = `${quoteNumber}.pdf`;
+    link.download = template === 'receipt' || template === 'invoice' ? `${quoteNumber}-receipt.pdf` : `${quoteNumber}.pdf`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -4755,9 +4755,11 @@
         timeout: Math.max(1000, Math.min(30000, remaining)),
         onload(response) {
           const bytes = new Uint8Array(response.response || new ArrayBuffer(0));
-          const isPdf = bytes.length > 3000 && String.fromCharCode(...bytes.slice(0, 4)) === '%PDF';
+          const isPdf = canRetry
+            ? bytes.length >= 32 && String.fromCharCode(...bytes.slice(0, 5)) === '%PDF-'
+            : bytes.length > 3000 && String.fromCharCode(...bytes.slice(0, 4)) === '%PDF';
           if (response.status >= 200 && response.status < 300 && isPdf) {
-            saveQuotePdfBuffer(response.response, quoteNumber);
+            saveQuotePdfBuffer(response.response, quoteNumber, template);
             finish();
             return;
           }
@@ -4812,15 +4814,23 @@
           if (clickedControl) return;
           clickedControl = document.documentElement;
           requestCurrentAdminReceiptHref().then(href => {
-            const nextHandoff = {...handoff, receiptOpened:true};
-            localStorage.setItem(`${QUOTE_PDF_HANDOFF_KEY}:${handoff.requestId}`, JSON.stringify(nextHandoff));
-            localStorage.setItem(QUOTE_PDF_HANDOFF_KEY, JSON.stringify(nextHandoff));
-            window.location.assign(href);
+            if (finished) return;
+            finished = true;
+            cleanup();
+            // Fetch the generated PDF directly; Chrome's PDF toolbar is not page DOM.
+            downloadSignedQuotePdf(href, handoff.quoteNumber, handoff.template, complete);
           }).catch(error => {
             if (finished) return;
             clickedControl = null;
             const liveControl = findQuotePdfAdminControl('receipt');
             if (liveControl) {
+              const rawHref = liveControl.getAttribute('href') || liveControl.getAttribute('formaction') || '';
+              if (rawHref && !/^javascript:/i.test(rawHref) && rawHref !== '#') {
+                finished = true;
+                cleanup();
+                downloadSignedQuotePdf(new URL(rawHref, location.href).href, handoff.quoteNumber, handoff.template, complete);
+                return;
+              }
               const nextHandoff = {...handoff, receiptOpened:true};
               localStorage.setItem(`${QUOTE_PDF_HANDOFF_KEY}:${handoff.requestId}`, JSON.stringify(nextHandoff));
               localStorage.setItem(QUOTE_PDF_HANDOFF_KEY, JSON.stringify(nextHandoff));

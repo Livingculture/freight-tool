@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const { chromium } = require('playwright');
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const source = fs.readFileSync('userscripts/omni-livingculture-workflow.user.js', 'utf8');
 function extract(name) {
   const start = new RegExp(`  (?:async )?function ${name}\\(`).exec(source).index;
@@ -11,9 +11,9 @@ const constants = "const QUOTE_PDF_HANDOFF_KEY='test-background',QUOTE_PDF_TIMEO
 const workerCode = constants + ['quotePdfTimeout', 'quotePdfWorkerHandoff', 'completeQuotePdfWorker', 'quotePdfTemplateLabel', 'quotePdfTemplateMatches', 'findQuotePdfAdminControl', 'findNativeReceiptDownloadControl', 'activateNativeReceiptControl', 'requestCurrentAdminReceiptHref', 'saveQuotePdfBuffer', 'downloadSignedQuotePdf', 'continueQuotePdfFromEditWorker', 'continueQuotePdfFromAdmin'].map(extract).join('\n');
 
 (async () => {
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({channel:process.env.BROWSER_CHANNEL || undefined});
   try {
-    for (const scenario of ['success', 'receipt-background', 'receipt-delayed', 'receipt-order5', 'receipt-order5-live', 'missing-receipt', 'wrong-quote', 'http-error']) {
+    for (const scenario of ['success', 'receipt-background', 'receipt-delayed', 'receipt-html', 'receipt-small', 'receipt-http-error', 'receipt-order5', 'receipt-order5-live', 'missing-receipt', 'wrong-quote', 'http-error']) {
       const order5 = scenario.startsWith('receipt-order5');
       const receiptLink = order5 ? '/Cloud/Docs/PDF/?T=Order%205&idWebSite=1&UN=demo&ID=363&SID=123' : '/Cloud/Docs/PDF/?T=Receipt&ID=363';
       const receiptAdminHtml = `<a href="/Cloud/Docs/PDF/?T=Invoice&ID=363">Dynamic Invoice</a><a href="${receiptLink}">PDF</a>`;
@@ -23,7 +23,7 @@ const workerCode = constants + ['quotePdfTimeout', 'quotePdfWorkerHandoff', 'com
         const admin = route.request().url().includes('ShoppingCartAdmin');
         const receipt = route.request().url().includes('/Cloud/Docs/PDF') && ['Receipt','Order 5'].includes(new URL(route.request().url()).searchParams.get('T'));
         return route.fulfill({contentType:'text/html',body:admin
-          ? order5 ? receiptAdminHtml : scenario === 'receipt-background' || scenario === 'receipt-delayed'
+          ? order5 ? receiptAdminHtml : scenario.startsWith('receipt-')
             ? '<a href="/Cloud/Docs/PDF/?T=Invoice&ID=363">Dynamic Invoice</a><a aria-label="Dynamic Receipt" href="/Cloud/Docs/PDF/?T=Receipt&ID=363"><span>PDF</span></a>'
             : scenario === 'missing-receipt'
               ? '<a href="/Cloud/Docs/PDF/?T=Invoice&ID=363">Dynamic Invoice</a>'
@@ -55,9 +55,12 @@ const workerCode = constants + ['quotePdfTimeout', 'quotePdfWorkerHandoff', 'com
           window.GM_xmlhttpRequest=options=>{
             window.pdfAttempts=(window.pdfAttempts||0)+1;
             if(!options.responseType){options.onload({status:${scenario === 'receipt-order5-live' ? 503 : 200},responseText:${JSON.stringify(scenario === 'missing-receipt' ? '<a href="/Cloud/Docs/PDF/?T=Invoice&ID=363">Dynamic Invoice</a>' : order5 ? receiptAdminHtml : '<a href="/Cloud/Docs/PDF/?T=Receipt&ID=363">Dynamic Receipt</a>')}});return;}
-            const bytes=new Uint8Array(3501);bytes.set(new TextEncoder().encode('%PDF'));
-            if(${JSON.stringify(scenario)}==='receipt-delayed'&&window.pdfAttempts===1){options.onload({status:202,response:new ArrayBuffer(0)});return;}
-            options.onload({status:${scenario === 'http-error' ? 403 : 200},response:bytes.buffer});
+            localStorage.setItem('test-pdf-url',options.url);
+            window.pdfRequests=(window.pdfRequests||0)+1;
+            const bytes=new Uint8Array(${scenario==='receipt-small'?128:3501});bytes.set(new TextEncoder().encode('%PDF-1.7'));
+            if(${JSON.stringify(scenario)}==='receipt-delayed'&&window.pdfRequests===1){options.onload({status:202,response:new ArrayBuffer(0)});return;}
+            if(${JSON.stringify(scenario)}==='receipt-html'&&window.pdfRequests===1){options.onload({status:200,response:new TextEncoder().encode('<html>Preparing receipt</html>').buffer});return;}
+            options.onload({status:${scenario === 'http-error' || scenario === 'receipt-http-error' ? 403 : 200},response:bytes.buffer});
           };
           ${workerCode}
           document.addEventListener('DOMContentLoaded',()=>{
@@ -96,9 +99,13 @@ const workerCode = constants + ['quotePdfTimeout', 'quotePdfWorkerHandoff', 'com
       const errors=await parent.evaluate(()=>window.alerts);
       if(scenario==='success'){
         assert.equal(savedName,'NZSO-17012.pdf');assert.deepEqual(errors,[]);
-      }else if(scenario==='receipt-background'||scenario==='receipt-delayed'||order5){
-        assert.equal(savedName,undefined);assert.deepEqual(errors,[]);
-        assert.equal(await parent.evaluate(()=>localStorage.getItem('test-native-download-clicks')),'1','The native receipt page Download action is invoked');
+      }else if((scenario.startsWith('receipt-')&&scenario!=='receipt-http-error')||order5){
+        assert.equal(savedName,'NZSO-17012-receipt.pdf');assert.deepEqual(errors,[]);
+        const fetched=new URL(await parent.evaluate(()=>localStorage.getItem('test-pdf-url')));
+        assert.equal(fetched.searchParams.get('ID'),'363','Uses Admin converted document ID');
+        assert.equal(fetched.searchParams.get('T'),order5?'Order 5':'Receipt','Never selects Dynamic Invoice');
+        if(order5) assert.equal(fetched.searchParams.get('SID'),'123','Preserves generated document parameters');
+        assert.equal(await parent.evaluate(()=>localStorage.getItem('test-native-download-clicks')),null,'Does not wait for Chrome PDF viewer controls');
       }else{
         assert.equal(savedName,undefined);assert.equal(errors.length,1);
         assert.match(errors[0],scenario==='missing-receipt'?/Dynamic Receipt/:scenario==='wrong-quote'?/different quote/:/valid (?:quote )?PDF/);

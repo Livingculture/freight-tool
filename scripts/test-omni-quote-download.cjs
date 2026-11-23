@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { chromium } = require('playwright');
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const source = fs.readFileSync(path.join(__dirname, '../userscripts/omni-livingculture-workflow.user.js'), 'utf8');
 function extract(name) {
   const match = new RegExp(`  (?:async )?function ${name}\\(`).exec(source);
@@ -12,7 +12,7 @@ function extract(name) {
 const workerHelpers = `${extract('quotePdfTimeout')}\n${extract('quotePdfWorkerHandoff')}\n${extract('completeQuotePdfWorker')}`;
 
 (async () => {
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({ headless: true, channel:process.env.BROWSER_CHANNEL || undefined });
   try {
     const parent = await browser.newPage();
     await parent.route('https://go.cin7.com/**', route => route.fulfill({ contentType:'text/html', body:'<button id="pdf">Download Quote</button>' }));
