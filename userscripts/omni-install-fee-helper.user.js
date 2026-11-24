@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Installation Fee Helper
 // @namespace    livingculture-omni
-// @version      0.1.22
+// @version      0.1.23
 // @description  Automatically matches pergola and blind installation fees in Cin7 Omni, with a manual installation fee picker.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-install-fee-helper.user.js
@@ -105,6 +105,11 @@
   function assemblyProduct(line) {
     return !/^AS/i.test(line.code) && (typeof assemblyChoicesBySku === 'undefined' || assemblyChoicesBySku.get(line.code.toUpperCase()) !== false)
       && /\b(?:pergola|blinds?)\b/i.test(line.name);
+  }
+  function rememberExistingAssemblyFees(lines, seen = automaticallyAddedFeeCodes) {
+    for (const line of lines) {
+      if (/^AS/i.test(line.code) && /\bassembly\b/i.test(line.name) && line.quantity > 0) seen.add(line.code.toUpperCase());
+    }
   }
   function alternativeFeeKey(line) {
     if (!/\bblinds?\b/i.test(line.name)) return '';
@@ -689,6 +694,10 @@
     if (!memoRequiresInstallation(quoteMemoText())) return;
     const lines = quoteLines();
     if (!lines.some(assemblyProduct)) return;
+    // An assembly already on the quote also counts as having been offered once.
+    // This covers quotes opened after an older script inserted the row: deleting
+    // that existing row must not cause this session to recreate it.
+    rememberExistingAssemblyFees(lines);
     const key = quoteKey();
     if (key === processedQuoteKey) return;
     if (key !== observedQuoteKey) {

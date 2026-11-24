@@ -4,7 +4,7 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync(require('node:path').join(__dirname, '../userscripts/omni-install-fee-helper.user.js'), 'utf8');
 const context = vm.createContext({});
-for (const name of ['clean', 'dimensions', 'pergolaDetails', 'matchingFee', 'matchedFeePlan', 'parseCsvLine', 'parseCsv', 'memoRequiresInstallation', 'blindWidth', 'blindOperation', 'blindMounting', 'matchingBlindFee', 'assemblyProduct', 'alternativeFeeKey']) {
+for (const name of ['clean', 'dimensions', 'pergolaDetails', 'matchingFee', 'matchedFeePlan', 'parseCsvLine', 'parseCsv', 'memoRequiresInstallation', 'blindWidth', 'blindOperation', 'blindMounting', 'matchingBlindFee', 'assemblyProduct', 'rememberExistingAssemblyFees', 'alternativeFeeKey']) {
   const start = source.indexOf(`  function ${name}(`);
   const end = source.indexOf('\n  function ', start + 1);
   vm.runInContext(source.slice(start, end), context);
@@ -39,6 +39,9 @@ for (const product of [tasman('8x8m'), tasman('4.01x4m'), line('Tasman Motorised
 }
 assert.equal(context.matchingFee(tasman('4x3m'), [...fees, fees[0]]), null, 'Ambiguous fees must not be selected');
 const existing = { code: 'AS10037', name: fees[0].name, quantity: 1 };
+const alreadyOffered = new Set();
+context.rememberExistingAssemblyFees([tasman('4x3m'), existing, { ...existing, code: 'as10140', quantity: 2 }], alreadyOffered);
+assert.deepEqual([...alreadyOffered], ['AS10037', 'AS10140'], 'Assembly rows present when a quote opens count as already offered');
 assert.equal(context.matchedFeePlan([tasman('4x3m'), { ...existing, name: '' }], fees).fees[0].quantity, 1, 'Code-only rows are not completed fees');
 assert.equal(context.matchedFeePlan([tasman('4x3m'), existing], fees).fees.length, 0);
 const multiple = context.matchedFeePlan([{ ...tasman('4x3m'), quantity: 2 }, tasman('4x3m'), existing], fees);
