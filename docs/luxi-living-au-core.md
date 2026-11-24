@@ -1,7 +1,7 @@
 # Luxi Living Australia — Cin7 Core installer
 
 This is a separate, manually installed Tampermonkey script:
-`userscripts/luxi-living-au-all-in-one.user.js` (0.1.0).
+`userscripts/luxi-living-au-all-in-one.user.js` (0.1.1).
 The New Zealand All-in-One and its resources are unchanged.
 
 Use a separate Australian Chrome profile with this installer. The New Zealand
@@ -13,6 +13,8 @@ can still add its own New Zealand tools independently of this Australian script.
 - Quote toolbar on `/Sale` in Cin7 Core when the current account selector shows
   Luxi Living / Luxi Living Pty Ltd. It is removed when the account or tab changes.
 - Independent installer name, namespace, update URL, DOM IDs and Tampermonkey settings.
+- Toolbar groups Quote text separately from Products & pricing, with equal-sized
+  buttons, separate resource links and responsive wrapping on narrow screens.
 - Custom Comments: staff-entered product specifications with an editable preview,
   copy and explicitly requested field fill. An Australian text sheet can optionally
   replace the specifications builder.

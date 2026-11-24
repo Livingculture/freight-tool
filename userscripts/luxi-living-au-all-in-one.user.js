@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Luxi Living AU All-in-One - Cin7 Core
 // @namespace    luxi-living-au-core
-// @version      0.1.0
+// @version      0.1.1
 // @description  Independent Luxi Living Australia quote tools and Australian source settings for Cin7 Core.
 // @match        https://inventory.dearsystems.com/*
 // @match        https://*.cin7core.com/*
@@ -277,12 +277,37 @@
     if(!enabled()){document.getElementById(BAR)?.remove();if(document.getElementById(MODAL))closeDialog();return;}
     if(document.getElementById(BAR))return;
     const bar=make('div');bar.id=BAR;bar.setAttribute('aria-label','Luxi Living Australia quote tools');
-    bar.style.cssText='display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:12px 16px;margin:12px 0;background:#fff;border:1px solid #b9d9dc;border-radius:6px;font:13px Arial,sans-serif;color:#164f56';
-    bar.append(make('strong','Luxi Living AU'));
-    for(const module of modules)bar.append(button(module.label,()=>openModule(module)));
+    const style=make('style');style.textContent=`
+      #${BAR}{display:block!important;box-sizing:border-box;width:100%;max-width:100%;min-width:0;padding:16px;margin:12px 0;background:#fff;border:1px solid #c7dfe1;border-radius:8px;font:13px/1.4 Arial,sans-serif;color:#23484d}
+      #${BAR} *{box-sizing:border-box}
+      #${BAR} .au-header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:14px}
+      #${BAR} strong{font:700 15px/1.3 Arial,sans-serif;color:#164f56}
+      #${BAR} .au-groups{display:grid;grid-template-columns:1fr 2fr;gap:20px}
+      #${BAR} .au-label{font:600 11px/1.4 Arial,sans-serif;color:#597379;margin-bottom:6px}
+      #${BAR} .au-buttons{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+      #${BAR} .au-products{grid-template-columns:repeat(4,minmax(0,1fr))}
+      #${BAR} button,#${BAR} a{float:none!important;position:static!important;margin:0!important;min-width:0;box-shadow:none;letter-spacing:normal;text-transform:none;font:600 13px/1.3 Arial,sans-serif;cursor:pointer;border-radius:5px;display:inline-flex!important;align-items:center;justify-content:center;text-decoration:none}
+      #${BAR} .au-buttons button{width:100%;min-height:40px;height:auto!important;padding:9px 12px!important;background:#00858e!important;color:#fff!important;border:1px solid #00858e!important;white-space:normal}
+      #${BAR} .au-buttons button:hover{background:#006d76!important;border-color:#006d76!important}
+      #${BAR} button.au-settings,#${BAR} a{width:auto;min-height:32px;height:auto!important;padding:6px 10px!important;background:#fff!important;color:#21616a!important;border:1px solid #bcd6d9!important;white-space:nowrap}
+      #${BAR} button:focus-visible,#${BAR} a:focus-visible{outline:3px solid #71c6cc!important;outline-offset:2px}
+      #${BAR} .au-links{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;padding-top:12px;border-top:1px solid #e4eeee}
+      @media(max-width:1050px){#${BAR} .au-groups{grid-template-columns:1fr;gap:12px}}
+      @media(max-width:600px){#${BAR}{padding:12px}#${BAR} .au-products{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    `;
+    const header=make('div');header.className='au-header';
+    const sources=button('AU Sources',setup);sources.className='au-settings';header.append(make('strong','Luxi Living AU'),sources);
+    const groups=make('div');groups.className='au-groups';
+    for(const [title,kinds] of [['Quote text',['comments','memo']],['Products & pricing',['install','custom','promo','newProducts']]]){
+      const group=make('div');group.setAttribute('role','group');group.setAttribute('aria-label',title);group.append(make('div',title));group.firstElementChild.className='au-label';
+      const actions=make('div');actions.className=kinds.length===4?'au-buttons au-products':'au-buttons';
+      for(const module of modules.filter(item=>kinds.includes(item.key)))actions.append(button(module.label,()=>openModule(module)));
+      group.append(actions);groups.append(group);
+    }
     const website=make('a','Luxi website');website.href='https://luxiliving.com.au/';website.target='_blank';website.rel='noopener noreferrer';
     const shared=make('a','AU shared files');shared.href='https://drive.google.com/drive/folders/1lzVHJsc4ebnJwJlZmQ06X_9w7Sj2Fd56';shared.target='_blank';shared.rel='noopener noreferrer';
-    bar.append(website,shared,button('AU Sources',setup));
+    const links=make('div');links.className='au-links';links.append(website,shared);
+    bar.append(style,header,groups,links);
     const heading=Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6')).find(element=>clean(element.textContent).toLowerCase()==='quote' && visible(element));
     if(heading)heading.parentElement.insertBefore(bar,heading);
     else {const comments=Array.from(document.querySelectorAll('label')).find(element=>clean(element.textContent).toLowerCase()==='comments');
