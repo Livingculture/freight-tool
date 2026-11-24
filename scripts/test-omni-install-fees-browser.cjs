@@ -151,13 +151,14 @@ const price = blindCase ? '500' : '2000';
     assert.equal(await page.locator('body > table td.code').filter({ hasText: feeCode }).count(), 1, 'Removing installation requirement prevents further fees');
     await page.locator('#memo').fill('Installation required');
     await page.evaluate(() => document.activeElement.blur());
-    await page.waitForFunction(feeCode => [...document.querySelectorAll('body > table td.code')]
-      .filter(cell => cell.textContent === feeCode)
-      .reduce((sum, cell) => sum + Number(cell.parentElement.children[5].querySelector('input').value), 0) === 3, feeCode);
-    await page.waitForFunction(() => !document.getElementById('lc-omni-install-fee-button').disabled);
+    await page.waitForTimeout(2200);
+    assert.equal(await page.locator('body > table td.code').filter({ hasText: feeCode }).count(), 1, 'Automatic assembly is offered only once');
+    await page.locator('body > table td.code').filter({ hasText: feeCode }).locator('..').evaluate(row => row.remove());
+    await page.waitForTimeout(2200);
+    assert.equal(await page.locator('body > table td.code').filter({ hasText: feeCode }).count(), 0, 'Deleting automatic assembly is respected');
     assert.equal(await page.locator('#lc-omni-install-fee-root').locator('#toast').evaluate(toast => toast.classList.contains('error')), false);
     await page.screenshot({ path: '/tmp/lc-install-fees-auto.png' });
-    console.log(`PASS browser (${blindCase ? 'blinds' : 'pergolas'}, ${mode}, ${cachedPricing ? 'cached' : 'prefetched'}): first insertion ${insertionMs}ms including simulated 1400ms Omni lookup; memo gate, quantity increase, incomplete-row recovery`);
+    console.log(`PASS browser (${blindCase ? 'blinds' : 'pergolas'}, ${mode}, ${cachedPricing ? 'cached' : 'prefetched'}): first insertion ${insertionMs}ms including simulated 1400ms Omni lookup; memo gate, one-time insertion, deletion and incomplete-row recovery`);
     await page.close();
     }
   } finally {

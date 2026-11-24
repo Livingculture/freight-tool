@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Installation Fee Helper
 // @namespace    livingculture-omni
-// @version      0.1.21
+// @version      0.1.22
 // @description  Automatically matches pergola and blind installation fees in Cin7 Omni, with a manual installation fee picker.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-install-fee-helper.user.js
@@ -28,6 +28,8 @@
   let automaticFeesTimer = null;
   let quoteUiTimer = null;
   let failedQuoteKey = '', failedQuoteAttempts = 0;
+  const automaticallyAddedFeeCodes = new Set();
+  const assemblyChoicesBySku = new Map();
   const maskedOptionStyles = new WeakMap();
 
   function dimensions(text) {
@@ -101,7 +103,8 @@
     return matches.length === 1 ? { ...matches[0], width } : null;
   }
   function assemblyProduct(line) {
-    return !/^AS/i.test(line.code) && /\b(?:pergola|blinds?)\b/i.test(line.name);
+    return !/^AS/i.test(line.code) && (typeof assemblyChoicesBySku === 'undefined' || assemblyChoicesBySku.get(line.code.toUpperCase()) !== false)
+      && /\b(?:pergola|blinds?)\b/i.test(line.name);
   }
   function alternativeFeeKey(line) {
     if (!/\bblinds?\b/i.test(line.name)) return '';
@@ -639,6 +642,7 @@
       if (initialKey !== quoteKey() || editingQuote() || !memoRequiresInstallation(quoteMemoText())) return;
       const plan = matchedFeePlan(quoteLines(), items);
       for (const fee of plan.fees) {
+        if (automaticallyAddedFeeCodes.has(fee.code.toUpperCase())) continue;
         if (editingQuote() || !memoRequiresInstallation(quoteMemoText())) return;
         // Recheck after each insertion; Omni may rerender the entire quote table.
         const stillNeeded = matchedFeePlan(quoteLines(), items).fees.find(item => item.code === fee.code);
@@ -656,6 +660,10 @@
           }
           return;
         }
+        // An automatically inserted fee is offered only once per open quote.
+        // If staff delete it, that is a deliberate choice and table mutation
+        // checks must not recreate it.
+        automaticallyAddedFeeCodes.add(fee.code.toUpperCase());
       }
       processedQuoteKey = quoteKey();
       failedQuoteKey = '';
@@ -757,6 +765,13 @@
   }
   function boot() { ensureRoot(); refreshQuoteUi(); void prepareFees(); scheduleAutomaticFees(); }
   boot();
+  window.addEventListener('lc:omni-add-sku', event => {
+    const sku = clean(event.detail?.sku).toUpperCase();
+    if (!sku || typeof event.detail?.assembly !== 'boolean') return;
+    assemblyChoicesBySku.set(sku, event.detail.assembly);
+    processedQuoteKey = '';
+    scheduleAutomaticFees(0, true);
+  });
   new MutationObserver(records => {
     const relevant = records.some(record => {
       const target = record.target instanceof Element ? record.target : record.target.parentElement;

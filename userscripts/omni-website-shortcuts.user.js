@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Website Shortcuts
 // @namespace    livingculture-omni
-// @version      0.1.33
+// @version      0.1.34
 // @description  Adds Living Culture website shortcuts to the grey space between Cin7 Omni quote sections.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @match        https://livingculture.co.nz/*
@@ -236,7 +236,8 @@
       header{display:flex;align-items:center;justify-content:space-between;padding:5px 10px;background:#13377e;color:#fff}h2{margin:0;font-size:14px}
       button{cursor:pointer}.close{border:0;background:transparent;color:#fff;font-size:20px;width:26px;height:26px}
       .fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;padding:10px}label{display:grid;gap:4px;font-size:12px;font-weight:700}select{width:100%;min-width:0;height:32px;border:1px solid #9db3d2;border-radius:4px;background:#fff;padding:0 5px;font:12px Arial}
-      label:has(#model){grid-column:1 / -1}#status,#retry{grid-column:1 / -1}
+      label:has(#model){grid-column:1 / -1}#status,#retry,.assembly-choice{grid-column:1 / -1}
+      .assembly-choice{display:flex;align-items:center;gap:8px}.assembly-choice input{width:17px;height:17px;margin:0}
       #blind-options{display:contents}
       #status{margin:0;color:#526987}#status.error{color:#a32d22}#retry{height:34px;border:1px solid #13377e;border-radius:4px;background:#fff;color:#13377e;font-weight:700}
       [hidden]{display:none!important}
@@ -290,6 +291,14 @@
     mount.setAttribute('aria-label', 'Mounting');
     model.setAttribute('aria-label', isBlinds ? 'Blind' : 'Model');
     const size = shadow.getElementById('size'), colour = shadow.getElementById('colour'), status = shadow.getElementById('status');
+    const assemblyLabel = document.createElement('label');
+    assemblyLabel.className = 'assembly-choice';
+    const assembly = document.createElement('input');
+    assembly.type = 'checkbox';
+    assembly.checked = true;
+    assembly.setAttribute('aria-label', 'Add assembly');
+    assemblyLabel.append(assembly, document.createTextNode('Add assembly'));
+    shadow.querySelector('.fields').insertBefore(assemblyLabel, shadow.getElementById('retry'));
     const blindOptions = document.createElement('div');
     blindOptions.id = 'blind-options';
     model.closest('label').insertAdjacentElement('afterend', blindOptions);
@@ -324,7 +333,7 @@
       const url = new URL(`https://livingculture.co.nz/products/${selectedProduct.handle}`);
       url.searchParams.set('variant', variant.id);
       if (!openShortcut({ label: shortcut.label, url: url.href })) return false;
-      window.dispatchEvent(new CustomEvent('lc:omni-add-sku', { detail: { sku: clean(variant.sku).toUpperCase() } }));
+      window.dispatchEvent(new CustomEvent('lc:omni-add-sku', { detail: { sku: clean(variant.sku).toUpperCase(), assembly: assembly.checked } }));
       close();
       return true;
     };
