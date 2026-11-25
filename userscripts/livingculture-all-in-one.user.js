@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture All-in-One
 // @namespace    livingculture
-// @version      0.1.276
+// @version      0.1.277
 // @description  Approved Living Culture Omni, Cin7 Core, Gmail, HubSpot and website tools in one Tampermonkey install.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -60,7 +60,7 @@
 // @resource     emailHelperCompose https://raw.githubusercontent.com/Livingculture/freight-tool/722b6e81fda1148fdedb7084c658c910395ac77f/userscripts/omni-email-helper-compose.user.js
 // @resource     pdfAttachments https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-pdf-attachments.user.js?v=0.4.9
 // @resource     hubspotShortcut https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-hubspot-shortcut.user.js?v=0.2.0
-// @resource     workflow https://raw.githubusercontent.com/Livingculture/freight-tool/f31de5430713c02756dabcd00afff5771130e096/userscripts/omni-livingculture-workflow.user.js
+// @resource     workflow https://raw.githubusercontent.com/Livingculture/freight-tool/7f1e2d549600289a7783be5ad49033d9a1f35ff5/userscripts/omni-livingculture-workflow.user.js
 // @resource     hubspotQuoteMemo https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-hubspot-quote-memo-pilot.user.js?v=0.1.4
 // @resource     staffUpdatesWidget https://raw.githubusercontent.com/Livingculture/freight-tool/33c91f265329d527a4e25b3c48c2ceac2e046210/userscripts/workflow-updates-dropdown.js
 // @resource     workflowNavigation https://raw.githubusercontent.com/Livingculture/freight-tool/48cf388f7d6e6ecf8d5766fb9afd65931ff730a5/userscripts/omni-workflow-navigation.user.js
@@ -75,8 +75,8 @@
 // @resource     newProducts https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-new-products-info-sheet.user.js?v=0.1.7
 // @resource     wecomPayment https://raw.githubusercontent.com/Livingculture/freight-tool/7cbb93a4a7401596e9e59ae067e7bdb534e81fb2/userscripts/cin7-wecom-payment-message.user.js
 // @resource     staffReps https://raw.githubusercontent.com/Livingculture/freight-tool/ea57776e8bd2538252e992f3a68b3691093cc513/userscripts/livingculture-reps.json
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/livingculture-all-in-one.user.js?v=0.1.276
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/livingculture-all-in-one.user.js?v=0.1.276
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/livingculture-all-in-one.user.js?v=0.1.277
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/livingculture-all-in-one.user.js?v=0.1.277
 // @supportURL   https://github.com/Livingculture/freight-tool
 // ==/UserScript==
 
@@ -3018,10 +3018,10 @@
       const source = GM_getResourceText(component.resource);
       if (!source) throw new Error('Bundled resource is empty');
       const run = new Function(
-        'GM_xmlhttpRequest', 'GM_getValue', 'GM_setValue', 'GM_registerMenuCommand', 'GM_getResourceText', 'unsafeWindow', 'GM_openInTab',
+        'GM_xmlhttpRequest', 'GM_getValue', 'GM_setValue', 'GM_registerMenuCommand', 'GM_getResourceText', 'unsafeWindow', 'GM_openInTab', 'lcAllInOne',
         `${source}\n//# sourceURL=lc-all-in-one/${component.file}`
       );
-      run(GM_xmlhttpRequest, GM_getValue, GM_setValue, GM_registerMenuCommand, GM_getResourceText, typeof unsafeWindow !== 'undefined' ? unsafeWindow : window, typeof GM_openInTab === 'function' ? GM_openInTab : undefined);
+      run(GM_xmlhttpRequest, GM_getValue, GM_setValue, GM_registerMenuCommand, GM_getResourceText, typeof unsafeWindow !== 'undefined' ? unsafeWindow : window, typeof GM_openInTab === 'function' ? GM_openInTab : undefined, component.resource === 'workflow');
       status.loaded.push(component.file);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
