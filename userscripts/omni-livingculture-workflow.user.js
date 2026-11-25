@@ -6784,7 +6784,7 @@
       && !new URL(location.href).searchParams.has('lcQuotePdfWorker');
     if (/\/Cloud\/ShoppingCartAdmin\//i.test(location.pathname) || isReceiptWorkerPage) {
       if (window.parent !== window) return;
-      installOmniOrderSearch();
+      if (typeof lcAllInOne === 'undefined' || !lcAllInOne) installOmniOrderSearch();
       installOmniOrderListSync();
       if (!isReceiptWorkerPage || /\/Cloud\/ShoppingCartAdmin\//i.test(location.pathname)) {
         continueConvertToSalesOrderFromAdmin();
