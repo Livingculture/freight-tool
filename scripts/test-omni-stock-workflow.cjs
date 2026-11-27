@@ -35,6 +35,18 @@ const functions=extracted.join('\n');
     await page.addScriptTag({content:fs.readFileSync('userscripts/omni-product-availability.user.js','utf8')});
     await page.waitForFunction(()=>document.getElementById('lc-omni-quote-stock')?.shadowRoot.querySelector('#progress')?.textContent.includes('Click Refresh'));
     assert.equal(await page.evaluate(()=>document.getElementById('lc-omni-quote-stock').dataset.workflowStock||''),'','Stock lookup is manual on first load');
+    const paused = await page.evaluate(() => {
+      const panel = document.getElementById('lc-omni-quote-stock');
+      panel.shadowRoot.getElementById('refresh').click();
+      const started = Boolean(document.getElementById('lc-omni-quote-stock').shadowRoot.querySelector('iframe'));
+      const editor = document.querySelector('#lines input');
+      editor.focus();
+      const current = document.getElementById('lc-omni-quote-stock').shadowRoot;
+      return {started, focused:document.activeElement === editor, stopped:!current.querySelector('iframe'),
+        message:current.getElementById('progress').textContent};
+    });
+    assert.deepEqual(paused,{started:true, focused:true, stopped:true,message:'Stock check paused. Click Refresh after editing.'});
+    await page.locator('#lines input').blur();
     await page.locator('#lc-omni-quote-stock').locator('#refresh').click();
     await page.waitForFunction(()=>JSON.parse(document.getElementById('lc-omni-quote-stock')?.dataset.workflowStock||'{}').complete===true);
     assert.equal(await page.evaluate(()=>omniProductStockObservation()?.ready),true,'Numbered, split-line Omni headings must reach Workflow after stock lookup completes');

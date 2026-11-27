@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Omni Living Culture Product Availability
 // @namespace    livingculture-omni
-// @version      0.1.18
+// @version      0.1.19
 // @description  Checks Omni products-page stock for all SKUs on the current quote.
 // @match        https://go.cin7.com/Cloud/TransactionEntry/TransactionEntry.aspx*
 // @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-product-availability.user.js
@@ -219,7 +219,7 @@
       document.dispatchEvent(new Event('lc-omni-stock-updated'));
       return true;
     };
-    const frame = document.createElement('iframe'); frame.title = 'Omni stock lookup'; frame.tabIndex = -1; frame.setAttribute('aria-hidden', 'true');
+    const frame = document.createElement('iframe'); frame.title = 'Omni stock lookup'; frame.tabIndex = -1; frame.inert = true; frame.setAttribute('aria-hidden', 'true');
     if (refresh) shadow.appendChild(frame);
     const tbody = shadow.querySelector('tbody'), progress = shadow.getElementById('progress');
     const renderStock = (row, item, stock) => {
@@ -242,7 +242,18 @@
       tbody.appendChild(row); return row;
     });
     let cancelled = false;
-    stopReport = () => { cancelled = true; root.remove(); };
+    const stopLookup = () => {
+      cancelled = true;
+      frame.remove();
+      document.removeEventListener('focusin', pauseForEditing, true);
+    };
+    function pauseForEditing(event) {
+      const editor = event.composedPath()[0];
+      if (!isEditor(editor)) return;
+      stopLookup();
+      progress.textContent = 'Stock check paused. Click Refresh after editing.';
+    }
+    stopReport = () => { stopLookup(); root.remove(); };
     if (retained) {
       root.dataset.workflowStock = JSON.stringify({ ...retained, page:location.pathname + location.search });
       progress.textContent = `${refresh ? 'Rechecking - showing' : 'Showing'} result from ${new Date(retained.checkedAt).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })}`;
@@ -252,6 +263,7 @@
       if (!retained) progress.textContent = 'Click Refresh to check stock';
       return;
     }
+    document.addEventListener('focusin', pauseForEditing, true);
     void (async () => {
       let errors = 0;
       for (let index = 0; index < items.length && !cancelled; index += 1) {
@@ -277,6 +289,7 @@
       }
       if (!cancelled) {
         frame.remove();
+        document.removeEventListener('focusin', pauseForEditing, true);
         const saved = publish();
         progress.textContent = saved
           ? `Checked ${items.length} products at ${new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })}`
@@ -287,7 +300,9 @@
   }
 
   function syncQuoteStock(forceRefresh = false) {
+    if (autoTimer !== null) clearTimeout(autoTimer);
     autoTimer = null;
+    if (editingQuote(!forceRefresh)) return;
     const items = quoteItems(), table = quoteTable();
     if (!table || !items.length) {
       stopReport?.(); stopReport = null; lastQuoteKey = ''; return;
@@ -299,11 +314,18 @@
     showQuoteStock(items, table, forceRefresh);
   }
 
-  function scheduleStockSync() {
+  function isEditor(element) {
+    return element instanceof HTMLElement && (element.matches('input, textarea, select') || element.isContentEditable);
+  }
+
+  function editingQuote(respectCooldown = true) {
     const active = document.activeElement;
-    const focused = active?.shadowRoot?.activeElement || active;
-    if (document.hidden || Date.now() < Number(window.__lcOmniEditingUntil || 0) || (focused && focused !== document.body
-      && (/^(INPUT|TEXTAREA|SELECT)$/i.test(focused.tagName) || focused.isContentEditable))) return;
+    return (respectCooldown && Date.now() < Number(window.__lcOmniEditingUntil || 0))
+      || isEditor(active?.shadowRoot?.activeElement || active);
+  }
+
+  function scheduleStockSync() {
+    if (document.hidden || editingQuote()) return;
     if (autoTimer !== null) return;
     autoTimer = setTimeout(syncQuoteStock, 300);
   }
@@ -325,10 +347,7 @@
   document.addEventListener('change', scheduleForQuoteChange);
   document.addEventListener('focusout', event => window.setTimeout(() => scheduleForQuoteChange(event), 700));
   new MutationObserver(records => {
-    const active = document.activeElement;
-    const focused = active?.shadowRoot?.activeElement || active;
-    if (Date.now() < Number(window.__lcOmniEditingUntil || 0) || (focused && focused !== document.body
-      && (/^(INPUT|TEXTAREA|SELECT)$/i.test(focused.tagName) || focused.isContentEditable))) return;
+    if (editingQuote()) return;
     const report = document.getElementById(REPORT_ID);
     const table = report?.previousElementSibling;
     if (!report?.isConnected || !table || records.some(record => {
