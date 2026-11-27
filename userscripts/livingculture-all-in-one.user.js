@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Living Culture All-in-One
 // @namespace    livingculture
-// @version      0.1.277
+// @version      0.1.278
 // @description  Approved Living Culture Omni, Cin7 Core, Gmail, HubSpot and website tools in one Tampermonkey install.
 // @author       Living Culture
 // @match        https://go.cin7.com/*
@@ -52,7 +52,7 @@
 // @resource     customProducts https://raw.githubusercontent.com/Livingculture/freight-tool/72e0cf7ff05575a36b275e5a48d911d027daa49c/userscripts/omni-custom-product-helper.user.js
 // @resource     customProductData https://raw.githubusercontent.com/Livingculture/freight-tool/454bc4336d12a1adc619d2011ffb61d29c1f08de/userscripts/cin7-custom-product-helper.user.js
 // @resource     websiteShortcuts https://raw.githubusercontent.com/Livingculture/freight-tool/cfcf481/userscripts/omni-website-shortcuts.user.js
-// @resource     productAvailability https://raw.githubusercontent.com/Livingculture/freight-tool/f32263abbd7d3eb8be01d52f6f4acffa27b00366/userscripts/omni-product-availability.user.js
+// @resource     productAvailability https://raw.githubusercontent.com/Livingculture/freight-tool/390ee4ae16892a4376106cc8df131998e2c3c7a0/userscripts/omni-product-availability.user.js
 // @resource     chinaWarehouse https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/omni-china-warehouse-popup-clean-mode.user.js?v=0.1.1
 // @resource     caribbeanStock https://raw.githubusercontent.com/Livingculture/freight-tool/28da92afbd1accc345feaaa22904e398d501a81b/userscripts/caribbean-stock.user.js
 // @resource     quoteDefaults https://raw.githubusercontent.com/Livingculture/freight-tool/f5d3039c2c919fa2920ebe838d7c63d8e7953767/userscripts/omni-quote-defaults.user.js
@@ -75,8 +75,8 @@
 // @resource     newProducts https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/cin7-new-products-info-sheet.user.js?v=0.1.7
 // @resource     wecomPayment https://raw.githubusercontent.com/Livingculture/freight-tool/7cbb93a4a7401596e9e59ae067e7bdb534e81fb2/userscripts/cin7-wecom-payment-message.user.js
 // @resource     staffReps https://raw.githubusercontent.com/Livingculture/freight-tool/ea57776e8bd2538252e992f3a68b3691093cc513/userscripts/livingculture-reps.json
-// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/livingculture-all-in-one.user.js?v=0.1.277
-// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/livingculture-all-in-one.user.js?v=0.1.277
+// @downloadURL  https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/livingculture-all-in-one.user.js?v=0.1.278
+// @updateURL    https://raw.githubusercontent.com/Livingculture/freight-tool/main/userscripts/livingculture-all-in-one.user.js?v=0.1.278
 // @supportURL   https://github.com/Livingculture/freight-tool
 // ==/UserScript==
 
